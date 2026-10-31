@@ -659,7 +659,7 @@ def test_apply_transform_maps_every_target_and_keeps_the_world_mix():
         app.set_morph_weight(w, lid)
     obj.transform = ObjectTransform(
         translation=(0.3, -0.2, 0.1), rotation=object_space.axis_angle_rotation((0.0, 1.0, 0.0), 0.7), scale=1.5)
-    app._placement_changed()
+    app._objects.placement_changed()
     world_before = {v: object_space.to_world(obj, p) for v, p in morph_mix.evaluate(obj.mesh, weights).items()}
     state = obj.mesh.export_state()
     app.key_press(_key("4"))

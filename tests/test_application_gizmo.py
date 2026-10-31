@@ -205,7 +205,7 @@ def test_the_tool_is_the_last_w_e_r_and_scale_centre_is_the_uniform_handle(app):
     app.key_release(R)  # scale becomes the current tool
     assert app.gizmo_tool == "scale"
     pivot = (0.5, 0.5, 0.0)
-    app._axis_constraint = "x"  # a stale constraint: the centre handle clears it
+    app._gestures.axis_constraint = "x"  # a stale constraint: the centre handle clears it
     centre = _screen(app, pivot)
     before = [mesh.vertex_position(v) for v in quad]
     assert _drag(app, _mouse("LEFT"), centre, (40.0, 0.0)) is True
@@ -249,7 +249,7 @@ def _object_selected(app, *, translation=(0.0, 0.0, 0.0)):
 
     obj = app.add_primitive("cube", name="box")  # mode 4, selected
     obj.transform = ObjectTransform(translation=translation)
-    app._placement_changed()
+    app._objects.placement_changed()
     return obj
 
 
@@ -282,7 +282,7 @@ def test_the_object_gizmo_is_drawn_in_world_even_when_the_edit_object_is_placed(
     from core import ObjectTransform
 
     app.scene.edit_object.transform = ObjectTransform(translation=(5.0, 0.0, 0.0))
-    app._placement_changed()
+    app._objects.placement_changed()
     _object_selected(app)
     assert app.gizmo_items()
     assert app.gizmo_camera_uniforms() == app.viewport.render_mesh._camera_uniforms()
@@ -349,7 +349,7 @@ def _placed_edit_object(app, rotated: bool = False):
     c, s = math.cos(math.pi / 2), math.sin(math.pi / 2)
     rotation = ((c, -s, 0.0), (s, c, 0.0), (0.0, 0.0, 1.0)) if rotated else ((1, 0, 0), (0, 1, 0), (0, 0, 1))
     app.scene.edit_object.transform = ObjectTransform(translation=(3.0, 1.0, 0.0), rotation=rotation)
-    app._placement_changed()
+    app._objects.placement_changed()
 
 
 def test_a_placed_edit_object_shows_the_component_gizmo_at_the_selections_world_position(app):

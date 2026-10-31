@@ -167,13 +167,13 @@ def test_pick_cache_has_no_screen_position_for_hidden_vertices(app):
     cache = PickCache()
     victim = mesh.all_vertex_ids()[100]
     cache.set_hidden([victim])
-    cache.refresh(app._edit_camera, mesh, WIDTH, HEIGHT)
+    cache.refresh(app._objects.edit_camera, mesh, WIDTH, HEIGHT)
     assert victim not in cache.vertex_screen
     assert cache.hidden_faces == frozenset(
         f for f in mesh.all_face_ids() if victim in mesh.face_vertices(f)
     )
     cache.set_hidden(())
-    cache.refresh(app._edit_camera, mesh, WIDTH, HEIGHT)
+    cache.refresh(app._objects.edit_camera, mesh, WIDTH, HEIGHT)
     assert victim in cache.vertex_screen and not cache.hidden_faces
 
 
@@ -268,10 +268,10 @@ def test_each_edit_object_keeps_its_own_hidden_set(app):
     app.key_press(CTRL_H)
     first = app.scene.edit_object_id
     other = app.add_primitive("cube")
-    app._set_edit_object(other.id if hasattr(other, "id") else other)
+    app._objects.set_edit_object(other.id if hasattr(other, "id") else other)
     assert not app._hidden
     assert not app.viewport.render_mesh.hidden_vertices
-    app._set_edit_object(first)
+    app._objects.set_edit_object(first)
     assert app._hidden and app.viewport.render_mesh.hidden_vertices
 
 

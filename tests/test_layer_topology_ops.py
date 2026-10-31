@@ -23,6 +23,7 @@ import pytest
 import tests._bootstrap  # noqa: F401
 
 from core import Mesh, PointLayerInfo, SelectionMode
+from mirai.controllers.gestures import OffsetGesture
 from mirai.interaction import commands
 from mirai.interaction.input import Input
 from mirai.topology.contextual_c import CContext
@@ -282,8 +283,8 @@ def _run(app, command: str, info: dict) -> None:
     if app.interaction_owner == "transform":  # Extrude / Inset: hold, drag, release
         for _ in range(4):
             app.pointer_motion(400, 300, 20.0, -15.0)
-        if app._offset is not None:  # Inset / Bevel: each new vertex is keyed first by the vertex it copies
-            info["sources"] = {new: key[0] for new, key in app._offset.result.keys.items()}
+        if isinstance(app._gestures.session, OffsetGesture):  # Inset / Bevel: each new vertex is keyed first by the vertex it copies
+            info["sources"] = {new: key[0] for new, key in app._gestures.session.result.keys.items()}
             info["old_to_new"] = {old: new for new, old in info["sources"].items()}
         else:
             info["old_to_new"] = dict(app.tool_manager.active_tool._old_to_new)

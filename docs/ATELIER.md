@@ -70,7 +70,7 @@ Mehlsack Lab (oben).
 | Kandidat | Was es dir bringt | Wo |
 |---|---|---|
 | Symmetrie-Spur J: symmetrische Soft Selection fertig, Re-Symmetrize prüfen | Symmetrie als durchgehender Werkzeugfluss | [AD-SYM-04](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#kurzfassung-für-manu-deutsch) · [AD-SYM-05](architecture/AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) |
-| Phase 6 (Skinning, nach Morph) | Rig-Grundlage auf der Mesh-Architektur; kommt nach dem Umbau der App-Steuerung (dein Go 2026-10-29) | [AD-025 §17.5](architecture/AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) · [AD-027](architecture/AD-027-INTERACTION-LAYER-SESSION-SLOT.md#kurzfassung-für-manu-deutsch) |
+| Phase 6 (Skinning, nach Morph) | Rig-Grundlage auf der Mesh-Architektur; der Umbau der App-Steuerung davor ist fertig (2026-10-30, kein Abhak-Test: melden, wenn sich etwas anders anfühlt) | [AD-025 §17.5](architecture/AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) · [AD-027](architecture/AD-027-INTERACTION-LAYER-SESSION-SLOT.md#kurzfassung-für-manu-deutsch) |
 | Hover-/Navigations-Optimierung auf dichten Meshes | flüssigeres Arbeiten auf dichten Meshes | D1c |
 | Toolbox-Lücken: Subdivide (B2) | die fehlenden Alltagswerkzeuge | [WP Toolbox-Lücken](WP_TOOLBOX_GAPS_PLAN.md) |
 

@@ -126,7 +126,7 @@ def test_a_rectangular_lasso_selects_exactly_what_a_box_does(app, mode_key, occl
     x1, y1 = _screen(app, 1.6, 0.4)
     rect = (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
     polygon = [(rect[0], rect[1]), (rect[2], rect[1]), (rect[2], rect[3]), (rect[0], rect[3])]
-    args = (app._edit_camera, app.scene.mesh, app.selection.mode)
+    args = (app._objects.edit_camera, app.scene.mesh, app.selection.mode)
     kwargs = dict(cache=app._pick_cache, occlusion=occlusion)
     box = elements_in_rect(*args, rect, WIDTH, HEIGHT, **kwargs)
     lasso = elements_in_polygon(*args, polygon, WIDTH, HEIGHT, **kwargs)

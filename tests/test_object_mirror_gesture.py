@@ -48,7 +48,7 @@ def _pair(app: Application):
         translation=(2.0, 1.0, -0.5), rotation=object_space.axis_angle_rotation((0.0, 1.0, 0.0), 0.4), scale=0.5
     )
     a.pivot = (0.1, 0.2, 0.0)
-    app._placement_changed()
+    app._objects.placement_changed()
     b = app.mirror_copy("X")
     b.name = "eye.R"
     app.selection.objects = set()
@@ -183,7 +183,7 @@ def test_a_reference_partner_locks_the_gesture():
     app = _app()
     a, b, _ = _pair(app)
     b.state = ObjectState.REFERENCE
-    app._sync_object_views()
+    app._objects.sync_views()
     app.selection.objects = {a.id}
     start = a.transform
     assert app.key_press(W) is False

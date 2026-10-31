@@ -2,8 +2,8 @@
 
 **Status:** **DECIDED (Manu, 2026-10-29: go with C1–C3; V1, V3, V7 stay as they are).** Proposed the same day as the
 Architecture Gate (Type C) stop point; second opinion [DEVCHAT-001](../archive/interaction_layer/reviews/AD-027_REVIEW_DEVCHAT_001.md)
-(Development chat): ACCEPT WITH CHANGES, disposition in §12. **M0–M5 implemented (2026-10-30)**; M6–M8 open (§7,
-findings of the steps so far in §7.1).
+(Development chat): ACCEPT WITH CHANGES, disposition in §12. **Implemented M0–M8 (2026-10-30)**; findings of the
+steps in §7.1, the Definition of Done checked in §8.
 **Mode (M5):** Production (a behaviour-neutral restructuring), in fresh sessions with this AD as the handoff (§7).
 **Baseline:** `main` @ `dfd6e5d`. Every code fact, line count and probe result below was read or run there.
 **References:** AGENTS.md §5, §7, §7a, §8a · Development System §5 · [SOURCE_ARCHITECTURE](SOURCE_ARCHITECTURE.md) ·
@@ -26,9 +26,10 @@ code: `src/mirai/application.py`, `src/mirai/interaction/`, `src/main.py`, `src/
   aufgezeichnet; nach jedem Umbauschritt müssen sie Schritt für Schritt exakt gleich ablaufen (§6). Danach bleiben
   nur die lesbaren Szenarien als Tests; die Zufallsaufzeichnung wird gelöscht, damit sie spätere gewollte Änderungen
   (Tasten, Phase 6) nicht blockiert.
-- **Stand:** entschieden (dein Go, 2026-10-29, mit den drei Änderungen der zweiten Meinung, §12). Der Umbau läuft in
-  drei frischen Sessions (§7); die erste (M0–M2: Aufzeichnung, Platz, eine Frage) und die zweite (M3–M5: Knife,
-  Halte-Tasten und Morph, Box/Lasso und Gizmo-Klick) sind fertig (2026-10-30). Eine Korrektur am Plan (§7.1 M5):
+- **Stand:** fertig (2026-10-30), in drei Sessions (§7): M0–M2 (Aufzeichnung, Platz, eine Frage), M3–M5 (Knife,
+  Halte-Tasten und Morph, Box/Lasso und Gizmo-Klick), M6–M8 (die Halte-Gesten W/E/R/T/G/S/I/Ctrl+B, die Objekte,
+  die Befehlstabelle, die Aufzeichnung als lesbare Szenario-Tests). `application.py` hat jetzt 4 073 statt 7 713
+  Zeilen; alle aufgezeichneten Eingabefolgen liefen nach jedem Schritt exakt gleich ab. Eine Korrektur am Plan (§7.1 M5):
   Box/Lasso, der Gizmo-Klick und eine abgelehnte Ziehgeste bekommen einen eigenen zweiten Platz neben dem ersten,
   weil heute z. B. Alt+M bei gedrücktem Gizmo-Griff die Vorschau öffnet und das Loslassen trotzdem dem Griff gehört -
   mit nur einem Platz hätte sich das geändert. Kein Abhak-Test: normal weiterarbeiten und melden, wenn sich etwas
@@ -264,7 +265,9 @@ point, the viewport size, the held modifiers and the edit camera; and `status(te
 `invalidate_picks()`, `notify_vertices_moved(ids)`, `notify_topology_changed()`, `notify_selection_changed()`,
 `set_hovered(...)`, `refresh_hover()`, `pick(x, y)`, `pick_face(x, y)`, `soft_preview_refresh(...)`,
 `set_edit_object(id)`, `follow_edit_object()`. Services that another controller owns (`set_edit_object` →
-ObjectController) are forwarded, so controllers never import each other.
+ObjectController) are forwarded, so controllers never import each other. *(M7: one exception, one-way - the object
+gesture is a gesture kind, so `objects.py` imports the gesture base from `gestures.py`; §7.1 M7. The members added
+since M1, each with its reason in its docstring, are listed in §7.1.)*
 
 **Command table.** `dispatch_command`'s if-chain becomes one `dict[command, handler]` built once in `__init__` from the
 controllers and `Application`'s own handlers, asserted one handler per command. It is a static table, not a plugin
@@ -435,7 +438,7 @@ and its rows below; a session ends with its steps green (E1, E2, targeted tests)
   preview, drags, held P / L / N / Q, gizmo drags), 18 scripted sequences (V1–V7, the test points). Deterministic
   across `PYTHONHASHSEED` (the SubD provider's cache had to stay out of the digest). The replay takes **2 min 31 s**
   on the 4-core container, over the "about one minute" budget; E2 per step (230 000 events, both trees) about
-  ten minutes on 4 workers. E2 by hand: `git worktree add <dir> dfd6e5d`, copy `tests/interaction_trace.py` into it,
+  ten minutes on 4 workers. E2 by hand (until M8.1, `4ccc13c`; the command line went with C1): `git worktree add <dir> dfd6e5d`, copy `tests/interaction_trace.py` into it,
   run `python tests/interaction_trace.py digests <scene> 1000 <count> 250` in both trees and compare the lines;
   `... observe <scene> <seed> 250 <index>` prints the observation at the first differing event.
 - **Session protocol:** `exclusive: bool` added - True for a session that grabs input (the Knife, the preview); its
@@ -512,18 +515,71 @@ and its rows below; a session ends with its steps green (E1, E2, targeted tests)
   passed. Routing cost (best of 5 x 20 000 calls, this tree vs `dfd6e5d`): an idle coalesced `pointer_motion`
   1.56 vs 0.25 µs, an unbound `key_press` 4.90 vs 5.36 µs, `key_release` 0.33 vs 0.14 µs, a Shift toggle 1.62 vs
   0.35 µs per pair - within the 5 µs budget per event.
+- **M6 (gestures).** `controllers/gestures.py`: `GestureController` (arms the gestures; owns the sticky constraint
+  settings - axis constraint, one-shot / sticky, World / Normal - and the Soft live radius / flow steps) and
+  `GestureSession`, the held gesture as the slot's session (owner `"transform"`; its `allows` = the old
+  `_GESTURE_REFUSES` rules, stage 6). The common state of every kind (14 former `Application` fields: key,
+  command, target, begun, space, the retouched constraint, the dial's press point and virtual cursor, Ctrl snap,
+  the gesture's Soft settings and the display it owns) is the session's; the kinds are subclasses:
+  `TransformGesture` (Move / Rotate / Scale through the `ToolManager`, also from the gizmo / Tweak origin),
+  `ExtrudeGesture`, `LoopSlideGesture` / `VertexSlideGesture`, `SmoothGesture`, `OffsetGesture` (Inset / Bevel).
+  Moved one kind per commit (C3), the not-yet-moved kinds running meanwhile as a transitional `_AppGesture` with
+  their code still in `Application`; E1 and E2 after each. Routing: the motion reaches the gesture through stage 3,
+  its key release through `slot.handle(KeyRelease)`; Alt still borrows the motion for the camera in front of the
+  slot (navigation owns no keys). The gizmo / Tweak entry functions (`_gizmo_step`, `_tweak_step`,
+  `_gizmo_release`, the TWEAK part of `_cancel`) stay in `Application`: they join a press session of the pointer
+  tools with a gesture, and controllers do not reach each other. The command groups the allow-lists name moved to
+  `interaction/commands.py` (the region group is `POLYGROUP_COMMANDS`: a test enumerates `REGION_*` as the region
+  commands themselves).
+- **M7 (objects).** `controllers/objects.py`: `ObjectController` (add / import / export / delete, mirror pairs,
+  Reference, Apply / Clear, material and texture display, the objects' views, cameras and pick caches,
+  `set_edit_object`, the object click, `mode_refusal` = stage 4) and `ObjectGesture`. **The one dependency between
+  controllers (a correction of §3.4's "controllers never import each other"):** the object gesture is a gesture
+  kind - it subclasses `gestures.GestureSession` and the `ObjectController` gets the `GestureController` at
+  construction (axis constraint, one-shot commit). One-way; `gestures.py` knows nothing of objects. The
+  alternative - a delegate protocol so neither imports the other - would duplicate the session's lifecycle for one
+  kind. What an edit-object switch moves outside the objects (mask, hidden set, region tints, Soft radius, the
+  morph editing view) stays in `Application._follow_edit_object`, which `services.follow_edit_object()` reaches.
+- **`AppServices` members added in M6-M7** (reasons in their docstrings): `status_message`, `active_pivot`,
+  `gizmo_press`, `soft_settings`, `set_soft_settings`, `show_soft_weights`, `mask_values`, `flush_hover`,
+  `prune_selection`, `hidden_vertices`, `loop_seed_edges`, `drag_select`, `document_object`, `layer_refusal`;
+  `soft_preview_refresh()` returns whether weights are shown (a hover-armed gesture then owns them).
+- **`test_layer_gate` enumeration.** Its scan of public methods that reach a mesh change read `Application`'s own
+  class only; since M1-M5 it had stopped seeing 9 of the 17 methods it found at `dfd6e5d` (the work had moved into
+  controllers). It now follows `self._<controller>.<method>` into each controller module and the slot's stages by
+  event type (a press, the hover and the Shift / Alt report change no mesh by themselves): the same 17 again.
+- **M8.** The command table `Application._command_table` (one handler per command, asserted; key and API
+  differences keyed on `ctx.source`, §3.3) replaces `_execute`'s and `_key_command`'s if-chains. E5:
+  `tests/test_interaction_structure.py` - (i) `Application.__init__` sets 61 fields (was 128), each in a §3.1
+  kind; (ii) no controller or `session.py` imports `mirai.application` or reads a private `AppServices` member, and
+  only `services.py` holds the app; (iii) 114 commands have one handler each, the other 24 are named with where
+  they run (window, pointer, Knife context, none); (iv) `can_run` is pure at every step of seven scenarios. The
+  scripted sequences are `tests/test_interaction_scenarios.py` (18 readable scenarios; they pass on `dfd6e5d` and
+  now); the random corpus, the full-observation fixtures, the random generator and the E2 command line are gone
+  (C1; last commit with them: `4ccc13c`). `tests/interaction_trace.py` stays as the scenario driver.
+- **Verification M6-M8 (2026-10-30, 4-core container, Python 3.13).** After each of M6.1-M6.5, M7 and M8.1, on a
+  worktree of its commit: E1 25 passed and E2 220 000 events beyond the corpus (200 000 on the small scenes,
+  20 000 on the basemesh), 0 divergences against `dfd6e5d`. At the end: the 18 scenario tests pass on this tree
+  and on `dfd6e5d`; `tests/` 5 529 passed, 125 skipped (the GL tests a combined run skips); GL tests in their own process 109 passed; `experiments/morph_lab/tests`
+  49 passed; Knife oracle 351 passed. Routing cost (best of 5 x 20 000 calls, this tree vs `dfd6e5d`): an idle
+  coalesced `pointer_motion` 1.80 vs 0.22 µs, an unbound `key_press` 3.76 vs 4.67 µs, `key_release` 0.56 vs
+  0.12 µs, a Shift toggle 1.11 vs 0.22 µs per pair, a motion routed to a held Move (zero step) 1.24 vs 0.29 µs,
+  `can_run` from the HUD 1.05 µs - within the 5 µs budget per event.
+- **Line counts (§8).** `application.py` 7 713 → 4 073 (class `Application` 6 981 → 3 740 lines, 332 → 214
+  methods, 101 public); `__init__` fields 128 → 61. `controllers/` and `interaction/session.py` 5 194 lines.
+  `main.py` 841 (unchanged), `hud.py` 481 → 498 (M2's availability data), `src/mirai` 30 184 → 31 801.
 
 ## 8. Definition of Done (from the handoff) and how each item is checked
 
-| Item | Check |
-|---|---|
-| No modal state outside the session slot | E5 (i): the field list of `Application.__init__` against §3.1 |
-| One `can_run` used by keys, `dispatch_command` and the HUD | grep: no `_*_refuses` left; E5 (iv); tests that call it through each path |
-| The named clusters live outside `Application` | `controllers/{knife,morph,objects,symmetry}.py` (plus gestures, pointer tools); E5 (ii) |
-| Behaviour equivalence | E1 and E2 equal after every step (in M6 after every gesture kind); E3 green; numbers reported (events, scenes, seeds) |
-| Corpus lifecycle (C1) | after M8: the scripted sequences (V1–V7, the test-point scenarios) are readable regression tests in `tests/`; no randomised digest fixture or random generator is left in the repository |
-| `SOURCE_ARCHITECTURE.md` reflects the structure | updated at M8 |
-| Line counts before / after, model / effort for Phase 6 | in the final report; before (§1): `application.py` 7 713, `main.py` 841, `hud.py` 481, `src/mirai` 30 184 |
+| Item | Check | Result (2026-10-30) |
+|---|---|---|
+| No modal state outside the session slot | E5 (i): the field list of `Application.__init__` against §3.1 | 61 fields, each in a §3.1 kind (was 128, 61 of them modal) |
+| One `can_run` used by keys, `dispatch_command` and the HUD | grep: no `_*_refuses` left; E5 (iv); tests that call it through each path | the command-level gates are `can_run` stages; left are operation-level checks at their own site, as §5 keeps them (`_layer_gate_refuses` for a `C` context, Apply on several meshes; `_context_refuses`, the host's `C`-context gate G-2; the Morph lifecycle's preconditions); E5 (iv) and `test_can_run.py` green |
+| The named clusters live outside `Application` | `controllers/{knife,morph,objects,symmetry}.py` (plus gestures, pointer tools); E5 (ii) | all six; E5 (ii) green; the one controller dependency (objects → gestures) in §7.1 M7 |
+| Behaviour equivalence | E1 and E2 equal after every step (in M6 after every gesture kind); E3 green; numbers reported (events, scenes, seeds) | §7.1 (verification M3-M5, M6-M8): 0 divergences after every step, 220 000 events per step |
+| Corpus lifecycle (C1) | after M8: the scripted sequences (V1–V7, the test-point scenarios) are readable regression tests in `tests/`; no randomised digest fixture or random generator is left in the repository | `tests/test_interaction_scenarios.py` (18); fixtures and generator removed |
+| `SOURCE_ARCHITECTURE.md` reflects the structure | updated at M8 | §2 Application und Controller, §5 |
+| Line counts before / after, model / effort for Phase 6 | in the final report; before (§1): `application.py` 7 713, `main.py` 841, `hud.py` 481, `src/mirai` 30 184 | §7.1 "Line counts"; Phase 6 in the M8 session's report |
 
 ## 9. Risks, limits and the points put to the second opinion
 

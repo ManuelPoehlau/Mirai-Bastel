@@ -186,10 +186,10 @@ def test_each_edit_object_gets_its_own_colours(app):
     app.update_viewport(0.016)
     first = app.scene.edit_object_id
     other = app.add_primitive("cube")
-    app._set_edit_object(other.id if hasattr(other, "id") else other)
+    app._objects.set_edit_object(other.id if hasattr(other, "id") else other)
     app.update_viewport(0.016)
     assert app.viewport.render_mesh._tints == {}
-    app._set_edit_object(first)
+    app._objects.set_edit_object(first)
     app.update_viewport(0.016)
     assert app.viewport.render_mesh._tints
 

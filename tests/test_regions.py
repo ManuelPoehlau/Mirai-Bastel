@@ -364,9 +364,9 @@ def test_each_edit_object_keeps_its_own_regions_and_active_group(app):
     app.key_press(NEXT)
     first = app.scene.edit_object_id
     other = app.add_primitive("cube")
-    app._set_edit_object(other.id if hasattr(other, "id") else other)
+    app._objects.set_edit_object(other.id if hasattr(other, "id") else other)
     assert app.scene.mesh.face_regions is None and app.active_region is None
-    app._set_edit_object(first)
+    app._objects.set_edit_object(first)
     assert app.scene.mesh.face_regions is not None and app.active_region == "Group 1"
 
 

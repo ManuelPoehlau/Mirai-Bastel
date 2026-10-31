@@ -219,7 +219,7 @@ def test_soft_smooth_reaches_the_falloff_and_fades_out():
     mesh = app.scene.mesh
     seed = _grid_vertex(app, 4, 4)
     _select(app, SelectionMode.VERTEX, {seed})
-    weights = app._smooth_soft_weights({seed}, app.soft_settings)
+    weights = app._gestures.smooth_soft_weights({seed}, app.soft_settings)
     inside = {v for v, w in weights.items() if 0.0 < w < 1.0}
     outside = set(mesh.all_vertex_ids()) - set(weights)
     assert inside and outside
@@ -239,7 +239,7 @@ def test_soft_weights_scale_the_step():
     seed = _grid_vertex(app, 4, 4)
     _select(app, SelectionMode.VERTEX, {seed})
     assert app.key_press(S)
-    plan = app._smooth_plan
+    plan = app._gestures.session.plan
     assert plan.weights is not None and plan.weights[seed] == 1.0
     full = plan.positions(1.0)
     import dataclasses
@@ -265,11 +265,18 @@ def test_the_bands_show_the_gesture_weights_and_the_preview_resumes():
     preview = app._soft_bands
     assert preview != EMPTY_BANDS
     _hold(app, S, motions=[30.0], release=False)
-    assert app._soft_op_running
-    assert app._soft_bands == SoftBands.from_weights(app._smooth_plan.weights) != EMPTY_BANDS
+    assert _op_running(app)
+    assert app._soft_bands == SoftBands.from_weights(app._gestures.session.plan.weights) != EMPTY_BANDS
     app.key_release(_key("s"))
-    assert not app._soft_op_running
+    assert not _op_running(app)
     assert app._soft_bands != EMPTY_BANDS  # the preview resumed
+
+
+
+def _op_running(app) -> bool:
+    """The running gesture shows its own weights (`GestureSession.soft_op_running`); no gesture, no op."""
+    gesture = app._gestures.session
+    return gesture is not None and gesture.soft_op_running
 
 
 def test_the_wheel_changes_the_radius_live_and_never_zooms():
@@ -289,7 +296,7 @@ def test_the_wheel_changes_the_radius_live_and_never_zooms():
     large = set(_moved(before, mesh))
     assert small < large
     assert app._soft_bands == __import__("mirai.soft_selection", fromlist=["SoftBands"]).SoftBands.from_weights(
-        app._smooth_plan.weights
+        app._gestures.session.plan.weights
     )
     app.key_release(_key("s"))
     assert len(app.history) == 1
@@ -305,10 +312,10 @@ def test_the_wheel_before_the_drag_sets_the_radius_of_the_tap():
     before = {v: mesh.vertex_position(v) for v in mesh.all_vertex_ids()}
     app.pointer_motion(400.0, 300.0)
     app.key_press(S)
-    small = set(app._smooth_plan.movable)
+    small = set(app._gestures.session.plan.movable)
     for _ in range(4):
         app.pointer_scroll(Input("wheel", "UP"))
-    assert set(app._smooth_plan.movable) > small
+    assert set(app._gestures.session.plan.movable) > small
     assert {v: mesh.vertex_position(v) for v in before} == before  # nothing moved yet
     app.key_release(_key("s"))
     assert set(_moved(before, mesh)) - small
@@ -332,7 +339,7 @@ def test_soft_off_is_unchanged():
     assert not app.soft_settings.enabled
     _select(app, SelectionMode.VERTEX, {centre})
     assert app.key_press(S)
-    assert app._smooth_plan.weights is None and app._soft_gesture is None
+    assert app._gestures.session.plan.weights is None and app._gestures.session.soft is None
     app.key_release(_key("s"))
 
 
@@ -359,7 +366,7 @@ def test_symmetric_soft_smooth_stays_exactly_symmetric(asset, key):
         key=lambda v: (laplacian(v), -int(v)),
     )
     _select(app, SelectionMode.VERTEX, {seed})
-    weights = app._smooth_soft_weights({seed}, app.soft_settings)
+    weights = app._gestures.smooth_soft_weights({seed}, app.soft_settings)
     assert len(weights) > 2  # the field reaches beyond the seed and its partner
     before = _topology(mesh)
     if key is ALT_S:

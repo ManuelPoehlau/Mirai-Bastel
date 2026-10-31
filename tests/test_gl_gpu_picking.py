@@ -76,7 +76,7 @@ def app(gl_window, request, monkeypatch) -> Application:
 
 
 def _cpu(app, mode, x, y):
-    return pick_component(app._edit_camera, app.scene.mesh, mode, x, y, W, H,
+    return pick_component(app._objects.edit_camera, app.scene.mesh, mode, x, y, W, H,
                           cache=app._pick_cache, occlusion=app.display.show_faces)
 
 
@@ -98,7 +98,7 @@ def test_face_ids_are_exact_at_pixel_centres(app):
     hits = border = 0
     for x, y in _cursors(5):
         gpu = _gpu(app, SelectionMode.FACE, x, y)
-        cpu = pick_face(app._edit_camera, mesh, x, y, W, H, cache=app._pick_cache)
+        cpu = pick_face(app._objects.edit_camera, mesh, x, y, W, H, cache=app._pick_cache)
         if gpu == cpu:
             hits += gpu is not None
             continue
@@ -143,7 +143,7 @@ def test_no_stale_ids_right_after_delete_and_undo(app):
     assert not any(mesh.is_valid_face(f) for f in faces)
 
     def cpu_face(x, y):
-        return pick_face(app._edit_camera, mesh, x, y, W, H, cache=app._pick_cache)
+        return pick_face(app._objects.edit_camera, mesh, x, y, W, H, cache=app._pick_cache)
 
     for x, y in cursors:
         assert app._pick(x, y) == cpu_face(x, y), (x, y)
@@ -158,9 +158,9 @@ def test_box_keeps_the_cpu_rule_within_a_few_percent(app, mode):
     from mirai.viewport.gpu_picking import gpu_elements_in_rect
 
     rect = (W * 0.3, H * 0.25, W * 0.7, H * 0.75)
-    cpu = elements_in_rect(app._edit_camera, app.scene.mesh, mode, rect, W, H,
+    cpu = elements_in_rect(app._objects.edit_camera, app.scene.mesh, mode, rect, W, H,
                            cache=app._pick_cache, occlusion=True)
-    gpu = gpu_elements_in_rect(app.viewport.gpu_picker, app._gpu_pick_mesh(), app._edit_camera, app.scene.mesh,
+    gpu = gpu_elements_in_rect(app.viewport.gpu_picker, app._gpu_pick_mesh(), app._objects.edit_camera, app.scene.mesh,
                                mode, rect, W, H, cache=app._pick_cache, occlusion=True)
     assert len(cpu) > 20
     assert len(cpu ^ gpu) <= 0.08 * len(cpu), (len(cpu), len(cpu - gpu), len(gpu - cpu))
@@ -196,7 +196,7 @@ def _wavy_ngon_app(gl_window, tmp_path, yaw, pitch) -> Application:
     )
     app.set_viewport_size(W, H)
     app.frame_scene()
-    app._edit_camera.orbit(yaw, pitch)
+    app._objects.edit_camera.orbit(yaw, pitch)
     app._camera_changed()
     app.viewport.sync()
     return app
@@ -208,7 +208,7 @@ def test_corners_and_edges_of_a_non_planar_ngon_stay_pickable(gl_window, tmp_pat
     the GPU path must too (the corner under the cursor was unpickable, reported 2026-10-22)."""
     app = _wavy_ngon_app(gl_window, tmp_path, yaw, pitch)
     mesh = app.scene.mesh
-    camera = app._edit_camera
+    camera = app._objects.edit_camera
     for vid in mesh.all_vertex_ids():
         p = camera.project_to_screen(mesh.vertex_position(vid), W, H)
         assert _gpu(app, SelectionMode.VERTEX, p[0], p[1]) == vid, vid

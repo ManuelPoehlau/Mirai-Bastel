@@ -75,7 +75,7 @@ def _drag(app, dx: float, steps: int = 4) -> None:
 
 
 def _width(app) -> float:
-    return app._offset.width
+    return app._gestures.session.width
 
 
 def _corners(mesh, face) -> set:

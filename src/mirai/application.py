@@ -35,7 +35,6 @@ from __future__ import annotations
 import dataclasses
 import math
 import os
-import time
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional
@@ -45,25 +44,18 @@ from core import (
     FaceId,
     HistoryStack,
     Mesh,
-    MirrorPair,
     ObjectId,
-    ObjectMaterial,
     ObjectState,
-    ObjectTransform,
     Scene,
     SceneObject,
     Selection,
     SelectionMode,
     VertexId,
 )
-from core.mesh import MeshChange
-from core.operations import CollapseRefused, MeshDeltaCommand, record_mesh_change
-from core.scene import IDENTITY_TRANSFORM
+from core.operations import CollapseRefused, MeshDeltaCommand
 from core.serialization import scene_from_json, scene_to_json
-from core.operations.transform import SeamConstraintError
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
-from viewport.gl_render_store import DEFAULT_BASE_COLOR
 from viewport.resource_store import ResourceStore, TraceStore
 
 from . import regions as face_regions_api
@@ -78,46 +70,16 @@ from .mask import (
 from .interaction import BindingSet, Input, ToolManager, commands
 from .interaction.bindings import KNIFE_MIRROR_VARIANT_KEY, KeymapLoad, build_default_bindings, load_keymap
 from .interaction.input import MORPH_CONTEXT, SUBD_CONTEXT
-from .interaction.dial import PRECISION_GAIN, DialAngle
 from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .interaction.tools.selection_helpers import selection_pivot
-from .interaction.tools.rotate import RotateTool
-from .interaction.tools.scale import ScaleTool
-from .interaction.tools.transform import _resolve_space
 from .mesh_geometry import mesh_center_and_radius
 from . import object_space
-from .object_space import ObjectSpaceCamera
 from .pivot import WorkingPivot
-from .object_mirror import PLANES as MIRROR_PLANES, in_sync, mirror_mesh, mirror_placement, mirror_transform
 from .scene_objects import (
-    REFERENCE_GHOST_ALPHA,
-    AddObjectCommand,
-    ApplyRefused,
-    CompositeCommand,
-    DeleteObjectsCommand,
-    DeleteRefused,
-    MirrorPairCommand,
-    MirrorRefused,
-    ObjectMaterialCommand,
-    ObjectPivotCommand,
-    ObjectStateCommand,
-    ObjectTransformCommand,
-    applied_symmetry_axis,
-    apply_placement,
-    check_pairable,
-    describe_pair,
     editable_material,
-    object_base_color,
-    object_finish,
-    out_of_sync_text,
-    pair_existing_command,
-    pair_names,
-    plan_object_delete,
     replace_scene,
-    resync_command,
-    selected_color,
     reset_scene,
     unique_object_name,
 )
@@ -145,22 +107,35 @@ from .symmetry_coordination import (
     expand_faces,
 )
 from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
-from .symmetry import mirrored_selection, vertex_correspondence
+from .symmetry import mirrored_selection
 from .symmetry_display import SymmetryDisplay
 from .resymmetrize import ResymPlan
 from .controllers.services import AppServices
+from .controllers.gestures import (
+    CONSTRAINT_ONE_SHOT,
+    SMOOTH_COMMANDS,
+    TRANSFORM_COMMANDS,
+    TWEAK_KEY,
+    TWEAK_TRANSFORMS,
+    CONSTRAINT_SPACES,
+    GestureController,
+    GestureSession,
+    element_vertices,
+    hovered_of_mode,
+)
 from .controllers.knife import KnifeController
 from .controllers.morph import MorphController
+from .controllers.objects import PLACEMENT_COMMANDS, ObjectController, selection_state
 from .controllers.pointer_tools import PointerToolsController
 from .controllers.symmetry import SymmetryController
 from .interaction.session import (
     PASS,
-    SILENT,
     Command,
     Drag,
     Hover,
     InteractionSlot,
     KeyPress,
+    KeyRelease,
     Leave,
     Modifiers,
     Motion,
@@ -175,31 +150,10 @@ from .layer_declarations import PER_TARGET_COMMANDS, layer_refusal
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.border import BORDER_LABEL, CAP_LABEL, CapRefused, apply_cap, border_select
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
-from .topology.smooth import PX_PER_STEP as SMOOTH_PX_PER_STEP, TAP_AMOUNT as SMOOTH_TAP_AMOUNT
-from .topology.smooth import RELAX_LABEL, SMOOTH_LABEL, SmoothPlan, SmoothRefused, plan_smooth
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
 from .topology.knife_preview import KnifeRenderData
 from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
 from .topology import selection_steps
-from .topology.loop_slide import (
-    LOOP_SLIDE_LABEL,
-    LoopSlideRefused,
-    SlidePlan,
-    plan_loop_slide,
-    slide_positions,
-)
-from .topology.bevel import BEVEL_LABEL, BevelRefused, build_bevel, plan_bevel
-from .topology.inset import INSET_LABEL, InsetRefused, build_inset, plan_inset
-from .topology.offset_build import OffsetBuild, OffsetRefused
-from .symmetric_offset import SymmetricOffset
-from .topology.vertex_slide import (
-    VERTEX_SLIDE_LABEL,
-    VertexSlidePlan,
-    VertexSlideRefused,
-    best_neighbour,
-    plan_vertex_slide,
-    vertex_slide_positions,
-)
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
 from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, install_morph_bindings
 from .surface_chain import SurfaceChain
@@ -218,12 +172,10 @@ from .viewport.look_controls import (
     LOOK_ROWS,
     MaterialRow,
     LookRow,
-    clamp_material_values,
     light_row,
-    material_row,
 )
 from .viewport.gpu_picking import gpu_elements_in_rect, gpu_elements_in_region, gpu_pick_component
-from .viewport.picking import pick_component, pick_face, pick_object
+from .viewport.picking import pick_component, pick_face
 from .viewport.picking_cache import PickCache
 
 
@@ -241,88 +193,17 @@ _SELECT_COMMANDS = (
 )
 
 
-#: WP-06 B4 (E28): die Commands, die über denselben AD-016-hold-key-hover-Pfad
-#: scharf geschaltet werden (Move/Rotate/Scale; seit WP-06 B9 auch Extrude, dessen
-#: Ziel Faces statt Vertices und dessen Begin-Payload `face_ids` statt `vertex_ids`
-#: ist - Zweige dafür in `_transform_arm/_step/key_release/_cancel`). Werte: (Label,
-#: Verb, Partizip) für die Statuszeilen (E34, `PROVISIONAL`).
-_TRANSFORM_COMMANDS: dict[str, tuple[str, str, str]] = {
-    commands.MOVE: ("Move", "move", "moved"),
-    commands.ROTATE: ("Rotate", "rotate", "rotated"),
-    commands.SCALE: ("Scale", "scale", "scaled"),
-    commands.EXTRUDE: ("Extrude", "extrude", "extruded"),
-    # 2026-10-15 (loop tools promoted): hold G, the same hold-key family as T.
-    commands.LOOP_SLIDE: ("Loop Slide", "slide", "slid"),
-    # WP Toolbox Gaps C2: hold S / Alt+S, same family (a tap is one step, see `_smooth_release`).
-    commands.SMOOTH: ("Smooth", "smooth", "smoothed"),
-    commands.RELAX: ("Relax", "relax", "relaxed"),
-    # 2026-10-29 (Manu: Inset, Bevel, Grundfunktion): hold I in face mode / hold Ctrl+B, the T family (`_offset_*`).
-    commands.INSET: ("Inset", "inset", "inset"),
-    commands.BEVEL: ("Bevel", "bevel", "beveled"),
-}
-
-#: The width gestures (`_offset_*`): topology built once when the drag starts, then only the new vertices move.
-_OFFSET_COMMANDS = (commands.INSET, commands.BEVEL)
-
-#: WP Toolbox Gaps C2: the two hold keys of `mirai.topology.smooth`.
-_SMOOTH_COMMANDS = (commands.SMOOTH, commands.RELAX)
-
-#: The pseudo key an LMB-drag transform (a gizmo handle drag; the `Tweak` drag command, unbound since 2026-10-28)
-#: arms the transform with; no key has this value, so `key_release` never ends it - the LMB release does
-#: (`pointer_release`). Not the user-facing "Tweak", which is the hold-key gesture (Manu A2, 2026-10-28).
-TWEAK_KEY = "LMB-tweak"
-
-#: How long an axis / plane constraint lives (2026-10-28, Manu A1 + E1, `PROVISIONAL`; the switch is a session
-#: setting for the comparison, `commands.CONSTRAINT_MODE_TOGGLE`, not saved). One-shot: the constraint applies to the
-#: next Move / Rotate / Scale gesture (also when pressed while the key is armed) and its commit clears it; Esc keeps
-#: it. Sticky: the B4.1 behaviour until 2026-10-28 - it stays until toggled off.
-CONSTRAINT_ONE_SHOT = "one-shot"
-CONSTRAINT_STICKY = "sticky"
-CONSTRAINT_MODES = (CONSTRAINT_ONE_SHOT, CONSTRAINT_STICKY)
-
 #: 2026-10-15: the loop commands that run once on a key press (Shift+L, Shift+R, I).
-_LOOP_COMMANDS = (commands.EDGE_LOOP, commands.EDGE_RING, commands.LOOP_INSERT)
+_LOOP_COMMANDS = commands.LOOP_COMMANDS
 
 #: WP Toolbox Gaps A1 (2026-10-23): the selection steps (`_selection_step`), once per press.
-_SELECTION_STEP_COMMANDS = (
-    commands.SELECT_GROW,
-    commands.SELECT_SHRINK,
-    commands.LOOP_GROW,
-    commands.LOOP_SHRINK,
-    commands.LOOP_NEXT,
-    commands.LOOP_PREVIOUS,
-)
-
-#: The transforms the gizmo drag (and the hold-key Tweak) can use (`tweak_command`).
-_TWEAK_TRANSFORMS = (commands.MOVE, commands.ROTATE, commands.SCALE)
+_SELECTION_STEP_COMMANDS = commands.SELECTION_STEP_COMMANDS
 
 #: 2026-10-28 practical-test switches (session only): `Application._session_switch`.
 _SESSION_SWITCH_COMMANDS = (commands.CONSTRAINT_MODE_TOGGLE, commands.GIZMO_SIZE_CYCLE)
 
-#: WP-06 B9 (E3, PROVISIONAL, agent-set): Extrude mutates the topology in `begin()`,
-#: so unlike Move/Rotate/Scale (AD-016: first motion begins) it needs the pointer's net
-#: displacement since the arm to reach this many logical pixels first; a tap or a hand
-#: tremble below it does nothing at all.
-EXTRUDE_BEGIN_PX = 4.0
-
 #: The gizmo's name for the tool a handle drag runs (`Application.tweak_command`, the last W/E/R).
 _GIZMO_TOOLS = {commands.MOVE: "move", commands.ROTATE: "rotate", commands.SCALE: "scale"}
-
-#: WP-06 B9 (E3, PROVISIONAL, agent-set): at release an Extrude whose |total distance|
-#: is below this (world units) counts as cancelled - exact prior state, no history.
-EXTRUDE_MIN_DISTANCE = 1e-6
-
-#: WP-06 B4 (E32): Constraint-Command → `space`-String nach AD-012
-#: (`transform._resolve_space`). Welche Taste welches Command auslöst
-#: (Blender: Shift+Achse schließt diese Achse aus), steht in `bindings.py`.
-_CONSTRAINT_SPACES: dict[str, str] = {
-    commands.CONSTRAIN_AXIS_X: "x",
-    commands.CONSTRAIN_AXIS_Y: "y",
-    commands.CONSTRAIN_AXIS_Z: "z",
-    commands.CONSTRAIN_PLANE_XY: "xy",
-    commands.CONSTRAIN_PLANE_XZ: "xz",
-    commands.CONSTRAIN_PLANE_YZ: "yz",
-}
 
 
 #: WP-06 B5a (E42) and AD-024 §8: the display and Look commands (groups in `commands` since AD-027 M3).
@@ -339,22 +220,9 @@ _SET_DISPLAY_MODES: dict[str, DisplayMode] = {
 #: WP-SOFT-01 S2a (AD-020, `PROVISIONAL`): the state commands of Soft Selection. They start
 #: no interaction and change no mesh, like the constraints: they set the sticky
 #: `SoftSettings`, which the next gesture reads at `begin()`.
-_MASK_COMMANDS = (commands.MASK_TOGGLE, commands.MASK_INVERT, commands.MASK_CLEAR)
-_HIDE_COMMANDS = (commands.HIDE_SELECTION, commands.ISOLATE_SELECTION, commands.SHOW_ALL)
-_REGION_COMMANDS = (
-    commands.REGION_NEXT,
-    commands.REGION_PREV,
-    commands.REGION_NEW,
-    commands.REGION_NAME,
-    commands.GROUP_MASK_TOGGLE,
-    commands.REGION_ADD,
-    commands.REGION_REMOVE,
-    commands.REGION_SELECT,
-    commands.REGION_SELECT_ADD,
-    commands.REGION_ISOLATE,
-    commands.REGION_MASK,
-    commands.REGION_DELETE,
-)
+_MASK_COMMANDS = commands.MASK_COMMANDS
+_HIDE_COMMANDS = commands.HIDE_COMMANDS
+_REGION_COMMANDS = commands.POLYGROUP_COMMANDS
 
 #: Commands that rewrite topology next to their selection: with hidden geometry around the selection they are
 #: refused instead of silently changing faces the artist cannot see (`Application._hidden_refusal`). Loop Insert is not in
@@ -394,24 +262,6 @@ _SOFT_COMMANDS = (
 _CPU = object()
 
 
-@dataclasses.dataclass
-class _OffsetGesture:
-    """A held Inset / Bevel (2026-10-29): fixed at the press (`build` = the mutation, run once the drag passes
-    `EXTRUDE_BEGIN_PX`; `symmetric` = the coordinator under a symmetry definition), then the width, the
-    journal from the start of the drag and the selection snapshot taken before it."""
-
-    label: str
-    build: Callable[[Mesh], OffsetBuild]
-    symmetric: SymmetricOffset | None
-    residue: Callable[[OffsetBuild], None]
-    world_per_px: float
-    travel: tuple[float, float] = (0.0, 0.0)
-    width: float = 0.0
-    result: OffsetBuild | None = None
-    before: MeshChange | None = None
-    selection_before: tuple | None = None
-
-
 @dataclasses.dataclass(frozen=True)
 class _MeshTransaction:
     """Outcome of `Application._mesh_transaction`: whether an entry was pushed, and what the
@@ -437,166 +287,9 @@ _MODE_COMMANDS: dict[str, SelectionMode] = {
     commands.SET_OBJECT_MODE: SelectionMode.OBJECT,
 }
 
-#: AD-021 M1 (L-1: one gesture writes one level): commands that work on the edit object's
-#: components. In mode `4` they are refused with a status line, except the object transforms
-#: below; a Reference is locked (RF-4, Q-1). Undo/Redo, display, Soft settings and constraints
-#: are state or history, not component work, and stay allowed.
-_COMPONENT_COMMANDS = frozenset(
-    {
-        *_TRANSFORM_COMMANDS,
-        commands.CONNECT,
-        *_REMOVAL_COMMANDS,
-        commands.COLLAPSE,
-        commands.BORDER_SELECT,
-        commands.CAP,
-        commands.SYMMETRY_CYCLE,
-        commands.RESYMMETRIZE,
-        *_MASK_COMMANDS,
-        *_HIDE_COMMANDS,
-        *_REGION_COMMANDS,
-        *_LOOP_COMMANDS,
-        *_SELECTION_STEP_COMMANDS,
-    }
-)
-
-#: AD-027 §3.3 stage 6: what a held W/E/R/T/G/S/I/Ctrl+B (armed or begun) refuses underneath it, silently (the
-#: Playground session gate, AD-SYM-04 R-4, AD-021 M2-3): the mode, placement and topology commands, the other hold
-#: keys, the morph keys and the drag selections. A second gesture key is refused by `_transform_arm`, after it set
-#: `tweak_command` (so the HUD tool follows, as before).
-_GESTURE_REFUSES = frozenset(
-    {
-        *MORPH_COMMANDS,
-        commands.LASSO_ARM,
-        commands.PIVOT_PLACE,
-        commands.LIGHT_DRAG,
-        *_MODE_COMMANDS,
-        commands.APPLY_TRANSFORM,
-        commands.CLEAR_TRANSFORM,
-        commands.TOGGLE_REFERENCE,
-        commands.CONNECT,
-        commands.COLLAPSE,
-        commands.BORDER_SELECT,
-        commands.CAP,
-        commands.SYMMETRY_CYCLE,
-        commands.RESYMMETRIZE,
-        *_MASK_COMMANDS,
-        *_HIDE_COMMANDS,
-        *_REGION_COMMANDS,
-        *_REMOVAL_COMMANDS,
-        *_LOOP_COMMANDS,
-        *_SELECTION_STEP_COMMANDS,
-        commands.SELECT_DRAG,
-        commands.SELECT_DRAG_ADD,
-    }
-)
-#: ... and once it has begun: Undo/Redo (E23; only armed, the key disarms first) and `K` (its frame is fixed).
-_BEGUN_GESTURE_REFUSES = frozenset({commands.UNDO, commands.REDO, commands.TOGGLE_TRANSFORM_SPACE})
-#: The gestures that ignore the constraint keys: Extrude is normal-only, Loop Slide runs along its edges, Smooth /
-#: Relax and Inset / Bevel have no axis - neither the gesture nor the pending constraint changes.
-_UNCONSTRAINED_GESTURES = frozenset({commands.EXTRUDE, commands.LOOP_SLIDE, *_SMOOTH_COMMANDS, *_OFFSET_COMMANDS})
-#: The commands a key runs through `_execute` once `can_run` let them through: pure display and view state (allowed
-#: while a transform runs), the Soft settings (state only, like the constraints: they apply to the next gesture - or
-#: to this one if it is armed and has not begun yet; symmetric Soft refuses at `begin()`, AD-SYM-04 SS2), and the
-#: mode, placement and topology commands (refused underneath a held gesture, `_GESTURE_REFUSES`).
-_KEY_COMMANDS = frozenset(
-    {
-        *_DISPLAY_COMMANDS,
-        *_LOOK_COMMANDS,
-        commands.TOGGLE_ORTHO,
-        *_SOFT_COMMANDS,
-        *_MODE_COMMANDS,
-        commands.APPLY_TRANSFORM,
-        commands.CLEAR_TRANSFORM,
-        commands.TOGGLE_REFERENCE,
-        commands.CONNECT,
-        commands.COLLAPSE,
-        commands.BORDER_SELECT,
-        commands.CAP,
-        commands.SYMMETRY_CYCLE,
-        commands.RESYMMETRIZE,
-        *_MASK_COMMANDS,
-        *_HIDE_COMMANDS,
-        *_REGION_COMMANDS,
-        *_REMOVAL_COMMANDS,
-        *_LOOP_COMMANDS,
-        *_SELECTION_STEP_COMMANDS,
-    }
-)
-
-#: AD-021 M2-2 (E-11): in mode `4` W/E/R arm the object gesture (`_object_arm`) instead of a
-#: component tool; T (Extrude) stays component work.
-_OBJECT_TRANSFORM_COMMANDS = frozenset({commands.MOVE, commands.ROTATE, commands.SCALE})
-
-#: AD-021 M2-3 (L-3): the two explicit level conversions, mode `4` only. Labels for the status
-#: line (`PROVISIONAL`).
-_PLACEMENT_COMMANDS: dict[str, str] = {
-    commands.APPLY_TRANSFORM: "Apply transform",
-    commands.CLEAR_TRANSFORM: "Clear transform",
-}
-
-
-@dataclasses.dataclass
-class _ObjectGesture:
-    """A W/E/R gesture in mode `4` (AD-021 M2-2, E-11): the targets with their start transforms
-    (Esc restores exactly these), the References of the selection that stay where they are, the
-    selection snapshot for the mirror entry, and what the motion has accumulated so far. Every
-    step recomputes each transform from its start, so nothing drifts inside one gesture."""
-
-    targets: list[tuple[SceneObject, ObjectTransform]]
-    references: tuple[str, ...]
-    selection_before: tuple
-    axis: tuple[float, float, float] | None = None
-    mask: tuple[float, float, float] | None = None
-    move: tuple[float, float, float] = (0.0, 0.0, 0.0)
-    pixels: float = 0.0
-    angle: float = 0.0  # Rotate: the total angle (rad), from the dial or the dx fallback
-    dial: DialAngle | None = None
-    # Mirror pairs (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.4): (follower, its start, driver, driver's
-    # start, pair). The follower is F(driver) after every step - stateless, nothing accumulates.
-    followers: list = dataclasses.field(default_factory=list)
-
-
-def _element_vertices(mesh, element) -> set[VertexId]:
-    """Vertices eines einzelnen Vertex/Edge/Face (Hover-Fallback des Transforms).
-
-    Ein Handle, das `mesh` nicht mehr kennt (Topologie-Mutation seither),
-    ergibt eine leere Menge statt eines `KeyError` — dieselbe Regel wie im
-    Viewport-Overlay (`viewport/overlay.py`)."""
-    if isinstance(element, VertexId):
-        return {element} if mesh.is_valid_vertex(element) else set()
-    if isinstance(element, EdgeId):
-        return set(mesh.edge_vertices(element)) if mesh.is_valid_edge(element) else set()
-    if isinstance(element, FaceId):
-        return set(mesh.face_vertices(element)) if mesh.is_valid_face(element) else set()
-    return set()
-
-
-def _active_selection_contains(selection: Selection, element) -> bool:
-    """Liegt `element` in der Auswahl des aktiven Modus (Playground
-    `_sel_contains_hovered`)? Typ mitprüfen - IDs sind int-Subklassen."""
-    kind, members = {
-        SelectionMode.VERTEX: (VertexId, selection.vertices),
-        SelectionMode.EDGE: (EdgeId, selection.edges),
-        SelectionMode.FACE: (FaceId, selection.faces),
-        SelectionMode.OBJECT: (ObjectId, selection.objects),
-    }[selection.mode]
-    return isinstance(element, kind) and element in members
-
-
-def _constraint_label(space: str | None) -> str:
-    """Statuszeilen-Text einer Constraint: "X", "YZ plane", "none"."""
-    if space is None:
-        return "none"
-    return space.upper() if len(space) == 1 else f"{space.upper()} plane"
-
-
-def _selection_state(selection: Selection) -> tuple[frozenset, ...]:
-    return (
-        frozenset(selection.vertices),
-        frozenset(selection.edges),
-        frozenset(selection.faces),
-        frozenset(selection.objects),
-    )
+#: A command handler of the table (AD-027 §3.4): (command, where it comes from, the API's tool context) -> bool.
+Handler = Callable[[str, RunContext, Optional[dict]], bool]
+_API = RunContext("api")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -670,18 +363,6 @@ class Application:
         # (comparison runs, the probes; `MIRAI_CPU_PICKING=1` in the environment as the escape hatch
         # if a driver draws wrong IDs).
         self.gpu_picking: bool = os.environ.get("MIRAI_CPU_PICKING") != "1"
-        # AD-021 M1: pick caches of the objects other than the edit object (mode `4` picking;
-        # the edit object shares `_pick_cache`). Pruned with the render entries.
-        self._object_pick_caches: dict[ObjectId, PickCache] = {}
-        # 2026-10-16: what the selection highlight in mode `4` was last drawn for.
-        self._object_highlight_key: tuple | None = None
-        # AD-021 M2-1 (E-7): one Objektraum-Kamera per placed object, stable so that a
-        # `PickCache` keyed on `id(camera)` keeps working; read live, pruned with the entries.
-        self._object_cameras: dict[ObjectId, ObjectSpaceCamera] = {}
-        # AD-021 M2-0 (§7.3 RD-2): all References drawn as Ghost (`Alt+D`); display state,
-        # not an Undo step, kept across scene loads like `DisplayState`.
-        self.reference_ghost: bool = False
-
         # Gate 7: V0.2 Viewport wird in init_scene() mit dem Mesh gebunden.
         # Bliebt None, bis init_scene() aufgerufen wurde (kein Mesh verfügbar).
         self.viewport: Viewport | None = None
@@ -750,44 +431,12 @@ class Application:
         # `can_run` stage 7 (AD-027 §3.5): (command, ctx) -> Refusal | None per mode; none yet.
         self._mode_policies: tuple[Callable[[str, RunContext], Refusal | None], ...] = ()
 
-        # WP-06 B3 (E21, AD-016 D4 hold-key-hover), generalisiert in B4 (E28)
-        # auf Move/Rotate/Scale: `_transform_key` ist die Taste, die scharf
-        # geschaltet hat (None = nicht scharf); das Release wird über ihren
-        # Wert erkannt, nicht über die Bindings, weil sich die Modifier
-        # zwischen Press und Release ändern dürfen (z. B. Alt für Orbit,
-        # während W gehalten wird). Das Ziel ist ab dem Press fix; `begin()`
-        # läuft erst bei der ersten Mausbewegung. `_transform_space` ist der
-        # `space`, mit dem die laufende Geste begonnen hat (None = frei).
-        self._transform_key: str | None = None
-        self._transform_command: str | None = None
-        self._transform_target: frozenset[VertexId] = frozenset()
-        self._transform_begun: bool = False
-        self._transform_space: str | None = None
-        # WP-06 B9 (Extrude, hold T): the faces fixed at the arm, the pointer's net
-        # displacement since the arm (until `begin()`, see EXTRUDE_BEGIN_PX) and the
-        # selection snapshot taken BEFORE `begin()` - the tool remaps the selection to
-        # the caps during `begin()`, so the Undo mirror entry needs the earlier one.
-        self._extrude_faces: frozenset[FaceId] = frozenset()
-        self._extrude_travel: tuple[float, float] = (0.0, 0.0)
-        self._extrude_selection_before: tuple | None = None
-        # AD-021 M2-2 (E-11): the object gesture of mode `4` (None = none). It shares
-        # `_transform_key`/`_transform_command`/`_transform_begun`/`_transform_space` with the
-        # component gestures, so `interaction_owner` reports "transform" and every key gate
-        # (mode keys, C, Undo while running, add object) holds for it unchanged.
-        self._object_gesture: _ObjectGesture | None = None
-        # WP-06 B4.1 (Artist-Entscheidung Manu 2026-09-27, Playground-Verhalten
-        # WP-AP-INPUT-FIX-03 1:1): Achsen-Constraint, unabhängig vom scharfen Tool,
-        # überlebt Cancel/neues Scharfschalten und wird bei jedem `begin()` gelesen. None = frei.
-        # 2026-10-28 (Manu A1, `CONSTRAINT_MODES`): one-shot by default - the commit of the gesture that
-        # used it clears it; `sticky` keeps the B4.1 behaviour for the comparison (session only).
-        self._axis_constraint: str | None = None
-        self.constraint_mode: str = CONSTRAINT_ONE_SHOT
-        # A constraint key pressed while a gesture runs sets the next gesture's constraint: that commit keeps it.
-        self._constraint_retouched: bool = False
-        # WP Toolbox Gaps C1 (`PROVISIONAL`): what the constraints mean - world axes or the
-        # selection's normal frame (`mirai.transform_space`). Sticky (never one-shot), read at
-        # `begin()` and by the gizmo; not in History or scene files.
-        self._orientation: str = transform_space.WORLD
+        # The hold-key gestures (W/E/R, T, G, S, I, Ctrl+B; the gizmo / Tweak drag) as sessions in the slot, their
+        # constraint settings and Soft live steps (`controllers.gestures` since AD-027 M6).
+        self._gestures = GestureController(self._services, self.tool_manager)
+        # The objects: add / delete, mirror pairs, Reference, Apply / Clear, material, their views, cameras and pick
+        # caches, the edit-object switch, the object click and the object gesture (`controllers.objects`, AD-027 M7).
+        self._objects = ObjectController(self._services, self._gestures)
         # WP-SOFT-01 S2a (AD-020, `PROVISIONAL`, off by default): sticky Soft Selection
         # settings with the semantics of the sticky axis constraint above - they survive commit,
         # cancel, re-arm and Undo and are read once per gesture at `begin()`. A gesture
@@ -807,18 +456,10 @@ class Application:
         #: Mask by Polygroup (Ctrl+Alt+Shift+M, ZBrush-like): gestures only move the groups of what they act on.
         self.group_mask = False
         self._tints_seen: tuple | None = None  # (mesh, face_regions, viewport) the viewport last got colours for
-        # The settings the running Soft gesture uses (None = no begun Soft gesture): those read at
-        # `begin()`, with only the radius / flow balance replaced by live steps. `_soft_gesture_reference` is
-        # the bounding radius its percent steps refer to, fixed for the gesture (the one its start
-        # radius was computed from), so the deforming mesh never redefines a step.
-        self._soft_gesture: SoftSettings | None = None
-        self._soft_gesture_reference: float = 0.0
         # WP-SOFT-01 S2b (AD-020 §5, `PROVISIONAL`): the influence bands shown in the window.
         # `_soft_overlay` is the host-supplied sink (None = headless: no overlay work at all),
-        # `_soft_bands` what it currently shows. `_soft_op_running`: the bands are the running
-        # op's weights (fixed at `begin()`), so no trigger recomputes them;
-        # `_soft_gesture_shown`: a gesture put the bands there (hover arm or op), so its end
-        # resumes the preview.
+        # `_soft_bands` what it currently shows. While a gesture shows its own weights it owns them
+        # (`GestureSession.soft_op_running` / `soft_shown`).
         self._soft_overlay = None
         self._soft_bands: SoftBands = EMPTY_BANDS
         # 2026-10-22: the second display mode (face shading) - its sink and the weights it shows
@@ -826,8 +467,6 @@ class Application:
         # `_soft_bands` / `_soft_shading` is non-empty at a time.
         self._soft_shading_overlay = None
         self._soft_shading: dict[VertexId, float] = {}
-        self._soft_op_running: bool = False
-        self._soft_gesture_shown: bool = False
         # Shift+S, the symmetry display and its report cache, Re-Symmetrize (AD-027 M1, `controllers.symmetry`).
         self._symmetry = SymmetryController(self._services)
 
@@ -856,9 +495,6 @@ class Application:
         # (Apply transform on a non-edit object), so their render entries rebuild on Undo/Redo.
         self._selection_undo_stack: list[tuple[tuple, tuple, bool, frozenset]] = []
         self._selection_redo_stack: list[tuple[tuple, tuple, bool, frozenset]] = []
-        # AD-021 M2-4: how long the last Q-5 switch of the edit object took (s, `time.perf_counter`;
-        # measured, not optimised - the viewport rebuilds the entries of both objects).
-        self.last_edit_switch_seconds: float = 0.0
         # Whether the last Undo/Redo touched the edit object's mesh (`_apply_undo_redo`).
         self._last_undo_redo_mesh_step: bool = True
 
@@ -883,17 +519,10 @@ class Application:
         # the click); a click keeps deciding by its press modifiers (A2, AD-019).
         self._shift_held: bool = False
         # Transform modifiers (2026-10-22, Blender): Shift = precision, Ctrl = snap while a transform runs.
-        # A Tweak starts with Ctrl down, so its snap waits until Ctrl was let go once (`_ctrl_snap_ok`).
         self._ctrl_held: bool = False
-        self._ctrl_snap_ok: bool = True
         # Alt held during a transform (2026-10-22, `PROVISIONAL`, Manu "Alt halten um zu orbiten"): the motion
         # navigates (Orbit, Alt+Shift Pan) instead of driving the gesture; letting Alt go resumes it.
         self._alt_held: bool = False
-        # Where the cursor was when the running transform armed (the dial's press point) and the cursor as the
-        # deltas draw it since (`press + sum(dx, dy)`): the dial reads this, not `_cursor`, so the window may warp
-        # the pointer across the viewport edge (cursor wrap, 2026-10-22) without a jump in the gesture.
-        self._rotate_press: tuple[float, float] | None = None
-        self._rotate_virtual: tuple[float, float] | None = None
 
         # 2026-10-15 (Playground tools promoted, Manu): the press point of the current LMB
         # gesture (Box/Paint/Tweak decide by it) and the transform a Tweak uses (the last W/E/R
@@ -918,28 +547,8 @@ class Application:
         # The session size of the gizmo (2026-10-28, Manu A4, `GIZMO_SIZE_CYCLE`, not saved).
         self.gizmo_size_name: str = _gizmo.GIZMO_SIZE_DEFAULT
         self.tweak_command: str = commands.MOVE
-        # Loop Slide (hold G): the plan fixed at the arm, the slide amount, the screen
-        # direction of side A (px per unit t; None = fall back to horizontal), and the mesh
-        # state at the first motion (Esc and the History entry use it).
-        self._slide_plan: SlidePlan | None = None
-        self._slide_t: float = 0.0
-        self._slide_direction: tuple[float, float] | None = None
-        self._slide_before: MeshChange | None = None
-        self._slide_selection_before: tuple | None = None
-        # Vertex Slide (hold G in vertex mode, 2026-10-29): the plan, the screen positions of each driven
-        # vertex and its candidate neighbours at the press, and the net drag since the press. The journal and
-        # the selection snapshot are Loop Slide's (`_slide_before`, `_slide_selection_before`).
-        self._vslide_plan: VertexSlidePlan | None = None
-        self._vslide_px: dict[VertexId, tuple] = {}
-        self._vslide_drag: tuple[float, float] = (0.0, 0.0)
-        # Inset / Bevel (2026-10-29): the held width gesture, None = none (`_OffsetGesture`).
-        self._offset: _OffsetGesture | None = None
-        # WP Toolbox Gaps C2: the held Smooth / Relax (plan at the press, amount in steps, journal).
-        self._smooth_plan: SmoothPlan | None = None
-        self._smooth_amount: float = 0.0
-        self._smooth_before: MeshChange | None = None
-        self._smooth_selection_before: tuple | None = None
-        self._smooth_seeds: frozenset[VertexId] = frozenset()  # the selection (Soft seeds) at the press
+        # AD-027 §3.4: the command table - one handler per command, built once (`_command_table`).
+        self._handlers: Mapping[str, Handler] = self._command_table()
 
     def _setup_tools(self) -> None:
         """Registriert die Default-Tools (Move/Rotate/Scale/Extrude) im ToolManager."""
@@ -1076,8 +685,8 @@ class Application:
         )
         self.morph.attach(self.viewport)
         self._morph.ab.clear()
-        self._object_pick_caches = {}
-        self._sync_object_views()
+        self._objects.pick_caches = {}
+        self._objects.sync_views()
         self._apply_display()
 
     @staticmethod
@@ -1104,7 +713,7 @@ class Application:
         texture = find_texture(path, data) if data.has_uvs else None
         return mesh_from_obj_data(data), path.stem, None if texture is None else str(texture.resolve())
 
-    # -- Objekte (AD-021 M1) ----------------------------------------------------
+    # -- Objects (AD-021; `controllers.objects` since AD-027 M7) ----------------------------------------
 
     def add_reference(
         self,
@@ -1121,22 +730,10 @@ class Application:
         meldet ihn). Gibt das neue Objekt zurück."""
         if self.viewport is None:
             raise RuntimeError("add_reference() before init_scene()")
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"Add object: not while the {owner} interaction runs")
-            return None
-        if self._layer_gate_refuses("add_reference", ()):
+        if self._objects.refused_during_interaction("Add object") or self._objects.layer_refused("add_reference", ()):
             return None
         mesh, default_name, texture = self._build_mesh(geometry_type, obj_path)
-        before = self._selection_snapshot()
-        obj = self.scene.add_object(
-            mesh, name=name or default_name, state=ObjectState.REFERENCE, texture=texture
-        )
-        self.history.push(AddObjectCommand(self.scene, obj))
-        self._record_selection_history(before, mesh_step=False)
-        self._sync_object_views()
-        self._set_status(f"Added {obj.name!r} as Reference")
-        return obj
+        return self._objects.add_reference(mesh, name or default_name, texture)
 
     def add_primitive(self, kind: str, name: str | None = None) -> SceneObject | None:
         """Add Mesh (Track A1, 2026-10-23, `PROVISIONAL`; `scene_factory.PRIMITIVES`: plane, cube,
@@ -1156,7 +753,7 @@ class Application:
 
         if kind not in PRIMITIVES:
             raise ValueError(f"unknown primitive {kind!r}")
-        return self._add_mesh_object(
+        return self._objects.add_mesh_object(
             lambda: PRIMITIVES[kind](), name or unique_object_name(self.scene, kind), f"Add {kind}"
         )
 
@@ -1176,442 +773,59 @@ class Application:
             mesh, _name, loaded["texture"] = self._load_obj(path)
             return mesh
 
-        obj = self._add_mesh_object(build, unique_object_name(self.scene, path.stem), "Import OBJ")
+        obj = self._objects.add_mesh_object(build, unique_object_name(self.scene, path.stem), "Import OBJ")
         if obj is not None and loaded.get("texture"):
             obj.texture = loaded["texture"]
-            self._sync_object_views()
+            self._objects.sync_views()
             self._set_status(f"{self.status_message} - texture {Path(obj.texture).name}")
         return obj
 
     def export_obj(self, path: str | Path) -> bool:
         """OBJ export (SPACE menu): the edit object in world space (object transform applied), one
         `o` record. True = written. Refused during an interaction like `save_scene_file`."""
-        from .obj_export import mesh_to_obj
-
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"Export OBJ: not while the {owner} interaction runs")
-            return False
-        obj = self.morph_document_object  # the rest shape of the base, never the editing view
-        path = Path(path)
-        text = mesh_to_obj(obj.mesh, obj.name, lambda p: object_space.to_world(obj, p))
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
-        self._set_status(f"Exported OBJ: {path}")
-        return True
-
-    def _add_mesh_object(self, build: Callable[[], Mesh], name: str, label: str) -> SceneObject | None:
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"{label}: not while the {owner} interaction runs")
-            return None
-        if self._layer_gate_refuses("add_primitive", ()):
-            return None
-        mesh = build()
-        scene, selection = self.scene, self.selection
-        before = self._selection_snapshot()
-        obj = scene.add_object(mesh, name=name)
-        self.history.push(AddObjectCommand(scene, obj))
-        selection.mode = SelectionMode.OBJECT
-        selection.clear()
-        selection.objects = {obj.id}
-        selection.hovered = None
-        self._record_selection_history(before, mesh_step=False)
-        self.viewport.on_selection_changed()
-        self._soft_preview_refresh()
-        self._sync_object_views()
-        self._refresh_hover()
-        self._set_status(
-            f"Added {obj.name!r} - selected (Object mode); W/E/R place it, 1/2/3 edit it"
-        )
-        return obj
-
-    def _delete_objects_command(self) -> bool:
-        """`Delete` in mode `4` (Track A2): remove the selected objects - **not** points/edges/
-        faces (`_removal_command` is the component Delete and is unchanged). One Undo step
-        (`DeleteObjectsCommand` + one mirror entry) however many objects; the same instances come
-        back on Undo with their ids, and Undo restores the selection and the edit object of
-        before. Deleting the edit object hands the edit role to a surviving Normal object
-        (`plan_object_delete`); the last object, or leaving only References, is refused with a
-        status line - the scene has no empty state."""
-        label = "Delete object"
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"{label}: not while the {owner} interaction runs")
-            return False
-        scene, selection = self.scene, self.selection
-        selected = [oid for oid in sorted(selection.objects) if oid in scene.objects]
-        if not selected:
-            self._set_status(f"{label}: no object selected - click one first")
-            return False
-        try:
-            doomed, edit_after = plan_object_delete(scene, selected)
-        except DeleteRefused as exc:
-            self._set_status(f"{label}: {exc}")
-            return False
-        before = self._selection_snapshot()
-        edit_before = scene.edit_object_id
-        edit_changed = edit_after != edit_before
-        # Mirror pairs (proposal §5.5): a pair with a deleted object is broken in the same Undo
-        # step - first, so the scene never holds a pair to a missing object; Undo restores both.
-        doomed_ids = {obj.id for obj in doomed}
-        broken = [pair for pair in scene.mirror_pairs if pair.a in doomed_ids or pair.b in doomed_ids]
-        pair_notes = []
-        for pair in broken:
-            survivors = [scene.objects[oid] for oid in (pair.a, pair.b) if oid not in doomed_ids]
-            if survivors:
-                pair_notes.append(f"mirror pair with {survivors[0].name!r} broken")
-            else:
-                pair_notes.append(f"mirror pair {pair_names(scene, pair)} removed")
-            scene.remove_mirror_pair(pair)
-        scene.edit_object_id = edit_after
-        for obj in doomed:
-            scene.remove_object(obj.id)
-        delete = DeleteObjectsCommand(scene, doomed, edit_before, edit_after)
-        if broken:
-            delete = CompositeCommand(
-                [MirrorPairCommand(scene, pair, create=False) for pair in broken] + [delete],
-                delete.description,
-            )
-        self.history.push(delete)
-        selection.objects -= {obj.id for obj in doomed}
-        if edit_changed:
-            selection.clear()  # component ids belong to the deleted edit object's mesh
-        selection.hovered = None
-        self._record_selection_history(before, mesh_step=edit_changed)
-        if edit_changed:
-            self._follow_edit_object()
-        else:
-            self._sync_object_views()
-        self._soft_preview_refresh()
-        self._refresh_hover()
-        names = ", ".join(repr(obj.name) for obj in doomed)
-        text = f"Deleted {names}"
-        for note in pair_notes:
-            text += f" - {note}"
-        if edit_changed:
-            text += f" - now editing {scene.edit_object.name!r}"
-        self._set_status(text)
-        return True
-
-    # -- Mirror pairs (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5, 2026-10-23, `PROVISIONAL`) ----------
-    #
-    # Window-level commands (the Shift+M menu, `src/scene_menu.py`), mode `4` only. Each is one Undo
-    # step built from the existing commands; pair state changes only through `MirrorPairCommand`.
-    # Planes: X = 0 / Y = 0 / Z = 0 (`object_mirror.PLANES`, proposal §9 decision 7 default).
-
-    def _mirror_selection(self, label: str) -> list[SceneObject] | None:
-        owner = self.interaction_owner
-        if owner is not None:
-            self._set_status(f"{label}: not while the {owner} interaction runs")
-            return None
-        if self.selection.mode is not SelectionMode.OBJECT:
-            self._set_status(f"{label}: works on objects - press 4 and select them")
-            return None
-        scene = self.scene
-        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
-        if not selected:
-            self._set_status(f"{label}: no object selected - click one first")
-            return None
-        return selected
-
-    def _selected_pairs(self, selected: list[SceneObject]) -> list[MirrorPair]:
-        pairs: list[MirrorPair] = []
-        for obj in selected:
-            pair = self.scene.mirror_pair_of(obj.id)
-            if pair is not None and pair not in pairs:
-                pairs.append(pair)
-        return pairs
+        return self._objects.export_obj(path)
 
     def mirror_copy(self, axis: str = "X") -> SceneObject | None:
-        """Mirror copy (proposal §5.5): a new Normal object B with the selected object's mesh
-        reflected across the world plane (`object_mirror.mirror_mesh`: positions `H p`, winding
-        reversed, no symmetry definition) at `F(A)`, paired with A. One Undo step
-        (`AddObjectCommand` + `MirrorPairCommand`); B becomes the object selection (`PROVISIONAL`),
-        named by `unique_object_name`. Refused (status line, None) without exactly one selected
-        object, for a Reference or an object already in a pair."""
-        label = "Mirror copy"
-        normal, offset = MIRROR_PLANES[axis]
-        selected = self._mirror_selection(label)
-        if selected is None:
-            return None
-        if len(selected) != 1:
-            self._set_status(f"{label}: select one object ({len(selected)} are selected)")
-            return None
-        scene, selection = self.scene, self.selection
-        source = selected[0]
-        if self._layer_gate_refuses("mirror_copy", [source.mesh]):
-            return None
-        try:
-            check_pairable(scene, [source])
-        except MirrorRefused as exc:
-            self._set_status(f"{label}: {exc}")
-            return None
-        before = self._selection_snapshot()
-        obj = scene.add_object(mirror_mesh(source.mesh, normal), name=unique_object_name(scene, source.name))
-        obj.transform, obj.pivot = mirror_placement(source, normal, offset)
-        obj.material = source.material  # AD-024 Q-M2: the copy keeps the source's material
-        obj.texture = source.texture  # AD-026: and its texture (the UVs come with the mesh)
-        add = AddObjectCommand(scene, obj)
-        pair = MirrorPair(source.id, obj.id, normal=normal, offset=offset)
-        scene.add_mirror_pair(pair)
-        self.history.push(
-            CompositeCommand([add, MirrorPairCommand(scene, pair, create=True)], f"Mirror copy {source.name!r}")
-        )
-        selection.objects = {obj.id}
-        selection.hovered = None
-        self._record_selection_history(before, mesh_step=False)
-        if self.viewport is not None:
-            self.viewport.on_selection_changed()
-        self._sync_object_views()
-        self._refresh_hover()
-        self._set_status(
-            f"Mirror copy: {describe_pair(scene, pair)} - paired: moving either moves both mirrored;"
-            " the meshes stay independent"
-        )
-        return obj
+        """Mirror copy of the one selected object, paired with it (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.5, the
+        Shift+M menu): `ObjectController.mirror_copy`."""
+        return self._objects.mirror_copy(axis)
 
     def pair_selected(self, axis: str = "X") -> bool:
-        """Pair two selected objects (proposal §5.5): the lower ObjectId drives and stays, the other
-        is placed at `F(driver)` (transform, scale and pivot - announced), then the pair. One Undo
-        step. The meshes are not inspected. Refused unless exactly two objects are selected, for a
-        Reference or an object already in a pair."""
-        label = "Mirror pair"
-        normal, offset = MIRROR_PLANES[axis]
-        selected = self._mirror_selection(label)
-        if selected is None:
-            return False
-        if len(selected) != 2:
-            self._set_status(
-                f"{label}: select exactly two objects ({len(selected)} are selected) - the first created"
-                " stays, the other is placed at its mirror"
-            )
-            return False
-        driver, follower = selected
-        before = self._selection_snapshot()
-        try:
-            command = pair_existing_command(self.scene, driver, follower, normal, offset)
-        except MirrorRefused as exc:
-            self._set_status(f"{label}: {exc}")
-            return False
-        self.history.push(command)
-        self._record_selection_history(before, mesh_step=False)
-        self._placement_changed()
-        pair = self.scene.mirror_pair_of(driver.id)
-        self._set_status(
-            f"{label}: {follower.name!r} is placed at the mirror of {driver.name!r}"
-            f" - paired {describe_pair(self.scene, pair)}"
-        )
-        return True
+        """Pair two selected objects (proposal §5.5): `ObjectController.pair_selected`."""
+        return self._objects.pair_selected(axis)
 
     def break_mirror_pairs(self) -> bool:
-        """Break the pairs of the selected objects (proposal §5.5): both objects stay exactly where
-        they are; one Undo step however many pairs."""
-        label = "Break pair"
-        selected = self._mirror_selection(label)
-        if selected is None:
-            return False
-        pairs = self._selected_pairs(selected)
-        if not pairs:
-            self._set_status(f"{label}: no selected object is in a mirror pair")
-            return False
-        scene = self.scene
-        names = ", ".join(pair_names(scene, pair) for pair in pairs)
-        before = self._selection_snapshot()
-        parts = []
-        for pair in pairs:
-            scene.remove_mirror_pair(pair)
-            parts.append(MirrorPairCommand(scene, pair, create=False))
-        self.history.push(parts[0] if len(parts) == 1 else CompositeCommand(parts, "Break mirror pairs"))
-        self._record_selection_history(before, mesh_step=False)
-        self._set_status(f"Mirror pair {names} broken - both stay where they are")
-        return True
+        """Break the pairs of the selected objects (proposal §5.5): `ObjectController.break_mirror_pairs`."""
+        return self._objects.break_mirror_pairs()
 
     def resync_mirror_pairs(self) -> bool:
-        """Re-sync the pairs of the selected objects (proposal §5.7): B is placed at `F(A)` again
-        (`pair.a` = the driver at creation). One Undo step; nothing for a pair in sync; refused,
-        before anything changes, when a B to move is a Reference."""
-        label = "Re-sync"
-        selected = self._mirror_selection(label)
-        if selected is None:
-            return False
-        pairs = self._selected_pairs(selected)
-        if not pairs:
-            self._set_status(f"{label}: no selected object is in a mirror pair")
-            return False
-        scene = self.scene
-        todo = [p for p in pairs if not in_sync(scene.objects[p.a], scene.objects[p.b], p)]
-        if not todo:
-            names = ", ".join(pair_names(scene, pair) for pair in pairs)
-            self._set_status(f"{label}: mirror pair {names} is in sync - nothing to do")
-            return False
-        for pair in todo:
-            b = scene.objects[pair.b]
-            if b.state is ObjectState.REFERENCE:
-                self._set_status(
-                    f"{label}: {b.name!r} (mirror partner of {scene.objects[pair.a].name!r}) is a Reference - locked"
-                )
-                return False
-        before = self._selection_snapshot()
-        parts = [resync_command(scene, pair) for pair in todo]
-        self.history.push(parts[0] if len(parts) == 1 else CompositeCommand(parts, "Re-sync mirror pairs"))
-        self._record_selection_history(before, mesh_step=False)
-        self._placement_changed()
-        moved = ", ".join(repr(scene.objects[pair.b].name) for pair in todo)
-        self._set_status(f"{label}: {moved} placed at the mirror of its partner again")
-        return True
-
-    def _mirror_followers(
-        self, label: str, targets: list[SceneObject]
-    ) -> tuple[list[SceneObject], list] | None:
-        """The object gesture's drivers and followers (proposal §5.4): a pair is one unit - the
-        partner of a driven object follows; with both selected the lower ObjectId drives. None
-        (refusal posted) when a partner is a Reference (locked) or a pair is out of sync."""
-        scene = self.scene
-        ids = {obj.id for obj in targets}
-        drivers: list[SceneObject] = []
-        followers: list = []
-        for obj in targets:
-            pair = scene.mirror_pair_of(obj.id)
-            if pair is None:
-                drivers.append(obj)
-                continue
-            partner = scene.objects[pair.other(obj.id)]
-            if partner.id in ids and partner.id < obj.id:
-                continue  # the partner drives this one
-            if partner.state is ObjectState.REFERENCE:
-                self._set_status(
-                    f"{label}: {partner.name!r} (mirror partner of {obj.name!r}) is a Reference - locked"
-                )
-                return None
-            if not in_sync(scene.objects[pair.a], scene.objects[pair.b], pair):
-                self._set_status(f"{label}: {out_of_sync_text(scene, pair)}")
-                return None
-            drivers.append(obj)
-            followers.append((partner, partner.transform, obj, obj.transform, pair))
-        return drivers, followers
-
-    @staticmethod
-    def _mirror_note(followers: list) -> str:
-        if not followers:
-            return ""
-        names = ", ".join(f"{f.name!r} mirrors {d.name!r}" for f, _, d, _, _ in followers)
-        return f" - {names}"
-
-    def _sync_object_views(self) -> None:
-        """Gleicht die Render-Einträge und Pick-Caches der Nicht-Edit-Objekte mit
-        `scene.objects` ab (AD-021 §4.6 "App consequences"): ein entferntes Objekt verliert
-        seinen Eintrag, ein neues bekommt einen, ein Zustandswechsel ändert nur die Farbe.
-        Läuft nach jedem Objekt-Schritt, nach Undo/Redo und beim Laden. Das Edit-Objekt
-        zeichnet der Viewport selbst, mit den Selection-Overlays (§4.4 "Drawing")."""
-        scene = self.scene
-        others = {
-            oid: obj for oid, obj in scene.objects.items() if oid != scene.edit_object_id
-        }
-        for oid in [oid for oid in self._object_pick_caches if oid not in others]:
-            del self._object_pick_caches[oid]
-        for oid in [oid for oid in self._object_cameras if oid not in scene.objects]:
-            del self._object_cameras[oid]
-        if self.viewport is None:
-            return
-        # M2-1: the edit object's placement (mesh uniform + `view·model` for its overlays).
-        self.viewport.set_model_matrix(object_space.model_matrix(scene.edit_object))
-        for key in [key for key in self.viewport.object_entries if key not in others]:
-            self.viewport.remove_object_entry(key)
-        highlighted = self._highlighted_objects()
-        for oid, obj in others.items():
-            reference = obj.state is ObjectState.REFERENCE
-            self.viewport.set_object_entry(
-                oid,
-                obj.mesh,
-                selected_color(obj, DEFAULT_BASE_COLOR) if oid in highlighted else object_base_color(obj),
-                model_matrix=object_space.model_matrix(obj),
-                # M2-0 (§7.3): RD-1 Ghost for every Reference on `Alt+D`; RD-3 a Reference is
-                # drawn in Wireframe too - a Normal object follows the display mode.
-                alpha=REFERENCE_GHOST_ALPHA if reference and self.reference_ghost else 1.0,
-                ignores_wireframe=reference,
-                finish=object_finish(obj, self.display.surface_finish),
-                texture=self._shown_texture(obj, oid in highlighted),
-            )
-        edit = scene.edit_object
-        self.viewport.set_edit_base_color(
-            selected_color(edit, DEFAULT_BASE_COLOR) if edit.id in highlighted else object_base_color(edit),
-            object_finish(edit, self.display.surface_finish),
-            self._shown_texture(edit, edit.id in highlighted),
-        )
-        self._object_highlight_key = self._object_highlight_signature()
-
-    def _shown_texture(self, obj: SceneObject, highlighted: bool) -> str | None:
-        """The texture the viewport draws for `obj` (AD-026): its own while textures are shown
-        (`DisplayState.show_texture`); a highlighted object (mode `4` selection) shows its selection
-        tint instead, so the selection stays visible on a textured object (`PROVISIONAL`)."""
-        if obj.texture is None or highlighted or not self.display.show_texture:
-            return None
-        return obj.texture
+        """Re-sync the pairs of the selected objects (proposal §5.7): `ObjectController.resync_mirror_pairs`."""
+        return self._objects.resync_mirror_pairs()
 
     def toggle_texture_display(self) -> bool:
         """Textures on/off (SPACE menu row, `src/obj_files.py`): pure view state, no Undo step.
         Returns the new state."""
-        self.display.show_texture = not self.display.show_texture
-        self._sync_object_views()
-        self._set_status(f"Textures: {'on' if self.display.show_texture else 'off'}")
-        return self.display.show_texture
+        return self._objects.toggle_texture_display()
 
-    def _highlighted_objects(self) -> frozenset:
-        """The objects drawn as selected: the object selection, in mode `4` only (2026-10-16, Manu:
-        "man kann nicht wirklich sehen, welches Objekt ausgewählt ist"; look `PROVISIONAL`)."""
-        if self.selection.mode is not SelectionMode.OBJECT:
-            return frozenset()
-        return frozenset(oid for oid in self.selection.objects if oid in self.scene.objects)
+    @property
+    def reference_ghost(self) -> bool:
+        """AD-021 M2-0 (§7.3 RD-2): all References drawn as Ghost (`Alt+D`); display state, not an Undo step,
+        kept across scene loads like `DisplayState`."""
+        return self._objects.reference_ghost
 
-    def _object_highlight_signature(self) -> tuple:
-        scene = self.scene
-        return (
-            self._highlighted_objects(),
-            scene.edit_object_id,
-            tuple((oid, obj.state, obj.material, obj.texture) for oid, obj in scene.objects.items()),
-        )
+    @reference_ghost.setter
+    def reference_ghost(self, value: bool) -> None:
+        self._objects.reference_ghost = value
 
-    def _sync_object_highlight(self) -> None:
-        """Redraws the selection highlight when the object selection, the mode, the edit object or
-        a state changed since it was last drawn - every path that changes them (click, box, Undo,
-        key `4`, ...) is covered by the per-frame call in `update_viewport`."""
-        if self.viewport is not None and self._object_highlight_signature() != self._object_highlight_key:
-            self._sync_object_views()
-
-    def _placement_changed(self) -> None:
-        """An object's `transform`/`pivot` changed (AD-021 M2-1; the M2-2 object tools and their
-        Undo call this). Positions in object space are unchanged, so nothing is rebuilt: the
-        matrices go to the viewport, every pick cache re-projects (the edit object's camera
-        revision already carries its transform; the explicit invalidation also covers the
-        switch between `OrbitCamera` and its adapter), the hover is re-picked. Soft weights and
-        symmetry live in object space and stay as they are (§4.8)."""
-        self._pick_cache.invalidate()
-        for cache in self._object_pick_caches.values():
-            cache.invalidate()
-        self._sync_object_views()
-        self._refresh_hover()
-
-    def _set_edit_object(self, object_id: ObjectId) -> None:
-        """AD-021 M2-4 (E-14): **the one place** that changes the edit object. Sets
-        `scene.edit_object_id` and moves everything that hangs on the edit object's mesh with
-        it: the viewport's overlay entry (`Viewport.set_edit_mesh`; the previous edit object
-        becomes an object entry in `_sync_object_views`), the pick caches, the hover and the
-        soft radius (the fourth radius event, §4.8). The symmetry report cache is keyed by the
-        mesh's geometry and needs nothing. The caller owns the component sets (§4.4: the Q-5
-        gesture clears them, Undo/Redo restores the ones of the step), the soft preview that
-        follows from them, and the refusals (a running interaction, a Reference - RF-5)."""
-        scene = self.scene
-        if object_id == scene.edit_object_id:
-            return
-        scene.edit_object_id = object_id
-        self._follow_edit_object()
+    @property
+    def last_edit_switch_seconds(self) -> float:
+        """AD-021 M2-4: how long the last Q-5 switch of the edit object took (s, `time.perf_counter`; measured,
+        not optimised - the viewport rebuilds the entries of both objects)."""
+        return self._objects.last_edit_switch_seconds
 
     def _follow_edit_object(self) -> None:
         """Everything that hangs on the edit object's mesh follows `scene.edit_object_id`. Called
-        by `_set_edit_object`, by Delete of the edit object, and by Undo/Redo of a step whose
+        by `ObjectController.set_edit_object`, by Delete of the edit object, and by Undo/Redo of a step whose
         command changed the edit object itself (`DeleteObjectsCommand`, `AddObjectCommand`): the
         scene is already switched there, only the view is behind. A morph target's editing view lives
         while it is the edit object: it closes here when another object became the edit object."""
@@ -1628,425 +842,7 @@ class Application:
         self._tints_seen = None  # the new RenderMesh has no region colours yet
         self._hidden_push()  # the new edit object keeps its own hidden set and mask
         self._soft_refresh_radius()
-        self._sync_object_views()
-
-    def _object_camera(self, obj: SceneObject):
-        """The camera as the object's own space sees it (AD-021 M2-1, E-7): the `OrbitCamera`
-        itself while the placement is identity (bit-exact as before), else its stable
-        `ObjectSpaceCamera`."""
-        if object_space.is_identity(obj.transform):
-            return self.camera
-        adapter = self._object_cameras.get(obj.id)
-        if adapter is None or adapter.camera is not self.camera:
-            adapter = self._object_cameras[obj.id] = ObjectSpaceCamera(self.camera, obj)
-        return adapter
-
-    @property
-    def _edit_camera(self):
-        """The camera every component path uses (picking, Knife, W/E/R/T): in the edit object's
-        space (L-5)."""
-        return self._object_camera(self.scene.edit_object)
-
-    def _pick_object(self, x: float, y: float) -> ObjectId | None:
-        """Mode `4`: the object whose surface is front-most under the cursor - every object,
-        References included (RF-3); none is hidden in M1."""
-        candidates = []
-        for oid, obj in self.scene.objects.items():
-            if oid == self.scene.edit_object_id:
-                cache = self._pick_cache
-            else:
-                cache = self._object_pick_caches.setdefault(oid, PickCache())
-            candidates.append(
-                (oid, obj.mesh, cache, self._object_camera(obj), obj.transform.scale)
-            )
-        return pick_object(candidates, x, y, self.viewport_width, self.viewport_height)
-
-    def _select_object_at(self, command: str, x: float, y: float) -> bool:
-        """Klick in Modus `4` (AD-021 M1): ändert nur die Objekt-Auswahl (`selection.objects`).
-        Ein einfacher Klick wählt genau dieses Objekt (ins Leere: Auswahl leer), Shift/Ctrl/Alt
-        wie bei Komponenten. Q-12 revidiert (Manu 2026-10-16: ein Klick, der zugleich auf Referenz
-        umschaltet, ist verwirrend): Referenz an/aus ist `Alt+R` (`_reference_command`). True =
-        die Auswahl hat sich geändert."""
-        if self._transform_key is not None:
-            # M2-2: no selection or state change underneath a held W/E/R (its targets are fixed).
-            return False
-        selection = self.selection
-        before = self._selection_snapshot()
-        before_state = _selection_state(selection)
-        hit = self._pick_object(x, y)
-        if hit is None:
-            if command == commands.SELECT:
-                selection.clear_objects()
-        elif command == commands.SELECT:
-            selection.set({hit})
-        elif command == commands.SELECT_ADD:
-            selection.add({hit})
-        elif command == commands.SELECT_REMOVE:
-            selection.remove({hit})
-        elif command == commands.SELECT_TOGGLE:
-            selection.toggle(hit)
-        changed = _selection_state(selection) != before_state
-        if hit is not None and command == commands.SELECT:
-            obj = self.scene.objects[hit]
-            if hit == self.scene.edit_object_id:
-                self._set_status(f"Object {obj.name!r} selected (being edited)")
-            elif obj.state is ObjectState.REFERENCE:
-                self._set_status(f"Object {obj.name!r} selected (Reference - Alt+R makes it Normal)")
-            else:
-                self._set_status(f"Object {obj.name!r} selected - 1/2/3 edits it")
-        self._sync_object_highlight()
-        return changed
-
-    def _reference_command(self) -> bool:
-        """`Alt+R` in mode `4`: switch every selected object except the edit object Normal <->
-        Reference, one Undo step (Q-3; Q-12 revised 2026-10-16, key `PROVISIONAL`). The edit object
-        never becomes a Reference (RF-2/RF-5)."""
-        label = "Reference on/off"
-        if self.interaction_owner is not None:
-            return False
-        if self.selection.mode is not SelectionMode.OBJECT:
-            self._set_status(f"{label}: works on objects - press 4 and select them")
-            return False
-        scene = self.scene
-        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
-        if not selected:
-            self._set_status(f"{label}: no object selected - click one first")
-            return False
-        edit = scene.edit_object
-        targets = [obj for obj in selected if obj.id != edit.id]
-        if not targets:
-            self._set_status(f"Object {edit.name!r} is being edited - it cannot become a Reference")
-            return False
-        before = self._selection_snapshot()
-        if len(targets) == len(selected) == 1:
-            return self._switch_object_state(targets[0].id, before)
-        steps = []
-        for obj in targets:
-            old = obj.state
-            new = ObjectState.NORMAL if old is ObjectState.REFERENCE else ObjectState.REFERENCE
-            obj.state = new
-            steps.append(ObjectStateCommand(obj, old, new))
-        self.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, label))
-        self._record_selection_history(before, mesh_step=False)
-        self._sync_object_views()
-        text = ", ".join(f"{obj.name!r}: {obj.state.name.capitalize()}" for obj in targets)
-        if len(targets) < len(selected):
-            text += f" ({edit.name!r} is being edited - stays Normal)"
-        self._set_status(f"Object {text}")
-        return True
-
-    def _switch_object_state(self, object_id: ObjectId, selection_before: tuple) -> bool:
-        """Normal <-> Referenz als ein Undo-Schritt (Q-3). Das Edit-Objekt wird nie Referenz
-        (RF-2; RF-5 `PROVISIONAL`: in M1 ist es das einzige bearbeitbare Objekt, einen
-        Wechsel des Edit-Objekts gibt es erst in M2)."""
-        obj = self.scene.objects[object_id]
-        if object_id == self.scene.edit_object_id:
-            self._set_status(
-                f"Object {obj.name!r} is being edited - it cannot become a Reference"
-            )
-            return False
-        before = obj.state
-        after = ObjectState.NORMAL if before is ObjectState.REFERENCE else ObjectState.REFERENCE
-        obj.state = after
-        self.history.push(ObjectStateCommand(obj, before, after))
-        self._record_selection_history(selection_before, mesh_step=False)
-        self._sync_object_views()
-        self._set_status(f"Object {obj.name!r}: {after.name.capitalize()}")
-        return True
-
-    def _object_mode_refusal(self, command: str | None) -> str | None:
-        """AD-021 M1 (L-1, RF-4): the refusal text for component work in mode `4` (`can_run` stage 4).
-        M2-2: W/E/R pass - in `4` they are the object gesture, which refuses on its own
-        (`_object_arm`: nothing selected, only References)."""
-        if self.selection.mode is not SelectionMode.OBJECT or command not in _COMPONENT_COMMANDS:
-            return None
-        if command in _OBJECT_TRANSFORM_COMMANDS or command == commands.DELETE:
-            return None  # Delete in `4` deletes the selected objects (`_delete_objects_command`)
-        return (
-            "Object mode: T, G, S, I, Ctrl+B, C, Shift+C, Dissolve, Shift+L/R, Shift+S, Alt+M, Shift+arrows and Ctrl+/- work"
-            " on points/edges/faces"
-            " - press 1/2/3 (Delete removes the selected objects)"
-        )
-
-    # -- Objekt-Geste in Modus `4` (AD-021 M2-2, E-11/E-12) -----------------------------
-
-    def _object_arm(self, command: str, key: str) -> bool:
-        """W/E/R in mode `4`: arm the object gesture on the selected objects without the
-        References (RF-4, Q-1: locked; in a mixed selection they stay where they are and the
-        status line says so, `PROVISIONAL`). Refused with a status line when nothing or only
-        References are selected. Nothing moves before the first motion (AD-016, as W/E/R)."""
-        label, verb, _ = _TRANSFORM_COMMANDS[command]
-        picked = self._object_targets(
-            f"Object {label}", f"to {verb} points/edges/faces press 1/2/3"
-        )
-        if picked is None:
-            return False
-        targets, references = picked
-        paired = self._mirror_followers(f"Object {label}", targets)
-        if paired is None:
-            return False
-        targets, followers = paired
-        self._transform_key = key
-        self._transform_command = command
-        self._transform_target = frozenset()
-        self._transform_begun = False
-        self._object_gesture = _ObjectGesture(
-            [(obj, obj.transform) for obj in targets],
-            references,
-            self._selection_snapshot(),
-            followers=followers,
-        )
-        if command == commands.SCALE:
-            constraint = " (uniform - X/Y/Z do not apply)" if self._axis_constraint else ""
-        else:
-            constraint = self._constraint_suffix(self._axis_constraint)
-        self._set_status(
-            f"Object {label}: {', '.join(repr(obj.name) for obj in targets)}{constraint}"
-            f"{self._mirror_note(followers)}{self._object_references_note(references)}{self._commit_hint(key)}"
-        )
-        return True
-
-    def _object_targets(
-        self, label: str, hint: str
-    ) -> tuple[list[SceneObject], tuple[str, ...]] | None:
-        """The selected objects an object command works on, and the names of the selected
-        References it leaves alone (RF-4, Q-1). None (refusal posted) when nothing or only
-        References are selected."""
-        scene = self.scene
-        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
-        targets = [obj for obj in selected if obj.state is not ObjectState.REFERENCE]
-        references = tuple(obj.name for obj in selected if obj.state is ObjectState.REFERENCE)
-        if not selected:
-            self._set_status(f"{label}: no object selected - click one first ({hint})")
-            return None
-        if not targets:
-            self._set_status(
-                f"Object mode: {references[0]!r} is a Reference - locked (select or switch only)"
-            )
-            return None
-        return targets, references
-
-    def _placement_command(self, command: str) -> bool:
-        """Apply / Clear transform (AD-021 M2-3, L-3) on the selected non-Reference objects, mode
-        `4` only. Objects without a placement are left alone; one Undo step for all of them."""
-        label = _PLACEMENT_COMMANDS[command]
-        if self.interaction_owner is not None:
-            return False
-        if self.selection.mode is not SelectionMode.OBJECT:
-            self._set_status(f"{label}: works on objects - press 4 and select them")
-            return False
-        picked = self._object_targets(label, "press 4 and click the object")
-        if picked is None:
-            return False
-        targets, references = picked
-        placed = [obj for obj in targets if not object_space.is_identity(obj.transform)]
-        if not placed:
-            self._set_status(f"{label}: nothing to do - {self._objects_text(targets)} not placed")
-            return False
-        paired = [obj for obj in placed if self.scene.mirror_pair_of(obj.id) is not None]
-        if paired:
-            # PROVISIONAL (proposal §5.7 / §9 decision 4): Apply/Clear would change the placement
-            # and the mesh/pivot relation the pair assumes - refused in v1, the way out named.
-            self._set_status(f"{label}: {paired[0].name!r} is in a mirror pair - break the pair first (Shift+M)")
-            return False
-        if command == commands.CLEAR_TRANSFORM:
-            return self._clear_transform(placed, references)
-        return self._apply_transform(placed, references)
-
-    def _clear_transform(self, placed: list[SceneObject], references: tuple[str, ...]) -> bool:
-        """Clear (L-3): placement back to identity, the mesh stays, the object jumps; the pivot
-        stays. One `ObjectTransformCommand` (an object step, `mesh_step=False`)."""
-        before = self._selection_snapshot()
-        changes = [(obj, obj.transform, IDENTITY_TRANSFORM) for obj in placed]
-        for obj, _, after in changes:
-            obj.transform = after
-        self.history.push(ObjectTransformCommand(changes, "Clear transform"))
-        self._record_selection_history(before, mesh_step=False)
-        self._placement_changed()
-        self._set_status(
-            f"{self._objects_text(placed)}: transform cleared (object level, mesh unchanged)"
-            f"{self._object_references_note(references)}"
-        )
-        return True
-
-    def _apply_transform(self, placed: list[SceneObject], references: tuple[str, ...]) -> bool:
-        """Apply (L-3, Max "Reset XForm"): every mesh position becomes its world position, the
-        placement becomes identity, and the pivot moves to its old world position `t + c`
-        (`PROVISIONAL`: a later Rotate/Scale turns about the same place as before; the
-        alternative, pivot = origin, is a question for Manu). One `CompositeCommand` per press
-        (E-13): a `MeshDeltaCommand` per object, then the transforms, then the pivots. Refused
-        as a whole, before anything changes, when one object's symmetry definition would not
-        survive the bake (`applied_symmetry_axis`), or when one object's mesh has point layers
-        (AD-025 §4.4: locked until Phase 3 maps the layers)."""
-        if self._layer_gate_refuses(commands.APPLY_TRANSFORM, [obj.mesh for obj in placed]):
-            return False
-        try:
-            axes = [applied_symmetry_axis(obj) for obj in placed]
-        except ApplyRefused as exc:
-            self._set_status(f"Apply transform: refused - {exc}")
-            return False
-        before = self._selection_snapshot()
-        parts: list = []
-        transforms, pivots = [], []
-        for obj, axis in zip(placed, axes):
-            mesh = obj.mesh
-            delta, _ = record_mesh_change(mesh, lambda obj=obj, axis=axis: apply_placement(obj, axis))
-            parts.append(MeshDeltaCommand(mesh=mesh, delta=delta, description=f"Apply transform {obj.name!r}"))
-            pivots.append((obj, obj.pivot, object_space.to_world(obj, obj.pivot)))
-            transforms.append((obj, obj.transform, IDENTITY_TRANSFORM))
-        for obj, _, after in transforms:
-            obj.transform = after
-        for obj, _, after in pivots:
-            obj.pivot = after
-        parts += [ObjectTransformCommand(transforms, "Apply transform"), ObjectPivotCommand(pivots)]
-        self.history.push(CompositeCommand(parts, "Apply transform"))
-        edit_id = self.scene.edit_object_id
-        others = frozenset(obj.id for obj in placed if obj.id != edit_id)
-        edit_changed = len(others) < len(placed)
-        self._record_selection_history(before, mesh_step=edit_changed, object_meshes=others)
-        self._object_meshes_changed(others)
-        if edit_changed:
-            self._notify_topology_changed()
-        self._placement_changed()
-        self._set_status(
-            f"{self._objects_text(placed)}: transform applied (object level -> mesh;"
-            f" placement is identity now){self._object_references_note(references)}"
-        )
-        return True
-
-    def _object_meshes_changed(self, object_ids) -> None:
-        """The mesh of these non-edit objects changed (Apply transform, its Undo/Redo): their
-        render entries rebuild and their pick caches re-project."""
-        for oid in object_ids:
-            cache = self._object_pick_caches.get(oid)
-            if cache is not None:
-                cache.invalidate()
-            if self.viewport is not None and oid in self.viewport.object_entries:
-                self.viewport.object_entries[oid].mark_topology_dirty()
-
-    @staticmethod
-    def _object_references_note(references: tuple[str, ...]) -> str:
-        if not references:
-            return ""
-        names = ", ".join(repr(name) for name in references)
-        return f" - Reference {names} stays (locked)"
-
-    def _object_step(self, dx: float, dy: float) -> bool:
-        """One motion of the object gesture. The first one fixes the constraint (sticky axis,
-        read once as at `begin()`; Q-4: Scale is always uniform) and, for Rotate, the axis:
-        the camera's view direction without a constraint, else the world axis or the plane's
-        normal. Move: world delta on the camera plane through the first target's pivot, masked
-        by the world constraint, `t' = t_start + Σdelta`. Rotate: `R' = Q(axis, angle)·R_start`
-        about each object's own pivot (its world position `t + c` does not depend on R and s,
-        so no translation is corrected). Scale: `s' = s_start·f`. The factors are the
-        component tools' (`RotateTool`, `ScaleTool`)."""
-        gesture = self._object_gesture
-        command = self._transform_command
-        if not self._transform_begun:
-            space = None if command == commands.SCALE else self._axis_constraint
-            self._transform_space = space
-            if command == commands.ROTATE:
-                gesture.axis = (
-                    self.camera.basis()[0] if space is None else _resolve_space(space, for_rotation=True)
-                )
-            elif command == commands.MOVE and space is not None:
-                gesture.mask = _resolve_space(space, for_rotation=False)
-            self._transform_begun = True
-        if command == commands.MOVE:
-            anchor = gesture.targets[0][0]
-            delta = self.camera.screen_delta_to_world(
-                object_space.to_world(anchor, anchor.pivot),
-                dx, dy, self.viewport_width, self.viewport_height,
-            )
-            if gesture.mask is not None:
-                delta = tuple(d * m for d, m in zip(delta, gesture.mask))
-            gesture.move = tuple(gesture.move[i] + delta[i] for i in range(3))
-        elif command == commands.ROTATE:
-            gesture.pixels += dx
-            self._object_rotate_angle(gesture, dx)
-        else:
-            gesture.pixels += dx + dy
-        for obj, start in gesture.targets:
-            obj.transform = self._object_transform_from(start)
-        for follower, follower_start, driver, driver_start, pair in gesture.followers:
-            follower.transform = (
-                follower_start
-                if driver.transform == driver_start
-                else mirror_transform(driver.transform, pair.normal, pair.offset)
-            )
-        self._placement_changed()
-        return True
-
-    def _object_rotate_angle(self, gesture: _ObjectGesture, dx: float) -> None:
-        """The Rotate angle of the object gesture: the dial about the first object's pivot when the pointer
-        is known (as the mesh Rotate), else the dx fallback."""
-        width, height = int(self.viewport_width), int(self.viewport_height)
-        if self._rotate_virtual is None:
-            gesture.angle += RotateTool.RADIANS_PER_PIXEL * dx * (PRECISION_GAIN if self._shift_held else 1.0)
-            return
-        if gesture.dial is None:
-            anchor = gesture.targets[0][0]
-            pivot = object_space.to_world(anchor, anchor.pivot)
-            gesture.dial = DialAngle(self.camera, pivot, gesture.axis, self._rotate_press, width, height)
-        gesture.angle = gesture.dial.update(*self._rotate_virtual, width, height, self._shift_held, self._snap_held())
-
-    def _object_transform_from(self, start: ObjectTransform) -> ObjectTransform:
-        """The transform the running gesture gives an object that started at `start`; exactly
-        `start` while the gesture has accumulated nothing."""
-        gesture = self._object_gesture
-        command = self._transform_command
-        if command == commands.MOVE:
-            if gesture.move == (0.0, 0.0, 0.0):
-                return start
-            translation = tuple(start.translation[i] + gesture.move[i] for i in range(3))
-            return dataclasses.replace(start, translation=translation)
-        if command == commands.ROTATE:
-            angle = gesture.angle
-            if angle == 0.0:
-                return start
-            turn = object_space.axis_angle_rotation(gesture.axis, angle)
-            rotation = object_space.orthonormalize(object_space.matmul3(turn, start.rotation))
-            return dataclasses.replace(start, rotation=rotation)
-        factor = max(ScaleTool.MIN_SCALE, 1.0 + ScaleTool.SCALE_PER_PIXEL * gesture.pixels)
-        if factor == 1.0:
-            return start
-        return dataclasses.replace(start, scale=start.scale * factor)
-
-    def _object_release(self) -> None:
-        """Release of W/E/R in mode `4`: one `ObjectTransformCommand` for every object that
-        changed (Q-3: one Undo step; mirror entry with `mesh_step=False`), status line on the
-        level (Q-6); a tap or a gesture that ends where it started records nothing."""
-        gesture = self._object_gesture
-        label, _, participle = _TRANSFORM_COMMANDS[self._transform_command]
-        if not self._transform_begun:
-            self._set_status(f"Object {label}: no motion, nothing {participle}")
-            return
-        starts = gesture.targets + [(f, start) for f, start, _, _, _ in gesture.followers]
-        changes = [(obj, start, obj.transform) for obj, start in starts if obj.transform != start]
-        if not changes:
-            self._set_status(f"Object {label}: no change")
-            return
-        objects = [obj for obj, _, _ in changes]
-        self.history.push(ObjectTransformCommand(changes, f"Object {label.lower()}"))
-        self._record_selection_history(gesture.selection_before, mesh_step=False)
-        self._set_status(
-            f"{self._objects_text(objects)}: {participle} (object level)"
-            f"{self._constraint_suffix(self._transform_space)}"
-            f"{self._mirror_note(gesture.followers)}"
-            f"{self._object_references_note(gesture.references)}"
-        )
-
-    def _object_cancel(self) -> None:
-        """Esc: every target gets its start transform back - the same instance, exactly."""
-        gesture = self._object_gesture
-        for obj, start in gesture.targets + [(f, start) for f, start, _, _, _ in gesture.followers]:
-            obj.transform = start
-        self._placement_changed()
-
-    @staticmethod
-    def _objects_text(objects: list[SceneObject]) -> str:
-        names = ", ".join(repr(obj.name) for obj in objects)
-        return f"Object {names}" if len(objects) == 1 else f"Objects {names}"
+        self._objects.sync_views()
 
     def frame_scene(self) -> None:
         """Richtet die Kamera auf die Bounds des aktuellen Meshs aus (WP-06 B1).
@@ -2178,69 +974,102 @@ class Application:
         grabbed = self.interaction.grab(Command(command, ctx))
         if grabbed is not PASS:
             return grabbed
-        return self._execute(command, context)
+        return self._execute(command, context, ctx)
 
-    def _execute(self, command: str, context: Optional[dict] = None) -> bool:
+    def _execute(self, command: str, context: Optional[dict] = None, ctx: RunContext = _API) -> bool:
         """The command's handler, ungated (AD-027 M2): called after `can_run` (or the gate of the path that
         reached it)."""
         self.flush_hover()
-        if command in MORPH_COMMANDS:
-            return self._morph.command(command)
-        tool_class = tool_for_command(command)
-        if tool_class:
-            return self.tool_manager.activate(command, context=context)
+        handler = self._handlers.get(command)
+        return False if handler is None else handler(command, ctx, context)
 
-        if command in (commands.UNDO, commands.REDO):
+    def _command_table(self) -> Mapping[str, Handler]:
+        """AD-027 §3.4: every command `Application` runs, with its one handler `(command, ctx, context) -> bool`
+        (`context`: the API's tool context). A static table, not a plugin system: nothing registers at runtime
+        (AD-013 H2 alternative E stays rejected). Where key and API differ today both stay, keyed on `ctx.source`
+        (§3.3): a gesture key arms its gesture, the API activates its tool; Undo from a key posts its status and
+        rebuilds the view; the hold keys, the constraint keys, Cancel and the session switches run from a key only."""
+        table: dict[str, Handler] = {}
+
+        def add(names, handler: Handler) -> None:
+            for name in names:
+                assert name not in table, f"two handlers for {name!r}"
+                table[name] = handler
+
+        def key_only(run: Callable[[str, Input], bool]) -> Handler:
+            return lambda command, ctx, context: ctx.source == "key" and run(command, ctx.input)
+
+        def plain(run: Callable[[str], bool]) -> Handler:
+            return lambda command, ctx, context: run(command)
+
+        objects, gestures, tools = self._objects, self._gestures, self._pointer_tools
+        add(MORPH_COMMANDS, self._run_morph)
+        add(TRANSFORM_COMMANDS, self._run_gesture)
+        add((commands.UNDO, commands.REDO), self._run_undo_redo)
+        add(_SESSION_SWITCH_COMMANDS, key_only(lambda command, input: self._session_switch(command)))
+        add((commands.LASSO_ARM,), key_only(lambda command, input: tools.lasso.arm(input.value)))
+        add((commands.PIVOT_PLACE,), key_only(lambda command, input: tools.pivot.arm(input.value)))
+        add((commands.LIGHT_DRAG,), key_only(lambda command, input: tools.light.arm(input.value)))
+        add(CONSTRAINT_SPACES, key_only(lambda command, input: gestures.constrain(CONSTRAINT_SPACES[command])))
+        add((commands.CANCEL,), key_only(lambda command, input: self._cancel()))
+        add((commands.TOGGLE_TRANSFORM_SPACE,), plain(lambda command: gestures.toggle_orientation()))
+        add((commands.TOGGLE_ORTHO,), plain(lambda command: self._toggle_ortho()))
+        add(_DISPLAY_COMMANDS, plain(self._display_command))
+        add(_LOOK_COMMANDS, plain(self._look_command))
+        add(_SOFT_COMMANDS, plain(self._soft_command))
+        add(SUBD_COMMANDS, plain(self._subd_command))
+        add(_MODE_COMMANDS, plain(lambda command: self._set_selection_mode(_MODE_COMMANDS[command])))
+        add(PLACEMENT_COMMANDS, plain(objects.placement_command))
+        add((commands.TOGGLE_REFERENCE,), plain(lambda command: objects.reference_command()))
+        add((commands.CONNECT,), plain(lambda command: self._connect_command()))
+        add(_REMOVAL_COMMANDS, plain(self._run_removal))
+        add((commands.COLLAPSE,), plain(lambda command: self._collapse_command()))
+        add((commands.BORDER_SELECT,), plain(lambda command: self._border_select()))
+        add((commands.CAP,), plain(lambda command: self._cap_command()))
+        add((commands.SYMMETRY_CYCLE,), plain(lambda command: self._symmetry.cycle()))
+        add((commands.RESYMMETRIZE,), plain(lambda command: self._symmetry.open()))
+        add(_MASK_COMMANDS, plain(self._mask_command))
+        add(_HIDE_COMMANDS, plain(self._hide_command))
+        add(_REGION_COMMANDS, plain(self._region_command))
+        add((commands.EDGE_LOOP, commands.EDGE_RING), plain(self._loop_select))
+        add((commands.LOOP_INSERT,), plain(lambda command: self._loop_insert()))
+        add(_SELECTION_STEP_COMMANDS, plain(self._selection_step))
+        return MappingProxyType(table)
+
+    def _run_morph(self, command: str, ctx: RunContext, context: Optional[dict]) -> bool:
+        """The morph keys (`MorphController.command`); N from a key holds the weight drag."""
+        if command == commands.MORPH_WEIGHT_DRAG and ctx.source == "key":
+            return self._morph.weight_hold.arm(ctx.input.value)
+        return self._morph.command(command)
+
+    def _run_gesture(self, command: str, ctx: RunContext, context: Optional[dict]) -> bool:
+        """A hold-key gesture: a key arms it (W/E/R also set the tool the gizmo uses - a tap sets it, "tool set");
+        the API activates its tool, with `context` begun at once (Pattern B), as before."""
+        if ctx.source == "key":
+            if command in TWEAK_TRANSFORMS:
+                self.tweak_command = command
+            return self._transform_arm(command, ctx.input.value)
+        if tool_for_command(command) is None:
+            return False
+        return self.tool_manager.activate(command, context=context)
+
+    def _run_undo_redo(self, command: str, ctx: RunContext, context: Optional[dict]) -> bool:
+        """E23: from a key a gesture that is only armed is disarmed first (a begun one refused it in `can_run`), and
+        the step posts its status and rebuilds the view; from the API only the step."""
+        if ctx.source != "key":
             self._apply_undo_redo(command)
             return True
-        if command == commands.TOGGLE_ORTHO:
-            return self._toggle_ortho()
-        if command in _DISPLAY_COMMANDS:
-            return self._display_command(command)
-        if command in _LOOK_COMMANDS:
-            return self._look_command(command)
-        if command in _SOFT_COMMANDS:
-            return self._soft_command(command)
-        if command in SUBD_COMMANDS:
-            return self._subd_command(command)
-        if command in _MODE_COMMANDS:
-            return self._set_selection_mode(_MODE_COMMANDS[command])
-        if command == commands.TOGGLE_TRANSFORM_SPACE:
-            return self._toggle_orientation()
-        if command in _PLACEMENT_COMMANDS:
-            return self._placement_command(command)
-        if command == commands.TOGGLE_REFERENCE:
-            return self._reference_command()
-        if command == commands.CONNECT:
-            return self._connect_command()
-        if command == commands.DELETE and self.selection.mode is SelectionMode.OBJECT:
-            return self._delete_objects_command()
-        if command in _REMOVAL_COMMANDS:
-            return self._removal_command(command)
-        if command == commands.COLLAPSE:
-            return self._collapse_command()
-        if command == commands.BORDER_SELECT:
-            return self._border_select()
-        if command == commands.CAP:
-            return self._cap_command()
-        if command == commands.SYMMETRY_CYCLE:
-            return self._symmetry.cycle()
-        if command in _MASK_COMMANDS:
-            return self._mask_command(command)
-        if command in _HIDE_COMMANDS:
-            return self._hide_command(command)
-        if command in _REGION_COMMANDS:
-            return self._region_command(command)
-        if command == commands.RESYMMETRIZE:
-            return self._symmetry.open()
-        if command in (commands.EDGE_LOOP, commands.EDGE_RING):
-            return self._loop_select(command)
-        if command == commands.LOOP_INSERT:
-            return self._loop_insert()
-        if command in _SELECTION_STEP_COMMANDS:
-            return self._selection_step(command)
+        gesture = self._gesture
+        if gesture is not None:
+            gesture.end()
+            self._refresh_hover()
+        return self._undo_redo(command)
 
-        return False
+    def _run_removal(self, command: str) -> bool:
+        """Delete / Dissolve; in mode `4` Delete removes the selected objects."""
+        if command == commands.DELETE and self.selection.mode is SelectionMode.OBJECT:
+            return self._objects.delete_selected()
+        return self._removal_command(command)
 
     # -- Symmetry (AD-SYM-04 A1-A3; `controllers.symmetry` since AD-027 M1) ------------------------
 
@@ -2275,7 +1104,7 @@ class Application:
         Several objects or a Reference selected: no switch, the status line says why."""
         note = ""
         if mode is not SelectionMode.OBJECT and self.selection.mode is SelectionMode.OBJECT:
-            note = self._edit_object_from_selection()
+            note = self._objects.edit_from_selection()
         self.selection.mode = mode
         self.selection.clear()
         self.selection.hovered = None
@@ -2288,31 +1117,8 @@ class Application:
             # AD-021 Q-6 (status line first, L-4): the edit object carries a placement.
             text += f" · object {edit.name!r} is placed (object level)"
         self._set_status(text)
-        self._sync_object_highlight()
+        self._objects.sync_highlight()
         return True
-
-    def _edit_object_from_selection(self) -> str:
-        """Q-5: switch the edit object to the one Normal object selected in `4` (E-14). Returns
-        the status-line note: whom `1`/`2`/`3` now edit, or why the edit object stayed."""
-        scene = self.scene
-        selected = [scene.objects[oid] for oid in sorted(self.selection.objects) if oid in scene.objects]
-        edit = scene.edit_object
-        if not selected:
-            return ""
-        if len(selected) > 1:
-            return f" · {len(selected)} objects selected - still editing {edit.name!r}"
-        (obj,) = selected
-        if obj.state is ObjectState.REFERENCE:
-            return f" · {obj.name!r} is a Reference - still editing {edit.name!r}"
-        if obj.id == edit.id:
-            return f" · editing {edit.name!r}"
-        owner = self.interaction_owner
-        if owner is not None:
-            return f" · not while the {owner} interaction runs - still editing {edit.name!r}"
-        started = time.perf_counter()
-        self._set_edit_object(obj.id)
-        self.last_edit_switch_seconds = time.perf_counter() - started
-        return f" · editing {obj.name!r}"
 
     # -- Contextual C: Split / Edge Connect / Vertex Connect (WP-06 B6, AD-017) --
 
@@ -2629,11 +1435,11 @@ class Application:
 
     def _apply_selection_step(self, label: str, ids: set, note: str = "") -> bool:
         selection = self.selection
-        before = _selection_state(selection)
+        before = selection_state(selection)
         ids = self._drop_hidden(ids)
         selection.set(ids)
         count = len(ids)
-        if _selection_state(selection) == before:
+        if selection_state(selection) == before:
             self._set_status(f"{label}: no change ({count} selected){note}")
             return False
         if self.viewport is not None:
@@ -2700,7 +1506,7 @@ class Application:
         x = sum(mesh.vertex_position(v)[0] for v in vertices) / n
         y = sum(mesh.vertex_position(v)[1] for v in vertices) / n
         z = sum(mesh.vertex_position(v)[2] for v in vertices) / n
-        return self._edit_camera.project_to_screen((x, y, z), self.viewport_width, self.viewport_height)
+        return self._objects.edit_camera.project_to_screen((x, y, z), self.viewport_width, self.viewport_height)
 
     def _loop_insert(self) -> bool:
         seeds = self._loop_seed_edges("Loop Insert")
@@ -2722,557 +1528,6 @@ class Application:
         if mesh.symmetry_definition is not None:
             effective = canonical_edges(SymmetryIndex(mesh), ring)
         return self._edge_connect(ring, effective, "Loop Insert", "Loop Insert")
-
-    def _slide_arm(self, key: str) -> bool:
-        """Hold G: plan the slide of the selected (else the hovered) edges now; refusals are
-        posted at the press, before anything moves. Nothing moves before the first motion.
-        In vertex mode G is Vertex Slide (`_vertex_slide_arm`)."""
-        if self.selection.mode is SelectionMode.VERTEX:
-            return self._vertex_slide_arm(key)
-        edges = self._loop_seed_edges(LOOP_SLIDE_LABEL)
-        if edges is None:
-            return False
-        mesh = self.scene.mesh
-        try:
-            plan = plan_loop_slide(mesh, edges)
-        except LoopSlideRefused as exc:
-            self._set_status(str(exc))
-            return False
-        self._transform_key = key
-        self._transform_command = commands.LOOP_SLIDE
-        self._transform_target = frozenset(plan.vertex_ids)
-        self._transform_begun = False
-        self._slide_plan = plan
-        self._slide_t = 0.0
-        self._slide_direction = self._slide_screen_direction(plan)
-        self._set_hovered(None)
-        count = len(plan.vertex_ids)
-        self._set_status(
-            f"{LOOP_SLIDE_LABEL}: {count} vertices - move the mouse, release {key.upper()} to commit"
-        )
-        return True
-
-    def _slide_screen_direction(self, plan: SlidePlan) -> tuple[float, float] | None:
-        """Mean screen vector from each driven vertex to its side-A target (px for t = 1)."""
-        camera = self._edit_camera
-        sx = sy = 0.0
-        n = 0
-        for orig, side_a, _ in plan.slides.values():
-            a = camera.project_to_screen(orig, self.viewport_width, self.viewport_height)
-            b = camera.project_to_screen(side_a, self.viewport_width, self.viewport_height)
-            if a is None or b is None:
-                continue
-            sx += b[0] - a[0]
-            sy += b[1] - a[1]
-            n += 1
-        if n == 0 or math.hypot(sx / n, sy / n) < 1.0:
-            return None
-        return (sx / n, sy / n)
-
-    def _vertex_slide_arm(self, key: str) -> bool:
-        """Hold G in vertex mode: plan the slide of the selected (else the hovered) vertices now; refusals
-        are posted at the press. Which edge each vertex takes is decided by the drag (`_vertex_slide_step`)."""
-        mesh = self.scene.mesh
-        selection = self.selection
-        vertices = {v for v in selection.vertices if mesh.is_valid_vertex(v)}
-        hovered = selection.hovered
-        if not vertices and isinstance(hovered, VertexId) and mesh.is_valid_vertex(hovered):
-            vertices = {hovered}
-        if not vertices:
-            self._set_status(f"{VERTEX_SLIDE_LABEL}: select or hover a vertex")
-            return False
-        try:
-            plan = plan_vertex_slide(
-                mesh, vertices, blocked=frozenset(self._hidden.vertices()), mask=self._mask_values(vertices)
-            )
-        except VertexSlideRefused as exc:
-            self._set_status(str(exc))
-            return False
-        camera, w, h = self._edit_camera, self.viewport_width, self.viewport_height
-        self._vslide_px = {
-            vid: (
-                camera.project_to_screen(origin, w, h),
-                tuple(camera.project_to_screen(p, w, h) for _, p in plan.candidates[vid]),
-            )
-            for vid, origin in plan.origins.items()
-        }
-        self._transform_key = key
-        self._transform_command = commands.LOOP_SLIDE
-        self._transform_target = frozenset(plan.vertex_ids)
-        self._transform_begun = False
-        self._vslide_plan = plan
-        self._vslide_drag = (0.0, 0.0)
-        self._set_hovered(None)
-        count = len(plan.vertex_ids)
-        noun = "vertex" if count == 1 else "vertices"
-        self._set_status(
-            f"{VERTEX_SLIDE_LABEL}: {count} {noun} - move the mouse towards an edge, release {key.upper()} to commit"
-        )
-        return True
-
-    def _vertex_slide_step(self, dx: float, dy: float) -> bool:
-        """Every motion: each driven vertex takes the edge whose screen direction best matches the net drag
-        since the press; the drag along the mean of those directions is the common amount (0 = start, 1 = on
-        the neighbour). Recomputed from the press state, so dragging back restores it."""
-        plan = self._vslide_plan
-        mesh = self.scene.mesh
-        if not self._transform_begun:
-            self._slide_before = mesh.begin_change()
-            self._slide_selection_before = self._selection_snapshot()
-            self._transform_begun = True
-        drag = (self._vslide_drag[0] + dx, self._vslide_drag[1] + dy)
-        self._vslide_drag = drag
-        chosen: dict[VertexId, VertexId] = {}
-        sx = sy = 0.0
-        for vid in plan.origins:
-            origin_px, candidates_px = self._vslide_px[vid]
-            i = best_neighbour(origin_px, candidates_px, drag)
-            if i is None:
-                continue
-            chosen[vid] = plan.candidates[vid][i][0]
-            sx += candidates_px[i][0] - origin_px[0]
-            sy += candidates_px[i][1] - origin_px[1]
-        t = 0.0
-        if chosen:
-            sx, sy = sx / len(chosen), sy / len(chosen)
-            length2 = sx * sx + sy * sy
-            if length2 >= 1.0:
-                t = max(0.0, min(plan.max_amount, (drag[0] * sx + drag[1] * sy) / length2))
-                if t < 1e-9:
-                    t = 0.0  # back at the press point (float sums of the motion): exactly the start
-        positions = vertex_slide_positions(plan, chosen, t)
-        for vid, position in positions.items():
-            mesh.set_vertex_position(vid, position)
-        self._pick_cache.invalidate()
-        self.viewport.on_vertices_moved(set(positions))
-        self._set_status(f"{VERTEX_SLIDE_LABEL}: {t * 100.0:.0f} %")
-        return True
-
-    def _slide_label(self) -> str:
-        return VERTEX_SLIDE_LABEL if self._vslide_plan is not None else LOOP_SLIDE_LABEL
-
-    def _slide_step(self, dx: float, dy: float) -> bool:
-        if self._vslide_plan is not None:
-            return self._vertex_slide_step(dx, dy)
-        plan = self._slide_plan
-        if plan is None:
-            return False
-        mesh = self.scene.mesh
-        if not self._transform_begun:
-            self._slide_before = mesh.begin_change()
-            self._slide_selection_before = self._selection_snapshot()
-            self._transform_begun = True
-        direction = self._slide_direction
-        if direction is None:
-            # Edges seen end-on: the Playground's mapping (horizontal motion).
-            self._slide_t += dx / self.viewport_width * 2.0
-        else:
-            self._slide_t += (dx * direction[0] + dy * direction[1]) / (
-                direction[0] ** 2 + direction[1] ** 2
-            )
-        self._slide_t = max(-plan.max_t, min(plan.max_t, self._slide_t))
-        positions = slide_positions(plan, self._slide_t)
-        for vid, position in positions.items():
-            mesh.set_vertex_position(vid, position)
-        self._pick_cache.invalidate()
-        self.viewport.on_vertices_moved(set(positions))
-        return True
-
-    def _slide_release(self) -> None:
-        mesh = self.scene.mesh
-        before = self._slide_before
-        label = self._slide_label()
-        if not self._transform_begun or before is None:
-            self._set_status(f"{label}: no change")
-            return
-        self._slide_before = None
-        delta = mesh.end_change(before)
-        if delta.empty:
-            self._set_status(f"{label}: no change")
-            return
-        self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=label))
-        self._record_selection_history(self._slide_selection_before)
-        self._soft_preview_refresh()
-        self._set_status(f"{label} committed")
-
-    def _slide_abort(self) -> None:
-        before = self._slide_before
-        plan = self._vslide_plan or self._slide_plan
-        if before is None or plan is None:
-            return
-        self._slide_before = None
-        self.scene.mesh.rollback_change(before)
-        self._pick_cache.invalidate()
-        if self.viewport is not None:
-            self.viewport.on_vertices_moved(set(plan.vertex_ids))
-
-    # -- Smooth / Relax (WP Toolbox Gaps C2) -----------------------------------------
-
-    def _smooth_arm(self, command: str, key: str) -> bool:
-        """Hold S / Alt+S: plan on the resolved selection (else the hovered element) now; refusals are
-        posted at the press. Nothing moves before the first motion or the release (tap)."""
-        relax = command == commands.RELAX
-        mesh = self.scene.mesh
-        selection = self.selection
-        target = resolve_selection_vertices(mesh, selection, selection.mode)
-        if not target and selection.hovered is not None:
-            target = _element_vertices(mesh, selection.hovered)
-        soft = self._soft if self._soft.enabled else None
-        try:
-            weights = None if soft is None or not target else self._smooth_soft_weights(target, soft)
-            plan = plan_smooth(mesh, target, relax=relax, weights=weights, mask=self._mask_values(target))
-        except (SmoothRefused, SoftSymmetryRefusal) as exc:
-            label = RELAX_LABEL if relax else SMOOTH_LABEL
-            text = str(exc)
-            self._set_status(text if text.startswith(label) else f"{label}: refused — {text}")
-            return False
-        self._smooth_seeds = frozenset(target)
-        self._transform_key = key
-        self._transform_command = command
-        self._transform_target = plan.movable
-        self._transform_begun = False
-        self._smooth_plan = plan
-        self._smooth_amount = 0.0
-        self._set_hovered(None)
-        if soft is not None:
-            # The same gesture state as a Soft W/E/R: live radius / flow steps go through it.
-            self._soft_gesture = soft
-            self._soft_gesture_reference = soft.world_radius * 100.0 / soft.radius_percent
-            self._smooth_show_weights()
-        soft_note = " (Soft: wheel = radius)" if soft is not None else ""
-        self._set_status(
-            f"{plan.label}: {len(plan.movable)} points{soft_note} - tap for one step, or drag right/left for"
-            f" more/less, release {key.upper()} to commit"
-        )
-        return True
-
-    def _smooth_soft_weights(self, seeds, soft: SoftSettings) -> dict[VertexId, float]:
-        """The influence of `seeds` by the same function and arguments as a Soft W/E/R (plain field, or
-        under a definition the symmetric field; raises `SoftSymmetryRefusal` like W/E/R at `begin()`)."""
-        mesh = self.scene.mesh
-        if mesh.symmetry_definition is None:
-            return compute_influence(
-                mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve,
-                curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
-            )
-        return symmetric_influence(
-            mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve,
-            curve_power=soft.curve_power, correspondence=vertex_correspondence(mesh),
-            flow_ratio=soft.flow_ratio,
-        ).weights
-
-    def _smooth_show_weights(self) -> None:
-        """The display shows the held Smooth / Relax's own weights (as `_soft_show_op_weights` for W/E/R)."""
-        if self._soft_overlay is None and self._soft_shading_overlay is None:
-            return
-        self._soft_op_running = True
-        self._soft_gesture_shown = True
-        display = self._soft_gesture or self._soft
-        weights = self._smooth_plan.weights if display.bands_visible else None
-        self._soft_show(weights, display.view_mode)
-
-    def _smooth_soft_live(self) -> bool:
-        """A held Smooth / Relax with Soft on (armed or dragging): the wheel steps its radius."""
-        return (
-            self._transform_command in _SMOOTH_COMMANDS
-            and self._smooth_plan is not None
-            and self._smooth_plan.weights is not None
-            and self._soft_gesture is not None
-        )
-
-    def _smooth_reweight(self, gesture: SoftSettings) -> set[VertexId]:
-        """New radius / flow for the held Smooth / Relax: back to the press geometry (only the movable
-        vertices were written), the influence and plan again from there, the current strength replayed.
-        Returns the vertices whose position may have changed."""
-        mesh = self.scene.mesh
-        old = self._smooth_plan
-        if self._transform_begun:
-            for vid in old.movable:
-                mesh.set_vertex_position(vid, old.start[vid])
-        try:
-            weights = self._smooth_soft_weights(self._smooth_seeds, gesture)
-            plan = plan_smooth(
-                mesh, self._smooth_seeds, relax=old.relax, weights=weights, mask=self._mask_values(self._smooth_seeds)
-            )
-        except (SmoothRefused, SoftSymmetryRefusal):
-            plan = old  # the seeds did not change: keep the field it had
-        self._smooth_plan = plan
-        self._transform_target = plan.movable
-        if self._transform_begun:
-            self._smooth_write(self._smooth_amount)
-        return set(old.movable) | set(plan.movable)
-
-    def _smooth_write(self, amount: float) -> set[VertexId]:
-        positions = self._smooth_plan.positions(amount)
-        mesh = self.scene.mesh
-        for vid, position in positions.items():
-            mesh.set_vertex_position(vid, position)
-        return set(positions)
-
-    def _smooth_step(self, dx: float) -> bool:
-        """Every motion recomputes the positions from the press state (no drift): right = more steps,
-        left = fewer, down to the start state. Journal from the first motion (as Loop Slide)."""
-        plan = self._smooth_plan
-        if plan is None or dx == 0:
-            return False
-        mesh = self.scene.mesh
-        if not self._transform_begun:
-            self._smooth_before = mesh.begin_change()
-            self._smooth_selection_before = self._selection_snapshot()
-            self._transform_begun = True
-        self._smooth_amount = max(0.0, self._smooth_amount + dx / SMOOTH_PX_PER_STEP)
-        moved = self._smooth_write(self._smooth_amount)
-        self._pick_cache.invalidate()
-        self.viewport.on_vertices_moved(moved)
-        self._set_status(f"{plan.label}: strength {self._smooth_amount:.2f} steps")
-        return True
-
-    def _smooth_release(self) -> None:
-        """Release: a drag commits its journal as one entry; a tap (no motion) is one fixed step
-        (`TAP_AMOUNT`) through the one commit boundary."""
-        plan = self._smooth_plan
-        if plan is None:
-            return
-        mesh = self.scene.mesh
-        if not self._transform_begun:
-            changed = self._mesh_transaction(
-                plan.label,
-                lambda _mesh: self._smooth_write(SMOOTH_TAP_AMOUNT),
-                moved_of=lambda moved: moved,
-            ).changed
-            self._set_status(f"{plan.label}: one step" if changed else f"{plan.label}: no change")
-            return
-        before, self._smooth_before = self._smooth_before, None
-        delta = mesh.end_change(before)
-        if delta.empty:
-            self._set_status(f"{plan.label}: no change")
-            return
-        self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=plan.label))
-        self._record_selection_history(self._smooth_selection_before)
-        self._soft_preview_refresh()
-        self._set_status(f"{plan.label} committed ({self._smooth_amount:.2f} steps)")
-
-    def _smooth_abort(self) -> None:
-        before, self._smooth_before = self._smooth_before, None
-        if before is None or self._smooth_plan is None:
-            return
-        self.scene.mesh.rollback_change(before)
-        self._pick_cache.invalidate()
-        if self.viewport is not None:
-            self.viewport.on_vertices_moved(set(self._smooth_plan.movable))
-
-    # -- Inset / Bevel (2026-10-29, Manu "Inset (Polygons), Chamfer/Bevel (Edges, Vertices)", Grundfunktion;
-    #    `PROVISIONAL`) ------------------------------------------------------------------------------
-    #
-    # A width gesture in the T family: the press plans and refuses (nothing changes), the drag past
-    # EXTRUDE_BEGIN_PX builds the topology once (`build_*`), every further motion only moves the new
-    # vertices (right = wider, left = narrower, down to 0; Shift = fine), the release commits one
-    # History entry, Esc / a tap / width 0 leave the mesh exactly as it was. Under a symmetry definition
-    # the declared planner (`symmetry_declarations.OFFSET_COORDINATORS`) expands the selection by its
-    # partners and the coordinator keeps the result an exact mirror.
-
-    def _inset_arm(self, key: str) -> bool:
-        """Hold I in face mode: the selected faces, else the hovered face."""
-        selection = self.selection
-        mesh = self.scene.mesh
-        faces = {f for f in selection.faces if mesh.is_valid_face(f)}
-        hovered = selection.hovered
-        if not faces and isinstance(hovered, FaceId) and mesh.is_valid_face(hovered):
-            faces = {hovered}
-        if not faces:
-            self._set_status(f"{INSET_LABEL}: select or hover a face")
-            return False
-        symmetric = None
-        planner = (
-            symmetry_declarations.OFFSET_COORDINATORS.get(commands.INSET)
-            if mesh.symmetry_definition is not None
-            else None
-        )
-        try:
-            if planner is not None:
-                faces, symmetric = planner(mesh, faces)
-            plan = plan_inset(mesh, faces)
-        except SymmetryRefusal as exc:
-            self._set_status(str(exc))
-            return False
-        except InsetRefused as exc:
-            self._set_status(str(exc))
-            return False
-
-        def residue(result: OffsetBuild) -> None:
-            kept = {f for f in result.faces if mesh.is_valid_face(f)}
-            if symmetric is not None:
-                kept = symmetric.residue(mesh, kept, mesh.face_vertices)
-            selection.clear()
-            selection.mode = SelectionMode.FACE
-            selection.add(kept)
-
-        anchor = {v for f in plan.faces for v in mesh.face_vertices(f)}
-        self._offset_arm(commands.INSET, key, INSET_LABEL, lambda m: build_inset(m, plan), symmetric, residue, anchor)
-        count = len(plan.faces)
-        self._set_status(
-            f"{INSET_LABEL}: {count} {'face' if count == 1 else 'faces'} - drag right / left for the width,"
-            f" release {key.upper()} to commit"
-        )
-        return True
-
-    def _bevel_arm(self, key: str) -> bool:
-        """Hold Ctrl+B: the selected vertices / edges / faces of the active mode, else the hovered one. Face mode
-        bevels the faces' inner edges. Residue (`PROVISIONAL`, Blender): the new vertices in vertex mode, the new
-        faces' edges in edge mode, the new faces in face mode."""
-        selection = self.selection
-        mesh = self.scene.mesh
-        mode = selection.mode
-        current = {
-            SelectionMode.VERTEX: selection.vertices,
-            SelectionMode.EDGE: selection.edges,
-            SelectionMode.FACE: selection.faces,
-        }.get(mode)
-        if current is None:
-            self._set_status(f"{BEVEL_LABEL}: vertex, edge or face mode needed (1/2/3)")
-            return False
-        valid = {
-            SelectionMode.VERTEX: mesh.is_valid_vertex,
-            SelectionMode.EDGE: mesh.is_valid_edge,
-            SelectionMode.FACE: mesh.is_valid_face,
-        }[mode]
-        ids = {i for i in current if valid(i)}
-        if not ids and self._hovered_of_mode() is not None:
-            ids = {self._hovered_of_mode()}
-        if not ids:
-            self._set_status(f"{BEVEL_LABEL}: select or hover a {mode.name.lower()}")
-            return False
-        kind = SelectionMode.VERTEX if mode is SelectionMode.VERTEX else SelectionMode.EDGE
-        if mode is SelectionMode.FACE:
-            ids = {e for f in ids for e in mesh.face_edges(f) if len(mesh.edge_faces(e)) == 2}
-        symmetric = None
-        planner = (
-            symmetry_declarations.OFFSET_COORDINATORS.get(commands.BEVEL)
-            if mesh.symmetry_definition is not None
-            else None
-        )
-        try:
-            if planner is not None and ids:
-                ids, symmetric = planner(mesh, kind, ids)
-            plan = plan_bevel(mesh, kind, ids)
-        except SymmetryRefusal as exc:
-            self._set_status(str(exc))
-            return False
-        except BevelRefused as exc:
-            self._set_status(str(exc))
-            return False
-
-        def residue(result: OffsetBuild) -> None:
-            if mode is SelectionMode.VERTEX:
-                kept, vertices_of = {v for v in result.vertices if mesh.is_valid_vertex(v)}, lambda v: (v,)
-            elif mode is SelectionMode.EDGE:
-                kept = {e for f in result.faces if mesh.is_valid_face(f) for e in mesh.face_edges(f)}
-                vertices_of = mesh.edge_vertices
-            else:
-                kept, vertices_of = {f for f in result.faces if mesh.is_valid_face(f)}, mesh.face_vertices
-            if symmetric is not None:
-                kept = symmetric.residue(mesh, kept, vertices_of)
-            selection.clear()
-            selection.mode = mode
-            selection.add(kept)
-
-        anchor = set(plan.fans)
-        self._offset_arm(commands.BEVEL, key, BEVEL_LABEL, lambda m: build_bevel(m, plan), symmetric, residue, anchor)
-        count = len(plan.vertices) if plan.vertex_mode else len(plan.edges)
-        noun = ("vertex" if count == 1 else "vertices") if plan.vertex_mode else ("edge" if count == 1 else "edges")
-        self._set_status(
-            f"{BEVEL_LABEL}: {count} {noun} - drag right / left for the width, release {key.upper()} to commit"
-        )
-        return True
-
-    def _offset_arm(self, command, key, label, build, symmetric, residue, anchor_vertices) -> None:
-        mesh = self.scene.mesh
-        n = len(anchor_vertices)
-        centre = tuple(sum(mesh.vertex_position(v)[i] for v in anchor_vertices) / n for i in range(3))
-        step = self._edit_camera.screen_delta_to_world(centre, 1.0, 0.0, self.viewport_width, self.viewport_height)
-        world_per_px = math.sqrt(sum(c * c for c in step)) or 0.01
-        self._offset = _OffsetGesture(label, build, symmetric, residue, world_per_px)
-        self._transform_key = key
-        self._transform_command = command
-        self._transform_target = frozenset(anchor_vertices)
-        self._transform_begun = False
-        self._set_hovered(None)
-
-    def _offset_step(self, dx: float, dy: float) -> bool:
-        gesture = self._offset
-        mesh = self.scene.mesh
-        if not self._transform_begun:
-            px, py = gesture.travel[0] + dx, gesture.travel[1] + dy
-            gesture.travel = (px, py)
-            if math.hypot(px, py) < EXTRUDE_BEGIN_PX:
-                return False
-            gesture.selection_before = self._selection_snapshot()
-            gesture.before = mesh.begin_change()
-            try:
-                gesture.result = gesture.build(mesh)
-            except OffsetRefused as exc:
-                mesh.rollback_change(gesture.before)
-                gesture.before = None
-                self._transform_end()
-                self._set_status(str(exc))
-                self._refresh_hover()
-                return False
-            except BaseException:
-                mesh.rollback_change(gesture.before)
-                gesture.before = None
-                raise
-            self._transform_begun = True
-            self._extrude_topology_changed()
-            dx = px
-        result = gesture.result
-        gesture.width = max(0.0, min(result.limit, gesture.width + dx * gesture.world_per_px))
-        positions = result.positions(gesture.width)
-        if gesture.symmetric is not None:
-            positions = gesture.symmetric.place(result.keys, positions)
-        for vid, position in positions.items():
-            mesh.set_vertex_position(vid, position)
-        self._pick_cache.invalidate()
-        if self.viewport is not None:
-            self.viewport.on_vertices_moved(set(positions))
-        at_limit = " (limit)" if gesture.width >= result.limit else ""
-        self._set_status(f"{gesture.label}: width {gesture.width:.4g}{at_limit}")
-        return True
-
-    def _offset_release(self) -> None:
-        gesture = self._offset
-        mesh = self.scene.mesh
-        if not self._transform_begun or gesture.before is None:
-            self._set_status(f"{gesture.label}: no change")
-            return
-        if gesture.width < EXTRUDE_MIN_DISTANCE:
-            self._offset_abort()
-            self._set_status(f"{gesture.label}: no change")
-            return
-        try:
-            if gesture.symmetric is not None:
-                gesture.symmetric.finish(mesh, gesture.before)
-            face_regions_api.inherit_into(mesh, gesture.before)
-        except SymmetryRefusal as exc:
-            self._offset_abort()
-            self._set_status(str(exc))
-            return
-        before, gesture.before = gesture.before, None
-        self.history.push(MeshDeltaCommand(mesh=mesh, delta=mesh.end_change(before), description=gesture.label))
-        gesture.residue(gesture.result)
-        self._record_selection_history(gesture.selection_before)
-        self._extrude_topology_changed()
-        self._set_status(f"{gesture.label} committed")
-
-    def _offset_abort(self) -> None:
-        """Exact prior mesh and selection, no History entry."""
-        gesture = self._offset
-        if gesture is None or gesture.before is None:
-            return
-        before, gesture.before = gesture.before, None
-        self.scene.mesh.rollback_change(before)
-        if gesture.selection_before is not None:
-            self._restore_selection(gesture.selection_before)
-        self._extrude_topology_changed()
 
     # -- Delete / Dissolve (WP Delete/Dissolve) ----------------------------------
 
@@ -3459,15 +1714,7 @@ class Application:
 
     def _hovered_of_mode(self):
         """The hovered element if it is a valid element of the active component mode, else None."""
-        hovered = self.selection.hovered
-        kind, valid = {
-            SelectionMode.VERTEX: (VertexId, self.scene.mesh.is_valid_vertex),
-            SelectionMode.EDGE: (EdgeId, self.scene.mesh.is_valid_edge),
-            SelectionMode.FACE: (FaceId, self.scene.mesh.is_valid_face),
-        }.get(self.selection.mode, (None, None))
-        if kind is None or not isinstance(hovered, kind) or not valid(hovered):
-            return None
-        return hovered
+        return hovered_of_mode(self.scene.mesh, self.selection)
 
     def _cap_command(self) -> bool:
         """Shift+B (`mirai.topology.border.apply_cap`): each closed border the selection (else the hovered
@@ -3611,10 +1858,7 @@ class Application:
 
     def _display_command(self, command: str) -> bool:
         if command == commands.TOGGLE_REFERENCE_GHOST:
-            self.reference_ghost = not self.reference_ghost
-            self._sync_object_views()
-            self._set_status(f"References: {'ghost' if self.reference_ghost else 'shaded'}")
-            return True
+            return self._objects.toggle_reference_ghost()
         if command == commands.TOGGLE_REGION_TINT:
             self.display.toggle_region_tint()
             self._apply_display()
@@ -3677,96 +1921,19 @@ class Application:
         self._set_status(f"Light: {row.label} {row.format(self.display.light_rig)}{suffix}")
         return changed
 
-    # -- Object material (AD-024 §6/§7, `PROVISIONAL` keys) ----------------------------------
-
-    def _material_preview(self) -> SceneObject | None:
-        """The object whose values the Look row shows (no status line): the edit object in `1/2/3`,
-        the first selected non-Reference in `4` (None = none)."""
-        scene = self.scene
-        if self.selection.mode is not SelectionMode.OBJECT:
-            return scene.edit_object
-        for oid in sorted(self.selection.objects):
-            obj = scene.objects.get(oid)
-            if obj is not None and obj.state is not ObjectState.REFERENCE:
-                return obj
-        return None
-
-    def _material_targets(self, label: str) -> tuple[list[SceneObject], tuple[str, ...]] | None:
-        """AD-024 §6: the selected objects in `4` (References skipped - locked, Q-M3), the edit object in
-        `1/2/3`. None (refusal posted) while an interaction owns the keys or nothing can be edited."""
-        owner = self.interaction_owner
-        if owner is not None or self._pointer_tools.drag_select is not None:
-            self._set_status(f"{label}: not while the {owner or 'selection'} interaction runs")
-            return None
-        if self.selection.mode is SelectionMode.OBJECT:
-            return self._object_targets(label, "or press 1/2/3 for the edited object")
-        return [self.scene.edit_object], ()
-
-    def _commit_materials(self, changes: list) -> bool:
-        """One Undo step for `(obj, before, after)` (unchanged ones dropped) and the view; the caller
-        posts the status line. True = something changed."""
-        changes = [(obj, before, after) for obj, before, after in changes if before != after]
-        if not changes:
-            return False
-        before = self._selection_snapshot()
-        for obj, _, after in changes:
-            obj.material = after
-        names = ", ".join(repr(obj.name) for obj, _, _ in changes)
-        self.history.push(ObjectMaterialCommand(changes, f"Material {names}"))
-        self._record_selection_history(before, mesh_step=False)
-        self._sync_object_views()
-        return True
+    # -- Object material (AD-024 §6/§7, `PROVISIONAL` keys; `controllers.objects` since AD-027 M7) --------------
 
     def set_object_material(self, **changes) -> bool:
         """The edit path of the object material (keys now, the GUI later): any of `base_color`,
-        `specular`, `glossiness`, clamped to [0, 1], set on every target (`_material_targets`); one Undo
-        step. True = a material changed. An object without a material starts from the default look."""
-        values = clamp_material_values(changes)
-        picked = self._material_targets("Material")
-        if picked is None:
-            return False
-        targets, references = picked
-        default = self.display.surface_finish
-        planned = []
-        for obj in targets:
-            current = editable_material(obj, default)
-            after = ObjectMaterial(
-                values.get("base_color", current.base_color),
-                specular=values.get("specular", current.specular),
-                glossiness=values.get("glossiness", current.glossiness),
-            )
-            planned.append((obj, obj.material, after))
-        changed = self._commit_materials(planned)
-        self._set_status(
-            ("Material set" if changed else "Material unchanged") + self._object_references_note(references)
-        )
-        return changed
+        `specular`, `glossiness`, clamped to [0, 1], set on every target (the selected objects in `4`, the edit
+        object in `1/2/3`); one Undo step. True = a material changed. An object without a material starts from the
+        default look."""
+        return self._objects.set_material(**changes)
 
     def step_object_material(self, row_id: str, direction: int, fine: bool = False) -> bool:
         """One value step of the material row `row_id` on every target, each from its own values
         (`look_controls.MATERIAL_ROWS`); one Undo step. True = a material changed."""
-        row = material_row(row_id)
-        picked = self._material_targets(row.label)
-        if picked is None:
-            return False
-        targets, references = picked
-        default = self.display.surface_finish
-        planned = []
-        for obj in targets:
-            current = editable_material(obj, default)
-            if row.applies(current):
-                planned.append((obj, obj.material, row.step(current, direction, fine)))
-        if not planned:
-            self._set_status(f"{row.label} inaktiv - {row.inactive_reason}")
-            return False
-        changed = self._commit_materials(planned)
-        shown = editable_material(planned[0][0], default)
-        suffix = "" if changed else " (Grenze)"
-        names = ", ".join(repr(obj.name) for obj, _, _ in planned)
-        self._set_status(
-            f"{row.label} {row.format(shown)}{suffix} - {names}" + self._object_references_note(references)
-        )
-        return changed
+        return self._objects.step_material(row_id, direction, fine)
 
     # -- Look rows (AD-024 §6/§8) ------------------------------------------------------------
 
@@ -3780,7 +1947,7 @@ class Application:
         """The active row and its value (HUD, status line). A material row shows the object it reads."""
         row = self.look_row
         if isinstance(row, MaterialRow):
-            obj = self._material_preview()
+            obj = self._objects.material_preview()
             if obj is None:
                 return f"{row.label} (kein Objekt gewählt)"
             values = editable_material(obj, self.display.surface_finish)
@@ -3830,57 +1997,75 @@ class Application:
         self.viewport.set_light(self.display.light_rig)
         if self.viewport.set_surface_finish(self.display.surface_finish):
             # The global finish resets every entry; the objects' own materials go back on (AD-024 §4).
-            self._sync_object_views()
+            self._objects.sync_views()
         self.subdivision.set_faces_shown(self.display.show_faces)
 
     # -- Tasten (WP-06 B3) ------------------------------------------------------
 
     @property
+    def _gesture(self) -> GestureSession | None:
+        """The held gesture in the slot (`controllers.gestures`), else None."""
+        return self._gestures.session
+
+    @property
     def move_armed(self) -> bool:
         """Move-Taste gehalten (scharf oder bereits laufend)."""
-        return self._transform_command == commands.MOVE
+        return self.transform_command == commands.MOVE
 
     @property
     def move_interacting(self) -> bool:
         """Move läuft (erste Mausbewegung nach dem Scharfschalten erfolgt)."""
-        return self.move_armed and self._transform_begun
+        return self.move_armed and self.transform_interacting
 
     @property
     def move_target(self) -> frozenset[VertexId]:
         """Beim Scharfschalten fixierte Ziel-Vertices (leer = nicht scharf)."""
-        return self._transform_target if self.move_armed else frozenset()
+        return self.transform_target if self.move_armed else frozenset()
 
     @property
     def transform_command(self) -> str | None:
         """Scharf geschalteter Hold-Key-Transform (MOVE/ROTATE/SCALE, seit WP-06 B9
         auch EXTRUDE; None = keiner)."""
-        return self._transform_command
+        gesture = self._gesture
+        return None if gesture is None else gesture.command
 
     @property
     def transform_interacting(self) -> bool:
         """Der scharfe Transform läuft (erste Mausbewegung erfolgt)."""
-        return self._transform_begun
+        gesture = self._gesture
+        return gesture is not None and gesture.begun
 
     @property
     def transform_target(self) -> frozenset[VertexId]:
         """Beim Scharfschalten fixierte Ziel-Vertices (leer = nicht scharf)."""
-        return self._transform_target
+        gesture = self._gesture
+        return frozenset() if gesture is None else gesture.target
 
     @property
     def transform_space(self) -> str | None:
         """`space` der laufenden Geste, fix ab `begin()` (None = frei bzw.
         keine Geste)."""
-        return self._transform_space
+        gesture = self._gesture
+        return None if gesture is None else gesture.space
 
     @property
     def transform_orientation(self) -> str:
         """`world` or `normal` (WP Toolbox Gaps C1): the frame the axis constraints and the gizmo use."""
-        return self._orientation
+        return self._gestures.orientation
 
     @property
     def axis_constraint(self) -> str | None:
         """Achsen-/Ebenen-Constraint als `space`-String (None = frei); one-shot or sticky (`constraint_mode`)."""
-        return self._axis_constraint
+        return self._gestures.axis_constraint
+
+    @property
+    def constraint_mode(self) -> str:
+        """How long a constraint lives: `gestures.CONSTRAINT_ONE_SHOT` (default) or `CONSTRAINT_STICKY`."""
+        return self._gestures.constraint_mode
+
+    @constraint_mode.setter
+    def constraint_mode(self, mode: str) -> None:
+        self._gestures.constraint_mode = mode
 
     @property
     def soft_settings(self) -> SoftSettings:
@@ -3893,10 +2078,8 @@ class Application:
         (AD-013 H2 addendum, H2-R2): `"transform"` while W/E/R (and, WP-06 B9, T =
         Extrude - the same hold-key family, no new value) is armed or running,
         `"knife"` during a Knife session, `"resymmetrize"` while the Re-Symmetrize
-        preview is open (AD-SYM-04 A3), else None. Camera gestures
+        preview is open (AD-SYM-04 A3), else None: the slot's session (AD-027 §3.2). Camera gestures
         (orbit, pan, zoom) own no keys and are never an owner."""
-        if self._transform_command is not None:
-            return "transform"
         return self.interaction.owner
 
     @property
@@ -3955,41 +2138,9 @@ class Application:
         return command
 
     def _key_command(self, command: str | None, input: Input) -> bool:
-        """A key's command after `can_run` let it through (AD-027 M2): the hold keys arm, the rest runs."""
-        if command in SUBD_COMMANDS:
-            return self._execute(command)
-        if command in MORPH_COMMANDS:
-            if command == commands.MORPH_WEIGHT_DRAG:
-                return self._morph.weight_hold.arm(input.value)
-            return self._execute(command)
-        if command in _SESSION_SWITCH_COMMANDS:
-            return self._session_switch(command)
-        if command == commands.LASSO_ARM:
-            return self._pointer_tools.lasso.arm(input.value)
-        if command == commands.PIVOT_PLACE:
-            return self._pointer_tools.pivot.arm(input.value)
-        if command == commands.LIGHT_DRAG:
-            return self._pointer_tools.light.arm(input.value)
-        if command in _TWEAK_TRANSFORMS:
-            # The gizmo (and the unbound `Tweak` drag) uses the last W/E/R pressed - a tap sets it ("tool set").
-            self.tweak_command = command
-        if command in _TRANSFORM_COMMANDS:
-            return self._transform_arm(command, input.value)
-        if command in _CONSTRAINT_SPACES:
-            return self._constrain(_CONSTRAINT_SPACES[command])
-        if command == commands.TOGGLE_TRANSFORM_SPACE:
-            return self._toggle_orientation()
-        if command == commands.CANCEL:
-            return self._cancel()
-        if command in (commands.UNDO, commands.REDO):
-            # E23: only armed -> disarm first, then run (a begun gesture refused it in `can_run`).
-            if self._transform_key is not None:
-                self._transform_end()
-                self._refresh_hover()
-            return self._undo_redo(command)
-        if command in _KEY_COMMANDS:
-            return self._execute(command)
-        return False
+        """A key's command after `can_run` let it through (AD-027 M2): its handler from the table (§3.4)."""
+        handler = self._handlers.get(command)
+        return False if handler is None else handler(command, RunContext("key", input), None)
 
     def key_release(self, input: Input) -> bool:
         """Taste losgelassen. True = das Loslassen hat etwas bewirkt.
@@ -4003,301 +2154,50 @@ class Application:
         for hold in (tools.lasso, tools.pivot, self._morph.weight_hold, tools.light):
             if hold.key is not None and input.value == hold.key:
                 return hold.release()
-        if self._transform_key is None or input.value != self._transform_key:
-            return False
-        self._transform_finish()
-        return True
-
-    def _transform_finish(self) -> None:
-        """End the armed/running hold gesture: commit after motion, else just disarm. The
-        release of its key (`key_release`) or, for an LMB-drag transform, of the LMB (`pointer_release`).
-        A one-shot constraint is cleared by the commit of the Move / Rotate / Scale gesture that used it."""
-        label, _, participle = _TRANSFORM_COMMANDS[self._transform_command]
-        consumed = self._transform_begun and self._transform_command in _TWEAK_TRANSFORMS
-        if self._object_gesture is not None:
-            self._object_release()
-        elif self._transform_command == commands.EXTRUDE:
-            self._extrude_release()
-        elif self._transform_command == commands.LOOP_SLIDE:
-            self._slide_release()
-        elif self._transform_command in _SMOOTH_COMMANDS:
-            self._smooth_release()
-        elif self._offset is not None:
-            self._offset_release()
-        elif self._transform_begun:
-            before = self._selection_snapshot()
-            command = self.tool_manager.commit()
-            if command is not None:
-                # Move/Rotate/Scale never change the Selection itself, only
-                # vertex positions — before and after are the same snapshot.
-                self._record_selection_history(before)
-            outcome = f"{label} committed" if command is not None else f"{label}: no change"
-            self._set_status(outcome + self._constraint_suffix(self._transform_space))
-        else:
-            self._set_status(f"{label}: tool set (no motion, nothing {participle})")
-        if consumed and self._consume_constraint():
-            self._set_status(f"{self.status_message} · free again (one-shot)")
-        self._transform_end()
-        self._refresh_hover()
-
-    def _consume_constraint(self) -> bool:
-        """One-shot (Manu A1, E1): the committed gesture used the constraint, so it goes - unless a constraint key
-        was pressed during the gesture (that one is for the next gesture) or the gesture ignored it. True = cleared."""
-        if (
-            self.constraint_mode != CONSTRAINT_ONE_SHOT
-            or self._constraint_retouched
-            or self._axis_constraint is None
-            or self._transform_space is None  # not used: object Scale is always uniform
-        ):
-            return False
-        self._axis_constraint = None
-        return True
+        return self.interaction.handle(KeyRelease(input)) is True  # the held gesture's key: its commit
 
     @property
     def tweak_running(self) -> bool:
         """True while W/E/R is held for a gesture (armed or begun): the user-facing "Tweak" (Manu A2, 2026-10-28) -
         not a gizmo drag (LMB) and not T / G / S."""
-        return self._transform_key not in (None, TWEAK_KEY) and self._transform_command in _TWEAK_TRANSFORMS
-
-    def _commit_hint(self, key: str) -> str:
-        """The arm line's instruction; the hold-key gesture is named "Tweak" there (Manu A2)."""
-        if key == TWEAK_KEY:
-            return " - move the mouse, release the mouse button to commit"
-        return f" - Tweak: move the mouse, release {key.upper()} to commit"
+        gesture = self._gesture
+        return gesture is not None and gesture.key != TWEAK_KEY and gesture.command in TWEAK_TRANSFORMS
 
     def _transform_arm(self, command: str, key: str) -> bool:
-        """Transform scharf schalten (E21/E28): Ziel = aufgelöste Selection,
-        sonst die Vertices des gehoverten Elements (Vertex/Edge/Face, B5b),
-        sonst ablehnen. Tool aktiv, `begin()` erst bei Bewegung. Ist schon
-        eine Transform-Taste gehalten, wird abgelehnt."""
-        if self._transform_key is not None or self.viewport is None:
+        """Arm a hold-key gesture (E21/E28; `controllers.gestures`). Refused while one is held already."""
+        if self._gesture is not None or self.viewport is None:
             return False
-        gizmo = self._pointer_tools.gizmo_press
-        if key == TWEAK_KEY:
-            press = (None if gizmo is None else gizmo.press_xy) or self._press_point or self._cursor
-        else:
-            press = self._cursor
-        self._rotate_press = None if press is None else (float(press[0]), float(press[1]))
-        self._rotate_virtual = self._rotate_press
-        self._ctrl_snap_ok = not (self._ctrl_held and key == TWEAK_KEY and gizmo is None)
+        origin = self._gestures.origin(key)
         if command == commands.EXTRUDE:
-            return self._extrude_arm(key)
+            return self._gestures.arm_extrude(key, origin)
         if command == commands.LOOP_SLIDE:
-            return self._slide_arm(key)
-        if command in _SMOOTH_COMMANDS:
-            return self._smooth_arm(command, key)
+            return self._gestures.arm_slide(key, origin)
+        if command in SMOOTH_COMMANDS:
+            return self._gestures.arm_smooth(command, key, origin)
         if command == commands.INSET:
-            return self._inset_arm(key)
+            return self._gestures.arm_inset(key, origin)
         if command == commands.BEVEL:
-            return self._bevel_arm(key)
+            return self._gestures.arm_bevel(key, origin)
         if self.selection.mode is SelectionMode.OBJECT:
-            return self._object_arm(command, key)
-        label, verb, _ = _TRANSFORM_COMMANDS[command]
-        selection = self.selection
-        target = resolve_selection_vertices(self.scene.mesh, selection, selection.mode)
-        hovered = selection.hovered
-        from_hover = not target and hovered is not None
-        if from_hover:
-            target = _element_vertices(self.scene.mesh, hovered)
-        if not target:
-            noun = selection.mode.name.lower()
-            self._set_status(f"{label}: nothing to {verb} (select or hover a {noun})")
-            return False
-        if not unblocked(target, self._mask_values(target)):
-            self._set_status(f"{label}: all selected points are masked (Ctrl+M unmasks)")
-            return False
-        self._execute(command)
-        self._transform_key = key
-        self._transform_command = command
-        self._transform_target = frozenset(target)
-        self._transform_begun = False
-        # Kein Hover-Highlight über dem, was gleich transformiert wird
-        # (Playground WP-STAB-11 clear-on-arm).
-        if from_hover or _active_selection_contains(selection, hovered):
-            self._set_hovered(None)
-        if from_hover:
-            # F11: a hover-armed gesture shows its bands once, here (no preview from hover).
-            self._soft_preview_refresh(shown_by_gesture=True)
-        count = len(self._transform_target)
-        noun = "vertex" if count == 1 else "vertices"
-        around = " around the Working Pivot" if command != commands.MOVE and self.active_pivot is not None else ""
-        self._set_status(
-            f"{label}: {count} {noun}{around}{self._constraint_suffix(self._axis_constraint)}{self._commit_hint(key)}"
-        )
-        return True
-
-    @staticmethod
-    def _constraint_suffix(space: str | None) -> str:
-        return "" if space is None else f" (constraint {_constraint_label(space)})"
-
-    def _constrain(self, space: str) -> bool:
-        """Constraint-Taste (B4.1, wie Playground `window.py`): dieselbe Taste
-        erneut → frei, eine andere ersetzt. Wirkt auch ohne scharfes Tool;
-        während einer laufenden Geste ändert sich nur der Zustand — der
-        Tool-`space` ist ab `begin()` fix, der neue Wert gilt ab der nächsten
-        Geste (one-shot: deren Commit räumt ihn, nicht der der laufenden)."""
-        self._axis_constraint = None if self._axis_constraint == space else space
-        if self._transform_begun:
-            self._constraint_retouched = True
-        self._set_status(self._constraint_status())
-        return True
-
-    def _constraint_status(self) -> str:
-        if self._axis_constraint is None:
-            return "Constraint: none"
-        return f"Constraint: {_constraint_label(self._axis_constraint)} ({self.constraint_mode})"
+            return self._objects.arm_gesture(command, key, origin)
+        return self._gestures.arm_transform(command, key, origin)
 
     def _session_switch(self, command: str) -> bool:
         """The session switches of the 2026-10-28 practical test (not saved, `PROVISIONAL` keys): one-shot <->
         sticky constraints, and the gizmo size S -> M -> L. State only, allowed at any time."""
         if command == commands.CONSTRAINT_MODE_TOGGLE:
-            index = CONSTRAINT_MODES.index(self.constraint_mode)
-            self.constraint_mode = CONSTRAINT_MODES[(index + 1) % len(CONSTRAINT_MODES)]
-            self._set_status(f"Constraints: {self.constraint_mode} (session setting)")
-            return True
+            return self._gestures.toggle_constraint_mode()
         names = list(_gizmo.GIZMO_SIZES)
         self.gizmo_size_name = names[(names.index(self.gizmo_size_name) + 1) % len(names)]
         self._set_status(f"Gizmo size: {self.gizmo_size_name} (session setting)")
         self._refresh_hover()
         return True
 
-    def _toggle_orientation(self) -> bool:
-        """`K` (WP Toolbox Gaps C1, the Playground's key, `PROVISIONAL`): World <-> Normal. Clears the
-        constraint like the Playground: the same letter is another direction in the other frame. Not
-        during a begun gesture (its frame is fixed at `begin()`); an armed one takes the new value."""
-        if self._transform_begun:
-            return False
-        self._orientation = (
-            transform_space.NORMAL if self._orientation == transform_space.WORLD else transform_space.WORLD
-        )
-        self._axis_constraint = None
-        self._set_status(f"Transform space: {self._orientation.capitalize()} (constraint none)")
-        return True
-
-    def _normal_space_context(self) -> tuple[str | None, dict]:
-        """(refusal, begin parameters) of a constrained gesture in Normal space: `space="normal"` with the
-        constraint as `axis`, and the selection's current normals as `derived_geometry` (the tools' frame is
-        the gizmo's frame, `transform_space`)."""
-        normals = transform_space.SelectionNormals(self.scene.mesh, self.selection)
-        frame = transform_space.normal_frame(self.scene.mesh, self.selection, normals)
-        refusal = transform_space.normal_refusal(
-            frame, self._transform_space, scale=self._transform_command == commands.SCALE
-        )
-        context = {"space": transform_space.NORMAL, "axis": self._transform_space, "derived_geometry": normals}
-        return refusal, context
-
-    def _transform_step(self, dx: float, dy: float, force: bool = False) -> bool:
-        """Eine Mausbewegung, während ein Transform scharf ist. Die erste
-        Bewegung startet die Interaktion (keine Schwelle, AD-016); ein
-        Nullschritt zählt nicht als Bewegung.
-
-        WP-SYM-LAB-03 H5: lehnt das Tool den Start unter Symmetrie ab
-        (`SeamConstraintError`, INV-8 / AD-SYM-02 §2.4: ein Seam-Vertex würde
-        die Ebene verlassen), endet der Transform sichtbar, ohne History und
-        mit unverändertem Mesh (das Tool bricht selbst exakt ab)."""
-        if dx == 0 and dy == 0 and not force:
-            return False
-        if self._rotate_virtual is not None:
-            self._rotate_virtual = (self._rotate_virtual[0] + dx, self._rotate_virtual[1] + dy)
-        if not force and self._shift_held and self._transform_command in (commands.MOVE, commands.SCALE, *_OFFSET_COMMANDS):
-            dx, dy = dx * PRECISION_GAIN, dy * PRECISION_GAIN  # Shift = precision (Rotate scales its own angle)
-        if self._object_gesture is not None:
-            return self._object_step(dx, dy)
-        if self._transform_command == commands.LOOP_SLIDE:
-            return self._slide_step(dx, dy)
-        if self._transform_command in _SMOOTH_COMMANDS:
-            return self._smooth_step(dx)
-        if self._offset is not None:
-            return self._offset_step(dx, dy)
-        if not self._transform_begun and self._transform_command == commands.EXTRUDE:
-            # Net displacement since the arm; the first update gets all of it, so the
-            # distance follows the pointer from where T went down.
-            px, py = self._extrude_travel
-            px, py = px + dx, py + dy
-            self._extrude_travel = (px, py)
-            if math.hypot(px, py) < EXTRUDE_BEGIN_PX:
-                return False
-            if not self._extrude_begin():
-                return False
-            dx, dy = px, py
-        elif not self._transform_begun:
-            self._transform_space = self._axis_constraint
-            soft = self._soft if self._soft.enabled else None
-            begin_context = {
-                "scene": self.scene,
-                "camera": self._edit_camera,
-                "vertex_ids": set(self._transform_target),
-                "space": self._transform_space,
-            }
-            if soft is not None:
-                begin_context["soft"] = soft  # absent when off: today's payload, unchanged
-            mask = self._mask_values(self._transform_target)
-            if mask:
-                begin_context["mask"] = mask  # absent without a mask: today's payload, unchanged
-            pivot = self.active_pivot if self._transform_command in (commands.ROTATE, commands.SCALE) else None
-            if pivot is not None:
-                begin_context["pivot"] = pivot  # Working Pivot (U-1); Move and pivot off: today's payload
-            if self._orientation == transform_space.NORMAL and self._transform_space is not None:
-                refusal, normal_context = self._normal_space_context()
-                if refusal is not None:
-                    label = _TRANSFORM_COMMANDS[self._transform_command][0]
-                    self._transform_end()
-                    self._set_status(f"{label}: refused — {refusal}")
-                    self._refresh_hover()
-                    return False
-                begin_context.update(normal_context)
-            rotate_gizmo = self._rotate_gesture_mode()
-            if rotate_gizmo is not None:
-                begin_context["gizmo"] = {
-                    "mode": rotate_gizmo,
-                    "press": self._rotate_press,
-                    "size": (int(self.viewport_width), int(self.viewport_height)),
-                }
-            try:
-                self.tool_manager.begin_current_interaction(begin_context)
-            except (SeamConstraintError, SoftSymmetryRefusal) as exc:
-                # Symmetric Soft (AD-SYM-04 SS2): D-2 and the open O-1 cases refuse here, where
-                # the settings are read, before anything moves - like a seam refusal.
-                label = _TRANSFORM_COMMANDS[self._transform_command][0]
-                self._transform_end()
-                hint = ""
-                if pivot is not None and isinstance(exc, SeamConstraintError):
-                    hint = " (the Working Pivot is off the symmetry plane: place it on the plane or tap P to turn it off)"
-                # Status text PROVISIONAL, like the other transform status lines.
-                self._set_status(f"{label}: refused — {exc}{hint}")
-                self._refresh_hover()
-                return False
-            self._transform_begun = True
-            if soft is not None:
-                self._soft_gesture = soft
-                self._soft_gesture_reference = soft.world_radius * 100.0 / soft.radius_percent
-                self._soft_show_op_weights()
-        update = {"dx": float(dx), "dy": float(dy), "width": self.viewport_width, "height": self.viewport_height}
-        if self._transform_command == commands.ROTATE:
-            update["precise"], update["snap"] = self._shift_held, self._snap_held()
-            if self._rotate_gesture_mode() == "dial":
-                update["x"], update["y"] = self._rotate_virtual
-        self.tool_manager.update(**update)
-        self._pick_cache.invalidate()
-        self.viewport.on_vertices_moved(self._active_transform_vertex_ids())
-        return True
-
-    def _rotate_gesture_mode(self) -> str | None:
-        """How the running Rotate follows the pointer: `trackball` (gizmo centre), `dial` (every other cursor
-        gesture: gizmo ring, R/E key, Tweak), None without a command, a cursor or a viewport (dx fallback)."""
-        if self._transform_command != commands.ROTATE or self._rotate_press is None:
-            return None
-        gizmo = self._pointer_tools.gizmo_press
-        return "trackball" if gizmo is not None and gizmo.handle_id == "center" else "dial"
-
-    def _snap_held(self) -> bool:
-        return self._ctrl_held and self._ctrl_snap_ok
-
     @property
     def cursor_wrap_active(self) -> bool:
         """True while the window should warp the pointer across the viewport edge (a running transform;
         a reusable gate for later slider drags)."""
-        return self._transform_key is not None
+        return self._gesture is not None
 
     def cursor_wrapped(self, jump_x: float, jump_y: float) -> None:
         """The window moved the pointer by (jump_x, jump_y) to the opposite edge. Gestures run on deltas (the
@@ -4322,68 +2222,7 @@ class Application:
         if held == self._ctrl_held:
             return False
         self._ctrl_held = held
-        if not held:
-            self._ctrl_snap_ok = True
-        if (
-            self._transform_key is None
-            or not self._transform_begun
-            or self._transform_command != commands.ROTATE
-            or self._rotate_virtual is None
-        ):
-            return False
-        return self._transform_step(0.0, 0.0, force=True)
-
-    def _active_transform_vertex_ids(self) -> set[VertexId]:
-        """Vom laufenden Transform betroffene Vertex-IDs (E29): `MoveTool.moves`
-        (inkl. Symmetrie-Partner) bzw. `TransformTool.vertex_ids` - bewusst
-        nicht vereinheitlicht, MoveTool erbt nicht von TransformTool."""
-        tool = self.tool_manager.active_tool
-        moves = getattr(tool, "moves", None)
-        return moves if moves is not None else tool.vertex_ids
-
-    def _transform_end(self) -> None:
-        """Transform-Tool deaktivieren und den Transform-Zustand löschen."""
-        resume_preview = self._soft_gesture_shown
-        self._soft_op_running = False
-        self._soft_gesture_shown = False
-        self._soft_gesture = None
-        self.tool_manager.deactivate()
-        self._transform_key = None
-        self._transform_command = None
-        self._transform_target = frozenset()
-        self._transform_begun = False
-        self._transform_space = None
-        self._constraint_retouched = False
-        self._rotate_press = None
-        self._rotate_virtual = None
-        self._extrude_faces = frozenset()
-        self._extrude_travel = (0.0, 0.0)
-        self._extrude_selection_before = None
-        self._object_gesture = None
-        self._slide_plan = None
-        self._slide_t = 0.0
-        self._slide_direction = None
-        self._vslide_plan = None
-        self._vslide_px = {}
-        self._vslide_drag = (0.0, 0.0)
-        if self._slide_before is not None:
-            # A slide that ended without release / abort: stop its recording, keep the mesh.
-            self.scene.mesh.release_change(self._slide_before)
-        self._slide_before = None
-        self._slide_selection_before = None
-        if self._offset is not None and self._offset.before is not None:
-            # A width gesture that ended without release / abort: stop its recording, keep the mesh.
-            self.scene.mesh.release_change(self._offset.before)
-        self._offset = None
-        self._smooth_plan = None
-        self._smooth_amount = 0.0
-        if self._smooth_before is not None:
-            self.scene.mesh.release_change(self._smooth_before)
-        self._smooth_before = None
-        self._smooth_selection_before = None
-        self._smooth_seeds = frozenset()
-        if resume_preview:
-            self._soft_preview_refresh()
+        return self._gestures.ctrl_changed(held)
 
     # -- Soft Selection settings (WP-SOFT-01 S2a, AD-020, PROVISIONAL) ------------------
 
@@ -4478,7 +2317,7 @@ class Application:
         selection = self.selection
         vertices = set(resolve_selection_vertices(mesh, selection, selection.mode))
         if not vertices and selection.hovered is not None and command != commands.CONNECT:
-            vertices = set(_element_vertices(mesh, selection.hovered))
+            vertices = set(element_vertices(mesh, selection.hovered))
         if not vertices:
             if command != commands.CONNECT:
                 return None  # the command's own "nothing selected" refusal speaks
@@ -4492,7 +2331,7 @@ class Application:
     def _hide_command(self, command: str) -> bool:
         """Ctrl+H / Ctrl+Shift+H / Alt+H: hide the selection, isolate it (hide everything else), show all.
         No History, no mesh change; the selection loses what became hidden. Refused during a running gesture."""
-        if self._transform_key is not None:
+        if self._gesture is not None:
             return False
         mesh = self.scene.mesh
         hidden = self._hidden
@@ -4536,7 +2375,7 @@ class Application:
     def _mask_command(self, command: str) -> bool:
         """Ctrl+M / Ctrl+Shift+M / Alt+Shift+M: mask the selection (or unmask it when it is fully masked),
         invert, clear. No History, no selection or mesh change; refused during a running gesture."""
-        if self._transform_key is not None:
+        if self._gesture is not None:
             return False
         mesh = self.scene.mesh
         if command == commands.MASK_CLEAR:
@@ -4620,7 +2459,7 @@ class Application:
         Ctrl+Alt+N (save as named set), Alt+G / Ctrl+Alt+Shift+G (select), Ctrl+Alt+H (isolate), Ctrl+Alt+M (mask),
         Ctrl+Alt+Backspace (delete). Edits of the stored groups are one Undo step (`_mesh_transaction`); select /
         isolate / mask only read them. Refused during a gesture."""
-        if self._transform_key is not None:
+        if self._gesture is not None:
             return False
         mesh = self.scene.mesh
         if command == commands.GROUP_MASK_TOGGLE:
@@ -4701,7 +2540,7 @@ class Application:
         if face is not _CPU:
             return face
         return pick_face(
-            self._edit_camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height,
+            self._objects.edit_camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height,
             cache=self._pick_cache,
         )
 
@@ -4711,7 +2550,7 @@ class Application:
         is visible: the visibility inverts (the rest visible, G hidden). Something else is hidden already: G is hidden
         as well. Empty space shows everything. View state only: no History, no selection or mesh change. Ignored in
         object mode and during a gesture."""
-        if self.viewport is None or self._transform_key is not None or self.selection.mode is SelectionMode.OBJECT:
+        if self.viewport is None or self._gesture is not None or self.selection.mode is SelectionMode.OBJECT:
             return False
         mesh = self.scene.mesh
         hidden = self._hidden
@@ -4815,12 +2654,12 @@ class Application:
             self._soft = soft.toggled()
             if self._soft.enabled:
                 self._soft_refresh_radius()
-        elif command in (commands.SOFT_RADIUS_UP, commands.SOFT_RADIUS_DOWN) and self._soft_live():
-            changed = self._soft_radius_live(1 if command == commands.SOFT_RADIUS_UP else -1)
+        elif command in (commands.SOFT_RADIUS_UP, commands.SOFT_RADIUS_DOWN) and self._gestures.soft_live():
+            changed = self._gestures.radius_live(1 if command == commands.SOFT_RADIUS_UP else -1)
         elif command in (commands.SOFT_FLOW_LOOP, commands.SOFT_FLOW_RING):
             delta = 1 if command == commands.SOFT_FLOW_LOOP else -1
-            if self._soft_live():
-                changed = self._soft_flow_live(delta)
+            if self._gestures.soft_live():
+                changed = self._gestures.flow_live(delta)
             else:
                 self._soft = soft.with_flow_step(delta)
                 changed = self._soft != soft
@@ -4858,10 +2697,11 @@ class Application:
     def _soft_flow_hint(self) -> str:
         """Status suffix for a flow step: says when the seeds give no Loop / Ring direction, so the field
         stays round (AD-020 "Loop / Ring flow": one vertex, one quad, a square block ...)."""
-        soft = self._soft_gesture or self._soft
+        gesture = self._gesture
+        soft = (None if gesture is None else gesture.soft) or self._soft
         if soft.flow_ratio == 1.0 or soft.metric != "geodesic":
             return ""
-        tool = self._soft_live_tool()
+        tool = self._gestures.live_tool()
         seeds = set(tool.soft_seeds) if tool is not None else self._soft_seeds()
         if not seeds or has_flow_direction(self.scene.mesh, seeds):
             return ""
@@ -4872,59 +2712,6 @@ class Application:
         for sink in (self._soft_overlay, self._soft_shading_overlay):
             if sink is not None and hasattr(sink, "set_look"):
                 sink.set_look(self._soft.look)
-
-    def _soft_live_tool(self):
-        """The tool of a begun Soft Move/Rotate/Scale (key hold, Tweak or gizmo drag), else None: the
-        state in which the wheel steps the radius of the running gesture."""
-        if self._soft_gesture is None or not self._transform_begun:
-            return None
-        tool = self.tool_manager.active_tool
-        return tool if getattr(tool, "is_soft_gesture", False) else None
-
-    def _soft_live(self) -> bool:
-        """A running Soft gesture takes radius / flow steps live: a begun Soft W/E/R, or a held Smooth /
-        Relax with Soft on (C2)."""
-        return self._soft_live_tool() is not None or self._smooth_soft_live()
-
-    def _soft_radius_live(self, delta: int) -> bool:
-        """One radius step for the running Soft gesture (AD-020 "Live radius", `PROVISIONAL`): the gesture
-        is re-evaluated from its start geometry with the new influence (`reweight`), the display shows the
-        new weights, and the sticky setting takes the same step. Clamped, no wrap; False at the end of
-        the list (nothing recomputed). Metric, curve and display stay those of the gesture."""
-        gesture = self._soft_gesture
-        step = max(0, min(gesture.radius_step + delta, len(RADIUS_STEPS_PERCENT) - 1))
-        if step == gesture.radius_step:
-            return False
-        gesture = gesture.with_radius_step(step, self._soft_gesture_reference)
-        self._soft = dataclasses.replace(self._soft, radius_step=step, world_radius=gesture.world_radius)
-        self._soft_reweight_live(gesture)
-        return True
-
-    def _soft_flow_live(self, delta: int) -> bool:
-        """One Loop / Ring balance step for the running Soft gesture (AD-020 "Loop / Ring flow",
-        `PROVISIONAL`): the same re-evaluation from the start geometry as a live radius step; the sticky
-        setting takes the same step. Clamped, no wrap; False at the end of the list."""
-        gesture = self._soft_gesture.with_flow_step(delta)
-        if gesture == self._soft_gesture:
-            return False
-        self._soft = dataclasses.replace(self._soft, flow_step=gesture.flow_step)
-        self._soft_reweight_live(gesture)
-        return True
-
-    def _soft_reweight_live(self, gesture: SoftSettings) -> None:
-        """The running Soft gesture continues with `gesture`'s influence (`reweight`: cancel, begin again
-        on the start geometry with the same seeds / pivot, replay the intent), and the display shows it."""
-        self._soft_gesture = gesture
-        if self._smooth_soft_live():
-            touched = self._smooth_reweight(gesture)
-            self._pick_cache.invalidate()
-            self.viewport.on_vertices_moved(touched)
-            self._smooth_show_weights()
-            return
-        touched = self._soft_live_tool().reweight(gesture)
-        self._pick_cache.invalidate()
-        self.viewport.on_vertices_moved(touched)
-        self._soft_show_op_weights()
 
     # -- Soft Selection bands (WP-SOFT-01 S2b, AD-020 §5, PROVISIONAL) -------------------
     #
@@ -4973,14 +2760,12 @@ class Application:
         target while a Move/Rotate/Scale is armed, else the explicit selection, else - with none -
         the vertices of the hovered component. An existing selection is never replaced by the
         hover."""
-        if (
-            self._transform_key is not None
-            and self._transform_command in (commands.MOVE, commands.ROTATE, commands.SCALE)
-        ):
-            return set(self._transform_target)
+        gesture = self._gesture
+        if gesture is not None and gesture.command in (commands.MOVE, commands.ROTATE, commands.SCALE):
+            return set(gesture.target)
         seeds = self._soft_selection_seeds()
         if not seeds and self.selection.hovered is not None:
-            seeds = _element_vertices(self.scene.mesh, self.selection.hovered)
+            seeds = element_vertices(self.scene.mesh, self.selection.hovered)
         return seeds
 
     def _soft_hover_changed(self) -> None:
@@ -4989,7 +2774,7 @@ class Application:
         running (its target owns the display), and never for a pointer move over the same
         component."""
         soft = self._soft
-        if not (soft.enabled and soft.bands_visible) or self._transform_key is not None:
+        if not (soft.enabled and soft.bands_visible) or self._gesture is not None:
             return
         if self._soft_overlay is None and self._soft_shading_overlay is None:
             return
@@ -4997,21 +2782,24 @@ class Application:
             return  # the explicit selection is the target; hover is only the highlight
         self._soft_preview_refresh()
 
-    def _soft_preview_refresh(self, shown_by_gesture: bool = False) -> None:
+    def _soft_preview_refresh(self) -> bool:
         """Recompute the preview (E3). No-op without a sink, and while a running op owns the
         display. Soft off, hidden (`bands_visible` False) or no target (no selection and no hovered
         component) show nothing; under a symmetry definition the preview is the symmetric field
-        (AD-SYM-04 D-5, slice SS3). The display mode (`view_mode`) only routes the same weights."""
-        if (self._soft_overlay is None and self._soft_shading_overlay is None) or self._soft_op_running:
-            return
+        (AD-SYM-04 D-5, slice SS3). The display mode (`view_mode`) only routes the same weights.
+        True = weights are shown now (a hover-armed gesture then owns them, `GestureSession.soft_shown`)."""
+        gesture = self._gesture
+        if (self._soft_overlay is None and self._soft_shading_overlay is None) or (
+            gesture is not None and gesture.soft_op_running
+        ):
+            return False
         soft = self._soft
         # Hidden (S2d E7): no influence work for display, nothing shown.
         shown = soft.enabled and soft.bands_visible
         seeds = self._soft_seeds() if shown else None
         weights = self._soft_preview_weights(seeds) if seeds else None
         self._soft_show(weights)
-        if weights is not None:
-            self._soft_gesture_shown = self._soft_gesture_shown or shown_by_gesture
+        return weights is not None
 
     def _soft_preview_weights(self, seeds: set[VertexId]) -> dict[VertexId, float] | None:
         """The weights the next gesture's `begin()` computes for `seeds`, by the same function
@@ -5041,148 +2829,6 @@ class Application:
             return None
         return mask_symmetric_influence(field, mask).weights
 
-    def _soft_show_op_weights(self) -> None:
-        """At `begin()`: the display becomes the op's own weights (E4), so the preview and the
-        gesture cannot disagree; nothing is computed. Under symmetry the op's weights are the
-        symmetric field, both sides (AD-SYM-04 D-5)."""
-        if self._soft_overlay is None and self._soft_shading_overlay is None:
-            return
-        # Also while hidden: the gesture still owns the display (a bands toggle or mode switch
-        # mid-gesture takes effect when it ends), it just has nothing to show (S2d E7). Hence the
-        # gesture's own display settings (a live radius step calls this again mid-gesture).
-        self._soft_op_running = True
-        self._soft_gesture_shown = True
-        display = self._soft_gesture or self._soft
-        if not display.bands_visible:
-            self._soft_show(None, display.view_mode)
-            return
-        self._soft_show(
-            self.tool_manager.active_tool.operation.context.params["influence"], display.view_mode
-        )
-
-    # -- Extrude (WP-06 B9, hold T) -------------------------------------------------
-    #
-    # PROVISIONAL baseline. Key T = Artist Input Truth `topology.extrude` ("for now",
-    # Manu 2026-10-09). The hold-key-hover activation (E1) and the hover fallback (E2)
-    # are engineering proposals, NOT Artist decisions. Same lifecycle as W/E/R
-    # (`_transform_*`), with the differences the branches above mark: Face mode only,
-    # target = faces, `begin()` mutates the topology (hence EXTRUDE_BEGIN_PX), the
-    # viewport is told about a topology change, a zero extrusion is cancelled, and the
-    # selection-history `before` is the snapshot taken ahead of `begin()`.
-
-    def _extrude_arm(self, key: str) -> bool:
-        """Arm Extrude: Face mode with >= 1 selected face, else the hovered face, else
-        refuse with a status line. The tool is active, `begin()` waits for the pointer."""
-        selection = self.selection
-        mesh = self.scene.mesh
-        if selection.mode is not SelectionMode.FACE:
-            self._set_status("Extrude: face mode needed")
-            return False
-        faces = {f for f in selection.faces if mesh.is_valid_face(f)}
-        hovered = selection.hovered
-        from_hover = not faces and isinstance(hovered, FaceId) and mesh.is_valid_face(hovered)
-        if from_hover:
-            faces = {hovered}
-        if not faces:
-            self._set_status("Extrude: select or hover a face")
-            return False
-        self._execute(commands.EXTRUDE)
-        self._transform_key = key
-        self._transform_command = commands.EXTRUDE
-        self._transform_target = frozenset(
-            vid for f in faces for vid in _element_vertices(mesh, f)
-        )
-        self._transform_begun = False
-        self._extrude_faces = frozenset(faces)
-        self._extrude_travel = (0.0, 0.0)
-        # Same clear-on-arm as the transforms: no hover highlight on what is extruded.
-        if from_hover or _active_selection_contains(selection, hovered):
-            self._set_hovered(None)
-        count = len(faces)
-        self._set_status(
-            f"Extrude: {count} {'face' if count == 1 else 'faces'}"
-            f" - move the mouse, release {key.upper()} to commit"
-        )
-        return True
-
-    def _extrude_begin(self) -> bool:
-        """Start the Extrude (topology changes here). False = refused, tool disarmed.
-
-        AD-SYM-03 slice 7: whenever a symmetry definition is set the declared planner
-        (`symmetry_declarations.EXTRUDE_COORDINATORS`, D-b - the declaration is the only switch) runs
-        first, in MARK as in BLOCK (H2 amendment, "Runtime refusals are not G-3"): it refuses before any
-        mutation (`SymmetryRefusal`: status text, mesh/history/selection untouched, tool disarmed) or
-        returns the plan - selection plus mirror partners as one intent - that the unchanged tool is handed.
-        Without a definition the tool runs exactly as in B9."""
-        self._extrude_selection_before = self._selection_snapshot()
-        faces = set(self._extrude_faces)
-        context = {"scene": self.scene, "camera": self._edit_camera}
-        planner = (
-            symmetry_declarations.EXTRUDE_COORDINATORS.get(commands.EXTRUDE)
-            if self.scene.mesh.symmetry_definition is not None
-            else None
-        )
-        if planner is not None:
-            try:
-                plan = planner(self.scene.mesh, faces)
-            except SymmetryRefusal as exc:
-                self._transform_end()
-                self._set_status(str(exc))
-                self._refresh_hover()
-                return False
-            faces = set(plan.face_ids)
-            context["symmetric_plan"] = plan
-        context["face_ids"] = faces
-        try:
-            self.tool_manager.begin_current_interaction(context)
-        except TopologyToolError as exc:
-            self._transform_end()
-            self._set_status(f"Extrude: refused — {exc}")
-            self._refresh_hover()
-            return False
-        self._transform_begun = True
-        self._extrude_topology_changed()
-        return True
-
-    def _extrude_topology_changed(self) -> None:
-        """After begin/commit/cancel: caches, viewport and a dead-ID sweep (B6 lesson:
-        a stale hovered/selected ID after a topology change crashed the draw loop)."""
-        self._pick_cache.invalidate()
-        self._prune_ghost_selection()
-        if self.viewport is not None:
-            self.viewport.on_topology_changed()
-            self.viewport.on_selection_changed()
-        self._soft_preview_refresh()
-
-    def _extrude_release(self) -> None:
-        """Release of T: commit, or - tap, jitter below EXTRUDE_BEGIN_PX, or a total
-        distance below EXTRUDE_MIN_DISTANCE - leave everything exactly as it was."""
-        if not self._transform_begun:
-            self._set_status("Extrude: no change")
-            return
-        if abs(self.tool_manager.active_tool.total_distance) < EXTRUDE_MIN_DISTANCE:
-            self._extrude_abort()
-            self._set_status("Extrude: no change")
-            return
-        tool = self.tool_manager.active_tool
-        self.tool_manager.commit()
-        if tool.refusal is not None:
-            # A symmetric commit the coordinator refused (delta): the tool has taken everything back, no
-            # history entry. Same exact prior state as an abort, with the refusal as the visible status.
-            self._restore_selection(self._extrude_selection_before)
-            self._extrude_topology_changed()
-            self._set_status(tool.refusal)
-            return
-        self._record_selection_history(self._extrude_selection_before)
-        self._extrude_topology_changed()
-        self._set_status("Extrude committed")
-
-    def _extrude_abort(self) -> None:
-        """Cancel a begun Extrude: exact prior mesh (tool), exact prior selection, no history."""
-        self.tool_manager.cancel()
-        self._restore_selection(self._extrude_selection_before)
-        self._extrude_topology_changed()
-
     def _cancel(self) -> bool:
         """Esc = nur Abbrechen (B1 A3: kein Quit, E22). Laufender Transform →
         exakter Vorzustand ohne History; nur scharf → entschärfen; idle →
@@ -5193,48 +2839,17 @@ class Application:
         claimed = self.interaction.claim(Command(commands.CANCEL, RunContext("key")))  # the Working Pivot
         if claimed is not PASS:
             return claimed
-        if self._transform_key is None:
+        gesture = self._gesture
+        if gesture is None:
             return False
-        if self._transform_key == TWEAK_KEY:
+        if gesture.key == TWEAK_KEY:
             # The LMB is still down: the rest of this drag must not arm a new one.
             self._pointer_tools.swallow()
             gizmo = self._pointer_tools.gizmo_press
-            if gizmo is not None and self.constraint_mode == CONSTRAINT_ONE_SHOT:
+            if gizmo is not None and self._gestures.constraint_mode == CONSTRAINT_ONE_SHOT:
                 # E2: the handle's axis was for this drag only; Esc keeps what was pending before the press.
-                self._axis_constraint = gizmo.constraint_before
-        label, _, _ = _TRANSFORM_COMMANDS[self._transform_command]
-        if self._transform_command == commands.LOOP_SLIDE:
-            label = self._slide_label()
-        if self._object_gesture is not None:
-            if self._transform_begun:
-                self._object_cancel()
-                self._set_status(f"Object {label} cancelled")
-            else:
-                self._set_status(f"Object {label} disarmed")
-        elif self._transform_begun and self._transform_command == commands.EXTRUDE:
-            self._extrude_abort()
-            self._set_status(f"{label} cancelled")
-        elif self._transform_begun and self._transform_command == commands.LOOP_SLIDE:
-            self._slide_abort()
-            self._set_status(f"{label} cancelled")
-        elif self._transform_command in _SMOOTH_COMMANDS:
-            # Begun: exact start state back. Not begun: Esc instead of the tap step.
-            self._smooth_abort()
-            self._set_status(f"{label} cancelled")
-        elif self._transform_begun and self._offset is not None:
-            self._offset_abort()
-            self._set_status(f"{label} cancelled")
-        elif self._transform_begun:
-            moved = self._active_transform_vertex_ids()
-            self.tool_manager.cancel()
-            self._pick_cache.invalidate()
-            self.viewport.on_vertices_moved(moved)
-            self._set_status(f"{label} cancelled")
-        else:
-            self._set_status(f"{label} disarmed")
-        self._transform_end()
-        self._refresh_hover()
-        return True
+                self._gestures.axis_constraint = gizmo.constraint_before
+        return gesture.cancel()
 
     def _undo_redo(self, command: str) -> bool:
         can = self.history.can_undo() if command == commands.UNDO else self.history.can_redo()
@@ -5311,12 +2926,12 @@ class Application:
         self._morph.after_history()
         self._prune_ghost_selection()
         # AD-021 §4.6: refresh the view of the objects an object step touched; an object step
-        # may be a placement (M2-2), so the pick caches re-project too (`_placement_changed`).
-        self._object_meshes_changed(object_meshes)
+        # may be a placement (M2-2), so the pick caches re-project too (`ObjectController.placement_changed`).
+        self._objects.meshes_changed(object_meshes)
         if self._last_undo_redo_mesh_step and not object_meshes:
-            self._sync_object_views()
+            self._objects.sync_views()
         else:
-            self._placement_changed()
+            self._objects.placement_changed()
         self._soft_preview_refresh()
 
     def apply_mesh_change(
@@ -5425,7 +3040,7 @@ class Application:
             and edit_object_id != scene.edit_object_id
             and target.state is not ObjectState.REFERENCE
         ):
-            self._set_edit_object(edit_object_id)
+            self._objects.set_edit_object(edit_object_id)
         selection = self.selection
         selection.mode = mode
         selection.vertices = set(vertices)
@@ -5459,7 +3074,7 @@ class Application:
         Das Mesh-Command stellt das Mesh wieder her; ohne den Selection-
         Restore oben blieben Handles von Elementen, die die Mutation entfernt
         hatte, als tote IDs in `selection` liegen. Der B6-Crash-Fix
-        (`_notify_topology_changed`, `_element_vertices`, `resolve_selection_
+        (`_notify_topology_changed`, `element_vertices`, `resolve_selection_
         vertices`) machte Konsumenten nur tolerant gegenüber solchen IDs; sie
         zählten aber weiter in `len(selection.edges/vertices/faces)`, was z. B.
         `resolve_c_context` in den falschen Kontext auflösen konnte. Dieselbe
@@ -5518,7 +3133,7 @@ class Application:
                 return Refusal(text)
         text = self._layer_refusal(command)
         if text is None:
-            text = self._object_mode_refusal(command)
+            text = self._objects.mode_refusal(command)
         if text is None and ctx.operands and command in _TOPOLOGY_COMMANDS:
             text = self._hidden_refusal(command)
         if text is not None:
@@ -5533,16 +3148,8 @@ class Application:
         return None
 
     def _session_refusal(self, command: str, ctx: RunContext) -> Refusal | None:
-        """`can_run` stage 6. The held gestures still live in `Application` (they move into the slot at AD-027
-        M6); their `allows` is here until then. Then the slot's (a drag selection lets through only its list)."""
-        if self._transform_key is not None:
-            if command in _GESTURE_REFUSES:
-                return SILENT
-            if self._transform_begun and command in _BEGUN_GESTURE_REFUSES:
-                return SILENT
-            if command in _CONSTRAINT_SPACES and self._transform_command in _UNCONSTRAINED_GESTURES:
-                return SILENT
-            return None
+        """`can_run` stage 6: the slot's sessions (a held gesture refuses its list silently, a drag selection lets
+        through only its list)."""
         return self.interaction.allows(command, ctx)
 
     def _refused(self, refusal: Refusal) -> bool:
@@ -5696,7 +3303,8 @@ class Application:
             outcome = self.interaction.claim(raw)  # the Working Pivot's LMB placement
         if outcome is not PASS:
             return outcome
-        if self._alt_held and self._transform_key == TWEAK_KEY:
+        gesture = self._gesture
+        if self._alt_held and gesture is not None and gesture.key == TWEAK_KEY:
             # A gizmo / Tweak drag: Alt borrows the motion for the camera, the gesture keeps running.
             return self._navigate_during_transform(dx, dy)
         step = self.pointer.drag(dx, dy)
@@ -5723,9 +3331,9 @@ class Application:
             drag = tools.drag_select
             if drag is not None:
                 return drag.commit()
-            if self._transform_key == TWEAK_KEY:
-                self._transform_finish()
-                return True
+            gesture = self._gesture
+            if gesture is not None and gesture.key == TWEAK_KEY:
+                return gesture.commit()
             tools.end_swallowed()
         # The Knife's session gate (every release); the Re-Symmetrize preview refuses the select / region clicks.
         grabbed = self.interaction.grab(Release(button, x, y, None if click is None else click.command))
@@ -5742,7 +3350,7 @@ class Application:
         Live radius (AD-020, `PROVISIONAL`): während einer begonnenen Soft-Geste (Move/Rotate/Scale,
         auch per Gizmo/Tweak) ist das Zoom-Rad die Radius-Stufe dieser Geste und zoomt nicht."""
         command = self.bindings.command_for(input)
-        if command == commands.ZOOM and self._soft_live():
+        if command == commands.ZOOM and self._gestures.soft_live():
             command = commands.SOFT_RADIUS_UP if input.value == "UP" else commands.SOFT_RADIUS_DOWN
         if command in _SOFT_COMMANDS:
             grabbed = self.interaction.grab(Wheel(input, command))
@@ -5780,11 +3388,13 @@ class Application:
         grabbed = self.interaction.grab(motion)  # the Knife's preview
         if grabbed is not PASS:
             return grabbed
-        if self._transform_key is not None:
+        gesture = self._gesture
+        if gesture is not None and self._alt_held and gesture.command not in SMOOTH_COMMANDS:
             # Relax is held with Alt (Alt+S): for Smooth / Relax Alt never borrows the camera.
-            if self._alt_held and self._transform_command not in _SMOOTH_COMMANDS:
-                return self._navigate_during_transform(dx, dy)
-            return self._transform_step(dx, dy)
+            return self._navigate_during_transform(dx, dy)
+        outcome = self.interaction.handle(motion)  # the held gesture
+        if outcome is not PASS:
+            return outcome
         outcome = self.interaction.background(motion)  # the light drag, then the Morph weight
         if outcome is not PASS:
             return outcome
@@ -5813,7 +3423,7 @@ class Application:
         cursor = None if self.pointer.active else self._cursor
         if self.interaction.grab(Leave() if cursor is None else Hover(*cursor)) is not PASS:
             return  # the Knife's preview (or the Re-Symmetrize preview's paused hover)
-        if cursor is not None and self._transform_key is None:
+        if cursor is not None and self._gesture is None:
             self._update_hover(*cursor)
 
     def pointer_leave(self) -> bool:
@@ -5856,12 +3466,12 @@ class Application:
         AD-021 M1: in mode `4` the ObjectId under the cursor; every other mode looks at the
         edit object's mesh only, so a Reference never blocks it (RF-6)."""
         if self.selection.mode is SelectionMode.OBJECT:
-            return self._pick_object(x, y)
+            return self._objects.pick(x, y)
         hit = self._gpu_pick(self.selection.mode, x, y)
         if hit is not _CPU:
             return hit
         return pick_component(
-            self._edit_camera,
+            self._objects.edit_camera,
             self.scene.mesh,
             self.selection.mode,
             x,
@@ -5892,7 +3502,7 @@ class Application:
             return _CPU
         try:
             return gpu_pick_component(
-                self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, mode,
+                self.viewport.gpu_picker, rm, self._objects.edit_camera, self.scene.mesh, mode,
                 x, y, int(self.viewport_width), int(self.viewport_height),
                 occlusion=self.display.show_faces, cache=self._pick_cache,
             )
@@ -5908,14 +3518,14 @@ class Application:
         if rm is not None:
             try:
                 return gpu_elements_in_rect(
-                    self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, mode,
+                    self.viewport.gpu_picker, rm, self._objects.edit_camera, self.scene.mesh, mode,
                     rect, int(self.viewport_width), int(self.viewport_height),
                     cache=self._pick_cache, occlusion=occlusion,
                 )
             except Exception as exc:  # noqa: BLE001 - see `_gpu_failed`
                 self._gpu_failed(exc)
         return elements_in_rect(
-            self._edit_camera,
+            self._objects.edit_camera,
             self.scene.mesh,
             mode,
             rect,
@@ -5935,7 +3545,7 @@ class Application:
         if rm is not None:
             try:
                 found = gpu_elements_in_region(
-                    self.viewport.gpu_picker, rm, self._edit_camera, self.scene.mesh, mode,
+                    self.viewport.gpu_picker, rm, self._objects.edit_camera, self.scene.mesh, mode,
                     lambda p: point_in_polygon(p, polygon), polygon_bounds(polygon), width, height,
                     cache=self._pick_cache, occlusion=occlusion,
                 )
@@ -5943,7 +3553,7 @@ class Application:
                 self._gpu_failed(exc)
         if found is None:
             found = elements_in_polygon(
-                self._edit_camera, self.scene.mesh, mode, polygon, width, height,
+                self._objects.edit_camera, self.scene.mesh, mode, polygon, width, height,
                 cache=self._pick_cache, occlusion=occlusion,
             )
         return found
@@ -6094,9 +3704,9 @@ class Application:
         if self.viewport is None:
             return False
         if self.selection.mode is SelectionMode.OBJECT:
-            return self._select_object_at(command, x, y)
+            return self._objects.select_at(command, x, y)
         selection = self.selection
-        before = _selection_state(selection)
+        before = selection_state(selection)
         hit = self._pick(x, y)
         if hit is None:
             if command == commands.SELECT:
@@ -6109,7 +3719,7 @@ class Application:
             selection.remove({hit})
         elif command == commands.SELECT_TOGGLE:
             selection.toggle(hit)
-        if _selection_state(selection) == before:
+        if selection_state(selection) == before:
             return False
         self.viewport.on_selection_changed()
         self._soft_preview_refresh()
@@ -6203,7 +3813,7 @@ class Application:
     # modifier) takes priority over the selection click: a click only sets the axis constraint (like X/Y/Z),
     # click + drag also runs the current tool - the last W/E/R, Move until one is pressed (D2) - along it, the
     # release commits, Esc cancels. A miss falls through unchanged. The drag is the LMB-drag transform
-    # (`_transform_arm` / `_transform_step` with `TWEAK_KEY` and the selection as the target), so it is one
+    # (`_transform_arm` / `GestureSession.motion` with `TWEAK_KEY` and the selection as the target), so it is one
     # History step, honours Soft Selection and Symmetry, and is refused where W/E/R is.
     # 2026-10-28 (Manu A1/A4/A5, E2/E3/E5): with one-shot constraints a handle click sets the one-shot constraint
     # (like X) and a handle drag is constrained for that drag only (commit clears, Esc restores what was pending);
@@ -6212,7 +3822,7 @@ class Application:
     # placed edit object (2026-10-23: at the selection's world position, in the world camera; the tools turn
     # the world axes into object space, E-8), hidden while any gesture runs. Look and sizes `PROVISIONAL` (`viewport.gizmo`).
     # Object level (2026-10-23): in mode `4` it sits at the centroid of the selected non-Reference objects'
-    # world pivots and drives the object gesture (`_object_arm`, the same Tweak path), in the world camera.
+    # world pivots and drives the object gesture (`ObjectController.arm_gesture`, the same Tweak path), in the world camera.
 
     def _gizmo_pivot(self):
         """The selection's centroid (world), cached until the selection or the vertex positions change;
@@ -6244,7 +3854,7 @@ class Application:
 
     def _gizmo_object_pivot(self):
         """Mode `4`: the centroid of the selected objects' world pivots, References excluded (they are
-        locked, `_object_targets`); None when no movable object is selected. Cheap, so not cached."""
+        locked, `ObjectController.targets`); None when no movable object is selected. Cheap, so not cached."""
         scene = self.scene
         targets = [
             scene.objects[oid]
@@ -6269,7 +3879,7 @@ class Application:
         selection's frame (`transform_space.normal_frame`: X/Y/Z for one face, Z only otherwise, nothing
         but the free handles when the selection has no normal). Mode `4` stays on the world axes (the
         object gesture). Cached with the same key as the pivot."""
-        if self._orientation == transform_space.WORLD or self.selection.mode is SelectionMode.OBJECT:
+        if self._gestures.orientation == transform_space.WORLD or self.selection.mode is SelectionMode.OBJECT:
             return _gizmo.WORLD_AXES, _gizmo.WORLD_PLANES
         # The pivot is computed first (`_gizmo_pivot`), so its cache key is current here.
         key = self._gizmo_cache[0] if self._gizmo_cache is not None else None
@@ -6304,7 +3914,7 @@ class Application:
         """`_gizmo_pivot()` while the gizmo is up: not while a transform key is down, any drag gesture runs
         or the Re-Symmetrize preview is open."""
         if (
-            self._transform_key is not None
+            self._gesture is not None
             or self._pointer_tools.drag_select is not None
             or self.resymmetrize_preview is not None
         ):
@@ -6318,7 +3928,7 @@ class Application:
 
     @property
     def gizmo_constraint(self) -> str | None:
-        return self._axis_constraint
+        return self._gestures.axis_constraint
 
     def gizmo_items(self) -> list:
         """What the window draws for the gizmo (`viewport.gizmo.draw_items`), [] while it is not shown.
@@ -6332,7 +3942,7 @@ class Application:
             hover = self._gizmo_handle_at(*self._cursor, pivot=pivot)
         axes, planes = self._gizmo_frame()
         return _gizmo.draw_items(
-            camera, pivot, self.gizmo_tool, self._axis_constraint, hover, axes, planes, scale=self.gizmo_scale
+            camera, pivot, self.gizmo_tool, self._gestures.axis_constraint, hover, axes, planes, scale=self.gizmo_scale
         )
 
     @property
@@ -6357,28 +3967,31 @@ class Application:
         handle = self._gizmo_handle_at(*self._cursor)
         if handle is None:
             return
-        self._pointer_tools.press_gizmo(handle, tuple(self._cursor), self._axis_constraint)
+        gestures = self._gestures
+        self._pointer_tools.press_gizmo(handle, tuple(self._cursor), gestures.axis_constraint)
         # `center` (free Move / Rotate trackball / uniform Scale) and `screen` (Rotate about the view axis)
         # are the unconstrained handles.
-        self._axis_constraint = None if handle in ("center", "screen") else handle
+        gestures.axis_constraint = None if handle in ("center", "screen") else handle
         self._set_hovered(None)
-        self._set_status(self._constraint_status())
+        self._set_status(gestures.constraint_status())
 
     def _gizmo_step(self, gizmo, dx: float, dy: float) -> bool:
         """A drag step of a gesture that started on a handle (`gizmo`, the press session; refused drags it swallowed
         itself): the first one arms the current tool on the selection (an LMB-drag transform with the selection as
         target), every step drives it."""
-        if self._transform_key is None:
+        gesture = self._gesture
+        if gesture is None:
             if self.viewport is None or self._refused_tweak():
                 gizmo.refused = True
                 return False
             if not self._transform_arm(self.tweak_command, TWEAK_KEY):
                 gizmo.refused = True
                 return False
-        elif self._transform_key != TWEAK_KEY:
+            gesture = self._gesture
+        elif gesture.key != TWEAK_KEY:
             return False
-        stepped = self._transform_step(dx, dy)
-        if self._transform_key is None:
+        stepped = gesture.motion(dx, dy)
+        if self._gesture is None:
             gizmo.refused = True  # refused at begin (seam, symmetric Soft)
         return stepped
 
@@ -6393,9 +4006,9 @@ class Application:
     def _gizmo_release(self, gizmo, clicked: bool) -> bool:
         """LMB released: commit a running handle drag; a plain click on a handle leaves just the constraint."""
         self.interaction.end_press(gizmo)
-        if self._transform_key == TWEAK_KEY:
-            self._transform_finish()
-            return True
+        gesture = self._gesture
+        if gesture is not None and gesture.key == TWEAK_KEY:
+            return gesture.commit()
         self._refresh_hover()
         return clicked
 
@@ -6410,7 +4023,8 @@ class Application:
         let go during the drag; the LMB release commits, Esc cancels (`_cancel`). A refused drag swallows the rest
         of its steps (`pointer_tools.swallow`)."""
         tools = self._pointer_tools
-        if self._transform_key is None:
+        gesture = self._gesture
+        if gesture is None:
             if self.viewport is None or self._refused_tweak():
                 tools.swallow()
                 return False
@@ -6421,10 +4035,11 @@ class Application:
             if not self._transform_arm(self.tweak_command, TWEAK_KEY):
                 tools.swallow()
                 return False
-        elif self._transform_key != TWEAK_KEY:
+            gesture = self._gesture
+        elif gesture.key != TWEAK_KEY:
             return False
-        stepped = self._transform_step(dx, dy)
-        if self._transform_key is None:
+        stepped = gesture.motion(dx, dy)
+        if self._gesture is None:
             # Refused at begin (seam, symmetric Soft): no re-arm until the release.
             tools.swallow()
         return stepped
@@ -6447,7 +4062,7 @@ class Application:
         """
         if self.viewport is not None:
             self.flush_hover()
-            self._sync_object_highlight()
+            self._objects.sync_highlight()
             self._push_region_tints()
             self.morph.refresh()
             self.viewport.sync()

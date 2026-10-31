@@ -1,16 +1,13 @@
 """AD-027 §3.3 (M2): one `can_run` answers keys, clicks, drags, the wheel, `dispatch_command` and the HUD.
 
-E5 (iv): `can_run` is pure - two calls give the same answer and change no observation (checked on states the
-trace driver reaches). The rest pins that each path asks the same check: the gated `dispatch_command` refuses
+E5 (iv), the purity of `can_run`, is `test_interaction_structure.py`'s. This file pins that each path asks the same check: the gated `dispatch_command` refuses
 what the key refuses (a held gesture, a Knife session, the Re-Symmetrize preview, mode `4`, a host gate), the
 Knife still lets view state through (AD-027 V8) and the HUD gets the refused hinted commands as data.
 """
 
 from __future__ import annotations
 
-import random
 
-import pytest
 
 import tests._bootstrap  # noqa: F401
 from tests import interaction_trace as trace
@@ -20,40 +17,8 @@ from mirai.interaction import commands
 from mirai.interaction.input import Input
 from mirai.interaction.session import Refusal, RunContext
 
-ALL_COMMANDS = sorted(
-    {getattr(commands, n) for n in dir(commands) if n.isupper() and isinstance(getattr(commands, n), str)}
-)
-SOURCES = ("key", "click", "drag", "wheel", "ui", "api")
-
-
 def _key(value: str, *mods: str) -> Input:
     return Input("key", value, frozenset(mods))
-
-
-def _answers(app):
-    return [
-        (command, source, app.can_run(command, RunContext(source, operands=source != "ui")))
-        for command in ALL_COMMANDS
-        for source in SOURCES
-    ]
-
-
-@pytest.mark.parametrize("scene", ["subd_sym", "objects", "morph", "hidden"])
-def test_can_run_is_pure(scene):
-    """E5 (iv) on every 25th state of two random sequences per scene."""
-    for seed in (0, 1):
-        driver = trace.Driver(scene)
-        rng = random.Random(f"can_run:{scene}:{seed}")
-        hand_events = 0
-        while hand_events < 150:
-            trace.random_sequence(driver, rng, len(driver.digests) + 25)
-            hand_events = len(driver.digests)
-            app = driver.app
-            before = trace.digest(trace.observe(app, None))
-            first = _answers(app)
-            assert _answers(app) == first
-            assert trace.digest(trace.observe(app, None)) == before
-            assert all(r is None or isinstance(r, Refusal) for _, _, r in first)
 
 
 def test_unbound_input_is_never_refused():

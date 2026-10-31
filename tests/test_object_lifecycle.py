@@ -90,10 +90,10 @@ def _assert_views_match_scene(app: Application) -> None:
     others = {oid for oid in scene.objects if oid != scene.edit_object_id}
     assert viewport.mesh is scene.mesh
     assert set(viewport.object_entries) == others
-    assert set(app._object_pick_caches) <= others
-    assert set(app._object_cameras) <= set(scene.objects)
+    assert set(app._objects.pick_caches) <= others
+    assert set(app._objects.cameras) <= set(scene.objects)
     assert app.selection.objects <= set(scene.objects)
-    assert app._highlighted_objects() <= set(scene.objects)
+    assert app._objects.highlighted() <= set(scene.objects)
     hovered = app.selection.hovered
     assert not isinstance(hovered, ObjectId) or hovered in scene.objects
 
@@ -114,7 +114,7 @@ def test_add_primitive_makes_a_selected_normal_object(kind):
     assert obj.id != edit_id and app.scene.edit_object_id == edit_id  # the edit object stays
     assert app.selection.mode is SelectionMode.OBJECT
     assert app.selection.objects == {obj.id}
-    assert obj.id in app._highlighted_objects()  # visibly selected (tint)
+    assert obj.id in app._objects.highlighted()  # visibly selected (tint)
     assert obj.id in app.viewport.object_entries
     assert len(app.history) == depth + 1  # one logical step
     assert obj.name.startswith(kind) and f"Added {obj.name!r}" in app.status_message
@@ -268,8 +268,8 @@ def test_primitive_survives_a_scene_file_roundtrip():
 def test_delete_removes_the_selected_object_and_cleans_every_dependent_state():
     app = _app()
     sphere = _extra(app)
-    app._pick_object(WIDTH / 2, HEIGHT / 2)  # populates the per-object pick caches
-    assert sphere.id in app._object_pick_caches
+    app._objects.pick(WIDTH / 2, HEIGHT / 2)  # populates the per-object pick caches
+    assert sphere.id in app._objects.pick_caches
     _select(app, sphere)
     app.selection.hovered = sphere.id
     depth = len(app.history)
@@ -278,7 +278,7 @@ def test_delete_removes_the_selected_object_and_cleans_every_dependent_state():
 
     assert sphere.id not in app.scene.objects
     assert app.selection.objects == set() and app.selection.hovered is None
-    assert sphere.id not in app._object_pick_caches
+    assert sphere.id not in app._objects.pick_caches
     assert len(app.history) == depth + 1
     assert app.status_message == "Deleted 'sphere'"
     assert app.scene.edit_object_id == app.scene.edit_object.id
@@ -299,7 +299,7 @@ def test_delete_undo_redo_brings_back_the_same_instance_selection_and_mode():
     assert app.scene.objects[oid] is sphere and sphere.mesh is mesh
     assert sphere.transform.translation == (2.0, 0.0, 0.0)
     assert app.selection.objects == {oid} and app.selection.mode is SelectionMode.OBJECT
-    assert oid in app.viewport.object_entries and oid in app._highlighted_objects()
+    assert oid in app.viewport.object_entries and oid in app._objects.highlighted()
     _assert_views_match_scene(app)
     _redo(app)
     assert oid not in app.scene.objects and app.selection.objects == set()
@@ -477,7 +477,7 @@ def test_a_click_selection_then_delete_works_end_to_end():
     app = _app()
     sphere = app.add_primitive("sphere")
     sphere.transform = ObjectTransform(translation=(3.0, 0.0, 0.0))
-    app._placement_changed()
+    app._objects.placement_changed()
     x, y = app.camera.project_to_screen((3.0, 0.0, 0.0), WIDTH, HEIGHT)
     app.selection.objects = set()
     _click(app, x, y)

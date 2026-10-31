@@ -183,7 +183,7 @@ def test_apply_on_a_non_edit_object_rebuilds_its_entry_and_undo_restores_it():
     app = _app()
     other = app.add_reference("cube", name="other")
     other.state = ObjectState.NORMAL
-    app._sync_object_views()
+    app._objects.sync_views()
     _select(app, other)
     _gesture(app, W, 80.0, 0.0, constraint=_key("x"))
     edit_state = app.scene.mesh.export_state()
@@ -204,7 +204,7 @@ def test_apply_on_a_non_edit_object_rebuilds_its_entry_and_undo_restores_it():
     # mode-4 picking finds it at its placed position again (its pick cache re-projected)
     center = object_space.to_world(other, (0.0, 0.0, 0.0))
     x, y = app.camera.project_to_screen(center, WIDTH, HEIGHT)
-    assert app._pick_object(x, y) == other.id
+    assert app._objects.pick(x, y) == other.id
 
 
 def test_apply_several_objects_is_one_undo_step():
@@ -277,7 +277,7 @@ def test_refused_on_a_reference_and_with_nothing_selected(key):
     app = _app()
     ref = app.add_reference("cube", name="plate")
     ref.transform = ObjectTransform(translation=(2.0, 0.0, 0.0))
-    app._placement_changed()
+    app._objects.placement_changed()
     _select(app, ref)
     state = ref.mesh.export_state()
     assert app.key_press(key) is False
@@ -348,7 +348,7 @@ def test_apply_keeps_a_symmetric_head_exactly_symmetric_when_the_plane_maps_onto
     # a quarter turn about Y given exactly: X maps onto Z, the definition follows
     app.key_press(CTRL_Z)
     head.transform = ObjectTransform(rotation=((0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0)))
-    app._placement_changed()
+    app._objects.placement_changed()
     assert app.key_press(APPLY), app.status_message
     assert current_axis(head.mesh) == "Z"
     assert symmetry_state(head.mesh).value == "valid"

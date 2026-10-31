@@ -177,7 +177,7 @@ def test_a_key_that_reads_the_hover_sees_the_current_one(twins):
     sync, coalesced = twins
     assert sync.transform_command is not None
     assert coalesced.transform_command == sync.transform_command
-    assert coalesced._transform_target == sync._transform_target
+    assert coalesced.transform_target == sync.transform_target
     assert coalesced.status_message == sync.status_message
     _both(twins, lambda app: app.key_press(ESC))
     _tick_and_compare(twins)

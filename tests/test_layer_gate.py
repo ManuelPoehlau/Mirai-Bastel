@@ -21,6 +21,9 @@ import tests._bootstrap  # noqa: F401
 
 from core import PointLayerInfo, SelectionMode
 from mirai import application as application_module
+from mirai.controllers import gestures as gestures_module, knife as knife_module, morph as morph_module
+from mirai.controllers import objects as objects_module, pointer_tools as pointer_tools_module
+from mirai.controllers import symmetry as symmetry_controller_module
 from mirai import layer_declarations as gate
 from mirai import symmetry_declarations
 from mirai.application import Application
@@ -86,26 +89,97 @@ _SINKS = {
 }
 
 
-def _mutating_public_methods() -> set[str]:
-    """Public `Application` methods that (through `self.` calls inside the class) reach a mesh change
-    or build a mesh from another - listed from the code, not by hand."""
-    tree = ast.parse(inspect.getsource(application_module))
-    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Application")
-    names = {}
-    for f in cls.body:
-        if isinstance(f, ast.FunctionDef):
-            names[f.name] = {
-                n.attr if isinstance(n, ast.Attribute) else n.id
-                for n in ast.walk(f) if isinstance(n, (ast.Attribute, ast.Name))
-            }
-    reach = {m for m, used in names.items() if used & _SINKS}
+#: The controllers `Application` delegates to (AD-027 §3.4), by the field that holds each.
+CONTROLLERS = {
+    "_gestures": gestures_module,
+    "_knife": knife_module,
+    "_morph": morph_module,
+    "_objects": objects_module,
+    "_pointer_tools": pointer_tools_module,
+    "_symmetry": symmetry_controller_module,
+}
+#: The slot's stages and the session / hold-key method each of them calls.
+_SLOT_CALLS = {"grab": {"handle"}, "handle": {"handle"}, "claim": {"claims"}, "background": {"background"},
+               "route": {"handle", "claims", "background"}}
+#: Events a session or hold key turns into a mesh change at most through a later event (a press, the hover, the
+#: Shift / Alt report): routing them is not a mesh change by itself.
+_PASSIVE_EVENTS = {"Press", "Hover", "Leave", "Modifiers"}
+
+
+def _event_types(arg, assigned: dict) -> set[str]:
+    """The event class names an argument of a slot call can be (empty = unknown)."""
+    if isinstance(arg, ast.IfExp):
+        return _event_types(arg.body, assigned) | _event_types(arg.orelse, assigned)
+    if isinstance(arg, ast.Name):
+        return assigned.get(arg.id, set())
+    if isinstance(arg, ast.Call) and isinstance(arg.func, ast.Name):
+        return {arg.func.id}
+    return set()
+
+
+def _used(f) -> set[str]:
+    return {n.attr if isinstance(n, ast.Attribute) else n.id for n in ast.walk(f) if isinstance(n, (ast.Attribute, ast.Name))}
+
+
+def _reach(functions: dict[str, set[str]], sinks: set[str]) -> set[str]:
+    reach = {m for m, used in functions.items() if used & sinks}
     grown = True
     while grown:
         grown = False
-        for m, used in names.items():
+        for m, used in functions.items():
             if m not in reach and used & reach:
                 reach.add(m)
                 grown = True
+    return reach
+
+
+def _module_reach(module) -> set[str]:
+    """The methods of a controller module (its controller, sessions and hold keys, merged by name) that reach a
+    mesh change; a controller reaches the app's transaction as `services.mesh_transaction`."""
+    functions: dict[str, set[str]] = {}
+    for node in ast.parse(inspect.getsource(module)).body:
+        if isinstance(node, ast.ClassDef):
+            for f in node.body:
+                if isinstance(f, ast.FunctionDef):
+                    functions.setdefault(f.name, set()).update(_used(f))
+    return _reach(functions, _SINKS | {"mesh_transaction"})
+
+
+def _mutating_public_methods() -> set[str]:
+    """Public `Application` methods that (through `self.` calls inside the class, through the controllers it
+    delegates to - `self._objects.mirror_copy(...)` - and through the slot's sessions) reach a mesh change or build
+    a mesh from another - listed from the code, not by hand."""
+    tree = ast.parse(inspect.getsource(application_module))
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Application")
+    reaches = {field: _module_reach(module) for field, module in CONTROLLERS.items()}
+    names = {}
+    for f in cls.body:
+        if isinstance(f, ast.FunctionDef):
+            used = _used(f)
+            assigned = {
+                t.id: _event_types(a.value, {})
+                for a in ast.walk(f) if isinstance(a, ast.Assign)
+                for t in a.targets if isinstance(t, ast.Name)
+            }
+            for n in ast.walk(f):
+                # self.<controller>.<method> and self.interaction.<stage>: a mesh change behind them counts as a sink.
+                if (
+                    isinstance(n, ast.Attribute)
+                    and isinstance(n.value, ast.Attribute)
+                    and isinstance(n.value.value, ast.Name)
+                    and n.value.value.id == "self"
+                ):
+                    if n.value.attr in reaches and n.attr in reaches[n.value.attr]:
+                        used.add("<controller sink>")
+                    if n.value.attr == "interaction" and any(
+                        _SLOT_CALLS.get(n.attr, set()) & reach for reach in reaches.values()
+                    ):
+                        calls = [c for c in ast.walk(f) if isinstance(c, ast.Call) and c.func is n]
+                        types = set().union(*(_event_types(c.args[0], assigned) for c in calls if c.args))
+                        if not types or types - _PASSIVE_EVENTS:
+                            used.add("<controller sink>")
+            names[f.name] = used
+    reach = _reach(names, _SINKS | {"<controller sink>"})
     return {m for m in reach if not m.startswith("_")}
 
 
@@ -125,7 +199,7 @@ def test_declared_entries_are_the_implementations_the_app_runs():
     for command in (commands.DELETE, commands.DISSOLVE, commands.DISSOLVE_NO_CLEANUP):
         assert ops[command] == (application_module.apply_removal, symmetry_declarations.REMOVAL_COORDINATORS[command])
     assert ops[commands.CAP] == (application_module.apply_cap, symmetry_declarations.CAP_COORDINATORS[commands.CAP])
-    assert ops[commands.APPLY_TRANSFORM] == (application_module.apply_placement,) * 2
+    assert ops[commands.APPLY_TRANSFORM] == (objects_module.apply_placement,) * 2
     # AD-025 Phase 5
     sym = symmetry_declarations.C_CONTEXT_COORDINATORS
     from core import Mesh
@@ -143,12 +217,12 @@ def test_declared_entries_are_the_implementations_the_app_runs():
         tool_for_command(commands.EXTRUDE), symmetry_declarations.EXTRUDE_COORDINATORS[commands.EXTRUDE]
     )
     assert ops[commands.INSET] == (
-        application_module.build_inset, symmetry_declarations.OFFSET_COORDINATORS[commands.INSET]
+        gestures_module.build_inset, symmetry_declarations.OFFSET_COORDINATORS[commands.INSET]
     )
     assert ops[commands.BEVEL] == (
-        application_module.build_bevel, symmetry_declarations.OFFSET_COORDINATORS[commands.BEVEL]
+        gestures_module.build_bevel, symmetry_declarations.OFFSET_COORDINATORS[commands.BEVEL]
     )
-    assert ops["mirror_copy"] == (application_module.mirror_mesh,) * 2
+    assert ops["mirror_copy"] == (objects_module.mirror_mesh,) * 2
 
 
 def test_unknown_keys_are_refused():
@@ -307,7 +381,7 @@ def _symmetric_placed(app):
     obj.transform = ObjectTransform(
         translation=(1.5, -0.25, 0.0), rotation=((0.0, 0.0, 1.0), (0.0, 1.0, 0.0), (-1.0, 0.0, 0.0)), scale=2.0
     )
-    app._placement_changed()
+    app._objects.placement_changed()
     return obj
 
 
