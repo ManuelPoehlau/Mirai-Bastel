@@ -10,7 +10,7 @@ view state, the mix display, Apply transform carrying the targets; implementatio
 (`split_face(…, origins=…)`, the second small Core change) and mirror copy are declared, plain and symmetric; implementation
 note in §16. **IMPLEMENTED (Phase 4, 2026-10-27)** — several targets per mesh, the additive mix with its drift guard,
 the stage chain morph → SubD (H5b) and packed layer storage (the Core internals); implementation note in §17. Phases 6
-and 7 open.
+and 7 open; **Phase 6 gate:** [AD-028](AD-028-SKINNING-RIG-AND-POSE-MODE.md) (PROPOSED 2026-11-01, waiting for Manu on P1–P4).
 **Go for the Phase 2 Core change: Manu, 2026-10-27** ("I give the Go for the Phase 2 Core Changes"). **Go for the Phase 5
 Core change (`split_face(…, origins=…)`): Manu, 2026-10-27** (given with the Phase 5 assignment). **H1–H5 and C-1 decided: Manu, 2026-10-27**
 ("ok ich gebe H1-H5 und C1 ein ja") — every recommended default of §10 / Kurzfassung holds; nothing is `PROVISIONAL` in §10
