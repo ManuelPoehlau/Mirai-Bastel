@@ -1,10 +1,10 @@
 # AD-028 — Skeleton and skinning: a scene rig, the weights point layer, CPU linear blend skinning (AD-025 Phase 6)
 
-**Status:** **PROPOSED (2026-11-02)** — the Architecture Gate (Type C) of AD-025 Phase 6. **Stop point before code:**
-Manu takes this draft to the Development chat for a second opinion (handoff, "extra stop point"; the points in §14),
-then decides S1–S8 (Kurzfassung) and gives the go for the Core change (§9, CORE_V1_FREEZE §7). No production code in
-this commit.
-**Mode (M5):** Discovery → decision preparation; Production after the go (§12).
+**Status:** **DECIDED (Manu, 2026-11-02: "Go for AD-028 and the Core change with C1–C3; S1–S8 as recommended")**,
+after the second opinion [DEVCHAT-001](../archive/deformation/reviews/AD-028_REVIEW_DEVCHAT_001.md) (Development chat,
+2026-11-02): ACCEPT WITH CHANGES, disposition in §16. Was PROPOSED the same day as the Architecture Gate (Type C) of
+AD-025 Phase 6. The go covers the Core change of §9 (CORE_V1_FREEZE §7, step 6). Not built yet.
+**Mode (M5):** Production, in fresh sessions with this AD as the handoff (§12).
 **Baseline:** `main` @ `0af65eb`. Every code fact below was read there (file:line).
 **Answers:** AD-025 §11 "Skinning data model" (influence keys, maximum influences, normalization tolerance, bind pose,
 where bindings live beyond AD-021 §4.9, the final shape of the weights kind) and AD-021 §4.9 "bind-pose storage".
@@ -36,7 +36,8 @@ Pose-Modus (`5`), Knochen anklicken, `E` dreht → Mundwinkel: Punkte wählen, *
 Wert, mit Soft (`O`) weich auslaufend → Ausdruck als Morph wie bisher → *Ruhe ↔ Pose* (eine Taste) → Loop am
 Mundwinkel → zurück in die Pose → speichern, laden.
 
-**Deine Entscheidungen** (je eine Zeile; „ja“ = Empfehlung):
+**Deine Entscheidungen** (je eine Zeile; „ja“ = Empfehlung) — **beantwortet am 2026-11-02: alle acht wie empfohlen**,
+mit deinem Go für den Bau:
 
 - **S1 Gewichte:** bis zu 4 Knochen pro Punkt, zusammen 100 %. Was ein Knochen abgibt, geht an seinen Elternknochen;
   ein Knochen ohne Eltern gibt an das Objekt ab (dieser Anteil bleibt stehen). — *ja / anders*
@@ -59,7 +60,8 @@ Mundwinkel → zurück in die Pose → speichern, laden.
 **Zur Kenntnis (keine Frage):** Nur das bearbeitete Objekt zeigt die Pose (Zähne als eigenes Objekt folgen in dieser
 Phase nicht). Auswahl und Hover liegen wie bei Morph auf der Ruheform.
 
-**Nächster Schritt:** Dieser Entwurf geht als zweite Meinung in den Development-Chat (Punkte in §14), dann dein Go.
+**Nächster Schritt:** der Bau (§12). Danach ein Durchgang am Kopf oder an Gollum und ein Messlauf auf deinem PC
+(Abschnitt „Praxistest“ am Ende).
 
 ---
 
@@ -83,7 +85,7 @@ Phase nicht). Auswahl und Hover liegen wie bei Morph auf der Ruheform.
 |---|---|
 | Rig on `Scene`, a bone hierarchy, a general data model, only the UI the jaw needs | kept (§3.1, §8) |
 | Weights as the WEIGHTS point layer, ≤ 4 influences, normalized, the remainder to the parent bone | kept, with one reading: the object is the parent of every root bone, and its share is implicit (§3.3, §3.4) |
-| CPU linear blend skinning (LBS) in the chain morph → skin → SubD; GPU only if a reference-PC profile demands it | kept (§5); **the acceptance "pose step ≤ 16.7 ms at 20k [RPC]" is not reachable on this path at a jaw-sized region** — evidence and a proposed acceptance in §5.4 (P-1) |
+| CPU linear blend skinning (LBS) in the chain morph → skin → SubD; GPU only if a reference-PC profile demands it | kept (§5); **the acceptance "pose step ≤ 16.7 ms at 20k [RPC]" is not reachable on this path at a jaw-sized region** — evidence and the acceptance decided instead (the H5c rule) in §5.4 (P-1) |
 | Posing with the transform interaction (E + gizmo) on a bone in a pose mode | kept (§8) |
 | Pose persistence and Undo follow the morph-weight rule | kept (§6) |
 | Editing the posed mesh: defined by the AD, fail-closed | refused with a one-key rest ↔ pose toggle (§7) |
@@ -185,6 +187,7 @@ several WEIGHTS layers, the app binds one per mesh). Its value per vertex (`Weig
   is part jaw, part object. With a head bone as the jaw's parent, the remainder rule (§3.4) writes the head explicitly,
   so the object's share appears only where nothing above the bone is weighted — which is exactly where the point
   should stay. The handoff's "remainder to the parent bone" holds with the object as the parent of every root (P-2).
+  A mandatory root bone stays possible later (DEVCHAT-001).
 - **Dead keys:** a key whose bone no longer exists (a file from elsewhere, a missed rewrite) counts as the object's
   share at evaluation — valid or dead, never wrong (AD-021 §4.5). Deleting a bone rewrites its keys (§3.4), so the app
   never produces one.
@@ -212,6 +215,11 @@ Setting bone `b` to `x ∈ [0, 1]` at vertex `v` with value `W` and object share
 - Why this rule and not proportional in both directions (Blender's auto-normalize, general knowledge): lowering a jaw
   share should fall back to what the jaw hangs on, not to an unrelated cheek bone that happens to share the vertex
   (P-3). Raising has no "parent" direction, so it takes proportionally.
+- **Path dependent across gestures** (DEVCHAT-001, accepted): raising a bone and lowering it back in a second gesture
+  does not restore the old split — e.g. `{jaw 0.4, cheek 0.6}` with parent head: jaw → 0.7 gives
+  `{jaw 0.7, cheek 0.3}`, jaw back → 0.4 gives `{head 0.3, jaw 0.4, cheek 0.3}`. Within one gesture the result is
+  deterministic: every step is computed from the values at the press (§8.4). Undo restores the exact old split. T-8
+  pins this behaviour.
 
 ### 3.5 Combination in the Core: why interpolation and the H3 average stay normalized
 
@@ -354,7 +362,7 @@ reference-card probe (bone matrices as uniforms or a buffer texture: GL 3.3 allo
 patch (§17.1 (b)) is the cheaper shared alternative, but Manu parked large-selection moves ("vorerst so lassen",
 2026-10-21, ATELIER D1c), and pure Python is unlikely to gain the needed 5×.
 
-**Proposed acceptance for this phase (P-1, S7):** the H5c rule — pose step ≤ 16.7 ms p95 [RPC] on head_basemesh and
+**Acceptance for this phase (P-1, S7; decided 2026-11-02):** the H5c rule (Manu's, inherited) — pose step ≤ 16.7 ms p95 [RPC] on head_basemesh and
 Man_With_Shoes for a jaw-like region (≤ 15 % of the points), with and without one morph target dialled in; gollum_20k
 measured and reported ("usable, not fluid" expected); the reference-PC run of the probe decides whether the GPU drawing path is the next AD. **Probe:**
 `python experiments/drag_cost/probe_morph_gl.py --only-skin` (built with the phase: pose steps of a jaw-like region of 5 /
@@ -557,6 +565,7 @@ in the window (`src/main.py:670`). HUD row "Rig" (only with a rig): current bone
 | T-5 | Per gated topology operation with a weights layer, plain and symmetric (Split, Edge Connect, Loop Insert, Knife incl. a closed shape and a self-crossing, Collapse, Extrude, Inset, Bevel, Delete, Dissolve, Vertex Connect, Cap): weights == the rule, W1–W4, Undo exact; Apply transform (weights unchanged, posed world result equal ≤ 1e-12); mirror copy refused untouched | §4 |
 | T-6 | Through `Application`: bone add / delete / rename with exact Undo (incl. the weights rewrite); both weight gestures (Esc exact, commit = one step, Soft, symmetry on- and off-centre, mask); the three policies (every position and topology command refused untouched while posed and running at rest; pose mode; placement); the toggle; bone picking; keys free in every context; HUD row; `can_run` purity; the E5 structure checks | §6–§8 |
 | T-7 | **The jaw scenario** (`tests/test_jaw_scenario.py`, readable named steps in the AD-027 scenario style, headless): group "Kiefer" → pivot → add bone → weights from the group with a width → a Soft correction at the mouth corner → rotate the jaw (E, X) → a morph target shaped beside the base → rest → Loop Insert at the mouth corner → pose again → bones, weights (rule at the new loop, W1–W4), offsets (rule) and the posed surface (= `evaluate`) as stated; Undo to the start and Redo to the end exact; save → load bit-exact (rig, weights, targets; rest pose after the load) | the Artist acceptance |
+| T-8 | The write rule (`skin_weights.py`): every case of §3.4 (raise; lower to the parent, and to the object for a root; a fifth key; the Soft target; bone deletion); **the path dependence pinned** — the §3.4 example (raise, then lower back in a second gesture) gives the documented split, not the old one; a gesture recomputed from its press values gives the same result whatever its intermediate steps; Undo restores the old split exactly | §3.4, DEVCHAT-001 P-3 |
 
 **Mutation checks by hand** (as in AD-025 §14–§17), each must fail a test: truncation keeping the smallest, the snap
 missing, a lowered share going to the object instead of the parent, the identity short-circuit missing (rest not
@@ -567,7 +576,9 @@ write without the journal, a weight gesture computing from the previous step ins
 `experiments/morph_lab/tests`; the Knife oracle; the AD-027 scenario tests are part of `tests/`.
 **Done:** all green; the probe built and its container numbers recorded here; reference-PC numbers when Manu runs it;
 the CORE_V1_FREEZE §7.1 entry and §4 update; AD-025 §11 updated; an implementation note here; one line in
-`docs/ATELIER.md`.
+`docs/ATELIER.md`. **For Manu (C2):** the implementation note and the ATELIER line ask him only what is his —
+Intent, Product Truth, Priority, Promotion — in plain German without jargon; technical defaults are stated, not
+asked.
 
 ## 13. Risks and guards
 
@@ -582,6 +593,8 @@ the CORE_V1_FREEZE §7.1 entry and §4 update; AD-025 §11 updated; an implement
 | The 20k bar is expected to fail on the reference PC | stated before the build (§5.4, P-1); the probe measures it |
 
 ## 14. Points for the second opinion (Development chat)
+
+**Decided:** all eight as proposed (DEVCHAT-001, Manu's go 2026-11-02; §16).
 
 1. **P-1 Acceptance at 20k** (§5.4): the CPU path cannot meet "pose step ≤ 16.7 ms at 20k [RPC]" at a jaw-sized region
    (expected 25–115 ms); proposed: the H5c rule for this phase, the GPU drawing path as its own AD after the
@@ -603,12 +616,30 @@ edit object; GPU skinning or a GPU drawing path; editing on the posed surface; b
 bone mirroring (L/R) and symmetric weights of off-centre bones; GUI panels; `config/keymap.json`; removing the Morph
 Lab; transfer between meshes (Phase 7).
 
+## 16. Review disposition
+
+Second opinion [DEVCHAT-001](../archive/deformation/reviews/AD-028_REVIEW_DEVCHAT_001.md) (Development chat,
+2026-11-02, archived verbatim): **ACCEPT WITH CHANGES**. Manu's go the same day: "Go for AD-028 and the Core change with
+C1–C3; S1–S8 as recommended." Nothing beyond the points below was changed.
+
+| Point | Review | Disposition |
+|---|---|---|
+| P-1 | agree; the H5c rule is Manu's (inherited), the GPU drawing path its own AD after the reference-PC run | §5.4 acceptance marked decided |
+| P-2 | agree; the implicit object share matches unweighted points staying at rest; a root bone stays possible later | §3.3 notes the later root bone |
+| P-3 | agree; raise-proportional / lower-to-parent is path dependent across gestures, acceptable, deterministic within a gesture; pin it with a test | **adopted:** §3.4 "Path dependent across gestures" with an example; test T-8 |
+| P-4, P-5, P-6, P-8 | as proposed for this phase | unchanged |
+| P-7 | four kept by size; more influences = an additive kind later | unchanged (§3.3 already says so) |
+| C1 | remove the verdict table from the practical test; keep one run-through and the reference-PC measurement | **adopted:** table removed, the section says "melde dich, wenn etwas Probleme macht" |
+| C2 | questions to Manu in plain German without jargon, only for Intent, Product Truth, Priority, Promotion; technical defaults stated, not asked; for the implementation note and the ATELIER line | **adopted:** the rule in §12 "Done" for the implementation note; the ATELIER line rewritten in plain words, without a question |
+| C3 | delete the stale branch `claude/jolly-hawking-eqqvmz` (the older draft `AD-028-SKINNING-RIG-AND-POSE-MODE.md`, 2026-11-01) | that draft (one commit `19018cd`, no PR) is superseded by this AD. The deletion is left to Manu on GitHub: this session's Git access reaches only its own branch (two attempts refused, 2026-11-02) |
+
 ---
 
 ## Praxistest für Manu nach dem Bau (Deutsch, ca. 20 Minuten)
 
-Am Kopf (`python src/main.py`) oder an Gollum (`python src/main.py examples/meshes/gollum_20k.obj`). Tasten außer `5`
-kommen mit dem Bau (`PROVISIONAL`); die Schritte bleiben.
+Ein Durchgang, keine Abhakliste: melde dich, wenn etwas Probleme macht. Am Kopf (`python src/main.py`) oder an Gollum
+(`python src/main.py examples/meshes/gollum_20k.obj`). Die Tasten außer `5` stehen erst nach dem Bau fest (Vorschläge);
+die Schritte bleiben.
 
 1. **Gruppe.** In `3` die Flächen des Unterkiefers wählen, `Strg+G`, Name „Kiefer“ — oder eine vorhandene Gruppe aktiv
    machen.
@@ -628,13 +659,3 @@ kommen mit dem Bau (`PROVISIONAL`); die Schritte bleiben.
    Gewicht 0 %).
 9. **Messlauf auf deinem PC:** `python experiments/drag_cost/probe_morph_gl.py --only-skin`, die Ausgabe in den Chat
    (die 16,7-ms-Grenze kann nur dein PC bestätigen).
-
-| Punkt | Verdikt (KEEP / ITERATE / REJECT / UNKNOWN) | Notiz |
-| --- | --- | --- |
-| Knochen anlegen vom Pivot zur Auswahl (2) | | |
-| Gewichte aus der Gruppe, Breite ziehen (3) | | |
-| Pose-Modus, Knochen anklicken, `E` (4) | | |
-| Korrektur mit Soft (5) | | |
-| Morph unter der Pose (6) | | |
-| Ablehnung in der Pose, Ruhe ↔ Pose, Loop (7) | | |
-| Speichern / Laden (8) | | |
