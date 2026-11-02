@@ -37,6 +37,13 @@ den Schlüssel: keine). Wie Version 5 nur geschrieben, wenn ein Mesh UVs oder ei
 4 bzw. 5), damit ein älterer Build die Datei ablehnt, statt UVs und Textur beim Speichern still zu
 verlieren. Gelesen werden 2-6.
 
+Version 7 (Rig und Gewichte, AD-028 §3.6, CORE_V1_FREEZE §7.1 2026-11-02) ist additiv: `"rig"` ist
+`null` oder `{"bone_id_counter", "bones": [{"id", "name", "parent", "head", "tail", "roll"}, ...]}`
+(geprüft über `core.rig.Rig`; ein ungültiges Rig macht die Datei ungültig), ein Gewichts-Layer reist
+in `Mesh.export_state()` mit `"kind": "weights"`. Nur geschrieben, wenn die Scene ein Rig oder ein
+Mesh einen Gewichts-Layer hat (sonst 4 / 5 / 6 wie bisher), damit ein älterer Build die Datei
+ablehnt, statt Rig oder Gewichte beim Speichern still zu verlieren. Gelesen werden 2-7.
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -47,7 +54,8 @@ from __future__ import annotations
 import json
 
 from .ids import ObjectId
-from .mesh import Mesh
+from .mesh import LayerKind, Mesh
+from .rig import Rig
 from .scene import MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, Scene, SceneObject
 
 FORMAT_VERSION = 4
@@ -55,13 +63,18 @@ FORMAT_VERSION = 4
 LAYERS_FORMAT_VERSION = 5
 #: Written when any mesh has face-corner UVs or any object a texture (AD-026).
 UV_FORMAT_VERSION = 6
+#: Written when the scene has a rig or any mesh a weights layer (AD-028 §3.6).
+RIG_FORMAT_VERSION = 7
 
 
 def scene_to_dict(scene: Scene) -> dict:
     objects = scene.objects.values()
     layered = any(obj.mesh.has_point_layers() for obj in objects)
     textured = any(obj.mesh.has_face_uvs() or obj.texture is not None for obj in objects)
-    if textured:
+    rigged = scene.rig is not None or any(_has_weights(obj.mesh) for obj in objects)
+    if rigged:
+        version = RIG_FORMAT_VERSION
+    elif textured:
         version = UV_FORMAT_VERSION
     else:
         version = LAYERS_FORMAT_VERSION if layered else FORMAT_VERSION
@@ -73,14 +86,18 @@ def scene_to_dict(scene: Scene) -> dict:
         "mirror_pairs": [_pair_to_dict(pair) for pair in scene.mirror_pairs],
         # Reservierte, aktuell leere Plätze für künftige Subsysteme (§12):
         "morph_targets": scene.morph_targets,
-        "rig": scene.rig,
+        "rig": None if scene.rig is None else scene.rig.to_dict(),
         "animation": scene.animation,
     }
 
 
+def _has_weights(mesh: Mesh) -> bool:
+    return any(mesh.point_layer_info(lid).kind is LayerKind.WEIGHTS for lid in mesh.point_layer_ids())
+
+
 def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
-    if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION):
+    if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
@@ -97,7 +114,8 @@ def scene_from_dict(data: dict) -> Scene:
     else:
         raise ValueError(f"Unbekannte/nicht unterstützte Scene-Version: {version!r}")
     scene.morph_targets = data.get("morph_targets")
-    scene.rig = data.get("rig")
+    raw_rig = data.get("rig")
+    scene.rig = None if raw_rig is None else Rig.from_dict(raw_rig)
     scene.animation = data.get("animation")
     return scene
 

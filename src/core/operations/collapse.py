@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from ..ids import EdgeId, FaceId, VertexId
-from ..mesh import Mesh, MeshError
+from ..mesh import Mesh, MeshError, combine_values
 
 
 class CollapseRefused(MeshError):
@@ -101,7 +101,14 @@ def collapse_elements(
 
 
 def _layer_means(mesh: Mesh, group: list[VertexId]) -> list:
-    return [(lid, _mean([mesh.layer_value(lid, v) for v in group])) for lid in mesh.point_layer_ids()]
+    """Per layer the H3 average of the group's original values through the Core's one combiner
+    (`combine_values`, rule "mean": for vectors the centroid's expression, for weights the convex
+    combination with 1/n each, AD-028 §3.5)."""
+    a = 1.0 / len(group)
+    return [
+        (lid, combine_values(mesh.point_layer_info(lid).kind, [(mesh.layer_value(lid, v), a) for v in group], "mean"))
+        for lid in mesh.point_layer_ids()
+    ]
 
 
 def _centroid(mesh: Mesh, group: list[VertexId]) -> tuple[float, float, float]:

@@ -3,7 +3,8 @@
 **Status:** **DECIDED (Manu, 2026-11-02: "Go for AD-028 and the Core change with C1–C3; S1–S8 as recommended")**,
 after the second opinion [DEVCHAT-001](../archive/deformation/reviews/AD-028_REVIEW_DEVCHAT_001.md) (Development chat,
 2026-11-02): ACCEPT WITH CHANGES, disposition in §16. Was PROPOSED the same day as the Architecture Gate (Type C) of
-AD-025 Phase 6. The go covers the Core change of §9 (CORE_V1_FREEZE §7, step 6). Not built yet.
+AD-025 Phase 6. The go covers the Core change of §9 (CORE_V1_FREEZE §7, step 6). **Slice 1 (Core) built 2026-11-02**
+(§17); slices 2–4 follow.
 **Mode (M5):** Production, in fresh sessions with this AD as the handoff (§12).
 **Baseline:** `main` @ `0af65eb`. Every code fact below was read there (file:line).
 **Answers:** AD-025 §11 "Skinning data model" (influence keys, maximum influences, normalization tolerance, bind pose,
@@ -632,6 +633,54 @@ C1–C3; S1–S8 as recommended." Nothing beyond the points below was changed.
 | C1 | remove the verdict table from the practical test; keep one run-through and the reference-PC measurement | **adopted:** table removed, the section says "melde dich, wenn etwas Probleme macht" |
 | C2 | questions to Manu in plain German without jargon, only for Intent, Product Truth, Priority, Promotion; technical defaults stated, not asked; for the implementation note and the ATELIER line | **adopted:** the rule in §12 "Done" for the implementation note; the ATELIER line rewritten in plain words, without a question |
 | C3 | delete the stale branch `claude/jolly-hawking-eqqvmz` (the older draft `AD-028-SKINNING-RIG-AND-POSE-MODE.md`, 2026-11-01) | that draft (one commit `19018cd`, no PR) is superseded by this AD. The deletion is left to Manu on GitHub: this session's Git access reaches only its own branch (two attempts refused, 2026-11-02) |
+
+## 17. Implementation note
+
+### 17.1 Slice 1 — Core (2026-11-02; CORE_V1_FREEZE §7.1 entry of the same date)
+
+Built as §3 and §9 say; tests `tests/test_weights_layer.py` (T-1), `tests/test_rig.py` (T-2). Findings and the
+direction taken (AGENTS §5):
+
+- **The combiner takes a rule** — `combine_values(kind, sources, rule)` with `"affine"` / `"midpoint"` / `"mean"`. The
+  four places of F-2 had three different vector expressions (Σ a·v chained; `(x + y) / 2.0`; `sum(…) / n`), which differ
+  in the sign of zero for `(−0.0, −0.0)` — a realistic input (a mirrored target's seam offsets). One expression for all
+  would have broken "bit-identical"; the rule keeps each one. For weights all three rules are the same convex
+  combination (factors ½ and 1/n). Pinned bit-wise in T-1; a differential run of 2,400 scene JSON texts (vector layers,
+  −0.0, Collapse, Knife origins) against `main` hashed identically.
+- **The snap is made exact and idempotent.** Dividing by `Σw` leaves `Σw` within an ulp or two of 1 (e.g.
+  0.9999999999999999), and a second canonicalization would divide again and move bits — a stored value would then fail
+  the file's "canonical only" check. The smallest weight (ties: the smaller key) takes the last ulp, so `Σw` (`math.fsum`)
+  is exactly 1.0 after a snap. A stored value therefore has `Σw == 1.0` or `Σw < 1 − 1e-12`. `Σw` is `math.fsum`
+  throughout the Core (order-free: the combination does not depend on the order of its sources).
+- **Written values:** `Σw > 1 + 1e-9` is refused (W2); `1 < Σw ≤ 1 + 1e-9` is divided out. Keys are ints in
+  `[0, 2^31)` — the 32-bit key storage of §3.6 bounds them (`BoneId`s count from 0; unreachable in practice). An int
+  weight in a file is accepted as its float (the value is canonical); a bool is not a number; `[]` (the default) is
+  not a stored value and makes the file invalid.
+- **`load_state` of an unrelated state** that reuses a `LayerId` with the other kind replaces the layer whole
+  (whole-layer record, rollback exact). A layer's kind still never changes within a history (L4).
+- **Rig API (names `PROVISIONAL`):** `Rig.with_new_bone(…)` allocates the next id and returns `(rig, id)`; `with_bone`
+  only replaces an existing id (an absent id below the counter would be a reused one); `without_bone` re-parents the
+  children (§3.4). `rest_frame(bone)` takes no rig — rig space is world space; the rig parameter comes with a rig
+  transform. `Scene.rig` is a typed property. An empty rig is a value (its counter persists) and writes version 7.
+- **One existing assertion changed:** `test_point_layers.test_layer_info_validation` pinned the reservation itself
+  (`add_point_layer(WEIGHTS)` refused); it now asserts the layer exists and refuses a vector value. Every other layer
+  test and the T-1 / T-2 journal oracles are unchanged and green. `tests/mesh_invariants.assert_layer_invariants`
+  checks W1–W4 for weights layers (`assert_weights_value`).
+- **Hand mutation checks (Core), each caught by T-1:** truncation keeping the smallest; the snap missing; the snap
+  without the last-ulp step; weights through a non-combiner path in `split_edge`.
+
+**[C] measurements** (container, Python 3.13; scratch probe, not kept: a dense weights layer with 1–3 keys per point
+on the example meshes, `split_edge` on 3,000 random edges, median / p95):
+
+| | gollum_20k (21,875 V) | gollum (87,500 V) |
+|---|---|---|
+| `PackedWeights` buffers | 1.02 MiB (49.0 B per point) | 4.09 MiB |
+| the shared slot map (once per mesh, all layers; `layer_storage_bytes` estimate) | ≈ 2.1 MiB | ≈ 8.3 MiB |
+| traced for the layer incl. the slot map | 3.4 MiB | 12.7 MiB |
+| `set_layer_value` (weights, validated) | ≈ 4.8 µs per point (vector: ≈ 1.7 µs) | — |
+
+`split_edge` at 20k: 15.4 / 26.4 µs without layers, 16.8 / 25.0 µs with a dense vector layer, **23.5 / 35.8 µs with a
+dense weights layer** (the combination ≈ 4.4 µs per call for two sources, four keys).
 
 ---
 

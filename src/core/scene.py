@@ -30,6 +30,9 @@ Architekturvertrag:
 - Textur pro Objekt (`SceneObject.texture`; AD-026, CORE_V1_FREEZE §7.1 2026-10-29): reine Daten -
   der Pfad einer Bilddatei (oder `None`), die über die Face-Ecken-UVs des Meshes gezeigt wird. Das
   Bild selbst ist kein Scene-Inhalt; Laden und Anzeigen leben in `src/mirai`/`src/viewport`.
+- Rig (`Scene.rig: Rig | None`; AD-028 §3.1, CORE_V1_FREEZE §7.1 2026-11-02): der reservierte Platz
+  trägt jetzt einen geprüften, unveränderlichen Wert (`core.rig`) - Knochen mit Ruhelage in Welt-
+  koordinaten; `None` = kein Rig. Pose, Auswertung und Commands leben in `src/mirai`.
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ from types import MappingProxyType
 from .history import HistoryStack
 from .ids import IdAllocator, ObjectId
 from .mesh import Mesh
+from .rig import Rig
 from .selection import Selection
 
 Vec3 = tuple[float, float, float]
@@ -237,9 +241,9 @@ class Scene:
         self.history: HistoryStack = HistoryStack()
 
         # Bewusst None in V1 - siehe §12/§16. Reservierte Plätze, keine
-        # Implementierung.
+        # Implementierung. `rig` ist seit AD-028 ein geprüfter Wert (Property unten).
         self.morph_targets = None
-        self.rig = None
+        self._rig: Rig | None = None
         self.animation = None
 
     @classmethod
@@ -276,6 +280,21 @@ class Scene:
         for pair in mirror_pairs:
             scene.add_mirror_pair(pair)
         return scene
+
+    # ------------------------------------------------------------------
+    # Rig (AD-028 §3.1)
+    # ------------------------------------------------------------------
+
+    @property
+    def rig(self) -> Rig | None:
+        """Die Knochen der Scene (ein Rig für alle Objekte, AD-021 §4.9) oder None."""
+        return self._rig
+
+    @rig.setter
+    def rig(self, rig: Rig | None) -> None:
+        if rig is not None and not isinstance(rig, Rig):
+            raise TypeError(f"erwartet ein Rig oder None, nicht {rig!r}")
+        self._rig = rig
 
     # ------------------------------------------------------------------
     # Objekte (AD-021 §4.1, §4.5, §5.1)

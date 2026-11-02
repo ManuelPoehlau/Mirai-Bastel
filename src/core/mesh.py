@@ -46,7 +46,7 @@ from .corner_uvs import (
     UV, FaceUVs, lerp_uv, mean_uv, polygon_weights, same_uv, uv_tuple, weighted_uv,
 )
 from .ids import VertexId, EdgeId, FaceId, IdAllocator, LayerId
-from .layer_storage import LayerSlots, PackedValues
+from .layer_storage import WEIGHTS_KEY_LIMIT, WEIGHTS_WIDTH, LayerSlots, PackedValues, PackedWeights
 
 Position = tuple[float, float, float]
 #: Value of a vector point layer (AD-025 §4.2): three finite floats, default (0, 0, 0).
@@ -98,7 +98,8 @@ class MeshError(ValueError):
 
 class LayerKind(enum.Enum):
     VECTOR = "vector"
-    #: Reserved for skinning weights (AD-025 §4.1, built with Phase 6); `add_point_layer` refuses it.
+    #: Skinning weights (AD-028 §3.3, CORE_V1_FREEZE §7.1 2026-11-02): per vertex 1-4 pairs
+    #: (key, w), canonical form W1-W4 (`_weights_value`); the default () = unbound.
     WEIGHTS = "weights"
 
 
@@ -147,6 +148,149 @@ def _vector_value(value) -> LayerValue:
     if not (math.isfinite(x) and math.isfinite(y) and math.isfinite(z)):
         raise MeshError(f"Ein Vektorwert muss endlich sein: {value!r}")
     return (x, y, z)
+
+
+# -- the WEIGHTS kind (AD-028 §3.3-§3.5) ---------------------------------------------------------
+#: Value of a weights layer: 1-4 pairs (key, w), keys strictly ascending, 0 < w <= 1, Σw <= 1; the
+#: object's share 1 - Σw is implicit. The Core treats keys as opaque ints (the app's BoneIds).
+WeightsValue = tuple[tuple[int, float], ...]
+_WEIGHTS_SUM_TOLERANCE = 1e-9  # W2: Σw <= 1 + 1e-9 for a written value
+_WEIGHTS_SNAP = 1e-12  # §3.5 step 4: Σw >= 1 - 1e-12 counts as fully bound
+
+
+def _snapped(pairs: list) -> WeightsValue:
+    """W4's last step on sorted pairs with w > 0 (AD-028 §3.5 step 4): Σw (`math.fsum`) > 1 or within
+    1e-12 under 1 is divided out. The division leaves Σw within an ulp or two of 1; the smallest weight
+    (ties: the smaller key) then takes that residue, so Σw is exactly 1.0 and the canonical form is
+    idempotent - a stored value re-validates unchanged (the file accepts only canonical values)."""
+    total = math.fsum(w for _, w in pairs)
+    if total == 1.0 or total < 1.0 - _WEIGHTS_SNAP:
+        return tuple(pairs)
+    weights = [w / total for _, w in pairs]
+    if len(weights) > 1:
+        j = min(range(len(weights)), key=lambda i: (weights[i], pairs[i][0]))
+        others = weights[:j] + weights[j + 1:]
+        wj = 1.0 - math.fsum(others)
+        for _ in range(8):  # converges in <= 2 steps (Sterbenz: the others sum to >= 1/2)
+            s = math.fsum(others + [wj])
+            if s == 1.0:
+                break
+            wj = math.nextafter(wj, 0.0 if s > 1.0 else 2.0)
+        weights[j] = wj
+    return tuple((k, w) for (k, _), w in zip(pairs, weights) if w > 0.0)
+
+
+def _weights_value(value) -> WeightsValue:
+    """Validates a weights value and returns its canonical form (AD-028 W1-W4): every item a pair
+    (key, w) with an int key 0 <= key < 2^31 (32-bit storage) and a finite w >= 0; distinct keys;
+    zero weights dropped; at most four left; keys ascending; Σw <= 1 + 1e-9 (W2), then the snap.
+    () is the default (unbound). Raises MeshError for anything else."""
+    if type(value) is tuple and value and all(
+        type(p) is tuple and len(p) == 2 and type(p[0]) is int and type(p[1]) is float for p in value
+    ):
+        pairs = list(value)  # the fast path: what the Core itself hands out
+    else:
+        try:
+            pairs = [tuple(p) for p in value]
+        except TypeError:
+            raise MeshError(f"Ein Gewichtswert ist eine Folge von (Schlüssel, Gewicht)-Paaren: {value!r}") from None
+    out = []
+    keys = set()
+    for pair in pairs:
+        if len(pair) != 2:
+            raise MeshError(f"Ein Gewichtspaar braucht genau zwei Einträge: {pair!r}")
+        key, w = pair
+        if isinstance(key, bool) or not isinstance(key, int) or not 0 <= key < WEIGHTS_KEY_LIMIT:
+            raise MeshError(f"Ein Gewichtsschlüssel ist eine ganze Zahl in [0, 2^31): {key!r}")
+        key = int(key)
+        if key in keys:
+            raise MeshError(f"Gewichtsschlüssel doppelt: {key}")
+        keys.add(key)
+        if isinstance(w, bool):
+            raise MeshError(f"Ein Gewicht ist eine Zahl: {w!r}")
+        try:
+            w = float(w)
+        except (TypeError, ValueError):
+            raise MeshError(f"Ein Gewicht ist eine Zahl: {w!r}") from None
+        if not math.isfinite(w) or w < 0.0:
+            raise MeshError(f"Ein Gewicht ist endlich und >= 0: {w!r}")
+        if w > 0.0:
+            out.append((key, w))
+    if len(out) > WEIGHTS_WIDTH:
+        raise MeshError(f"Höchstens {WEIGHTS_WIDTH} Gewichte pro Punkt: {value!r}")
+    out.sort()
+    if math.fsum(w for _, w in out) > 1.0 + _WEIGHTS_SUM_TOLERANCE:
+        raise MeshError(f"Die Gewichte eines Punkts summieren sich höchstens zu 1: {value!r}")
+    return _snapped(out)
+
+
+def _combine_weights(sources) -> WeightsValue:
+    """AD-028 §3.5 for affine factors a_i: per key Σ a_i·w_ik (`math.fsum`, an absent key counts 0;
+    the object's share follows implicitly), non-positive results dropped (only negative factors could
+    give them), the four largest kept (ties: the smaller key) and divided by 1 - the dropped mass, then
+    the snap. Raises MeshError for a non-finite result (before any mutation, like the vector rule)."""
+    terms: dict[int, list[float]] = {}
+    for value, a in sources:
+        for key, w in value:
+            terms.setdefault(key, []).append(a * w)
+    pairs = []
+    for key in sorted(terms):
+        try:
+            w = math.fsum(terms[key])
+        except OverflowError:
+            w = math.inf
+        if not math.isfinite(w):
+            raise MeshError("Herkunft ergibt keinen endlichen Wert.")
+        if w > 0.0:
+            pairs.append((key, w))
+    if len(pairs) > WEIGHTS_WIDTH:
+        ranked = sorted(pairs, key=lambda kw: (-kw[1], kw[0]))
+        kept = ranked[:WEIGHTS_WIDTH]
+        scale = 1.0 - math.fsum(w for _, w in ranked[WEIGHTS_WIDTH:])
+        if scale <= 0.0:  # only with negative factors: the kept ones carry everything
+            scale = math.fsum(w for _, w in kept)
+        pairs = sorted((k, w / scale) for k, w in kept)
+    return _snapped(pairs)
+
+
+#: How `combine_values` combines (AD-028 §3.5). For WEIGHTS all three are the one convex combination
+#: with the given factors. For VECTOR each keeps its expression of AD-025 Phase 2, bit-identical:
+#: "affine" Σ a_i·v_i with the first term not added to 0.0 (`add_vertex(origin=…)`,
+#: `split_face(origins=…)`, `split_edge`'s blend), "midpoint" (x + y) / 2.0 (`collapse_edge`, the
+#: position's expression there), "mean" sum(…) / n (`collapse_elements`, the centroid's expression).
+COMBINE_RULES = ("affine", "midpoint", "mean")
+
+
+def combine_values(kind: LayerKind, sources, rule: str = "affine"):
+    """The per-kind combination of point-layer values - the one place of the arithmetic for every
+    new or merged vertex (AD-028 §3.5, F-2). `sources` is a sequence of (value, factor) pairs with
+    factors summing to 1 (for "midpoint" ((a, ½), (b, ½)), for "mean" 1/n each). Returns the value
+    (possibly the kind's default; the caller drops it). Vector results are not checked for
+    finiteness here (as before); a weights result is finite or MeshError."""
+    if kind is LayerKind.VECTOR:
+        if rule == "affine":
+            total = None
+            for v, w in sources:
+                term = (w * v[0], w * v[1], w * v[2])
+                total = term if total is None else (total[0] + term[0], total[1] + term[1], total[2] + term[2])
+            return _VECTOR_DEFAULT if total is None else total
+        if rule == "midpoint":
+            (a, _), (b, _) = sources
+            return tuple((x + y) / 2.0 for x, y in zip(a, b))
+        if rule == "mean":
+            points = [v for v, _ in sources]
+            n = len(points)
+            return (sum(p[0] for p in points) / n, sum(p[1] for p in points) / n, sum(p[2] for p in points) / n)
+        raise MeshError(f"Unbekannte Kombinationsregel: {rule!r}")
+    if kind is LayerKind.WEIGHTS:
+        if rule not in COMBINE_RULES:
+            raise MeshError(f"Unbekannte Kombinationsregel: {rule!r}")
+        return _combine_weights(sources)
+    raise MeshError(f"Unbekannte Layer-Art: {kind!r}")
+
+
+def _default_of(kind: LayerKind):
+    return () if kind is LayerKind.WEIGHTS else _VECTOR_DEFAULT
 
 
 @dataclass(frozen=True)
@@ -463,8 +607,9 @@ class Mesh:
                 records[vid] = None if log.keys_only else values.get(vid)
 
     def _write_value(self, lid: LayerId, vid: VertexId, value: LayerValue | None) -> None:
-        """The one per-element write path: journal, copy-on-write, canonical form (L2)."""
-        if value is not None and value == _VECTOR_DEFAULT:
+        """The one per-element write path: journal, copy-on-write, canonical form (L2, W3: the
+        kind's default - (0, 0, 0) or () - is never stored)."""
+        if not value or value == _VECTOR_DEFAULT:
             value = None
         values = self._layer_values[lid]
         if values.get(vid) == value:
@@ -492,18 +637,27 @@ class Mesh:
             self._layer_values.pop(lid, None)
             self._layer_shared.discard(lid)
         else:
-            self._layer_values[lid] = self._packed(values)
+            self._layer_values[lid] = self._packed(values, lid)
             if shared:
                 self._layer_shared.add(lid)
             else:
                 self._layer_shared.discard(lid)
 
-    def _packed(self, values) -> PackedValues:
+    def _packed(self, values, lid: LayerId):
         """`values` as this mesh's packed form: itself when it is one already (a record's or a
-        delta's, shared as it is), else a packed copy (a plain dict, another mesh's values)."""
-        if isinstance(values, PackedValues) and values.slots is self._layer_slots:
+        delta's, shared as it is), else a packed copy (a plain dict, another mesh's values) of the
+        layer's kind (AD-028 §3.6: `PackedWeights` for WEIGHTS; the meta names the kind)."""
+        if isinstance(values, (PackedValues, PackedWeights)) and values.slots is self._layer_slots:
             return values
+        if self._layer_kind(lid) is LayerKind.WEIGHTS:
+            return PackedWeights(self._layer_slots, values)
         return PackedValues(self._layer_slots, values)
+
+    def _layer_kind(self, lid: LayerId) -> LayerKind:
+        for other, info in self._layer_meta:
+            if other == lid:
+                return info.kind
+        raise MeshError(f"Unbekannter Punkt-Layer {lid!r}")
 
     def _set_layer_meta(self, meta: tuple) -> None:
         for log in self._logs:
@@ -587,11 +741,12 @@ class Mesh:
         raise MeshError(f"Unbekannter Punkt-Layer {layer_id!r}")
 
     def layer_value(self, layer_id: LayerId, vertex_id: VertexId) -> LayerValue:
-        """The value of a vertex in a layer; the kind's default when none is stored."""
+        """The value of a vertex in a layer; the kind's default when none is stored ((0, 0, 0) for
+        a vector layer, () for a weights layer)."""
         values = self._layer_values.get(layer_id)
         if values is None:
             raise MeshError(f"Unbekannter Punkt-Layer {layer_id!r}")
-        return values.get(vertex_id, _VECTOR_DEFAULT)
+        return values.get(vertex_id, values.default)
 
     def layer_items(self, layer_id: LayerId) -> list[tuple[VertexId, LayerValue]]:
         """The stored (non-default) values of a layer, ascending VertexId."""
@@ -609,8 +764,6 @@ class Mesh:
         """Appends an empty layer. ID continuity: exactly one new LayerId (never reused, AD-001)."""
         if not isinstance(info, PointLayerInfo):
             raise MeshError("add_point_layer erwartet PointLayerInfo.")
-        if info.kind is not LayerKind.VECTOR:
-            raise MeshError(f"Layer-Art {info.kind.value!r} ist noch nicht gebaut (AD-025 §4.1).")
         if any(other.name == info.name for _, other in self._layer_meta):
             raise MeshError(f"Punkt-Layer-Name schon vergeben: {info.name!r}")
         lid = self._layer_alloc.allocate()
@@ -649,12 +802,15 @@ class Mesh:
             self._set_layer_meta(tuple((lid, infos[lid]) for lid in order))
 
     def set_layer_value(self, layer_id: LayerId, vertex_id: VertexId, value) -> None:
-        """Sets one value (journaled per element); the default removes the stored value (L2)."""
-        if layer_id not in self._layer_values:
+        """Sets one value (journaled per element); the default removes the stored value (L2). A
+        weights value is validated and canonicalized (AD-028 W1-W4, `_weights_value`)."""
+        values = self._layer_values.get(layer_id)
+        if values is None:
             raise MeshError(f"Unbekannter Punkt-Layer {layer_id!r}")
         if vertex_id not in self._vertices:
             raise MeshError(f"Unbekannter Vertex {vertex_id!r}")
-        self._write_value(layer_id, vertex_id, _vector_value(value))
+        check = _weights_value if isinstance(values, PackedWeights) else _vector_value
+        self._write_value(layer_id, vertex_id, check(value))
 
     def map_vector_layers(self, matrix: Sequence[Sequence[float]]) -> None:
         """Frame change (AD-025 §4.3): every vector value v -> M·v, M the linear part of the point
@@ -674,16 +830,17 @@ class Mesh:
             if info.kind is not LayerKind.VECTOR or not values:
                 continue
             try:
-                mapped[lid] = self._packed(values).mapped(m)
+                mapped[lid] = self._packed(values, lid).mapped(m)
             except ValueError:
                 raise MeshError("map_vector_layers: Ergebnis nicht endlich.") from None
         for lid, new in mapped.items():
             self._bulk_set(lid, new, shared=False)
 
     def _origin_values(self, origin: VertexOrigin) -> list[tuple[LayerId, LayerValue]]:
-        """Validates `origin` and combines its sources' values per layer (AD-025 §4.1), before
-        any mutation. Vector: sum of w_i·v_i per component, the first term not added to 0.0 so a
-        copy ((v, 1.0),) is bit-exact (also for -0.0)."""
+        """Validates `origin` and combines its sources' values per layer (AD-025 §4.1, the
+        "affine" rule of `combine_values`), before any mutation. Vector: sum of w_i·v_i per
+        component, the first term not added to 0.0 so a copy ((v, 1.0),) is bit-exact (also for
+        -0.0); weights: the convex combination of AD-028 §3.5 (a copy is bit-exact too)."""
         try:
             pairs = [(src, float(w)) for src, w in origin]
         except (TypeError, ValueError):
@@ -702,15 +859,12 @@ class Mesh:
             if info.new_point != "interpolate":
                 continue
             values = self._layer_values[lid]
-            total = None
-            for src, w in pairs:
-                v = values.get(src, _VECTOR_DEFAULT)
-                term = (w * v[0], w * v[1], w * v[2])
-                total = term if total is None else (total[0] + term[0], total[1] + term[1], total[2] + term[2])
-            if total != _VECTOR_DEFAULT:
+            default = values.default
+            total = combine_values(info.kind, [(values.get(src, default), w) for src, w in pairs])
+            if total != default:
+                if info.kind is LayerKind.VECTOR and not all(map(math.isfinite, total)):
+                    raise MeshError("Herkunft ergibt keinen endlichen Wert.")
                 out.append((lid, total))
-        if not all(math.isfinite(c) for _, value in out for c in value):
-            raise MeshError("Herkunft ergibt keinen endlichen Wert.")
         return out
 
     # ------------------------------------------------------------------
@@ -1060,6 +1214,8 @@ class Mesh:
         return mid, eid_a, eid_b
 
     def _blend_values(self, v0: VertexId, v1: VertexId, t: float) -> list[tuple[LayerId, LayerValue]]:
+        """The edge blend ((v0, 1 - t), (v1, t)) per layer through `combine_values` ("affine"; for
+        vectors bit-identical to the position's own expression a·(1 - t) + b·t)."""
         out = []
         layer_values = self._layer_values
         s = 1.0 - t
@@ -1069,15 +1225,13 @@ class Mesh:
             values = layer_values[lid]
             a = values.get(v0)
             b = values.get(v1)
-            if a is None:
-                if b is None:
-                    continue
-                a = _VECTOR_DEFAULT
-            elif b is None:
-                b = _VECTOR_DEFAULT
-            # the position's own expression, a·(1 - t) + b·t per component
-            value = (a[0] * s + b[0] * t, a[1] * s + b[1] * t, a[2] * s + b[2] * t)
-            if value != _VECTOR_DEFAULT:
+            if a is None and b is None:
+                continue
+            default = values.default
+            value = combine_values(
+                info.kind, ((default if a is None else a, s), (default if b is None else b, t))
+            )
+            if value != default:
                 out.append((lid, value))
         return out
 
@@ -1121,14 +1275,18 @@ class Mesh:
         p0 = self.vertex_position(survivor)
         p1 = self.vertex_position(removed)
         self.set_vertex_position(survivor, tuple((a + b) / 2.0 for a, b in zip(p0, p1)))
-        # Point layers (AD-025 §4.1, H3): the survivor gets the average, the position's expression
-        # (every layer - the new-point rule is about new points); `removed`'s values go with it.
+        # Point layers (AD-025 §4.1, H3): the survivor gets the average ("midpoint": for vectors the
+        # position's expression; every layer - the new-point rule is about new points); `removed`'s
+        # values go with it.
         for lid in self._layer_values:
             values = self._layer_values[lid]
             a, b = values.get(survivor), values.get(removed)
             if a is not None or b is not None:
-                a, b = a or _VECTOR_DEFAULT, b or _VECTOR_DEFAULT
-                self._write_value(lid, survivor, tuple((x + y) / 2.0 for x, y in zip(a, b)))
+                default = values.default
+                a = default if a is None else a
+                b = default if b is None else b
+                kind = LayerKind.WEIGHTS if isinstance(values, PackedWeights) else LayerKind.VECTOR
+                self._write_value(lid, survivor, combine_values(kind, ((a, 0.5), (b, 0.5)), "midpoint"))
 
         # Jede Face, die `removed` in ihrer Boundary hat, hängt an einer Edge von `removed` (eine Face
         # steht in den Face-Listen aller Edges ihrer Boundary) - vor dem Umbiegen unten einsammeln,
@@ -2046,7 +2204,8 @@ class Mesh:
 
     def _export_point_layers(self, meta: tuple | None = None, values_of=None) -> list | None:
         """Additive key `"point_layers"` (AD-025 §4.2): None without layers (L5), else one entry
-        per layer in display order, vertex IDs ascending (deterministic JSON text)."""
+        per layer in display order, vertex IDs ascending (deterministic JSON text). A vector value
+        is `[x, y, z]`, a weights value `[[key, w], ...]` (AD-028 §3.6)."""
         meta = self._layer_meta if meta is None else meta
         if not meta:
             return None
@@ -2057,7 +2216,11 @@ class Mesh:
                 "name": info.name,
                 "kind": info.kind.value,
                 "new_point": info.new_point,
-                "values": {int(vid): list(value) for vid, value in sorted(values_of(lid).items())},
+                "values": (
+                    {int(vid): [[k, w] for k, w in value] for vid, value in sorted(values_of(lid).items())}
+                    if info.kind is LayerKind.WEIGHTS
+                    else {int(vid): list(value) for vid, value in sorted(values_of(lid).items())}
+                ),
             }
             for lid, info in meta
         ]
@@ -2214,7 +2377,7 @@ class Mesh:
     def _load_point_layers(self, meta: tuple, values: dict) -> None:
         if not self._logs:
             self._layer_meta = meta
-            self._layer_values = {lid: self._packed(v) for lid, v in values.items()}
+            self._layer_values = {lid: self._packed(v, lid) for lid, v in values.items()}
             self._layer_shared = set()
             return
         # Under a journal: only what differs (whole-layer records for layers that appear or go).
@@ -2224,7 +2387,8 @@ class Mesh:
             self._set_layer_meta(meta)
         for lid, new in values.items():
             old = self._layer_values.get(lid)
-            if old is None:
+            if old is None or isinstance(old, PackedWeights) != (self._layer_kind(lid) is LayerKind.WEIGHTS):
+                # a new layer, or an unrelated state reusing the id with another kind: replace whole
                 self._bulk_set(lid, new, shared=False)
                 continue
             for vid in [vid for vid in old if vid not in new]:
@@ -2531,8 +2695,6 @@ def _parse_point_layers(raw, vertex_records: dict) -> tuple[tuple, dict]:
                 kind = LayerKind(entry["kind"])
             except ValueError:
                 raise MeshError(f"Unbekannte Layer-Art: {entry['kind']!r}") from None
-            if kind is not LayerKind.VECTOR:
-                raise MeshError(f"Layer-Art {kind.value!r} ist noch nicht gebaut.")
             info = PointLayerInfo(entry["name"], kind, entry["new_point"])
             if info.name in names or lid in values:
                 raise MeshError(f"Doppelter Punkt-Layer: {info.name!r} / {int(lid)}")
@@ -2542,6 +2704,9 @@ def _parse_point_layers(raw, vertex_records: dict) -> tuple[tuple, dict]:
                 vid = VertexId(int(vid_raw))
                 if vid not in vertex_records:
                     raise MeshError(f"Layer {info.name!r}: Wert für fehlenden Vertex {int(vid)}")
+                if kind is LayerKind.WEIGHTS:
+                    layer[vid] = _canonical_weights_entry(value, info.name, vid)
+                    continue
                 if type(value) is list and len(value) == 3:
                     value = tuple(value)  # JSON gives lists; the fast path takes tuples of floats
                 value = _vector_value(value)
@@ -2552,6 +2717,22 @@ def _parse_point_layers(raw, vertex_records: dict) -> tuple[tuple, dict]:
     except (KeyError, TypeError, AttributeError) as exc:
         raise MeshError(f"Ungültige point_layers: {exc!r}") from None
     return tuple(meta), values
+
+
+def _canonical_weights_entry(raw, name: str, vid: VertexId) -> WeightsValue:
+    """A stored weights value of the file (AD-028 §3.6 W5): accepted only in canonical form - a
+    value the Core would change (unsorted, a zero weight, Σw not snapped, the default ()) makes the
+    file invalid instead of being repaired."""
+    if not isinstance(raw, list) or not raw:
+        raise MeshError(f"Layer {name!r}: Gewichtswert für Vertex {int(vid)} ist keine nicht leere Liste")
+    try:
+        given = tuple(tuple(pair) for pair in raw)
+    except TypeError:
+        raise MeshError(f"Layer {name!r}: Gewichtswert für Vertex {int(vid)} ungültig: {raw!r}") from None
+    value = _weights_value(given)
+    if value != given:
+        raise MeshError(f"Layer {name!r}: Gewichtswert für Vertex {int(vid)} nicht kanonisch: {raw!r}")
+    return value
 
 
 def _parse_face_uvs(raw, face_records: dict) -> dict[FaceId, FaceUVs]:
