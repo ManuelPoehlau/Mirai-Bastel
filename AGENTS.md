@@ -57,6 +57,8 @@ Current architecture, requirements and accepted decisions.
 
 Interaction principles, UX direction and ideas deliberately not yet implemented.
 
+For current Production GUI/UX work, start with [`docs/design/GUI_Bestandsaufnahme.md`](docs/design/GUI_Bestandsaufnahme.md). It is a dated implementation-state assessment for Modelling, Morph and Rig: `[V]` = verified, `[H]` = UX hypothesis, `[O]` = open for Manu. It is not a specification or Artist verdict; verify facts against current code and keep hypotheses provisional.
+
 ### Research
 
 Evidence, historical findings and technical investigation.

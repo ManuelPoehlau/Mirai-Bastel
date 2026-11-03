@@ -642,6 +642,8 @@ step); a commit hook per gesture path (six paths, a seventh would be missed sile
   (jaw pose, relative ↔ absolute, the HUD timing); `M` still sends a copy. A mesh with a Production target arrives as the Lab's
   pair — base = rest shape, "Ziel 1" = rest + the first target's offsets, both without layers (`lab_scene.build_pair_scene`);
   nothing comes back. During target editing `M` sends the base.
+- **GUI follow-up:** the current cross-feature inventory of visible Morph/Target states and the proposed GUI direction is
+  [GUI_Bestandsaufnahme.md](../design/GUI_Bestandsaufnahme.md) (2026-11-03). It is an assessment, not an amendment to this AD.
 - Unchanged: the Core, the H1 table on the base (Phase 2 rules: Delete / Dissolve keep the survivors' offsets exactly).
 
 ### 15.3 Measured [C] (container, Python 3.13, Mesa llvmpipe; `xvfb-run -a python experiments/drag_cost/probe_morph_gl.py`)

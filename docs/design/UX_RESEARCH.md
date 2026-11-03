@@ -1,8 +1,8 @@
 # Artist UX — Research / Idea Space
 
 **Status:** Open research — no implementation decision  
-**Area:** Artist Playground  
-**Date:** 2026-09-12
+**Area:** Mirai UX & Interface — interaction language and Production GUI  
+**Original research:** 2026-09-12 · **GUI baseline linked:** 2026-11-03
 
 ---
 
@@ -20,7 +20,11 @@ This document therefore deliberately moves **one level up**. Tweak remains an im
 
 This is **not** a production specification and not an implementation plan. It is a place to collect observations, ideas, hypotheses, comparisons and questions before making architectural or UX decisions.
 
-The Artist Playground is the place to build and play with these variants. Findings may later become validated UX decisions, but nothing here automatically becomes Production architecture.
+## Current Production GUI baseline (2026-11-03)
+
+For GUI planning against the features that now exist in Production, start with [GUI_Bestandsaufnahme.md](GUI_Bestandsaufnahme.md). It maps the current HUD, viewport feedback, Morph and Rig states against the repository baseline and separates verified facts `[V]`, UX hypotheses `[H]` and open Manu decisions `[O]`. It is a dated, non-normative assessment — not an accepted GUI specification or Artist verdict. [GUI_STAGE1_HUD.md](GUI_STAGE1_HUD.md) remains the implementation reference for the existing read-only HUD.
+
+The former Artist Playground was removed on 2026-10-24. The interaction questions in this document remain useful, but do not assume that an active Playground host exists; select a targeted prototype or Production discovery path only when the current UX investigation needs one.
 
 ---
 

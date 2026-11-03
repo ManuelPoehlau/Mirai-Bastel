@@ -315,6 +315,9 @@ def key_press(self, input: Input) -> bool:
   UI layer: drags and the release follow their press (capture at press, as `PointerGestures` fixes a gesture at
   press, AD-019), so a session never loses the release of a press it took, and a panel never gets half a viewport
   gesture.
+- **Current GUI inventory:** [GUI_Bestandsaufnahme.md](../design/GUI_Bestandsaufnahme.md) (2026-11-03) maps the
+  implemented HUD/viewport state and the remaining Morph/Rig visibility gaps. It is UX assessment only; the
+  interaction-slot, command-gate and pointer-capture contracts in this AD remain authoritative.
 
 ## 4. Alternatives
 

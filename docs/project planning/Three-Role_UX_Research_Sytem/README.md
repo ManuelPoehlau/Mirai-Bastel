@@ -30,6 +30,8 @@ The central research document is:
 
 It is the shared idea/research space for the interaction language. Tweak is one research subject inside it, not the organizing principle of the whole system.
 
+For current Production GUI work (Modelling, Morph, Rig), read [`docs/design/GUI_Bestandsaufnahme.md`](../../design/GUI_Bestandsaufnahme.md) first. It is the dated implementation inventory and UX working assessment; `[H]` items remain hypotheses, not Manu's verdict. The implemented HUD reference is [`docs/design/GUI_STAGE1_HUD.md`](../../design/GUI_STAGE1_HUD.md).
+
 Supporting context includes:
 
 - `docs/design/artist_playground/AP-03_PLAN.md`
@@ -182,5 +184,7 @@ That means the artist learns reusable interaction principles instead of memorizi
 - `ROLE_INTERACTION_DEV.md` — implementation/prototyping role prompt
 - `ROLE_PLAYGROUND_SPEC.md` — experiment/validation role prompt
 - `docs/design/UX_RESEARCH.md` — shared UX research / idea space
+- `docs/design/GUI_Bestandsaufnahme.md` — current Production GUI state inventory and provisional UX assessment (2026-11-03)
+- `docs/design/GUI_STAGE1_HUD.md` — implementation reference for the existing read-only HUD
 
-**Last aligned:** 2026-09-12
+**GUI baseline pointer added:** 2026-11-03 · **Overall system last aligned:** 2026-09-12

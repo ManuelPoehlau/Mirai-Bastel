@@ -4,13 +4,16 @@
 **Artist-Urteil A vs. B:** offen (siehe §4) · **Code:** `src/hud.py`, Verdrahtung `src/main.py`
 (`install_handlers(..., hud=)`), Tests `tests/test_hud.py`, `tests/test_main_wiring.py`
 
+**Aktuelle Bestandsaufnahme (2026-11-03):** [GUI_Bestandsaufnahme.md](GUI_Bestandsaufnahme.md) erfasst den heutigen HUD-/Viewport-Bestand sowie die zusätzlichen Morph- und Rig-Zustände. Sie ist ein nicht-normativer Arbeitsstand mit `[V]`/`[H]`/`[O]`, keine neue GUI-Spezifikation.
+
 ## 1. Was gebaut ist
 
 - Eine immer sichtbare, rein lesende Zustandsanzeige im Production-Fenster: Modus (1/2/3/4), aktuelles
   Tool (letztes W/E/R; eine laufende Interaktion als „… (running)“, auch Extrude, Loop Slide, Knife),
   Achsen-/Ebenen-Constraint, Symmetrie-Achse, Display-Modus (+ Wire), Soft Selection (an/aus, Radius,
   Kurve), SubD-Vorschau (Ansicht, Stufe, Linien versteckt) und die letzte Statusmeldung.
-  „An“-Zustände sind farbig (gelb), Tastenhinweise blau.
+  „An“-Zustände sind farbig (gelb), Tastenhinweise blau. Später kamen die bedingten Zeilen „Morph“, „Targets“ und
+  „Rig“ hinzu; Pose-Modus und Bind-Status sind damit noch nicht als eigener, klar priorisierter Zustand dargestellt.
 - Zwei Layout-Varianten: **A `bar`** = Leiste unten (Segmente in einer Zeile, bei schmalem Fenster zwei,
   darunter die Statusmeldung); **B `corner`** = Panel oben links (eine Zeile pro Eintrag, Statusmeldung
   darunter). `H` schaltet **A → B → aus → A** (nur solange beide in Erprobung sind; nach dem Urteil wird
@@ -45,12 +48,15 @@
   `PointerGestures` Klick vs. Drag. Ein HUD-Treffer müsste davor im Fenster abgefangen werden (wie die
   modalen Menüs, aber nicht modal: Treffer = HUD, daneben = App). Offen ist, ob das eine Fenster-Ebene
   bleibt (Variante G wie SPACE/Shift+A) oder ein eigener Owner in `interaction_owner` wird.
-- **Gates:** `key_press` schützt viele Commands (W/E/R/T scharf, Drag-Select, Objektmodus);
-  `dispatch_command` hat diese Gates nicht alle. Ein Klickpfad braucht einen öffentlichen Einstieg
-  „Command aus der UI auslösen, mit denselben Gates wie die Taste“ — das wäre die erste
-  `Application`-Änderung von Stufe 2.
-- **Drags (Slider):** `cursor_wrap_active` ist schon als wiederverwendbares Gate für Slider-Drags
-  vorgesehen; `pointer.active` / `interaction_owner` sagen, wann die UI nichts annehmen darf.
+- **Gates:** Der öffentliche Einstieg `Application.dispatch_command(...)` ist inzwischen bereits gegatet: Er prüft
+  `can_run(command, RunContext("api"))` und leitet erst danach an den Handler weiter. Interne App-Aufrufe nutzen
+  `_execute(...)` nach ihrem jeweiligen Gate. Für eine UI-Schaltfläche kann `can_run(command, RunContext("ui", operands=False))`
+  die Verfügbarkeit bestimmen (dieser read-only Status steckt bereits in `HudState.unavailable`, wird aber noch nicht
+  gezeichnet); ausgelöst wird anschließend über `dispatch_command(...)`. Der Fenstercode besitzt aktuell weiterhin keinen
+  Panel-Hit-Test oder klickbaren GUI-Pfad.
+- **Drags (Slider):** AD-027 sieht eine `SliderDrag`-Session mit Esc-Restore vor; `cursor_wrap_active` ist als
+  wiederverwendbare Grundlage vorgesehen. Das ist eine Architektur-Naht, noch kein implementierter Morph-Slider.
+  Press, Drag und Release müssen zusammen beim Empfänger bleiben. Die offene Ownership-Frage steht in AD-027 §3.5.
 - **Toolkit:** Bleibt offen bis zum Stufe-2-Gate. `HudState`/`hud_rows` sind toolkit-frei; nur
   `_Builder`/`_layout_*` sind pyglet und wären auszutauschen.
 
@@ -68,6 +74,8 @@ _Offen. Nach dem Praxistest hier eintragen: welche Variante, was fehlt, was stö
 6. Kontext-Hinweiszeile (Wings-Stil) als eigene Zeile oder in der Bar?
 7. Toolkit-Gate: bleiben pyglet-Labels, oder Panels/Slider/Kurveneditor mit ImGui/Qt (REFERENCE_HARDWARE: GL 3.3)?
 8. Schriftgröße / HiDPI auf dem alten PC lesbar?
+
+Die aktuelle Bestandsaufnahme und ihre vorläufigen Prioritäten stehen in [GUI_Bestandsaufnahme.md](GUI_Bestandsaufnahme.md); sie ersetzen die offenen Artist-Urteile in diesem Dokument nicht.
 
 ## 6. Testschritte für Manu (Praxistest)
 

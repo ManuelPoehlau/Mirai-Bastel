@@ -10,7 +10,7 @@ Fast alles in Mirai ist per Taste erreichbar, aber der Zustand, in dem eine Tast
 
 **Kennzeichnung:** **\[V\]** im Code oder per Probe geprüft · **\[H\]** Hypothese von mir (UX-Chat) · **\[O\]** offen, braucht dich. Kein Satz hier ist ein Artist-Verdikt; alle Vorschläge sind `PROVISIONAL`, bis du sie im Praxistest beurteilst.
 
-**Was diese Seite nicht ist:** keine Entscheidung, kein neues Dokument im Repo. Was davon bleibt, landet nach deinem Urteil in `docs/design/GUI_STAGE1_HUD.md` bzw. `UX_RESEARCH.md`.
+**Status und Rolle:** Diese versionierte Bestandsaufnahme ist ein datierter UX-Arbeitsstand, keine Entscheidung und keine GUI-Spezifikation. `[V]` beschreibt den geprüften Bestand, `[H]` sind Vorschläge des UX-Chats, `[O]` sind offene Fragen an Manu. Nichts davon ist ohne dein Urteil Artist Input Truth. Übernommene Entscheidungen gehören anschließend in `GUI_STAGE1_HUD.md` bzw. `UX_RESEARCH.md`; technische Verträge bleiben in den ADs.
 
 ## 1. Was heute existiert
 
@@ -143,6 +143,8 @@ Vier kleine Phasen; A und B hängen nicht voneinander ab, das Panel (C) braucht 
 &#91;embedded content: Fahrplan · 4 Phasen, Abhängigkeiten und Gates\]
 
 Phase A ist ein Discovery-Paket für eine Testsitzung von 20–40 Minuten; die Übergabe an Claude Code steht im Tab „Handoff Phase A“.
+
+**Review-Hinweis (2026-11-03, Vorschlag — noch kein Manu-Verdikt):** Die fünf „Jetzt“-Punkte aus §5 sollten nicht als ein einziger Implementierungsblock behandelt werden. Sinnvoll wäre die Trennung in **A1 Statusklarheit** (read-only HUD: sichtbarer Arbeitsmodus und relevante Morph-/Rig-Zustände), **A2 Gesten-Feedback** (Achse und Wert direkt am Cursor) und **A3 dauerhafte Gewichtsansicht**. A1 ist der kleinste gemeinsame Einstieg. A3 braucht eine eigene technische Klärung: Die heutige Gewichts-/Soft-Färbung teilt sich den Shading-Overlay-Pfad und die Gewichtsanzeige gehört derzeit zur laufenden Geste. Eine dauerhafte Vorschau darf nicht nebenbei die Soft-Selection-Anzeige oder deren Lebensdauer übernehmen.
 
 Zur Übergabe: Handoff Phase A
 

@@ -480,6 +480,9 @@ binds `J` — so the toggle does not take `J`); `config/keymap.json` is not touc
 cross at the head, the current bone highlighted, dimmed outside pose mode) joins `gizmo_items() + pivot_marker_items()`
 in the window (`src/main.py:670`). HUD row "Rig" (only with a rig): current bone, `n` bones, rest / posed, pose mode.
 
+The cross-feature GUI inventory for Morph, Rig and modelling states is [GUI_Bestandsaufnahme.md](../design/GUI_Bestandsaufnahme.md)
+(2026-11-03). Its proposals are non-normative; this AD remains the technical source of truth for rig and skinning.
+
 ### 8.6 Gate (AD-025 §4.4)
 
 - A new class `RIG` for the rig, pose and weight commands (they handle the weights layer themselves, like `MORPH`);

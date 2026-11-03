@@ -9,7 +9,8 @@ This directory contains the durable project knowledge that should survive indivi
 | [Atelier](ATELIER.md) | Artist-Übersicht: Stand, offene Verdikte, nächste Kandidaten (Index, Deutsch) |
 | [Roadmap](architecture/ROADMAP.md) | Canonical roadmap and work packages |
 | [Architecture](architecture/README.md) | Current system boundaries, accepted architectural direction and V1 decisions |
-| [Design](design/README.md) | Interaction and workflow principles |
+| [Design](design/README.md) | Interaction and workflow principles, including the current Production GUI inventory |
+| [GUI Bestandsaufnahme](design/GUI_Bestandsaufnahme.md) | Current, dated GUI state assessment for Modelling, Morph and Rig (2026-11-03; hypotheses are not decisions) |
 | [Future Ideas](future_ideas/README.md) | Ideas and requirements deliberately deferred from implementation |
 | [Research](research/README.md) | Historical and technical investigation |
 | [Archive](archive/README.md) | Historical reviews and superseded working material |

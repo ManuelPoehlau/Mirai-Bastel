@@ -14,14 +14,18 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
   rollback and derived data instead of `export_state()` / `load_state()` snapshots.
 - `src/viewport/`, `src/mirai/` — In-progress production areas
 - `src/main.py` — the production app (own window); it is the product.
-- `experiments/` — the few active research tools (index: `experiments/README.md`): `morph_lab` (Morph is not in
-  `src/`; the app starts it through `src/morph_bridge.py`), `mehlsack_lab` (open Artist verdicts), `drag_cost`
+- `experiments/` — the remaining research tools (index: `experiments/README.md`): `morph_lab` (separate Discovery
+  tool/bridge; Production Morph lives in `src/mirai/`), `mehlsack_lab` (parked; no open Artist test), `drag_cost`
   (GL cost probe) and `knife_oracle` (frozen engines; regression coverage for the Production Knife). Labs start
   their own windows via `experiments/<lab>/run.py`. Removed labs and the Playground (2026-10-24) are listed with
   their last commit in `experiments/README.md`; their docs are in `docs/archive/experiments_2026-10/`.
 - `tests/` — pytest suite for Production (`src/`). Bootstrap adds `src/` to path. Bare `pytest` runs `tests/` and
   `experiments/morph_lab/tests` (`pytest.ini`); every other tree only when named (AGENTS.md §8a).
 - `docs/` — Architecture, design, research decisions. Hierarchy: `README.md` → index → local docs → plans/specs
+- For Production GUI/UX tasks, start with [`docs/design/GUI_Bestandsaufnahme.md`](docs/design/GUI_Bestandsaufnahme.md),
+  then read [`GUI_STAGE1_HUD.md`](docs/design/GUI_STAGE1_HUD.md) and [`UX_RESEARCH.md`](docs/design/UX_RESEARCH.md).
+  The Bestandsaufnahme is a dated, non-normative assessment (`[V]` facts / `[H]` hypotheses / `[O]` Manu decisions),
+  not an accepted GUI specification; verify it against the current code.
 - `references/` — External material (historical Mirai docs, etc.)
 
 ## Project workflow
@@ -107,5 +111,5 @@ Details:
 
 ---
 
-**Last revised**: 2026-10-24  
+**Last revised**: 2026-11-03  
 See [AGENTS.md](AGENTS.md) for full collaboration model.

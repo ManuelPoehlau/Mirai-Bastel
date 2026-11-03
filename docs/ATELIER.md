@@ -26,6 +26,7 @@ stehen im jeweiligen Dokument, nicht hier.
 | SubD | `V` Käfig/Fläche/Isolinien, `Strg+1/2/3` Stufe | [SubD in Production](../src/mirai/subdivision/README.md) |
 | Morph-Ziele | Mehrere Ziele pro Mesh, daneben formen, Gewicht und Mischung, auch mit SubD und Topologie-Werkzeugen | [AD-025, Kurzfassung](architecture/AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#kurzfassung-für-manu-deutsch) |
 | Knochen und Gewichte | Knochen anlegen (`Strg+J`), Gewichte aus einer Gruppe (`7` halten) und weich korrigieren (`8` halten), im Pose-Modus (`5`) den Kiefer drehen, Ruhe ↔ Pose (`6`); ein Morph fährt mit, weitermodelliert wird in Ruhe | [AD-028, Praxistest](architecture/AD-028-SKELETON-AND-SKINNING.md#praxistest-für-manu-nach-dem-bau-deutsch-ca-20-minuten) |
+| GUI / Zustände | HUD zeigt bereits Morph-, Target- und Rig-Status als Text; wichtige Zustände und Viewport-Rückmeldungen sind noch schwerer erkennbar. Neue UX-Vorschläge sind noch nicht Artist-entschieden | [GUI-Bestandsaufnahme](design/GUI_Bestandsaufnahme.md) · [HUD](design/GUI_STAGE1_HUD.md) |
 | Objekte | Mehrere Objekte, Referenzen, Add Mesh, Platzieren, Transform übernehmen, Spiegelpaare | [AD-021](architecture/AD-021-OBJECT-COMPONENT-MODEL.md#kurzfassung-für-manu-deutsch) |
 | Szenen und OBJ | Szene speichern/laden, `Leertaste`-Menü; OBJ mit UVs und Textur importieren/exportieren | [`src/scene_files.py`](../src/scene_files.py) · [INPUT_WIRING_MAP §10](design/INPUT_WIRING_MAP.md) · [AD-026, Kurzfassung](architecture/AD-026-FACE-CORNER-UVS-AND-TEXTURE.md#kurzfassung-für-manu-deutsch) |
 | Symmetrie | Symmetrische Werkzeuge und Soft Selection, Re-Symmetrize auf `Alt+M` | [AD-SYM-04](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#kurzfassung-für-manu-deutsch) |
@@ -74,6 +75,7 @@ Mehlsack Lab (oben).
 | Symmetrie-Spur J: symmetrische Soft Selection fertig, Re-Symmetrize prüfen | Symmetrie als durchgehender Werkzeugfluss | [AD-SYM-04](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#kurzfassung-für-manu-deutsch) · [AD-SYM-05](architecture/AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) |
 | Hover-/Navigations-Optimierung auf dichten Meshes | flüssigeres Arbeiten auf dichten Meshes | D1c |
 | Toolbox-Lücken: Subdivide (B2) | die fehlenden Alltagswerkzeuge | [WP Toolbox-Lücken](WP_TOOLBOX_GAPS_PLAN.md) |
+| GUI-Zustandssichtbarkeit | Arbeitsmodus, Morph-Target, Rig-Zustand und Gewichtsanzeige klarer erkennen; Priorität und Vorschläge bleiben offen | [GUI-Bestandsaufnahme](design/GUI_Bestandsaufnahme.md) |
 
 ---
 
