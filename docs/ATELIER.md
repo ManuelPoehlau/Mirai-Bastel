@@ -56,7 +56,6 @@ Bereichsdokumenten.
 | D1c | **Viewport-Performance**: Stufe 2 und GPU-Picking sind in der App; offen ist Move/Rotate/Scale großer Auswahlen, vor allem mit Soft Selection (dein Verdikt 2026-10-21: vorerst so lassen) | [AD-022 §11](architecture/AD-022-GPU-PICKING.md) · [AD-023 §9](architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) |
 | D1f | **Symmetrie + Soft Selection auf dem Körper**: über dem 8-ms-Wert ab 15 % Radius; ob die Viewport-Aufgabe vor J kommt | [AD-SYM-04, Addendum 2026-10-15](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#addendum-2026-10-15-reference-pc-run-d-4) |
 | D3 | **Messlauf Knochen auf deinem PC**: zeigt, ob das Drehen des Kiefers auf Kopf und Körper flüssig ist und ob ein GPU-Zeichenweg das nächste Thema wird | [AD-028, Praxistest Schritt 9](architecture/AD-028-SKELETON-AND-SKINNING.md#praxistest-für-manu-nach-dem-bau-deutsch-ca-20-minuten) |
-| D4 | **Modellieren an der sichtbaren, verformten Form** (Morph offen, Kiefer posiert): ein Vorschlag fürs langfristige Ziel. Vier kurze Fragen an dich entscheiden, ob und womit eine Architektur-Untersuchung beginnt | [Vorschlag, Kurzfassung](design/MODELING_ON_DEFORMED_SURFACES.md#kurzfassung-für-manu-deutsch) |
 | D2 | **Priorität**: was als Nächstes (Abschnitt 3) | — |
 
 ### Bewusst geparkt (kein Handlungsbedarf, nur damit es nicht verloren geht)
@@ -74,6 +73,7 @@ Mehlsack Lab (oben).
 
 | Kandidat | Was es dir bringt | Wo |
 |---|---|---|
+| **Hover und Auswahl auf der gemorphten Form** (deine Entscheidung 2026-11-03; Bau in einer frischen Session) | bei 50 % / 100 % offenem Mund an der Basis treffen, was du siehst; die Pose bleibt vorerst „Modellieren in Ruhe“ | [Modellieren auf verformten Flächen §15](design/MODELING_ON_DEFORMED_SURFACES.md#15-decided-first-slice-picking-on-the-morph-mix-manu-2026-11-03) |
 | Symmetrie-Spur J: symmetrische Soft Selection fertig, Re-Symmetrize prüfen | Symmetrie als durchgehender Werkzeugfluss | [AD-SYM-04](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#kurzfassung-für-manu-deutsch) · [AD-SYM-05](architecture/AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) |
 | Hover-/Navigations-Optimierung auf dichten Meshes | flüssigeres Arbeiten auf dichten Meshes | D1c |
 | Toolbox-Lücken: Subdivide (B2) | die fehlenden Alltagswerkzeuge | [WP Toolbox-Lücken](WP_TOOLBOX_GAPS_PLAN.md) |
