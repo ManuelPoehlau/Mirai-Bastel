@@ -49,7 +49,7 @@ Die größten Lücken liegen dort, wo eine Taste je nach Zustand etwas anderes t
 | L8 | **Gesperrtes wird nicht gezeigt.** `can_run` weiß es pro Befehl, das HUD zeigt es nicht | \[V\] `HudState.unavailable` | fehlende UI |
 | L9 | **Kein Umbenennen per Text.** Namenslisten statt Eingabe; bei vielen Zielen oder Knochen nicht tragfähig | \[V\] `RENAME_CYCLE`, `BONE_NAMES` | technische Grenze (kein Textfeld) |
 | L10 | **Zwei Heat-Ansichten teilen eine Färbung.** Soft-Zone und Gewichte nutzen dieselbe Flächenfärbung; beide zugleich geht nicht | \[V\] `show_soft_weights` | Gestaltungsgrenze, bei L4 beachten |
-| L11 | **Keine permanente Raumorientierung.** Außerhalb einer aktiven Geste fehlt ein eigenständiger, stets sichtbarer Hinweis auf die X-/Y-/Z-Richtung im Weltraum. Das gestenbezogene Gizmo erfüllt diese Aufgabe nicht | \\[V\\] In der geprüften Viewport-Bestandsaufnahme ist kein separates Orientierungs-Gizmo erfasst | fehlende UI |
+| L11 | **Keine permanente Raumorientierung.** Außerhalb einer aktiven Geste fehlt ein eigenständiger, stets sichtbarer Hinweis auf die X-/Y-/Z-Richtung im Weltraum. Das gestenbezogene Gizmo erfüllt diese Aufgabe nicht | \[V\] In der geprüften Viewport-Bestandsaufnahme ist kein separates Orientierungs-Gizmo erfasst | fehlende UI |
 
 Außerhalb der UI, nur notiert: Der Drehring liefert 0°, wenn das Auge genau auf der Drehebene liegt (AD-028 §17.3); der Praxistest umgeht es mit schräger Ansicht. Und eine kleine Doku-Drift: CLAUDE.md sagt noch „Morph is not in `src/`“, ATELIER und AD-025 sagen das Gegenteil.
 
@@ -163,7 +163,7 @@ Zur Übergabe: Handoff Phase A
 
 | Phase | Fertig, wenn | Modus (M5) |
 | --- | --- | --- |
-| A | Leiste, permanentes XYZ-Orientierungs-Gizmo, Achslinie, Wert am Cursor und Gewichts-Ansicht gebaut, umschaltbar und getestet; dein Urteil zu E2–E4 und E8 steht in GUI\\_STAGE1\\_HUD | Discovery |
+| A | Leiste, permanentes XYZ-Orientierungs-Gizmo, Achslinie, Wert am Cursor und Gewichts-Ansicht gebaut, umschaltbar und getestet; dein Urteil zu E2–E4 und E8 steht in GUI\_STAGE1\_HUD | Discovery |
 | B | Klick löst Befehle über `dispatch_command` mit allen Sperren aus; Ziehen folgt dem Druck; die AD-027-Szenario-Tests laufen unverändert | Production (Input-Architektur) |
 | C | Panel mit Morph-Zielen, Knochen und Gruppen; Klick = aktuell, Halte-Taste = Wert; zwei Lagen umschaltbar; dein Urteil zu E6 | Discovery |
 | D | Umbenennen per Text; Entwurf Hotkey-Editor und Menü am Cursor | zuerst Discovery |
