@@ -416,7 +416,7 @@ class KnifeSession:
     def render_data(self) -> KnifeRenderData:
         knife = self.tool
         data = build_knife_render_data(
-            self._controller.services.scene.mesh,
+            self._controller.services.query_mesh,  # §15: drawn where the surface is (the morph mix, else rest)
             [_DRAWN_LIFT if p.get("reason") == "lift" else p for p in knife.path],
             self.target,
             self.highlight_edge,
@@ -564,7 +564,7 @@ class KnifeController:
         services = self.services
         cache = services.pick_cache
         show_faces = services.display.show_faces
-        mesh = services.scene.mesh
+        mesh = services.query_mesh  # §15: the drawn morph mix while a target is dialled in, else the edit mesh
         camera = services.edit_camera
         kwargs = {"cache": cache, "occlusion": show_faces}
         size = services.viewport_size
@@ -594,6 +594,7 @@ class KnifeController:
         """The live camera for the planner (S4) - set before every hover / click plan."""
         services = self.services
         width, height = services.viewport_size
+        self.tool.set_geometry(services.query_mesh)  # §15: the session aims on what is drawn
         self.tool.set_view(services.edit_camera, width, height,
                            cache=services.pick_cache, occlusion=services.display.show_faces)
 

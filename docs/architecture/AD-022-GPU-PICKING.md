@@ -384,7 +384,8 @@ mode and every headless path keep the CPU picker (slice 3 not done). Engineering
   later** (open item, not a decided rule); no unexpected element picked.
 - **Open:** the Box silhouette rule (re-check later, Manu); the Knife
   (picker and planner) still projects the whole mesh per camera change; object picking (mode `4`) is CPU; the Box
-  still projects every vertex once per gesture; H7 surfaces: the ID pass draws the cage (contract unchanged).
+  still projects every vertex once per gesture; H7 surfaces: the ID pass draws the cage — since 2026-11-03 the *shown* cage: the morph mix while a target is dialled
+  in (AD-013 H7-R2 addendum, MODELING_ON_DEFORMED_SURFACES §15), never the SubD surface.
 
 ### Praxistest für Manu (ca. 10 Minuten + zwei Befehle)
 

@@ -100,7 +100,7 @@ Zusatz-Overlays (H1) und gibt die bewegten Vertices von `p.surface_mesh` zurück
 beim letzten `sync()` heißt neu aufbauen. Der Viewport besitzt dafür einen `RenderMesh` ohne
 `SelectionOverlay` mit Kamera, Material, Licht, Flat/Smooth und Matrix des Edit-Mesh und zeichnet
 ihn bei `show_faces` an dessen Stelle. Wire, Auswahl, Tool- und Zusatz-Overlays bleiben auf dem
-Edit-Mesh (dem Käfig), Picking ist nicht betroffen. Kamera-Änderungen erreichen die Fläche in
+Edit-Mesh (dem Käfig), Picking ist nicht betroffen (außer über die Käfig-Quelle, unten). Kamera-Änderungen erreichen die Fläche in
 jedem `sync()` wie die Objekt-Einträge, ohne den Provider zu fragen. Ohne Provider ändert sich nichts.
 Optional (2026-10-23, SubD in Production): `p.surface_topology_changed` True nach `p.sync(...)` heißt
 "dasselbe Mesh-Objekt, Topologie in place geändert" - der Viewport markiert dann die Topologie des
@@ -110,7 +110,8 @@ Die Ersatzfläche zeichnet immer mit Polygon-Offset (Host-Linien liegen auf ihr)
 (der Host zeigt die Kanten selbst, `wire_drawn()`).
 Optional (2026-10-27, Morph-Ziel in Production, AD-025 §15): `p.wire_follows_surface` True heißt, die Ersatzfläche hat
 dieselben IDs und Kanten wie das Edit-Mesh, nur andere Positionen (die Morph-Mischung) - dann zeichnet der Wire die Kanten
-an den Positionen der Ersatzfläche, solange es eine gibt. Auswahl, Hover und Picking bleiben am Edit-Mesh.
+an den Positionen der Ersatzfläche, solange es eine gibt. Auswahl, Hover und Picking folgen ihr nur über die
+Käfig-Quelle (2026-11-03, unten).
 Optional (2026-10-27, AD-025 Phase 5): `p.entry_topology_changed` (Menge von Eintrags-Schlüsseln) heißt dasselbe wie
 `surface_topology_changed` für die Ersatzflächen der Objekt-Einträge (H7-E).
 
@@ -120,6 +121,15 @@ H7-E (2026-10-17, Morph Lab): Ersatzfläche auch für **Objekt-Einträge**. Opti
 Key mit vorhandenem Eintrag zeichnet der Viewport an dessen Stelle einen eigenen `RenderMesh` des Ersatz-Meshes mit
 Kamera, Material, Matrix, Alpha und Flat/Smooth des Eintrags (jeden Frame nachgeführt); ein Key ohne Eintrag oder ein
 Eintrag ohne Ersatz wird wie bisher gezeichnet. Fehlt das Attribut, ändert sich nichts.
+
+Käfig-Quelle (2026-11-03, MODELING_ON_DEFORMED_SURFACES §15, AD-013 H7-R2-Addendum): `set_cage_source(fn)`
+gibt dem Viewport eine Funktion, die nach dem Provider-Sync den **gezeigten Käfig** liefert - ein `core.Mesh`
+mit den IDs und der Topologie des Edit-Mesh an den gezeichneten Positionen (die Morph-Mischung) oder None
+(= das Edit-Mesh selbst). Ist einer gesetzt, lesen Auswahl-, Hover-, Kanten- und Flächen-Overlays seine
+Positionen (`overlay_mesh()`), ebenso Zusatz-Overlays mit `follows_cage = True`; der GPU-Pick zeichnet sein
+ID-Buffer aus diesem Käfig (`gpu_pick_mesh()`: der RenderMesh der Ersatzfläche, wenn sie der Käfig ist, sonst
+ein eigener, nie gezeichneter RenderMesh, z. B. unter SubD). Der Käfig wird nie zurückgeschrieben. Ohne Quelle
+oder mit None ändert sich nichts.
 
 Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 """
@@ -240,6 +250,15 @@ class Viewport:
         self.surface_render_mesh: RenderMesh | None = None
         # H7-E: Ersatzflächen für Objekt-Einträge (Schlüssel wie `object_entries`).
         self.entry_surface_render_meshes: dict = {}
+        # Käfig-Quelle (Modul-Docstring): None = keine; `cage_mesh` = der zuletzt gelieferte Käfig
+        self._cage_source = None
+        self.cage_mesh: Mesh | None = None
+        self._cage_watch = None
+        #: ein nie gezeichneter RenderMesh des Käfigs für das ID-Buffer-Picking, wenn die Ersatzfläche nicht der
+        #: Käfig ist (SubD zeigt die glatte Fläche), und das Journal, aus dem er nachgezogen wird
+        self._cage_render_mesh: RenderMesh | None = None
+        self._cage_rm_watch = None
+        self._cage_hidden_key = None
         # Startzustand = DisplayState-Default (Shaded, kein Overlay).
         self.show_faces = True
         self.show_edges = False
@@ -438,6 +457,97 @@ class Viewport:
         self.extra_overlays.append(overlay)
         self._extra_overlays_dirty = True
 
+    # -- Käfig-Quelle (2026-11-03, MODELING_ON_DEFORMED_SURFACES §15) -------------
+
+    def set_cage_source(self, source) -> None:
+        """`source()` -> der gezeigte Käfig (Modul-Docstring) oder None; `None` als Quelle = keine."""
+        self._cage_source = source
+        self._selection_overlays_dirty = True
+        self._extra_overlays_dirty = True
+        self._edges_dirty = True
+
+    def overlay_mesh(self) -> Mesh:
+        """Das Mesh, dessen Positionen die Overlays des Edit-Objekts zeigen: der Käfig, sonst das Edit-Mesh."""
+        return self.cage_mesh if self.cage_mesh is not None else self.mesh
+
+    def sync_cage(self) -> Mesh | None:
+        """Bringt den Käfig sofort auf den Stand (ein Pick zwischen einer Operation und dem nächsten Frame)
+        und gibt ihn zurück; None ohne Quelle oder ohne Käfig. Ohne Quelle geschieht nichts."""
+        if self._cage_source is None:
+            return None
+        provider = self.surface_provider
+        if provider is not None and getattr(provider, "dirty", False):
+            self._sync_surface()
+        self._follow_cage()
+        return self.cage_mesh
+
+    def _follow_cage(self) -> bool:
+        """Liest die Quelle; True = der gezeigte Käfig hat sich geändert (ein anderes Mesh, oder seit dem letzten
+        Aufruf bewegt / gepatcht) - dann folgen Overlays, Wire und alles, was an Positionen hängt."""
+        cage = self._cage_source() if self._cage_source is not None else None
+        changed = False
+        if cage is not self.cage_mesh:
+            if self._cage_watch is not None:
+                self._cage_watch.close()
+            self.cage_mesh = cage
+            self._cage_watch = cage.watch() if cage is not None else None
+            if cage is None or (self._cage_render_mesh is not None and self._cage_render_mesh.mesh is not cage):
+                self._release_cage_render_mesh()
+            changed = True
+        elif cage is not None and not self._cage_watch.take().is_empty():
+            changed = True
+        if changed:
+            self.geometry_revision += 1
+            self._selection_overlays_dirty = True
+            self._extra_overlays_dirty = True
+            self._edges_dirty = True
+        rm = self.surface_render_mesh
+        if cage is not None and rm is not None and rm.mesh is cage:
+            # Die Ersatzfläche ist der Käfig: Hide / Isolate gilt für sie wie für das Edit-Mesh (gezeichnet und gepickt).
+            key = (id(rm), self.hidden_vertices)
+            if key != self._cage_hidden_key:
+                self._cage_hidden_key = key
+                rm.set_hidden(self.hidden_vertices)
+        return changed
+
+    def _release_cage_render_mesh(self) -> None:
+        rm, self._cage_render_mesh = self._cage_render_mesh, None
+        if self._cage_rm_watch is not None:
+            self._cage_rm_watch.close()
+            self._cage_rm_watch = None
+        if rm is not None:
+            release = getattr(rm.store, "release", None)
+            if release is not None:
+                release()
+
+    def _cage_pick_render_mesh(self, cage: Mesh) -> RenderMesh:
+        """Der RenderMesh, aus dem das ID-Buffer-Picking den Käfig zeichnet: die Ersatzfläche, wenn sie der Käfig ist,
+        sonst ein eigener, nie gezeichneter, der aus dem Journal des Käfigs nachgezogen wird."""
+        rm = self.surface_render_mesh
+        if rm is None or rm.mesh is not cage:
+            rm = self._cage_render_mesh
+            if rm is None or rm.mesh is not cage:
+                self._release_cage_render_mesh()
+                rm = self._cage_render_mesh = RenderMesh(cage, overlay=None, store_type=self._store_type)
+                self._cage_rm_watch = cage.watch()
+                rm.set_hidden(self.hidden_vertices)
+            else:
+                change = self._cage_rm_watch.take()
+                if change.edges or change.faces or any(
+                    before is None or not cage.is_valid_vertex(v) for v, before in change.vertices.items()
+                ):
+                    rm.mark_topology_dirty()
+                elif change.vertices:
+                    rm.mark_vertices_dirty(set(change.vertices))
+                if rm.hidden_vertices != self.hidden_vertices:
+                    rm.set_hidden(self.hidden_vertices)
+            camera = self.render_mesh.camera
+            if camera is not None and (rm.camera is not camera or self.render_mesh.dirty.camera):
+                rm.bind_camera(camera)
+            rm.mark_camera_dirty(aspect=self.render_mesh.aspect)
+            rm.set_model_matrix(self.model_matrix)
+        return rm
+
     # -- Ersatzfläche (AD-013 H7) ---------------------------------------------
 
     def set_surface_provider(self, provider) -> None:
@@ -452,6 +562,7 @@ class Viewport:
     def _release_surface(self) -> None:
         rm = self.surface_render_mesh
         self.surface_render_mesh = None
+        self._cage_hidden_key = None
         if rm is not None:
             release = getattr(rm.store, "release", None)
             if release is not None:
@@ -702,14 +813,16 @@ class Viewport:
             entry.sync()
         # Selektion/Hover, Vertex-Move und Topologie setzen alle dieses Flag.
         changed = self._selection_overlays_dirty or self._extra_overlays_dirty
-        if self._selection_overlays_dirty:
-            self._sync_selection_overlays()
         provider = self.surface_provider
         if provider is not None and (changed or getattr(provider, "dirty", False)):
             self._sync_surface()
         elif self.surface_render_mesh is not None:
             # Kamera/Aspect (kein Provider-Auslöser) kommen wie bei den Objekt-Einträgen jeden Frame an.
             self.surface_render_mesh.sync()
+        if self._cage_source is not None and self._follow_cage():
+            changed = True  # the overlays sit on the cage (after the provider: it patches the cage)
+        if self._selection_overlays_dirty:
+            self._sync_selection_overlays()
         if provider is not None and getattr(provider, "entry_surfaces", None):
             # Ein Eintrag, der erst nach dem Provider-Sync entstand, bekommt seine Fläche ohne Auslöser.
             self._sync_entry_surfaces(apply_moved=False)
@@ -720,20 +833,21 @@ class Viewport:
             self._sync_edges()
         for overlay in self.extra_overlays:
             if changed or getattr(overlay, "dirty", False):
-                overlay.sync(self.mesh, self.selection)
+                overlay.sync(self.overlay_mesh() if getattr(overlay, "follows_cage", False) else self.mesh, self.selection)
         self._extra_overlays_dirty = False
 
     def _sync_selection_overlays(self) -> None:
-        self.point_positions = self.overlay.point_layers(self.mesh)
+        mesh = self.overlay_mesh()
+        self.point_positions = self.overlay.point_layers(mesh)
         if self.point_overlay is not None:
             for layer, positions in self.point_positions.items():
                 self.point_overlay.set_points(layer, positions)
-        self.line_layers = self.overlay.line_layers(self.mesh)
+        self.line_layers = self.overlay.line_layers(mesh)
         if self.line_overlay is not None:
             for layer, segments in self.line_layers.items():
                 self.line_overlay.set_segments(segments, layer=layer)
         self._update_edge_highlight()
-        self.face_layers = self.overlay.face_layers(self.mesh)
+        self.face_layers = self.overlay.face_layers(mesh)
         if self.face_overlay is not None:
             for layer, triangles in self.face_layers.items():
                 self.face_overlay.set_triangles(layer, triangles)
@@ -746,6 +860,7 @@ class Viewport:
         mit `set_hidden`) versteckt die Teilflächen der versteckten Käfig-Faces."""
         self.hidden_vertices = frozenset(vertex_ids)
         self.render_mesh.set_hidden(self.hidden_vertices)
+        self._cage_hidden_key = None
         provider = self.surface_provider
         if provider is not None and hasattr(provider, "set_hidden"):
             provider.set_hidden(self.hidden_vertices)
@@ -757,6 +872,8 @@ class Viewport:
     def _wire_mesh(self):
         """The mesh whose positions the wire shows: the replacement surface if the provider says it
         follows (`wire_follows_surface`, same IDs and edges), else the edit mesh."""
+        if self.cage_mesh is not None:
+            return self.cage_mesh  # the shown cage (`set_cage_source`)
         rm = self.surface_render_mesh
         if rm is not None and getattr(self.surface_provider, "wire_follows_surface", False):
             return rm.mesh
@@ -837,14 +954,17 @@ class Viewport:
 
     # -- GPU-Picking (AD-022 B2-out) --------------------------------------------
 
-    def gpu_pick_mesh(self):
+    def gpu_pick_mesh(self, *, sync_cage: bool = True):
         """Der `RenderMesh` der Edit-Mesh, synchronisiert, wenn seine Buffer für ein GPU-Picking taugen
         (GL-Store, VertexList, Kamera) - sonst None (headless: CPU-Picker). Synchronisiert vorher alles
         Ausstehende, damit ein Pick direkt nach einer Operation oder einem Undo nie die Buffer des
-        vorigen Mesh-Zustands liest (AD-022 §5, Hover-Reihenfolge)."""
+        vorigen Mesh-Zustands liest (AD-022 §5, Hover-Reihenfolge). Mit einem Käfig (`set_cage_source`) dessen
+        RenderMesh: das ID-Buffer zeigt dann die gezeichnete Mischung, nicht die Ruheform (§15)."""
         from .gpu_picker import GpuPicker
 
-        rm = self.render_mesh
+        # `sync_cage=False`: the host brought the cage up to date itself (and knows none is due)
+        cage = self.sync_cage() if sync_cage else self.cage_mesh
+        rm = self.render_mesh if cage is None else self._cage_pick_render_mesh(cage)
         dirty = rm.dirty
         if dirty.topology or dirty.geometry or dirty.camera or rm._model_dirty:
             rm.sync()

@@ -59,6 +59,10 @@ class GLSoftBandOverlay(GLPointOverlay):
     """The band layers as a `GLPointOverlay` subclass (draw order: weakest first, so the
     strongest band is on top)."""
 
+    #: Viewport (§15, 2026-11-03): `sync` gets the shown cage (the morph mix) when there is one - the points sit
+    #: where the surface is drawn.
+    follows_cage = True
+
     LAYERS = tuple(reversed(BAND_LAYERS))
     #: The class default is the `color` look; `set_look` gives an instance its own styles.
     LAYER_STYLES = band_layer_styles("color")

@@ -674,6 +674,7 @@ class Application:
             face_overlay_type=face_overlay_type,
         )
         self.viewport.bind_camera(self.camera)
+        self.viewport.set_cage_source(self._query_cage)  # §15: picks and overlays on the drawn morph mix
         self._soft_overlay = None
         self._soft_bands = EMPTY_BANDS
         self._soft_shading_overlay = None
@@ -2587,7 +2588,7 @@ class Application:
         if face is not _CPU:
             return face
         return pick_face(
-            self._objects.edit_camera, self.scene.mesh, x, y, self.viewport_width, self.viewport_height,
+            self._objects.edit_camera, self._query_mesh(), x, y, self.viewport_width, self.viewport_height,
             cache=self._pick_cache,
         )
 
@@ -3641,7 +3642,7 @@ class Application:
             return hit
         return pick_component(
             self._objects.edit_camera,
-            self.scene.mesh,
+            self._query_mesh(),
             self.selection.mode,
             x,
             y,
@@ -3651,12 +3652,38 @@ class Application:
             occlusion=self.display.show_faces,
         )
 
+    def _query_cage(self) -> Mesh | None:
+        """MODELING_ON_DEFORMED_SURFACES §15 (Manu 2026-11-03): the morph mix of the edit object while a target is
+        dialled in above 0 % and the chain shows it - the cage hover, picks, overlays and screen mappings read. None
+        = the rest shape: no target or 0 % (bit-identical to before), posed (§15 (b): S5, the rest cage), a foreign
+        host in the slot. The viewport's cage source (`Viewport.set_cage_source`); never written back."""
+        morph = self.morph.provider
+        if morph.surface_mesh is None or not self.surface_chain.holds(morph):
+            return None
+        skin = self.skin.provider
+        if skin.surface_mesh is not None and self.surface_chain.holds(skin) and skin.posed():
+            return None
+        return morph.mix_of(self.scene.edit_object_id)
+
+    def _query_mesh(self) -> Mesh:
+        """The mesh hover, click, Box / Lasso / Paint, the Knife and the drag mappings read (same IDs and topology as
+        the edit mesh): the shown cage (`_query_cage`, brought up to date first), else the edit mesh. Edits always
+        write the edit mesh."""
+        viewport = self.viewport
+        if viewport is None:
+            return self.scene.mesh
+        if viewport.cage_mesh is None and not self.morph.provider.object_weights(self.scene.edit_object_id):
+            return self.scene.mesh  # no target above 0 %: nothing is synced early, exactly as before
+        cage = viewport.sync_cage()
+        return cage if cage is not None else self.scene.mesh
+
     def _gpu_pick_mesh(self):
         """The edit `RenderMesh` when the window can pick from its ID buffers (AD-022 B2-out), else None
         (headless, `TraceStore`, `gpu_picking` off): the CPU picker then answers."""
         if not self.gpu_picking or self.viewport is None:
             return None
-        return self.viewport.gpu_pick_mesh()
+        self._query_mesh()  # §15: the cage up to date first (inert without a target above 0 %)
+        return self.viewport.gpu_pick_mesh(sync_cage=False)
 
     def _gpu_failed(self, exc: BaseException) -> None:
         """A GL error in the ID pass (driver, FBO at resize): the CPU picker takes over for the rest of
@@ -3671,7 +3698,7 @@ class Application:
             return _CPU
         try:
             return gpu_pick_component(
-                self.viewport.gpu_picker, rm, self._objects.edit_camera, self.scene.mesh, mode,
+                self.viewport.gpu_picker, rm, self._objects.edit_camera, self._query_mesh(), mode,
                 x, y, int(self.viewport_width), int(self.viewport_height),
                 occlusion=self.display.show_faces, cache=self._pick_cache,
             )
@@ -3687,7 +3714,7 @@ class Application:
         if rm is not None:
             try:
                 return gpu_elements_in_rect(
-                    self.viewport.gpu_picker, rm, self._objects.edit_camera, self.scene.mesh, mode,
+                    self.viewport.gpu_picker, rm, self._objects.edit_camera, self._query_mesh(), mode,
                     rect, int(self.viewport_width), int(self.viewport_height),
                     cache=self._pick_cache, occlusion=occlusion,
                 )
@@ -3695,7 +3722,7 @@ class Application:
                 self._gpu_failed(exc)
         return elements_in_rect(
             self._objects.edit_camera,
-            self.scene.mesh,
+            self._query_mesh(),
             mode,
             rect,
             self.viewport_width,
@@ -3714,7 +3741,7 @@ class Application:
         if rm is not None:
             try:
                 found = gpu_elements_in_region(
-                    self.viewport.gpu_picker, rm, self._objects.edit_camera, self.scene.mesh, mode,
+                    self.viewport.gpu_picker, rm, self._objects.edit_camera, self._query_mesh(), mode,
                     lambda p: point_in_polygon(p, polygon), polygon_bounds(polygon), width, height,
                     cache=self._pick_cache, occlusion=occlusion,
                 )
@@ -3722,7 +3749,7 @@ class Application:
                 self._gpu_failed(exc)
         if found is None:
             found = elements_in_polygon(
-                self._objects.edit_camera, self.scene.mesh, mode, polygon, width, height,
+                self._objects.edit_camera, self._query_mesh(), mode, polygon, width, height,
                 cache=self._pick_cache, occlusion=occlusion,
             )
         return found
@@ -4080,14 +4107,16 @@ class Application:
         ids = self._pointer_tools.active_selection_ids()
         if not ids:
             return None
-        key = (viewport.geometry_revision, id(self.scene.mesh), self.selection.mode, len(ids), hash(frozenset(ids)))
+        shown = self._query_mesh()  # §15: the centroid of the drawn mix while a target is dialled in
+        key = (viewport.geometry_revision, id(self.scene.mesh), id(shown), self.selection.mode, len(ids),
+               hash(frozenset(ids)))
         cache = self._gizmo_cache
         if cache is not None and cache[0] == key:
             pivot = cache[1]
         else:
             mesh = self.scene.mesh
             vertex_ids = resolve_selection_vertices(mesh, self.selection, self.selection.mode)
-            pivot = selection_pivot(mesh, vertex_ids) if vertex_ids else None
+            pivot = selection_pivot(shown, vertex_ids) if vertex_ids else None
             self._gizmo_cache = (key, pivot)  # also with a Working Pivot: `_gizmo_frame` keys on it
         if pivot is not None and self.active_pivot is not None:
             # The gizmo shows where W/E/R turn and scale: the Working Pivot while it is on (U-1).

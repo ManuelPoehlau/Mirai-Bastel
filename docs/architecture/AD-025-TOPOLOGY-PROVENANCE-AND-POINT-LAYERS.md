@@ -372,7 +372,9 @@ is measured too slow. Corner-domain data (UVs) would use the same primitive hook
 ## 6. Artist-facing consequences
 
 - Nothing visible changes before Phase 3; Phase 2 is Core plus tests.
-- With targets, the base's picking, selection and the tools stay on the rest shape (F-11 "hilft").
+- With targets, the base's picking, selection and the tools stay on the rest shape (F-11 "hilft"). *(Superseded
+  2026-11-03, Manu, [MODELING_ON_DEFORMED_SURFACES §15](../design/MODELING_ON_DEFORMED_SURFACES.md#15-decided-first-slice-picking-on-the-morph-mix-manu-2026-11-03): with a target dialled in above 0 % they act on the drawn mix; edits still change the base;
+  at 0 %, in a pose and on the editing view the rest shape stays.)*
 - An expression follows later base edits (J-3); a whole-mesh rotate / scale in `1`/`2`/`3` is an edit, and Re-Symmetrize
   evens out the base only (§4.3). The first point is asked as a one-line confirmation (Kurzfassung).
 
@@ -620,7 +622,9 @@ Requirements taken from the Morph Lab (J-5 "daneben" KEEP, J-3 "relativ", F-11 w
    Display through H7: `morph_targets.MorphSurfaceProvider` shows `b + w·d` as the edit object's surface and, H7-E, on the
    base beside the view. **The wire follows the mix** (Manu 2026-10-27, after the first try: "das Wireframe geht nicht
    mit, nur die Polygone"; viewport hook `provider.wire_follows_surface`, additive to H7); selection, hover, picking and the
-   tools stay on the rest shape (Morph Lab 6a "hilft" — `PROVISIONAL` reading: his note is about the wire only). Cost [C]:
+   tools stay on the rest shape (Morph Lab 6a "hilft" — `PROVISIONAL` reading: his note is about the wire only).
+   *Amended 2026-11-03 (Manu, [MODELING_ON_DEFORMED_SURFACES §15](../design/MODELING_ON_DEFORMED_SURFACES.md#15-decided-first-slice-picking-on-the-morph-mix-manu-2026-11-03)): while a target is dialled in above 0 % hover, picking, the
+   overlays, the Knife and the drag mappings act on the drawn mix (AD-013 H7-R2 addendum); the edit writes the base.* Cost [C]:
    with the wire shown a weight step rebuilds it (gollum_20k, 43,750 edges: +22 ms; head / body < 1 ms). The H7 slot is shared with the SubD preview: whoever
    holds it keeps it, the other says so (H5b: together from Phase 4). The surface patches from the base's journal: a weight step
    touches only the points with an offset (`_Surface`, `(b, d)` cached), an edit only the touched ones; since Phase 5 a
@@ -817,6 +821,7 @@ or Phase 6 (skinning; the weights kind gets the Phase 5 rules for free).
   is kept even at 0 % (`keep_edit_surface`), so a weight step patches SubD's positions instead of switching its input.
   Skinning (Phase 6) slots in between as its own stage (audit §E: morph → skin → SubD). Picking, selection, hover and the
   tools stay on the rest-shape cage (Morph Lab 6a, §15); the SubD cage lines and the morph wire follow the mix.
+  *(Amended 2026-11-03, [MODELING_ON_DEFORMED_SURFACES §15](../design/MODELING_ON_DEFORMED_SURFACES.md#15-decided-first-slice-picking-on-the-morph-mix-manu-2026-11-03) (d): with SubD on they act on the mixed cage, never on the SubD surface.)*
 - **No GPU path in this phase** (the assignment's condition "if the CPU path cannot meet fluid on head and body with 10
   targets"): in the container every head row and every body row with sparse targets is far under the bar; the only rows
   at the bar step a target that moves every body point — with one target as with ten (p95 16.6 / 16.7 ms [C]), Phase 3's

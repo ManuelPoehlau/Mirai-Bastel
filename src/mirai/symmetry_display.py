@@ -199,8 +199,11 @@ class ReportCache:
         return self._report
 
 
-def _positions(mesh: Mesh, ids) -> list:
-    return [mesh.vertex_position(v) for v in sorted(ids, key=int)]
+def _positions(mesh: Mesh, ids, shown: Optional[Mesh] = None) -> list:
+    """The ids' positions on `shown` (the drawn cage, same IDs) where it has them, else on `mesh`."""
+    if shown is None:
+        return [mesh.vertex_position(v) for v in sorted(ids, key=int)]
+    return [(shown if shown.is_valid_vertex(v) else mesh).vertex_position(v) for v in sorted(ids, key=int)]
 
 
 def _triples(flat: list[float]) -> list:
@@ -237,8 +240,12 @@ class SymmetryDisplay:
         defer: Optional[Callable[[], bool]] = None,
         reports: Optional[ReportCache] = None,
         preview: Optional[Callable[[], Optional[ResymPlan]]] = None,
+        cage: Optional[Callable[[], Optional[Mesh]]] = None,
     ) -> None:
         self.sink = sink
+        #: §15 (2026-11-03): the shown cage (the morph mix, same IDs) the markers sit on; None = the synced mesh.
+        #: The report and the plane stay the mesh's own (symmetry is a property of the base).
+        self.cage = cage
         self.reports = reports if reports is not None else ReportCache(defer)
         self.preview = preview or _no_preview
         self._preview_plan: object = None
@@ -283,10 +290,11 @@ class SymmetryDisplay:
         # Positionen immer aus dem aktuellen Mesh: während eines Transforms wandern die
         # Marker mit, auch wenn ihre IDs vom Drag-Start stammen. Die Senke baut nur neu,
         # wenn sich die Punkte wirklich ändern.
+        shown = self.cage() if self.cage is not None else None
         self.sink.set_markers(
-            _positions(mesh, report.seam),
-            _positions(mesh, report.unpaired),
-            _positions(mesh, report.ambiguous),
+            _positions(mesh, report.seam, shown),
+            _positions(mesh, report.unpaired, shown),
+            _positions(mesh, report.ambiguous, shown),
         )
         self.dirty = self.reports.defer() and self.reports.stale(signature)
 

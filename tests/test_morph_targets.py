@@ -650,8 +650,9 @@ def test_the_evaluated_surface_equals_the_definition_through_random_edits():
     assert len(surfaces) <= 3  # patched in place, not rebuilt per topology edit
 
 
-def test_the_wire_follows_the_mix_while_selection_stays_on_the_rest_shape():
-    """Manu 2026-10-27: during the N drag the wireframe must move with the polygons."""
+def test_the_wire_and_the_selection_follow_the_mix():
+    """Manu 2026-10-27: during the N drag the wireframe must move with the polygons. Manu 2026-11-03
+    (MODELING_ON_DEFORMED_SURFACES §15): the selection overlays follow the mix too (before: the rest shape)."""
     from viewport import edge_segments
 
     app, base = _with_target()
@@ -669,7 +670,12 @@ def test_the_wire_follows_the_mix_while_selection_stays_on_the_rest_shape():
     _select(app, V, {v})
     app.viewport.on_selection_changed()
     app.update_viewport(0.0)
-    assert any(tuple(p) == mesh.vertex_position(v) for layer in app.viewport.point_positions.values() for p in layer)
+    shown = app.morph.provider.surface_mesh.vertex_position(v)
+    assert shown != mesh.vertex_position(v)
+    points = [tuple(p) for layer in app.viewport.point_positions.values() for p in layer]
+    assert tuple(shown) in points and tuple(mesh.vertex_position(v)) not in points
     app.set_morph_weight(0)
     app.update_viewport(0.0)
     assert app.viewport.edge_segments == edge_segments(mesh)
+    points = [tuple(p) for layer in app.viewport.point_positions.values() for p in layer]
+    assert tuple(mesh.vertex_position(v)) in points  # 0 %: the rest shape again

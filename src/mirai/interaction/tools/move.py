@@ -102,6 +102,7 @@ class MoveTool(Tool):
         self._mask: dict = {}
         self._vertex_ids: set[VertexId] = set()
         self._anchor_vertex: VertexId | None = None
+        self._anchor_shift = None
         self._axes_mask: tuple[float, float, float] = (1.0, 1.0, 1.0)
         self._normal: tuple[float, float, float] | None = None  # Für space="normal" single-axis
         self._plane_exclude: tuple[float, float, float] | None = None  # Für space="normal" plane (WP-03D)
@@ -157,7 +158,7 @@ class MoveTool(Tool):
 
     def _on_begin(
         self, scene=None, camera=None, vertex_ids=None, space=None, axis=None, derived_geometry=None,
-        soft=None, mask=None, **params: Any
+        soft=None, mask=None, shown=None, **params: Any
     ) -> None:
         self._mask = mask or {}  # Mask Geometry: `mirai.mask`; fixed for the gesture
         vertex_ids = unblocked(vertex_ids or (), self._mask)
@@ -167,6 +168,13 @@ class MoveTool(Tool):
         self._camera = camera
         self._vertex_ids = vertex_ids
         self._anchor_vertex = min(vertex_ids)
+        # MODELING_ON_DEFORMED_SURFACES §15: `shown` = the drawn cage (the morph mix, same IDs) while a target is
+        # dialled in. The pixel delta is mapped at the depth where the anchor is *drawn*; the mix moves each point by a
+        # constant offset, so rest + that shift is the drawn anchor for the whole drag. Absent: the rest anchor.
+        self._anchor_shift = None
+        if shown is not None and shown is not getattr(scene, "mesh", None) and shown.is_valid_vertex(self._anchor_vertex):
+            a, b = shown.vertex_position(self._anchor_vertex), scene.mesh.vertex_position(self._anchor_vertex)
+            self._anchor_shift = (a[0] - b[0], a[1] - b[1], a[2] - b[2])
         self._normal = None
         self._plane_exclude = None
         self._in_plane_normal = None
@@ -306,6 +314,9 @@ class MoveTool(Tool):
         # wird auf der Bildebene der Kamera durch diesen Punkt in ein Welt-Delta
         # übersetzt.
         anchor_pos = self._scene.mesh.vertex_position(self._anchor_vertex)
+        shift = self._anchor_shift
+        if shift is not None:
+            anchor_pos = (anchor_pos[0] + shift[0], anchor_pos[1] + shift[1], anchor_pos[2] + shift[2])
         world_delta = self._camera.screen_delta_to_world(
             anchor_pos, dx, dy, width, height
         )
@@ -365,6 +376,7 @@ class MoveTool(Tool):
 
     def _on_deactivate(self) -> None:
         self._anchor_vertex = None
+        self._anchor_shift = None
         self._scene = None
         self._camera = None
         self._axes_mask = (1.0, 1.0, 1.0)

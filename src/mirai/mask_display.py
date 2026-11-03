@@ -20,6 +20,10 @@ class GLMaskOverlay(GLPointOverlay):
     """Fully masked vertices near-black, partially masked ones grey; both a little larger than the soft
     bands so the protection reads at a glance."""
 
+    #: Viewport (§15, 2026-11-03): `sync` gets the shown cage (the morph mix) when there is one - the points sit
+    #: where the surface is drawn.
+    follows_cage = True
+
     LAYERS = (MASK_LAYER_PARTIAL, MASK_LAYER_FULL)
     LAYER_STYLES = {
         MASK_LAYER_PARTIAL: ((0.45, 0.45, 0.50, 0.90), 6.0),

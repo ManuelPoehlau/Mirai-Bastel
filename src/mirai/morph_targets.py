@@ -13,9 +13,11 @@ the values, their journal, Undo and the file; this module gives them their meani
   Undo step, not saved (F-11, Manu 2026-10-17). The viewport shows the additive mix `b + Σ wᵢ·dᵢ`
   (`morph_mix`, the evaluation rule and its drift guard) through the H7 replacement surface: the edit
   object's faces (`surface_mesh`) and, H7-E, object entries (`entry_surfaces`, the base beside the
-  editing view). The wire follows the mix (`wire_follows_surface`, Manu 2026-10-27); picking,
-  selection, hover and every tool stay on the rest shape (H7: the cage is authoritative; Morph Lab 6a:
-  "hilft"). Morph + SubD together (H5b, Phase 4): the provider is the first stage of the app's
+  editing view). The wire follows the mix (`wire_follows_surface`, Manu 2026-10-27). Since 2026-11-03
+  (Manu, MODELING_ON_DEFORMED_SURFACES §15; AD-013 H7-R2 addendum) hover, picking, the overlays, the Knife and
+  the drag mappings act on the edit object's mix too (`mix_of`, the app's `_query_cage`), read only: every
+  edit still writes the base (rest positions); at 0 %, in a pose and on the editing view the rest shape stays
+  the cage (Morph Lab 6a "Picking auf der Ruheform" superseded for base editing above 0 %). Morph + SubD together (H5b, Phase 4): the provider is the first stage of the app's
   `surface_chain.SurfaceChain`, the SubD preview reads the mixed cage (`MorphDisplay`).
 - **Editing view** (H4, the §11 "editing-view mechanics" decided here, AD-025 §15): `TargetView`.
   The target is edited *beside* the base, as in the Morph Lab (J-5): a transient scene object whose
@@ -385,7 +387,7 @@ class MorphSurfaceProvider:
         self._surfaces: dict = {}
         self._dirty = False
         #: H7 (viewport): the wire is drawn at the mix, not at the rest shape (Manu 2026-10-27: "das Wireframe geht
-        #: nicht mit"); selection, hover and picking stay on the rest shape (Morph Lab 6a "hilft").
+        #: nicht mit"); since 2026-11-03 selection, hover and picking follow it too (§15, `mix_of`).
         self.wire_follows_surface = True
         #: AD-025 Phase 4 (stage chain): show the edit object's mix even at 0 % while a later stage reads it
         self.keep_edit_surface = False
@@ -470,6 +472,18 @@ class MorphSurfaceProvider:
 
     def wants_surface(self) -> bool:
         return bool(self.shown())
+
+    def mix_of(self, object_id) -> Optional[Mesh]:
+        """The object's evaluated mix (same IDs and topology as its mesh) while one of its targets is above 0 %,
+        else None (0 %, no target, not synced yet). MODELING_ON_DEFORMED_SURFACES §15: the cage the base is picked
+        and edited on - read only, never written back."""
+        surface = self._surfaces.get(object_id)
+        obj = self._scene_of().objects.get(object_id)
+        if surface is None or obj is None or surface.base is not obj.mesh or surface.mesh is None:
+            return None
+        if surface.weights != self.object_weights(object_id) or not surface.weights:
+            return None  # stale (a weight step not synced yet) or 0 %
+        return surface.mesh
 
     @property
     def dirty(self) -> bool:

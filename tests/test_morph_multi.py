@@ -484,12 +484,14 @@ def test_morph_and_subd_show_together_as_subd_of_the_mixed_cage():
     mixed = morph_mix.evaluate(mesh, app.morph.provider.object_weights(app.scene.edit_object_id))
     assert set(app.subdivision.provider.control_positions()) == set(mixed.values())
     assert cage is not None
-    # picking and selection stay on the rest cage
+    # §15 (Manu 2026-11-03, (d)): picking and selection sit on the mixed cage, not on the SubD surface
     assert app.viewport.mesh is mesh
     _select(app, V, {v})
     app.viewport.on_selection_changed()
     app.update_viewport(0.0)
-    assert any(tuple(p) == mesh.vertex_position(v) for layer in app.viewport.point_positions.values() for p in layer)
+    assert app.viewport.cage_mesh is app.morph.provider.surface_mesh
+    points = [tuple(p) for layer in app.viewport.point_positions.values() for p in layer]
+    assert tuple(mixed[v]) in points and tuple(mixed[v]) != tuple(mesh.vertex_position(v))
 
 
 def test_subd_alone_and_the_mix_alone_hold_the_slot_themselves():
@@ -616,9 +618,11 @@ def test_the_knife_with_three_targets_in_the_app():
     _shown_equals_definition(app)
     before = mesh.export_state()
     ref = Mesh.from_state(before)
-    face = max(mesh.all_face_ids(), key=lambda f: min(mesh.vertex_position(v)[0] for v in mesh.face_vertices(f)))
+    # §15 (Manu 2026-11-03): the cut is aimed on the drawn mix - the clicks are where the mix is drawn
+    shown = app.morph.provider.surface_mesh
+    face = max(mesh.all_face_ids(), key=lambda f: min(shown.vertex_position(v)[0] for v in mesh.face_vertices(f)))
     edges = mesh.face_edges(face)
-    pa = [mesh.vertex_position(v) for v in mesh.face_vertices(face)]
+    pa = [shown.vertex_position(v) for v in mesh.face_vertices(face)]
 
     def inside(u, w):
         return tuple(pa[0][k] * (1 - u) * (1 - w) + pa[1][k] * u * (1 - w) + pa[2][k] * u * w + pa[3][k] * (1 - u) * w
@@ -626,7 +630,7 @@ def test_the_knife_with_three_targets_in_the_app():
 
     def on_edge(e, t):
         a, b = mesh.edge_vertices(e)
-        p0, p1 = mesh.vertex_position(a), mesh.vertex_position(b)
+        p0, p1 = shown.vertex_position(a), shown.vertex_position(b)
         return tuple(p0[k] + t * (p1[k] - p0[k]) for k in range(3))
 
     app.selection.clear()
@@ -636,10 +640,19 @@ def test_the_knife_with_three_targets_in_the_app():
         app.pointer_motion(sx, sy)
         app.pointer_press(LMB, sx, sy)
         assert app.pointer_release("LEFT", sx, sy), app.status_message
-    path = [dict(p) for p in app._knife.tool.path]
+    tool = app._knife.tool
+    aimed = [dict(p) for p in tool.path if p.get("kind") == "face"]
+    assert len(aimed) == 2 and all(p["face_id"] == face for p in aimed)
+    path = [dict(p) for p in tool._rest_path(tool.path)]  # what the commit cuts: interior points at Σ oⱼ·bⱼ
     assert app.key_press(ENTER), app.status_message
     ops.knife_rule(ref, mesh, {"path": path, "symmetric": False})
     _shown_equals_definition(app)
+    # DS-AC3: each new interior point is drawn where it was aimed (the mix of its rest position and offsets)
+    weights = app.morph.provider.object_weights(app.scene.edit_object_id)
+    mixed = morph_mix.evaluate(mesh, weights)
+    new = [v for v in mesh.all_vertex_ids() if not ref.is_valid_vertex(v)]
+    for p in aimed:
+        assert min(max(abs(a - b) for a, b in zip(mixed[v], p["position"])) for v in new) <= 1e-9
     ops._assert_undo_redo_exact(app, before)
     _shown_equals_definition(app)
 

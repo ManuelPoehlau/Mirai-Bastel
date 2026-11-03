@@ -146,10 +146,21 @@ class ExtrudeTool(Tool):
 
     # -- Tool hooks ----------------------------------------------------------
 
-    def _on_begin(self, scene, camera, face_ids: set[FaceId], symmetric_plan=None, **_: Any) -> None:
+    def _on_begin(self, scene, camera, face_ids: set[FaceId], symmetric_plan=None, shown=None, **_: Any) -> None:
         # Validation first: a refused begin must leave the mesh and the tool untouched.
         mesh = scene.mesh
         face_ids_frozen = frozenset(face_ids)
+        # MODELING_ON_DEFORMED_SURFACES §15: the drag maps pixels at the depth where the region is *drawn* (`shown`,
+        # the morph mix, same IDs); the mix shifts each point by a constant offset, so the shift is fixed here.
+        self._anchor_shift = None
+        if shown is not None and shown is not mesh:
+            ids = {v for f in face_ids_frozen if mesh.is_valid_face(f) for v in mesh.face_vertices(f)}
+            ids = [v for v in ids if shown.is_valid_vertex(v)]
+            if ids:
+                self._anchor_shift = tuple(
+                    sum(shown.vertex_position(v)[k] - mesh.vertex_position(v)[k] for v in ids) / len(ids)
+                    for k in range(3)
+                )
 
         if not face_ids_frozen:
             raise TopologyToolError("Mindestens eine Face erforderlich.")
@@ -292,6 +303,9 @@ class ExtrudeTool(Tool):
 
         mesh = self._scene.mesh
         anchor = self._face_center_original()
+        shift = getattr(self, "_anchor_shift", None)
+        if shift is not None:
+            anchor = (anchor[0] + shift[0], anchor[1] + shift[1], anchor[2] + shift[2])
         world_delta = self._camera.screen_delta_to_world(
             anchor, dx, dy, width, height
         )

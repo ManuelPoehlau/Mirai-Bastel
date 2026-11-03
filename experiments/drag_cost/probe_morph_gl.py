@@ -8,6 +8,7 @@ Usage (from the repo root, Windows and Linux alike; opens a hidden pyglet window
     python experiments/drag_cost/probe_morph_gl.py --only-phase4        # Phase 4: 1 / 10 targets, with SubD
     python experiments/drag_cost/probe_morph_gl.py --memory             # Phase 4: layer memory, no window
     python experiments/drag_cost/probe_morph_gl.py --only-skin          # AD-028: pose steps of a jaw-like region
+    python experiments/drag_cost/probe_morph_gl.py --only-picking       # §15: hover on the mix, weight step with a selection
 
 Headless container: prefix with `xvfb-run -a`.
 
@@ -48,6 +49,12 @@ offset; the offsets are a smooth bump):
                  (offsets on 15 % of the points) dialled in at 60 %, and with the SubD preview on (level 2; head
                  and body: gollum_20k is over SubD's face limit). The AD-028 P-1 bar: <= 16.7 ms p95 on head and
                  body for a region <= 15 % on the reference PC; gollum_20k "usable, not fluid" (H5c).
+
+- `picking`      (MODELING_ON_DEFORMED_SURFACES §15, `--only-picking`) per asset, one target with offsets on 100 %
+                 of the points: hover (a sweep of 120 cursors over the middle of the viewport, `pointer_motion` +
+                 the frame) in vertex / edge / face mode at 0 % (the rest cage, as before) and at 60 % (the ID
+                 pass and the overlays on the mix), GPU path; and the hold-N weight step with 40 selected vertices
+                 shown at 0 -> 100 % (since §15 the selection overlay follows the mix every step).
 
 Numbers from a container must be labelled as such (`docs/architecture/REFERENCE_HARDWARE.md` §4); only
 the reference PC decides the 16.7 ms bar. Output is plain ASCII.
@@ -114,6 +121,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-subd", action="store_true", help="Phase 4 rows without the SubD variant")
     parser.add_argument("--only-skin", action="store_true",
                         help="AD-028: pose steps of a jaw-like region (5 / 15 / 100 %%), plain, with a target, with SubD")
+    parser.add_argument("--only-picking", action="store_true",
+                        help="MODELING_ON_DEFORMED_SURFACES §15: hover on the mix and the weight step with a selection")
     parser.add_argument("--memory", action="store_true",
                         help="Phase 4: layer memory and journal cost only (no window; default assets gollum_20k, gollum)")
     return parser
@@ -566,6 +575,43 @@ def _header(args) -> list[str]:
     return lines
 
 
+def picking_rows(path: Path, steps: int) -> list[str]:
+    """§15 rows (module docstring, `picking`)."""
+    from core import SelectionMode
+
+    window, app = build_app(path)
+    name, count = path.stem, len(app.scene.mesh.all_vertex_ids())
+    app.key_press(_key("n", "ctrl"))
+    fill_target(app, 100)
+    lines = []
+    cursors = [(250 + (i % 12) * 25.0, 200 + (i // 12) * 20.0) for i in range(120)]
+    for weight in (0, 60):
+        app.set_morph_weight(weight)
+        frame(app)
+        cells = []
+        for mode in (SelectionMode.VERTEX, SelectionMode.EDGE, SelectionMode.FACE):
+            app.selection.mode = mode
+            samples = []
+            for x, y in cursors:
+                t0 = time.perf_counter()
+                app.pointer_motion(x, y)
+                _, draw = frame(app)
+                samples.append((time.perf_counter() - t0) * 1000.0 - draw)
+            cells.append(f"{mode.name.lower()} {Stats.of(samples).text()}")
+        cage = "mix" if app.viewport.cage_mesh is not None else "rest"
+        lines.append(f"{name:<26} {count:>6} V  hover at {weight:>2} % ({cage}, GPU {app._gpu_pick_mesh() is not None}): "
+                     + " | ".join(cells))
+    app.selection.mode = SelectionMode.VERTEX
+    app.selection.set(set(grow_region(app.scene.mesh, 40)))
+    app.viewport.on_selection_changed()
+    step, draw, _ = weight_rows(app, steps)
+    verdict = "ok" if step.p95 <= THRESHOLD_P95_MS else "OVER"
+    lines.append(f"{name:<26} {count:>6} V  weight step with 40 selected vertices {step.text()}  [{verdict}]"
+                 f"  (draw p50 {draw.p50:.2f})")
+    window.close()
+    return lines
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     if args.memory:
@@ -580,6 +626,14 @@ def main(argv=None) -> int:
     if args.only_skin:
         for path in paths:
             rows = skin_rows(path, args.steps)
+            if not lines:
+                lines = _header(args)
+            lines += rows
+        print("\n".join(lines))
+        return 0
+    if args.only_picking:
+        for path in paths:
+            rows = picking_rows(path, args.steps)
             if not lines:
                 lines = _header(args)
             lines += rows

@@ -19,8 +19,10 @@ changing the viewport: it is an additive layer *above* the H7 contract.
 - **Foreign hosts** (a lab that sets its own provider) keep the slot: the chain never replaces a provider
   it did not set, and `holds` / `can_take` say so to the stages, which report it as before.
 
-Picking, selection, hover and every tool stay on the edit mesh (the rest-shape cage): the viewport never
-picks on a replacement surface (H7), and no stage writes a scene mesh.
+No stage writes a scene mesh. Picking, selection, hover and the tools read the drawn *cage* - the morph
+stage's mix while a target is dialled in (MODELING_ON_DEFORMED_SURFACES §15, AD-013 H7-R2 addendum: queries
+on a replacement surface with the edit mesh's IDs, never written back), else the edit mesh; never the SubD
+surface ((d): the cage lines show the mixed cage) and never the posed surface ((b), AD-028 §7.1).
 """
 
 from __future__ import annotations

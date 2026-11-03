@@ -169,6 +169,27 @@ BEGUN_GESTURE_REFUSES = frozenset({commands.UNDO, commands.REDO, commands.TOGGLE
 UNCONSTRAINED_GESTURES = frozenset({commands.EXTRUDE, commands.LOOP_SLIDE, *SMOOTH_COMMANDS, *OFFSET_COMMANDS})
 
 
+def shown_shift(services):
+    """MODELING_ON_DEFORMED_SURFACES §15: `vid -> (dx, dy, dz)` from a vertex's rest position to where it is drawn
+    (the morph mix), or None without a shown mix (0 %, no target, posed: the rest shape, unchanged). A base edit moves
+    a drawn point by its rest delta (the mix adds a constant offset per point), so the shift holds for the gesture."""
+    shown, mesh = services.query_mesh, services.scene.mesh
+    if shown is mesh:
+        return None
+
+    def shift(vid):
+        if not shown.is_valid_vertex(vid) or not mesh.is_valid_vertex(vid):
+            return (0.0, 0.0, 0.0)
+        a, b = shown.vertex_position(vid), mesh.vertex_position(vid)
+        return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+    return shift
+
+
+def _plus(p, d):
+    return (p[0] + d[0], p[1] + d[1], p[2] + d[2])
+
+
 def element_vertices(mesh, element) -> set[VertexId]:
     """The vertices of one vertex / edge / face (the hover fallback of a gesture's target). A handle `mesh` no
     longer knows (a topology change since) gives an empty set instead of a `KeyError` - the viewport overlay's rule."""
@@ -439,6 +460,9 @@ class TransformGesture(GestureSession):
         mask = services.mask_values(self.target)
         if mask:
             begin_context["mask"] = mask  # absent without a mask: today's payload, unchanged
+        shown = services.query_mesh
+        if shown is not services.scene.mesh:
+            begin_context["shown"] = shown  # §15: the drawn morph mix (absent at 0 % / without targets: unchanged)
         pivot = services.active_pivot if self.command in (commands.ROTATE, commands.SCALE) else None
         if pivot is not None:
             begin_context["pivot"] = pivot  # Working Pivot (U-1); Move and pivot off: today's payload
@@ -591,6 +615,9 @@ class ExtrudeGesture(GestureSession):
         faces = set(self.faces)
         mesh = services.scene.mesh
         context = {"scene": services.scene, "camera": services.edit_camera}
+        shown = services.query_mesh
+        if shown is not mesh:
+            context["shown"] = shown  # §15: the drag plane at the drawn morph mix (absent otherwise: unchanged)
         planner = (
             symmetry_declarations.EXTRUDE_COORDINATORS.get(commands.EXTRUDE)
             if mesh.symmetry_definition is not None
@@ -718,9 +745,13 @@ class LoopSlideGesture(_SlideGesture):
         """Mean screen vector from each driven vertex to its side-A target (px for t = 1)."""
         camera = self.services.edit_camera
         width, height = self.services.viewport_size
+        shift = shown_shift(self.services)  # §15: the screen direction where the edges are drawn
         sx = sy = 0.0
         n = 0
-        for orig, side_a, _ in self.plan.slides.values():
+        for vid, (orig, side_a, _) in self.plan.slides.items():
+            if shift is not None:
+                d = shift(vid)
+                orig, side_a = _plus(orig, d), _plus(side_a, d)
             a = camera.project_to_screen(orig, width, height)
             b = camera.project_to_screen(side_a, width, height)
             if a is None or b is None:
@@ -911,7 +942,7 @@ class OffsetGesture(GestureSession):
                  symmetric: SymmetricOffset | None, residue, anchor_vertices) -> None:
         super().__init__(controller, command, key, anchor_vertices, origin)
         services = self.services
-        mesh = services.scene.mesh
+        mesh = services.query_mesh  # §15: the width per pixel at the depth where the anchor is drawn
         n = len(anchor_vertices)
         centre = tuple(sum(mesh.vertex_position(v)[i] for v in anchor_vertices) / n for i in range(3))
         width, height = services.viewport_size
@@ -1142,12 +1173,15 @@ class GestureController:
             return False
         camera = services.edit_camera
         w, h = services.viewport_size
+        shift = shown_shift(services)  # §15: the vertex's drawn position (its own offset rides along the slide)
+        zero = (0.0, 0.0, 0.0)
         px = {
             vid: (
-                camera.project_to_screen(start, w, h),
-                tuple(camera.project_to_screen(p, w, h) for _, p in plan.candidates[vid]),
+                camera.project_to_screen(_plus(start, d), w, h),
+                tuple(camera.project_to_screen(_plus(p, d), w, h) for _, p in plan.candidates[vid]),
             )
             for vid, start in plan.origins.items()
+            for d in (shift(vid) if shift is not None else zero,)
         }
         services.interaction.start(VertexSlideGesture(self, key, plan, px, origin))
         services.set_hovered(None)

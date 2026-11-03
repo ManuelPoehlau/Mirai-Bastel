@@ -178,9 +178,19 @@ class RotateTool(TransformTool):
         self._refuse_if_seam_unsafe(lambda normal: rotation_keeps_plane(self._axis, normal))
         if gizmo is not None and gizmo["mode"] == "dial":
             width, height = gizmo["size"]
+            centre = self._operation.pivot
+            shown = params.get("shown")
+            if shown is not None and params.get("pivot") is None and shown is not scene.mesh:
+                # §15: the dial turns about the pivot where the gizmo is drawn (the selection's centroid on the morph
+                # mix); the rotation itself stays about the rest pivot (base editing, reading (a)).
+                ids = [vid for vid in vertex_ids if shown.is_valid_vertex(vid)]
+                if ids:
+                    rest, mix = scene.mesh.vertex_position, shown.vertex_position
+                    shift = [sum(mix(v)[k] - rest(v)[k] for v in ids) / len(ids) for k in range(3)]
+                    centre = tuple(centre[k] + shift[k] for k in range(3))
             self._gizmo = {
                 "mode": "dial",
-                "dial": DialAngle(self._camera, self._operation.pivot, self._axis, gizmo["press"], width, height),
+                "dial": DialAngle(self._camera, centre, self._axis, gizmo["press"], width, height),
             }
 
     def _replay(self) -> None:

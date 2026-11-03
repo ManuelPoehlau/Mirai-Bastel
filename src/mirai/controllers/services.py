@@ -140,6 +140,14 @@ class AppServices:
         picking stays in `Application` (§3.4), the cache is the one it keeps."""
         return self._app._pick_cache
 
+    @property
+    def query_mesh(self):
+        """The mesh picks, previews and screen <-> world mappings read: the drawn morph mix of the edit object while a
+        target is dialled in (same IDs and topology), else the edit mesh (`Application._query_mesh`). Never written:
+        edits go to `scene.mesh`. Reason for the member (MODELING_ON_DEFORMED_SURFACES §15, Manu 2026-11-03): the
+        Knife and the drag gestures aim on what is drawn; which cage is shown stays `Application`'s."""
+        return self._app._query_mesh()
+
     # -- operations --------------------------------------------------------------------------------
 
     def status(self, text: str) -> None:

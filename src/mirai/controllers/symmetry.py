@@ -195,7 +195,9 @@ class SymmetryController:
             services.interaction.end(session)
         self.display = None
         if overlay_type is not None:
-            self.display = SymmetryDisplay(overlay_type(), reports=self.reports, preview=self.preview_plan)
+            viewport = services.viewport
+            self.display = SymmetryDisplay(overlay_type(), reports=self.reports, preview=self.preview_plan,
+                                           cage=lambda: viewport.cage_mesh)
             services.viewport.add_overlay(self.display)
 
     def display_deferred(self) -> bool:

@@ -207,6 +207,7 @@ class KnifeTool(Tool):
 
     def _on_activate(self) -> None:
         self._mesh = None
+        self._geom = None
         self._scene = None
         self._selection = None
         self._session_before = None
@@ -224,6 +225,14 @@ class KnifeTool(Tool):
         self._symmetric_view = None
         self._stretch_faces: dict = {}
 
+    def set_geometry(self, mesh) -> None:
+        """MODELING_ON_DEFORMED_SURFACES §15: the mesh whose *positions* the session aims on - the drawn morph mix
+        (same IDs and topology as the edit mesh) or None / the edit mesh itself (the rest shape). Every click-time rule
+        (margins, chords, the planner, the preview) reads it; the commit cuts the edit mesh, a face point at its rest
+        position Σ oⱼ·bⱼ from its origin (on the mix it is the aimed point, Σ oⱼ·pⱼ). Records fixed by earlier clicks
+        keep their meaning: an edge `t` and an origin mean the same on both."""
+        self._geom = self._mesh if mesh is None else mesh
+
     def set_view(self, camera, width: int = 1, height: int = 1, *, cache=None, occlusion: bool = True) -> None:
         """The camera the next plans across faces use (S4); `camera=None` = no view. Crossings are fixed
         by the click that stores them — a later view never changes what the path holds."""
@@ -235,6 +244,7 @@ class KnifeTool(Tool):
         KnifeResolution` (AD-SYM-03 §10); `symmetric_view`: the optional click-time view of the same
         symmetry (`.refusal(path, cut_faces)`, slice 6c); `None` = the Knife as it always was."""
         self._mesh = mesh
+        self._geom = mesh
         self._symmetric_commit = symmetric_commit
         self._symmetric_view = symmetric_view
         self._stretch_faces = {}
@@ -324,7 +334,7 @@ class KnifeTool(Tool):
             p = self._point_by_pid(p.get("pid"))
             if p is None:
                 return None
-        return target_position(self._mesh, p)
+        return target_position(self._geom, p)
 
     # -- acceptance -------------------------------------------------------------------------
 
@@ -336,7 +346,7 @@ class KnifeTool(Tool):
     def _invalid(self, target: dict | None) -> str | None:
         """Why `target` is no point at all (None: it is one)."""
         kind = target.get("kind") if target else None
-        m = self._mesh
+        m = self._geom
         if kind == "vertex":
             vid = target.get("vertex_id")
             return None if vid is not None and m.is_valid_vertex(vid) else "invalid vertex"
@@ -362,7 +372,7 @@ class KnifeTool(Tool):
         vertex already on the path (the same point id), a new one (no pid yet) otherwise. Does not
         check the face point margin (`_invalid`)."""
         kind = target.get("kind") if target else None
-        m = self._mesh
+        m = self._geom
         if kind == "vertex":
             vid = target.get("vertex_id")
             if vid is None or not m.is_valid_vertex(vid):
@@ -382,7 +392,7 @@ class KnifeTool(Tool):
             if fid is None or pos is None or not m.is_valid_face(fid):
                 return None
             record = {"kind": "face", "face_id": fid, "position": tuple(pos)}
-            if m.has_point_layers():
+            if self._mesh.has_point_layers() or m is not self._mesh:
                 # AD-025 §4.1 Phase 5: the point's origin, fixed when it is picked - the barycentric
                 # weights of the hit triangle over the click-time face's corners (they stay live for the
                 # whole session); a target without one (a host, a headless session) gets the same rule
@@ -409,7 +419,7 @@ class KnifeTool(Tool):
     def _chord_valid(self, face, a: dict, b: dict) -> bool:
         """F2 (`chord_validity`) for two path points on `face`'s boundary: an edge point is inserted
         into a copy of the boundary where `split_edge` would put it."""
-        m = self._mesh
+        m = self._geom
         boundary = m.face_vertices(face)
         edges = m.face_edges(face)
         points, index = [], {}
@@ -433,7 +443,7 @@ class KnifeTool(Tool):
     def _link_face(self, a: dict, b: dict) -> tuple[str | None, object]:
         """`_link`'s answer and, for a "cut", the face it lies in: the first shared face (by id) that holds
         it — the same face the answer was decided by (slice 6c: the symmetric view needs its partner)."""
-        m = self._mesh
+        m = self._geom
         shared = _faces_of(m, a) & _faces_of(m, b)
         if not shared:
             return None, None
@@ -503,7 +513,7 @@ class KnifeTool(Tool):
         return self._plan_segment(last, point, earlier=True)
 
     def _plan_segment(self, a: dict, b: dict, *, closing: bool = False, earlier: bool = False) -> KnifePlan:
-        m = self._mesh
+        m = self._geom
         space = "space" in (a["kind"], b["kind"])
         link, link_face = (None, None) if space else self._link_face(a, b)
         crossings, hidden, method = [], 0, ""
@@ -628,7 +638,7 @@ class KnifeTool(Tool):
             a, b = fresh.get(id(a), a), fresh.get(id(b), b)
             faces[frozenset((a["pid"], b["pid"]))] = face
         kept = self._path[:len(self._path) - plan.replaces]
-        refusal = view.refusal(kept + entries, faces)
+        refusal = view.refusal(self._rest_path(kept + entries), faces)
         if refusal is None:
             return plan
         return KnifePlan(False, str(refusal), refused=True)
@@ -726,7 +736,8 @@ class KnifeTool(Tool):
             if self._symmetric_commit is None:
                 # Points in space are no mesh points: the resolver gets the path without them, the "space"
                 # breaks around them keep every run off the stretch outside the mesh (S4).
-                res = resolve_cross_face(self._mesh, [p for p in self._path if p["kind"] != "space"], start)
+                path = self._rest_path(self._path)
+                res = resolve_cross_face(self._mesh, [p for p in path if p["kind"] != "space"], start)
                 check = check_commit(self._mesh, start)
             else:
                 res = self._commit_symmetric()
@@ -758,7 +769,7 @@ class KnifeTool(Tool):
         mutations back before it raises; the tool does not rely on that for a callable it did not write
         (reverting to the session start is idempotent). Anything but a refusal is a bug and propagates."""
         try:
-            return self._symmetric_commit(self._mesh, list(self._path), self._session_before)
+            return self._symmetric_commit(self._mesh, self._rest_path(self._path), self._session_before)
         except Exception as exc:
             if not getattr(exc, "commit_refusal", False):
                 raise
@@ -767,6 +778,29 @@ class KnifeTool(Tool):
             self.last_problem = str(exc)
             print(f"[KNIFE] commit refused ({exc}) -> mesh restored, no history")
             return None
+
+    def _rest_path(self, path: list[dict]) -> list[dict]:
+        """`path` for the edit mesh (§15, `set_geometry`): unchanged when the session aims on the edit mesh itself;
+        otherwise every face point at its rest position Σ oⱼ·bⱼ (a copy, the same copy wherever the record recurs -
+        a closed chain's seed is the same record twice). Vertex and edge records mean the same on both meshes."""
+        geom, mesh = self._geom, self._mesh
+        if geom is None or geom is mesh:
+            return list(path)
+        copies: dict = {}
+        out = []
+        for p in path:
+            if p.get("kind") == "face":
+                q = copies.get(id(p))
+                if q is None:
+                    origin = p.get("origin")
+                    if origin is None:
+                        origin = face_point_origin(geom, p["face_id"], p["position"])
+                    rest = [mesh.vertex_position(v) for v, _ in origin]
+                    position = tuple(sum(w * b[k] for (_, w), b in zip(origin, rest)) for k in range(3))
+                    q = copies[id(p)] = dict(p, position=position, origin=tuple(origin))
+                p = q
+            out.append(p)
+        return out
 
     def _on_cancel(self) -> None:
         """Drop the path. The mesh was never changed; nothing pushed to history."""

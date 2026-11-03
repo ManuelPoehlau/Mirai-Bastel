@@ -1,11 +1,14 @@
 # Modeling on deformed surfaces — product requirement
 
 **Status:** **PROPOSED (2026-11-03), pending Manu's review**, except the first slice: **picking and hover on the
-morph mix while editing the base, decided by Manu 2026-11-03 (chat), §15**; it is built in a fresh session. The rest
+morph mix while editing the base, decided by Manu 2026-11-03 (chat), §15**; **built 2026-11-03 (§15 implementation
+note), awaiting Manu's practical test**. The rest
 is not decided, not an architecture decision, no Artist verdict, no implementation commitment. Every decided rule it touches stays in force until Manu decides otherwise:
 AD-028 §7.1 (S5, "Modellieren nur in Ruhe"), AD-025 §15 (H4/J-5, the target edited beside the base), AD-013 H7-R2
-(the replacement surface is display only), Morph Lab 6a ("Picking auf der Ruheform hilft").
-**Mode (M5):** Discovery: requirement and audit. No code, test or configuration was changed.
+(the replacement surface is display only; amended 2026-11-03 for queries on the morph mix, §15), Morph Lab 6a ("Picking
+auf der Ruheform hilft"; superseded for base editing above 0 % by §15).
+**Mode (M5):** Discovery: requirement and audit (§0–§14, written without code changes). §15: Production (2026-11-03).
+The §6 baseline is the state at `34d2ba2`; §15's implementation note says what changed since.
 **Baseline:** branch `claude/vibrant-darwin-yn0uz4` @ `34d2ba2` (clean tree). Every code fact below was read there.
 **Tags:** **[V]** verified in code or tests at `34d2ba2` · **[C]** measured in the container (Linux, Python 3.13.18;
 a scratch probe outside the repository, not kept, re-runnable from its description in §6.2) · **[B]** read in
@@ -231,9 +234,9 @@ decision about which state is authoritative for placement (§11 R-2).
 | Evaluated display: morph mix, skin, SubD as one chain; edit object and the morph base beside its view (H7-E) | **Implemented and verified** | `src/mirai/surface_chain.py`, `morph_mix.py`, `skinning.py`; `tests/test_morph_multi.py`, `tests/test_skin_stage.py`, `tests/test_jaw_scenario.py` |
 | Wire follows the evaluated surface | **Implemented and verified** | `src/viewport/viewport.py:506–520`, `:757–763`; `tests/test_morph_targets.py:653` |
 | Face shading (Soft preview, weight view, weight gestures) on the evaluated surface | **Implemented and verified** (one overlay) | `src/mirai/soft_selection/gl_shading.py:14–20`, `:121`; `src/mirai/application.py:688`, `:2844`; `tests/test_weight_view.py:271` |
-| Selection, hover, edge/face highlight overlays on the evaluated surface | **Not implemented** (deliberately on rest; pinned) | `src/viewport/viewport.py:726–736`; `tests/test_morph_targets.py:653`, `tests/test_morph_multi.py:487` |
-| Picking (CPU, GPU ID buffers, box, lasso) on the evaluated surface | **Not implemented** (rest cage; H7-R2) | `src/mirai/application.py:3630–3730`; `src/viewport/viewport.py:840–851` (the ID pass draws the edit `RenderMesh`); `src/mirai/viewport/gpu_picking.py:36–80`; `tests/test_skin_stage.py:335` |
-| Tool previews and spatial queries (Knife target and planner, Soft field and bands, gizmo pivot, transform drag projection) | **Not implemented** (rest) | `src/mirai/controllers/knife.py:567–576`; `src/mirai/application.py:2948–2974` (Soft field on `scene.mesh`), `:4067` (gizmo pivot = rest centroid; in pose mode the bone's posed head) |
+| Selection, hover, edge/face highlight overlays on the evaluated surface | **Not implemented** (deliberately on rest; pinned) — *morph: implemented 2026-11-03, §15.1; pose: unchanged* | `src/viewport/viewport.py:726–736`; `tests/test_morph_targets.py:653`, `tests/test_morph_multi.py:487` |
+| Picking (CPU, GPU ID buffers, box, lasso) on the evaluated surface | **Not implemented** (rest cage; H7-R2) — *morph: implemented 2026-11-03, §15.1; pose: unchanged* | `src/mirai/application.py:3630–3730`; `src/viewport/viewport.py:840–851` (the ID pass draws the edit `RenderMesh`); `src/mirai/viewport/gpu_picking.py:36–80`; `tests/test_skin_stage.py:335` |
+| Tool previews and spatial queries (Knife target and planner, Soft field and bands, gizmo pivot, transform drag projection) | **Not implemented** (rest) — *morph: implemented 2026-11-03, §15.1; pose: unchanged* | `src/mirai/controllers/knife.py:567–576`; `src/mirai/application.py:2948–2974` (Soft field on `scene.mesh`), `:4067` (gizmo pivot = rest centroid; in pose mode the bone's posed head) |
 | Topology operations while a morph mix is shown | **Partially implemented**: run and propagate exactly, aim on the rest cage, no hint | AD-025 §16; `src/mirai/layer_declarations.py:75`; `tests/test_layer_topology_ops.py:335`, `:406`, `:527` |
 | Topology and position operations while posed and bound | **Not implemented**: refused (decided, S5) | `src/mirai/controllers/skeleton.py:1120–1137`; `src/mirai/layer_declarations.py:298–313`; `src/mirai/application.py:3103–3109`; `tests/test_application_rig.py:426`, `:447` |
 | Topology at rest on a mesh with targets and weights, coherent in every later state | **Implemented and verified** | AD-025 §3/§16, AD-028 §4; `tests/test_layer_knife.py`, `tests/test_weights_topology_ops.py:161`, `:303`; `tests/test_jaw_scenario.py:152`, `:171` |
@@ -489,3 +492,103 @@ weight-step cost measured with the existing probe (container, plus the line for 
 §8a: `tests/` fully, GL tests in their own process, `experiments/morph_lab/tests`, the Knife oracle. Done also means
 an implementation note here, the AD amendments, `docs/ATELIER.md` and a short German practical test for Manu
 (head_basemesh, a "mouth open" target at 50 % and 100 %: hover, select, Loop Insert, Knife inside the mouth).
+
+### 15.1 Implementation note (2026-11-03)
+
+Built on `main` @ `2ce1132` (contains this section). Reading (a)–(e) unchanged, `PROVISIONAL` as above.
+
+**Mechanism — one query cage, read only.** `Application._query_cage` names the cage: the edit object's mix
+(`MorphSurfaceProvider.mix_of`) while one of its targets is above 0 % and the chain shows the morph stage; None at 0 %
+(also when the mix is kept at 0 % for SubD), without targets, while the skin stage shows the edit object posed (b), on
+the editing view (e: its mesh has no targets, it already is `b + d`) and while a foreign host holds the slot. The viewport
+takes it as its **cage source** (`Viewport.set_cage_source`, the AD-013 H7-R2 addendum): selection / hover / edge / face
+overlays, the wire and opt-in extra overlays (`follows_cage`: Soft bands, mask points; the symmetry markers through their
+own `cage` callable — the report and the plane stay the base's) read the cage; the GPU ID pass draws it
+(`gpu_pick_mesh`: the morph surface's own `RenderMesh`, or under SubD a never drawn `RenderMesh` of the mixed cage, (d));
+`sync_cage()` brings provider and cage up to date for a pick between an edit and the next frame. `Application._query_mesh`
+(= `AppServices.query_mesh`) is the mesh every query reads: CPU and GPU hover / click, Box, Lasso, Paint, the Box start
+decision, the region click, the gizmo pivot, the Knife (pick, own-point snap, planner, preview), Extrude, Move / Tweak,
+the Rotate dial, Inset / Bevel width per pixel, Loop / Vertex Slide screen directions. Every write goes to `scene.mesh`.
+
+- **Drag mappings.** A base edit moves a drawn point by its rest delta (the mix adds a constant offset per point), so
+  each gesture fixes the rest → drawn shift at its start: Move / Tweak map pixels at the drawn anchor's depth (exact on
+  screen; tested), Extrude at the drawn region's centre, the Rotate dial turns about the drawn centroid (the rotation
+  itself stays about the rest pivot, reading (a)), Inset / Bevel measure the width per pixel at the drawn anchor, Loop and
+  Vertex Slide project the drawn ends. Scale is pixel-based (no mapping). Absent a cage the payloads are unchanged.
+- **Knife.** `KnifeTool.set_geometry(cage)` (the controller passes the live query mesh before every hover / click plan):
+  every click-time rule (margins, chords, the planner, the preview) reads the drawn positions; topology and IDs are the
+  edit mesh's. An edge record's `t` means the same on both meshes; a face record keeps its hit position on the mix and
+  its origin (barycentric weights of the drawn hit triangle). At commit (`_rest_path`) each interior point becomes its rest
+  position Σ oⱼ·bⱼ (the same copy where a record recurs, e.g. a closed chain's seed), so the Core's origin rule gives it
+  offsets whose mix is exactly the aimed point; a self-crossing point is the resolver's blend of its stretch ends (affine
+  inside one triangle, AD-025 §16.2). The symmetric session view and the commit coordinator get the rest path.
+- **Hide on the mix:** when the morph surface is the cage it gets the edit mesh's hidden set (drawn and picked like the
+  edit mesh). Before, hidden faces stayed drawn on the mix (found here).
+
+**Limits (known, not changed):** Rotate / Scale turn rest positions about a rest pivot, so a region with large offsets
+does not turn rigidly on screen (C-1, reading (a)); normal-space constraints and Extrude directions are the rest normals;
+the Working Pivot is a free point in object space placed and drawn at rest; the symmetric Knife's mirror preview is the
+mirror image of the drawn working side (exact for a symmetric target; with an asymmetric one it can lie off the drawn
+mirror side — the commit is exact); a warped quad can triangulate along the other diagonal on the mix (R-12); the
+Re-Symmetrize preview and the plane outline stay on the base; posed: everything as before (b).
+
+**Tests.** `tests/test_morph_picking.py` (42, headless CPU picker): DS-AC1 — every vertex / edge / face hovered at its
+drawn anchor at 50 % and 100 %, the cursor at the rest anchor gets what is drawn there (an independent mesh at
+`morph_mix.evaluate` positions as the oracle), a 154-cursor sweep over the cube equals the oracle with occlusion in every
+mode, an element hidden behind the drawn mix is not picked, hidden vertices are not picked; Box / Lasso / Paint select the
+drawn elements (and not the rest-shape ones); DS-AC2 — selection points, hover / selection lines, face highlights, wire,
+gizmo pivot (also after a weight step), Soft / mask overlays (`follows_cage`) and the symmetry markers on the drawn cage
+(≤ 1e-9); the Knife's placed points under their clicks on the drawn mix; Move keeps the drawn point under the pointer,
+also with a target that pushes it towards the camera; DS-AC3 / DS-AC6 through real clicks on the mix — Split, Edge
+Connect, Loop Insert, Collapse, Extrude, Inset, Bevel, plain and symmetric (AD-025 rule, mirror, L1–L5, the shown mix =
+the definition before and after Undo / Redo, Undo / Redo exact) and the Knife open, closed and self-crossing, plain and
+symmetric (each interior point drawn where aimed ≤ 1e-9, the rule on the rest path); 0 % — a target at 0 % (also back
+from 60 %, also under SubD with the mix kept) hovers, draws and places the gizmo bit-identically to no target; posed —
+the rest cage, the mix again at rest. `tests/test_gl_morph_picking.py` (14, GL, compact and slot layouts): the ID pass
+draws the mix (face IDs at pixel centres = the CPU oracle, ≥ 20 pixels differ from the rest shape), vertex / edge hover
+and Box agree with the oracle, a pick right after a base edit with no frame in between, under SubD the never drawn cage
+`RenderMesh` (also after a weight step), 0 % draws the edit mesh. Changed with the decision: `test_morph_targets.py`
+(the wire *and the selection* follow the mix), `test_morph_multi.py` (morph + SubD: selection on the mixed cage; the
+Knife with three targets aims on the mix). `tests/test_skin_stage.py:335` (posed, rest) unchanged and green.
+**Mutation checks by hand**, each caught: no cage, the Knife cutting the mix positions into the base, Move mapping at the
+rest depth, the cage kept in a pose, overlays at rest, a cage at 0 % under SubD.
+
+**Measured [C]** (container, Linux, Python 3.13, Mesa llvmpipe; `xvfb-run -a python experiments/drag_cost/probe_morph_gl.py
+--only-picking`; one target, offsets on 100 % of the points; hover = `pointer_motion` + the frame over 120 cursors, GPU
+path; p50 / p95 ms, before = the same probe on `2ce1132`):
+
+| Asset | hover V / E / F at 60 %: before (rest) | after (mix) | weight step, 40 vertices selected: before | after |
+|---|---|---|---|---|
+| head_basemesh (326 V) | 0.24/0.48 · 0.27/0.51 · 0.18/0.31 | 0.23/0.55 · 0.26/0.73 · 0.21/0.38 | 2.16 / 3.57 | 2.39 / 3.98 |
+| Man_With_Shoes (928 V) | 0.22/0.46 · 0.22/0.68 · 0.17/0.37 | 0.26/0.84 · 0.23/0.57 · 0.16/0.31 | 6.87 / 9.39 | 6.35 / 10.08 |
+| gollum_20k (21,875 V) | 0.66/3.16 · 0.31/3.19 · 0.20/1.49 | 0.95/5.99 · 0.67/3.76 · 0.24/1.78 | 173 / 238 | 170 / 245 |
+
+**Reading.** Hover on the mix costs what hover on the rest shape costs (the ID pass draws the buffers the mix already has;
+within the container's spread). The weight step is unchanged within the spread: the overlays now follow every step, but
+the cost is still the viewport's per-vertex patch of the moved points (AD-025 §15.3, §17.3). Under SubD the first pick after
+a weight step also patches the never drawn cage buffers (not measured separately; one patch of the moved points).
+**Reference PC:** `python experiments/drag_cost/probe_morph_gl.py --only-picking` (Python there ≈ 2× slower).
+
+**Next:** Manu's practical test (below). Same session or fresh: fresh is fine (this note is the handoff); a later
+stage (§13: posed picking or position attribution) needs Manu's answers to Kurzfassung 1–3 first.
+
+### Praxistest für Manu: Picking auf dem Morph (ca. 15 Minuten)
+
+Technisch geprüft (Tests oben): Hover, Klick, Box/Lasso/Malen, Knife, Overlays und W/E-Ziehen sitzen auf der
+gemischten Form; Schnitte landen genau dort, wo du zielst; bei 0 % ist alles wie vorher. Offen ist nur, wie es sich
+anfühlt. **Meine Lesart deiner Entscheidung** (bitte in einem Satz korrigieren, falls falsch): du bearbeitest weiter die
+Basis; in der Pose bleibt alles beim Alten; `N` antippen (0 % ↔ zuletzt) ist dein Blick auf die Ruheform; bei SubD
+wird auf dem gemischten Käfig gepickt, nicht auf der glatten Fläche; die Zielbearbeitung mit `Tab` bleibt wie sie ist.
+
+Start: `python src\main.py`, `Leertaste` → `head_basemesh`. Ziel anlegen (`Ctrl+N`), mit `Tab` daneben den Mund öffnen
+(Kiefer-Punkte nach unten ziehen), `Tab` zurück. Gewicht mit `N` halten + Maus auf **50 %**, dann auf **100 %**.
+
+| # | Schritt | Dein Verdikt |
+|---|---|---|
+| 1 | Hover in `1` / `2` / `3` über Lippen und Mundinnenraum: leuchtet immer das Element auf, das du *siehst*? | |
+| 2 | Klick und Box-/Lasso-Auswahl im offenen Mund: wird genau das Sichtbare ausgewählt? Malen ebenso? | |
+| 3 | `W` auf ausgewählten Lippenpunkten: bleibt der Punkt unter der Maus? (Gedreht/Skaliert wird die Basis – große Morph-Abstände drehen nicht starr mit, bekannt.) | |
+| 4 | Loop Insert (`I`) an einer Lippenkante bei 100 %: sitzt der neue Loop, wo du ihn siehst? `N` antippen: liegt er auch in Ruhe sauber? | |
+| 5 | Knife (`C`) im offenen Mund: Punkte auf Kanten und in Flächen, `Enter`. Sitzt der Schnitt genau, wo du geklickt hast, bei 50 % und bei 100 %? | |
+| 6 | `N` antippen (0 %): ist alles wie früher (Hover, Auswahl, Gizmo)? Ist das als Blick auf die Ruheform genug, oder fehlt dir ein Umschalter? | |
+| 7 | Mit SubD (falls du es nutzt): Picking auf dem gemischten Käfig – passt das? | |

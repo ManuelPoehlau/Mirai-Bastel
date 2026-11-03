@@ -1458,6 +1458,7 @@ and cannot hide it.
 - **H7-R1 — inert by default.** Without a provider nothing changes (test: `tests/test_viewport_surface_provider.py`).
   `src/main.py` and `Application` never set a provider.
 - **H7-R2 — display only.** The surface is derived and never written back; no picking, no History, no document state.
+  *(Amended 2026-11-03: read-only queries on an ID-identical cage — "H7-R2 amended: queries on the morph mix" below.)*
 - **H7-R3 — the host follows H2-R4.** The SubD Lab uses only the public allow-list of H2-R4: read-only state (`bindings` with
   `set_default` for its own context `subd_lab` at start-up, `interaction_owner`, the edit mesh), `set_status`, `key_press`
   from the window adapter, the one-time setup in its `run.py`, the H1 overlay hook and now H7. It writes no gate data and
@@ -1532,6 +1533,29 @@ as Artist Input Truth. Code: `src/mirai/subdivision/` (status home: its `README.
   offset whenever it is drawn — no longer only while the wire overlay or an edge highlight is on: host lines lie exactly
   on it (SubD isolines) and z-fought without hover. (b) Optional, inert `p.replaces_wire`: while the surface is drawn the
   viewport leaves out the edit mesh's wire layer, because the host shows those edges itself (`Viewport.wire_drawn()`).
+
+### H7-R2 amended: queries on the morph mix (2026-11-03)
+
+**Decision (Manu, 2026-11-03, chat; [MODELING_ON_DEFORMED_SURFACES §15](../design/MODELING_ON_DEFORMED_SURFACES.md#15-decided-first-slice-picking-on-the-morph-mix-manu-2026-11-03)):**
+with a morph target dialled in while the base is edited, hover and picking act on the morphed state, so the artist
+hits what is visible. Production, implemented in the same change.
+
+- **H7-R2 amended — display, plus read-only queries on an ID-identical cage.** A replacement surface is still never
+  written back, never in History and never document state. New: the host may name an **ID-identical cage** — a
+  `core.Mesh` with the edit mesh's IDs and topology at the positions drawn — through `Viewport.set_cage_source(fn)`
+  (`fn()` -> the cage or None, read after the provider's sync). While it names one, the selection / hover / edge /
+  face overlays, the wire and opt-in extra overlays (`follows_cage = True`) read its positions, and the GPU ID pass
+  draws it (`gpu_pick_mesh`: the surface's own `RenderMesh` when the surface is the cage, else a never drawn one of
+  the cage, e.g. the mixed cage under SubD). `Viewport.sync_cage()` brings it up to date for a pick between an edit
+  and the next frame. Without a source, or with None, nothing changes (H7-R1 holds).
+- **Who names a cage:** only `Application._query_cage`: the morph mix of the edit object (`MorphSurfaceProvider.mix_of`)
+  while one of its targets is above 0 % and the chain shows it. Not the SubD surface (§15 (d)), not the posed skin
+  surface (§15 (b), AD-028 §7.1 S5 unchanged), not a foreign host's surface (the Morph Lab keeps the slot; its
+  picking is unchanged). Edits always write the edit mesh; the Knife maps an interior point to its rest position
+  Σ oⱼ·bⱼ from its origin (exact on the mix, AD-025 §16.1).
+- **H7-R1, H7-R3, H7-R4 unchanged.** One provider; the cage source is not a second provider.
+- Not reviewed independently (AGENTS §6: the change is additive, reversible by not setting a source, and Manu decided
+  the product behaviour); the GL tests pin the ID pass on the mix (`tests/test_gl_morph_picking.py`).
 
 ## Addendum (2026-10-28, the active BindingSet is the single input truth, Manu's keymap in the repo)
 
