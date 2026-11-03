@@ -40,7 +40,6 @@ Die größten Lücken liegen dort, wo eine Taste je nach Zustand etwas anderes t
 | # | Lücke | Beleg | Art |
 | --- | --- | --- | --- |
 | L1 | **Achsen-Sperre während des Tweaks unsichtbar.** Das Gizmo verschwindet, sobald `W`/`E`/`R` gehalten wird; ohne Auswahl (Hover-Tweak) gibt es gar kein Gizmo. Bleibt nur der Text unten im HUD | \[V\] `_gizmo_pivot_if_shown`; dein Ärger 2026-10-28 „HUD-Anzeige unten wird beim Modellieren übersehen“ | fehlende UI |
-| L11 | **Keine permanente Raumorientierung.** Außerhalb einer aktiven Geste fehlt ein eigenständiger, stets sichtbarer Hinweis auf die X-/Y-/Z-Richtung im Weltraum. Das gestenbezogene Gizmo erfüllt diese Aufgabe nicht | [V] In der geprüften Viewport-Bestandsaufnahme ist kein separates Orientierungs-Gizmo erfasst | fehlende UI |
 | L2 | **Pose-Modus fehlt in der Modus-Zeile.** Im Pose-Modus zeigt „Mode“ weiter „Face“, „Tool“ zeigt „Move“; „pose mode“ steht am Ende der Rig-Zeile | \[V\] Probe | fehlende UI |
 | L3 | **Ruhe/Pose und „gebunden“.** „posed/rest“ ist Text in der Rig-Zeile; „gebunden“ steht nirgends. Beide Sperren (Modellieren nur in Ruhe, Objekt fest) erfährt man erst durch die Ablehnung | \[V\] AD-028 §7, `status_text` | fehlende UI |
 | L4 | **Gewichte im Ruhezustand unsichtbar.** Keine Gewichts-Ansicht zum Einschalten; Prüfen heißt `7`/`8` halten und damit schon schreiben | \[V\] `_show_share` nur in der Geste | fehlende UI |
@@ -50,6 +49,7 @@ Die größten Lücken liegen dort, wo eine Taste je nach Zustand etwas anderes t
 | L8 | **Gesperrtes wird nicht gezeigt.** `can_run` weiß es pro Befehl, das HUD zeigt es nicht | \[V\] `HudState.unavailable` | fehlende UI |
 | L9 | **Kein Umbenennen per Text.** Namenslisten statt Eingabe; bei vielen Zielen oder Knochen nicht tragfähig | \[V\] `RENAME_CYCLE`, `BONE_NAMES` | technische Grenze (kein Textfeld) |
 | L10 | **Zwei Heat-Ansichten teilen eine Färbung.** Soft-Zone und Gewichte nutzen dieselbe Flächenfärbung; beide zugleich geht nicht | \[V\] `show_soft_weights` | Gestaltungsgrenze, bei L4 beachten |
+| L11 | **Keine permanente Raumorientierung.** Außerhalb einer aktiven Geste fehlt ein eigenständiger, stets sichtbarer Hinweis auf die X-/Y-/Z-Richtung im Weltraum. Das gestenbezogene Gizmo erfüllt diese Aufgabe nicht | \\[V\\] In der geprüften Viewport-Bestandsaufnahme ist kein separates Orientierungs-Gizmo erfasst | fehlende UI |
 
 Außerhalb der UI, nur notiert: Der Drehring liefert 0°, wenn das Auge genau auf der Drehebene liegt (AD-028 §17.3); der Praxistest umgeht es mit schräger Ansicht. Und eine kleine Doku-Drift: CLAUDE.md sagt noch „Morph is not in `src/`“, ATELIER und AD-025 sagen das Gegenteil.
 
@@ -77,6 +77,7 @@ Eine Grammatik für alle Bereiche, keine Mini-App pro Funktion: Modus sagt *wora
 | Wie verteilen sich die Gewichte? | nur während `7`/`8` | Gewichts-Ansicht als Anzeige-Umschalter (wie `D`) |
 
 **Übergang Posieren ↔ Gewichte (Rig):** Posieren geschieht im Pose-Modus (`5`), Gewichte korrigieren im Komponenten-Modus (`1`/`2`/`3`) — bei sichtbar bleibender Pose. Der aktuelle Knochen gilt in beiden. Deshalb muss sein Name *auch außerhalb* des Pose-Modus sichtbar sein, sonst schreibt `8` auf einen Knochen, den man nicht sieht.
+
 **Drei Achsen-/Orientierungsanzeigen dürfen nicht verwechselt werden:**
 
 - **Raumorientierung:** ein dauerhaft sichtbares, kleines XYZ-Gizmo. Es zeigt die Richtung der Weltachsen relativ zur aktuellen Kamera und dient der allgemeinen Orientierung im Modellierraum — unabhängig von Werkzeug, Auswahl und Geste.
@@ -100,7 +101,7 @@ Drei Schichten mit einer Regel: Die Statusleiste zeigt nur, was vom Standard abw
 
 &#91;embedded content: Skizze des Fensters · drei Schichten, nicht maßstäblich\]
 
-Neu für Phase A sind nur die Gewichtung der Leiste und drei Hinweise im Viewport; das Panel rechts kommt erst mit Phase C. Lage der Leiste (oben/unten) bleibt umschaltbar, wie heute A/B.
+Neu für Phase A sind die Gewichtung der Leiste und zusätzliche, klar getrennte Viewport-Hinweise;
 
 | Schicht | Inhalt | Sichtbar |
 | --- | --- | --- |
@@ -119,8 +120,8 @@ Zuerst kommt, was Zustände sichtbar macht und nur liest: Es hilft beim Modellie
 | Wann | Was | Löst | Braucht |
 | --- | --- | --- | --- |
 | **Jetzt** | Statusleiste neu gewichtet: Modus-Leiste mit Pose, Warnmarke „Pose aktiv / gebunden“, aktueller Knochen und aktuelles Ziel; Seltenes (Look, Display, View, Fixed) in eine einklappbare Zweitebene | L2, L3, L7 | nur `src/hud.py` und lesende Zugriffe |
-| **Jetzt** | Achslinie im Viewport, solange eine Geste mit Sperre läuft (auch Hover-Tweak ohne Gizmo) | L1 | Overlay im Fenster, Daten aus dem laufenden Tweak |
 | **Jetzt** | **Permanentes XYZ-Orientierungs-Gizmo** als allgemeine Raumorientierung; unabhängig von Auswahl, Tool und laufender Geste | L11 | kleines, lesendes Viewport-Overlay; Weltachsen relativ zur Kamera darstellen |
+| **Jetzt** | Achslinie im Viewport, solange eine Geste mit Sperre läuft (auch Hover-Tweak ohne Gizmo) | L1 | Overlay im Fenster, Daten aus dem laufenden Tweak |
 | **Jetzt** | Wert am Cursor bei Halte-Gesten (`N`, `7`, `8`, `L`, Soft-Radius) | Blick bleibt am Mesh | Overlay im Fenster |
 | **Jetzt** | Gewichts-Ansicht zum Einschalten (aktueller Knochen als Wärmefarben), Name am aktuellen Knochen | L4, Teil von L5 | ein Anzeige-Befehl, Taste `PROVISIONAL` |
 | **Jetzt** | Gesperrte Hinweise grau statt gleich hell | L8 | Daten existieren schon |
@@ -142,9 +143,9 @@ Nur eine Frage blockiert den Start (E1); alles andere klärt ein Praxistest mit 
 | E3 | Achslinie im Viewport: wie auffällig? (dünn durch den Pivot, bis zum Rand, farbig nach Achse) | Product Truth | Varianten im Praxistest A |
 | E4 | HUD A (Leiste) gegen B (Ecke) | Product Truth | geht in Phase A auf: die neue Leiste wird wieder in beiden Lagen umschaltbar getestet; das alte Urteil kann dann geschlossen werden |
 | E5 | Aktive Transformationsachse: einmaliges gegen dauerhaftes Feedback (Praxistest K1–K4 vom 2026-10-28, noch ohne Eintrag) | Product Truth | betrifft nur die aktive Werkzeugachse/Achslinie, **nicht** das permanente XYZ-Orientierungs-Gizmo |
-| E8 | Permanente Raumorientierung: Größe, Platzierung und visuelle Form des XYZ-Gizmos | Product Truth | Ausgangshypothese: klein und unaufdringlich in einer Viewport-Ecke; im Praxistest beurteilen |
 | E6 | Panel fest am Rand oder schwebend über dem Viewport? | Product Truth | Varianten im Praxistest C |
 | E7 | Elternknochen umhängen und Knochen frei benennen: wann nötig? | Priorität / Intent | später; Umhängen geht vorher als zweite Meinung ins Projekt „Mirai Bastel“ |
+| E8 | Permanente Raumorientierung: Größe, Platzierung und visuelle Form des XYZ-Gizmos | Product Truth | Ausgangshypothese: klein und unaufdringlich in einer Viewport-Ecke; im Praxistest beurteilen |
 
 Grenze dieses Projekts: Alles in Phase A und B bleibt in der UI- und Input-Schicht. Ein neuer Rig-Befehl (E7) oder eine Änderung an AD-027/AD-028 gehört nicht hierher.
 
