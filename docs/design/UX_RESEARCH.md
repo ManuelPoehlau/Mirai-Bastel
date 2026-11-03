@@ -89,7 +89,7 @@ A useful mental model may eventually look something like:
        ...            ...              ...
 ```
 
-This is deliberately only a hypothesis. The Playground exists to find out whether such a language actually feels good.
+This is deliberately only a hypothesis. A small, targeted prototype may be used to find out whether such a language actually feels good, but it is not a permanent Playground or a prerequisite for every UX question.
 
 ---
 
@@ -490,7 +490,7 @@ Do **not** begin by creating a complete global shortcut table.
 
 Do **not** attempt to assign every current and future function a final key.
 
-Do **not** freeze the InputMap around today's Playground experiments.
+Do **not** freeze the InputMap around earlier Playground experiments or any single prototype.
 
 Do **not** create architecture merely because a prototype needs a convenient implementation.
 
@@ -503,7 +503,7 @@ Observe
    ↓
 Capture principle
    ↓
-Build tiny Playground experiment
+Build a tiny, targeted prototype (only where needed)
    ↓
 Play
    ↓
@@ -535,7 +535,7 @@ First determine the basic vocabulary:
 
 ### B — Transform Family
 
-Use Move / Rotate / Scale as the first playground for the grammar.
+Use Move / Rotate / Scale as the first testbed for the grammar.
 
 Test:
 
@@ -611,14 +611,14 @@ For each UX experiment:
 
 1. Capture the interaction idea.
 2. State the hypothesis.
-3. Build the smallest possible Playground variant.
-4. Play with it on Cube and Head.
+3. Build the smallest possible targeted prototype, only if code inspection or an existing Production workflow cannot answer the question.
+4. Try it on the simplest useful test mesh (for example Cube or Head).
 5. Compare it against the current baseline.
 6. Record what feels good/bad/confusing.
 7. Decide: **KEEP / ITERATE / REJECT / UNKNOWN**.
 8. Only promote validated findings toward Production later.
 
-The Playground is allowed to be messy.
+A targeted prototype may be messy.
 
 Production is not.
 
@@ -665,13 +665,16 @@ Sticky mode potential
 Mouse/keyboard interaction
 ```
 
-That makes it a good Playground experiment — but **not the place where the whole UX system should begin or end**.
+That makes it a useful small prototype candidate — but **not the place where the whole UX system should begin or end**.
 
 ---
 
 ## Related Documents
 
-- `docs/design/artist_playground/AP-03_PLAN.md` — Selection Lab plan
-- `docs/design/artist_playground/ARCHITECTURE_MAP.md` — Playground architecture boundaries
-- `docs/design/artist_playground/ROADMAP.md` — broader Playground roadmap
+- [AP-03_PLAN.md](../archive/experiments_2026-10/artist_playground_design/AP-03_PLAN.md) — archived Selection Lab plan
+- [ARCHITECTURE_MAP.md](../archive/experiments_2026-10/artist_playground_design/ARCHITECTURE_MAP.md) — archived Playground architecture boundaries
+- [ROADMAP.md](../archive/experiments_2026-10/artist_playground_design/ROADMAP.md) — archived Playground roadmap
+- [GUI_Bestandsaufnahme.md](GUI_Bestandsaufnahme.md) — current Production GUI state inventory (2026-11-03)
+- [GUI_STAGE1_HUD.md](GUI_STAGE1_HUD.md) — existing read-only HUD implementation reference
+- [AD-027](../architecture/AD-027-INTERACTION-LAYER-SESSION-SLOT.md) — current interaction/session and GUI integration contract
 - `AGENTS.md` — repository-wide agent/documentation rules
