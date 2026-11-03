@@ -156,6 +156,7 @@ from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
 from .topology import selection_steps
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
 from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, install_morph_bindings
+from .skinning import SkinDisplay
 from .surface_chain import SurfaceChain
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.camera import nearest_standard_view
@@ -506,10 +507,16 @@ class Application:
         # (`morph`, view state), the editing view and the weight drag.
         self._morph = MorphController(self._services)
         self.morph: MorphDisplay = self._morph.display
-        # AD-025 Phase 4 (H5b): the viewport's replacement surface as a chain - the morph mix, then the
-        # SubD preview of the mixed cage (`mirai.surface_chain`); either alone sits in the slot itself.
-        self.surface_chain = SurfaceChain((self.morph.provider, self.subdivision.provider))
+        # AD-028 §5.2: the skin stage (view state; the pose is set through `skin.provider.set_pose`) between
+        # the mix and SubD - wanted only while the rig is posed and the edit mesh (or the morph base beside
+        # its editing view) has a weights layer.
+        self.skin = SkinDisplay(lambda: self.scene, self._morph_entries_for_skin, self._skin_beside)
+        # AD-025 Phase 4 (H5b): the viewport's replacement surface as a chain - the morph mix, the skin
+        # (AD-028), then the SubD preview of the cage before it (`mirai.surface_chain`); one alone sits in
+        # the slot itself.
+        self.surface_chain = SurfaceChain((self.morph.provider, self.skin.provider, self.subdivision.provider))
         self.morph.chain = self.surface_chain
+        self.skin.chain = self.surface_chain
         self.subdivision.chain = self.surface_chain
 
         # The Knife session (AD-017, `controllers.knife` since AD-027 M3): its settings live in the controller.
@@ -684,6 +691,7 @@ class Application:
             self.viewport, subd_overlay_type() if subd_overlay_type is not None else None
         )
         self.morph.attach(self.viewport)
+        self.skin.attach(self.viewport)  # a load starts at rest (the pose is not saved, AD-028 §6)
         self._morph.ab.clear()
         self._objects.pick_caches = {}
         self._objects.sync_views()
@@ -3195,6 +3203,18 @@ class Application:
         """True while a morph target's editing view is the edit object (H4)."""
         return self._morph.view is not None
 
+    def _morph_entries_for_skin(self) -> dict:
+        """AD-028 §5.2 (H7-E): the morph stage's entry surfaces while that stage runs - the skin stage's
+        input for the base beside the editing view (mix + pose); {} when the stage is not shown."""
+        if self.surface_chain.wanted(self.morph.provider):
+            return self.morph.provider.entry_surfaces
+        return {}
+
+    def _skin_beside(self) -> tuple:
+        """AD-028 §5.3: the object shown posed beside the edit object - the morph base beside its view."""
+        view = self._morph.view
+        return () if view is None else (view.base_obj.id,)
+
     @property
     def morph_document_object(self) -> SceneObject:
         """The object the document means by "the edit object": the base while its target's editing
@@ -4064,6 +4084,8 @@ class Application:
             self.flush_hover()
             self._objects.sync_highlight()
             self._push_region_tints()
+            # skin first: the morph stage keeps its surface while a later stage (skin, SubD) reads it
+            self.skin.refresh()
             self.morph.refresh()
             self.viewport.sync()
 

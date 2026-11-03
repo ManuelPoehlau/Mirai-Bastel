@@ -3,8 +3,8 @@
 **Status:** **DECIDED (Manu, 2026-11-02: "Go for AD-028 and the Core change with C1–C3; S1–S8 as recommended")**,
 after the second opinion [DEVCHAT-001](../archive/deformation/reviews/AD-028_REVIEW_DEVCHAT_001.md) (Development chat,
 2026-11-02): ACCEPT WITH CHANGES, disposition in §16. Was PROPOSED the same day as the Architecture Gate (Type C) of
-AD-025 Phase 6. The go covers the Core change of §9 (CORE_V1_FREEZE §7, step 6). **Slice 1 (Core) built 2026-11-02**
-(§17); slices 2–4 follow.
+AD-025 Phase 6. The go covers the Core change of §9 (CORE_V1_FREEZE §7, step 6). **Slices 1–2 (Core, evaluation) built
+2026-11-02** (§17); slices 3–4 (app, acceptance) follow.
 **Mode (M5):** Production, in fresh sessions with this AD as the handoff (§12).
 **Baseline:** `main` @ `0af65eb`. Every code fact below was read there (file:line).
 **Answers:** AD-025 §11 "Skinning data model" (influence keys, maximum influences, normalization tolerance, bind pose,
@@ -681,6 +681,61 @@ on the example meshes, `split_edge` on 3,000 random edges, median / p95):
 
 `split_edge` at 20k: 15.4 / 26.4 µs without layers, 16.8 / 25.0 µs with a dense vector layer, **23.5 / 35.8 µs with a
 dense weights layer** (the combination ≈ 4.4 µs per call for two sources, four keys).
+
+### 17.2 Slice 2 — evaluation (2026-11-02)
+
+Built as §5.1–§5.2 and §3.4 say: `src/mirai/skinning.py` (`BonePose`, `skin_transforms`, `object_transforms`,
+`evaluate`, `SkinSurface`, the stage `SkinSurfaceProvider` / `SkinDisplay`), `src/mirai/skin_weights.py`
+(`set_bone_weight`, `soft_target`, `WeightStroke`, `delete_bone_weights`), the chain
+`SurfaceChain((morph, skin, subdivision))` in `Application`; tests `tests/test_skinning.py` (T-3),
+`tests/test_skin_stage.py` (T-4), `tests/test_skin_weights.py` (T-8). No UI: the pose is set through
+`app.skin.provider.set_pose(...)`. Findings and the direction taken:
+
+- **`c = 1 − Σ` of the posed keys' weights (`math.fsum`)** — the same value as §5.1's `r + Σ` unposed / dead, computed
+  from what the point sums anyway; a fully bound, fully posed point has `c == 0` exactly and drops the `c·p` term.
+  A bone with an identity pose under a posed parent takes the parent's transform as it is (the short-circuit
+  extended down the hierarchy: no product with an identity is formed).
+- **Wanted = the rig is posed and the mesh has a weights layer** (a layer, not "a stored value"): the check runs every
+  frame and must not scan the layer; an empty layer shows its input. §7.1's "bound" (a stored value) stays the
+  definition for the slice-3 policies.
+- **Refresh order: skin before morph.** The morph stage keeps its surface while a later stage reads it; it must see
+  the skin stage's want of the same frame, else SubD's and the skin's inputs switch twice (a rebuild each).
+- **The pose lives in the provider for now** (`SkinSurfaceProvider.pose`, `set_pose`, view state: no History, not
+  saved, `reset` on every scene load). Slice 3's SkeletonController owns it (§6) and writes it there; nothing else
+  changes. `PROVISIONAL`.
+- **H7-E:** the morph base beside its editing view is posed whatever its mix weight (the host names it,
+  `Application._skin_beside`); its input is the morph stage's entry surface while that stage runs, else the base.
+  Other objects with a morph weight keep their mix without the pose (§5.3, F-16).
+- **A new scene cleared no subsystem slot.** `scene_objects.reset_scene` (a primitive or OBJ scene) left `Scene.rig`
+  (and `morph_targets`, `animation`) as they were — harmless while they were always `None`; a rig would have
+  leaked into the next scene. It now resets the three; `replace_scene` (a file) copies them as before.
+- **`SkinSurface` caches the weights** of its points (as the mix caches its offsets), kept in step with the base's
+  weights journal; the cache is also the bone → points index. Without it a pose step cost ≈ 1.4–1.6 µs per moved
+  point [C], with it ≈ 0.9–1.2 µs.
+- **An input switch rebuilds** the skin surface (the morph mix appearing or going while posed — a first target, the
+  last one deleted); pose steps, morph weight steps, weight writes, edits and the rest ↔ pose toggle patch.
+- **Ties in the write rule** ("keep the three largest") are decided on the float values: a share equal in exact
+  arithmetic can lose by an ulp (`0.3 − 0.1` < `0.2`). Deterministic; T-8 avoids such near-ties.
+- **Hand mutation checks (evaluation), each caught by T-3 / T-4 / T-8:** the identity short-circuit missing (rest not
+  bit-exact); the placement not conjugated; the chain feeding the edit mesh to the skin stage instead of the mix; a
+  weight write without the journal; a stroke computing from the previous step instead of the press values; a lowered
+  share going to the object instead of the parent; `keep_edit_surface` missing (SubD rebuilt on the toggle); the pose
+  candidates missed (no recompute on a pose change); the weights cache not kept in step.
+
+**[C] measurements** (container, Python 3.13; scratch probe, not kept: §5.4's region rule — the lowest-Y share of the
+points, 70 % on one bone, 30 % on two, a rotation about X; 40 pose steps through `SkinSurface.update`, median / p95;
+`evaluate` over all points once):
+
+| Mesh | region | points | pose step (LBS + writes) | per moved point | `evaluate`, all points |
+|---|---|---|---|---|---|
+| head_basemesh (326 V) | 100 % | 326 | 0.28 / 0.72 ms | 0.85 µs | 0.6 ms (1.9 µs per bound point) |
+| Man_With_Shoes (928 V) | 100 % | 928 | 0.82 / 1.09 ms | 0.88 µs | 1.4 ms |
+| gollum_20k (21,875 V) | 5 % | 1,093 | 1.02 / 2.20 ms | 0.93 µs | 9.6 ms (≈ 0.4 µs per unbound point) |
+| | 15 % | 3,281 | 3.12 / 5.28 ms | 0.95 µs | 10.2 ms |
+| | 100 % | 21,875 | 25.6 / 32.5 ms | 1.17 µs | 29.7 ms |
+
+The evaluation stays within §5.4's 0.5–1 µs per point; the step a user sees adds the viewport's per-vertex patch
+(≈ 11 µs per moved point, §5.4) — measured with the probe of slice 4 (`--only-skin`).
 
 ---
 

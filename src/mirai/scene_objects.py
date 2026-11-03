@@ -107,6 +107,11 @@ def reset_scene(scene: Scene, mesh: Mesh, name: str, texture: str | None = None)
     _clear_mirror_pairs(scene)
     for object_id in [oid for oid in scene.objects if oid != obj.id]:
         scene.remove_object(object_id)
+    # A new scene has none of the old one's subsystems (AD-028: the rig is a real value since 2026-11-02;
+    # before, these reserved slots were always None and nothing reset them).
+    scene.morph_targets = None
+    scene.rig = None
+    scene.animation = None
     return obj
 
 
