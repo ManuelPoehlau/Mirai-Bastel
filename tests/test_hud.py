@@ -159,8 +159,11 @@ def test_rows_text(app):
     app.key_press(_key("o"))
     rows = {row.label: row for row in hud_rows(hud_state(app), key_hints(app.bindings))}
     assert list(rows) == [
-        "Mode", "Tool", "Axis", "Space", "Pivot", "Sym", "Soft", "SubD", "Display", "View", "Region", "Look", "Fixed"
+        "Mode", "Tool", "Axis", "Space", "Pivot", "Sym", "Soft", "SubD", "Weights", "Display", "View", "Region", "Look",
+        "Fixed",
     ]
+    # Phase A3: the weight view's row is always there, quiet (full detail only) while the view is off.
+    assert rows["Weights"].value == "off" and rows["Weights"].quiet and rows["Weights"].keys == "9"
     # WP Ortho / Views: the view row with the toggle key; on once it is not the plain perspective.
     assert rows["View"].value == "Persp" and rows["View"].keys == "U" and not rows["View"].on
     app.key_press(_key("u"))
