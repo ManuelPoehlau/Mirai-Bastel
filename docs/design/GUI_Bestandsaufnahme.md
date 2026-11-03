@@ -23,7 +23,8 @@ Die App hat ein lesendes HUD, drei Menüs am Cursor und Feedback im Viewport; kl
 | Tastenhinweise | Kommen aus dem `BindingSet`; eine Umbelegung in `keymap.json` erscheint sofort | gut, beibehalten |
 | Gesperrte Befehle | `HudState.unavailable` berechnet per `can_run(…, "ui")`, was gerade nicht geht — wird aber nicht angezeigt | Ausgrauen ist laut AD-027 §3.3 die Entscheidung dieses Projekts |
 | Menüs am Cursor | `Leertaste` Szenen/OBJ, `Shift+A` Add Mesh, `Shift+M` Mirror; modal, Fenster-Ebene | `PROVISIONAL`; „Menü am Cursor kommt definitiv“ (du, 2026-10-28) |
-| Gizmo | Zeigt Achsen, aktive Achse dick, Hover sichtbar; im Pose-Modus am Knochenkopf | **verschwindet während jeder Geste** (`_gizmo_pivot_if_shown`) |
+| Gizmo | Zeigt Achsen, aktive Achse dick, Hover sichtbar; im Pose-Modus am Knochenkopf | **verschwindet während jeder Geste** (`_gizmo_pivot_if_shown`); gesten-/pivotbezogen, nicht die permanente Raumorientierung |
+| Raumorientierung | Kein separates, dauerhaft sichtbares XYZ-Orientierungs-Gizmo als eigenes Viewport-Element erfasst | **Grundausstattung fehlt**: Orientierung muss auch ohne aktive Auswahl oder Geste jederzeit ablesbar sein |
 | Knochen | Linie Kopf → Spitze mit Kreuz am Kopf; aktueller Knochen orange und dicker; außerhalb des Pose-Modus gedimmt | kein Name, keine Hierarchie sichtbar |
 | Gewichte | Wärmefarben über die Soft-Selection-Flächenfärbung | **nur solange `7`/`8` gehalten wird** |
 | Morph | Ziel wird daneben bearbeitet (`Tab`); Drahtgitter folgt der Mischung; Gewicht per `N` halten, `+`/`-` | Gewicht nur als Zahl im HUD |
@@ -39,6 +40,7 @@ Die größten Lücken liegen dort, wo eine Taste je nach Zustand etwas anderes t
 | # | Lücke | Beleg | Art |
 | --- | --- | --- | --- |
 | L1 | **Achsen-Sperre während des Tweaks unsichtbar.** Das Gizmo verschwindet, sobald `W`/`E`/`R` gehalten wird; ohne Auswahl (Hover-Tweak) gibt es gar kein Gizmo. Bleibt nur der Text unten im HUD | \[V\] `_gizmo_pivot_if_shown`; dein Ärger 2026-10-28 „HUD-Anzeige unten wird beim Modellieren übersehen“ | fehlende UI |
+| L11 | **Keine permanente Raumorientierung.** Außerhalb einer aktiven Geste fehlt ein eigenständiger, stets sichtbarer Hinweis auf die X-/Y-/Z-Richtung im Weltraum. Das gestenbezogene Gizmo erfüllt diese Aufgabe nicht | [V] In der geprüften Viewport-Bestandsaufnahme ist kein separates Orientierungs-Gizmo erfasst | fehlende UI |
 | L2 | **Pose-Modus fehlt in der Modus-Zeile.** Im Pose-Modus zeigt „Mode“ weiter „Face“, „Tool“ zeigt „Move“; „pose mode“ steht am Ende der Rig-Zeile | \[V\] Probe | fehlende UI |
 | L3 | **Ruhe/Pose und „gebunden“.** „posed/rest“ ist Text in der Rig-Zeile; „gebunden“ steht nirgends. Beide Sperren (Modellieren nur in Ruhe, Objekt fest) erfährt man erst durch die Ablehnung | \[V\] AD-028 §7, `status_text` | fehlende UI |
 | L4 | **Gewichte im Ruhezustand unsichtbar.** Keine Gewichts-Ansicht zum Einschalten; Prüfen heißt `7`/`8` halten und damit schon schreiben | \[V\] `_show_share` nur in der Geste | fehlende UI |
@@ -68,12 +70,20 @@ Eine Grammatik für alle Bereiche, keine Mini-App pro Funktion: Modus sagt *wora
 | --- | --- | --- |
 | Woran arbeite ich? | Mode-Zeile, ohne Pose | Modus-Leiste mit Pose; Edit-Objekt und „Ziel daneben“ als Zusatz |
 | Was macht `W`/`E`/`R` jetzt? | Tool-Zeile | dort; im Pose-Modus „Bone · Rotate“ |
-| Welche Achse gilt? | Axis-Zeile unten | **Achslinie im Viewport während des Tweaks** (L1) |
+| Wie ist der Raum orientiert? | keine permanente XYZ-Anzeige | **Kleines, dauerhaft sichtbares XYZ-Orientierungs-Gizmo** im Viewport; es vermittelt die Weltachsen auch ohne aktive Auswahl oder Geste (L11) |
+| Welche Achse gilt gerade beim Bearbeiten? | Axis-Zeile unten | **Achslinie im Viewport während des Tweaks** (L1) |
 | Ist das Mesh posiert / gebunden? | Rig-Zeile, Wort „posed“ | Warnmarke dauerhaft sichtbar, mit Taste: „Pose aktiv — Modellieren in Ruhe (`6`)“ |
 | Welcher Knochen / welches Ziel ist aktuell? | Rig- / Morph-Zeile | Name am Knochen im Viewport; im Panel hervorgehoben |
 | Wie verteilen sich die Gewichte? | nur während `7`/`8` | Gewichts-Ansicht als Anzeige-Umschalter (wie `D`) |
 
 **Übergang Posieren ↔ Gewichte (Rig):** Posieren geschieht im Pose-Modus (`5`), Gewichte korrigieren im Komponenten-Modus (`1`/`2`/`3`) — bei sichtbar bleibender Pose. Der aktuelle Knochen gilt in beiden. Deshalb muss sein Name *auch außerhalb* des Pose-Modus sichtbar sein, sonst schreibt `8` auf einen Knochen, den man nicht sieht.
+**Drei Achsen-/Orientierungsanzeigen dürfen nicht verwechselt werden:**
+
+- **Raumorientierung:** ein dauerhaft sichtbares, kleines XYZ-Gizmo. Es zeigt die Richtung der Weltachsen relativ zur aktuellen Kamera und dient der allgemeinen Orientierung im Modellierraum — unabhängig von Werkzeug, Auswahl und Geste.
+- **Aktive Werkzeugachse:** temporäres Feedback zur gerade verwendeten Transformations- oder Tweak-Achse, idealerweise als Linie im Viewport und gegebenenfalls mit Wert am Cursor.
+- **Working Pivot / lokales Koordinatensystem:** bestimmt den Bezug für eine konkrete Bearbeitung. Seine Position und Orientierung sind kein Ersatz für die allgemeine Weltachsen-Anzeige.
+
+Das Orientierungs-Gizmo sollte beim Drehen der Kamera seine Darstellung entsprechend aktualisieren, selbst aber an einer festen, unaufdringlichen Stelle im Viewport bleiben. Ein klassisches kleines Achsenkreuz in einer Viewport-Ecke ist eine naheliegende Ausgangshypothese; Gestaltung und Platzierung bleiben offen.
 
 **Vergleich mit anderen Programmen** (aus eigener Kenntnis, nicht recherchiert)
 
@@ -98,7 +108,7 @@ Neu für Phase A sind nur die Gewichtung der Leiste und drei Hinweise im Viewpor
 | Zweitebene | Display, View, Look, Space, Region, Fixed | aufgeklappt über „mehr“ bzw. eine Taste |
 | Statuszeile | letzte Meldung; Ablehnungen farbig abgesetzt | immer, eine Zeile |
 | Kontextpanel | Morph-Ziele mit Balken, Knochen eingerückt nach Eltern, Gruppen | nur, wenn das Edit-Objekt solche Daten hat |
-| Viewport | Achslinie im Tweak, Wert am Cursor, Name am aktuellen Knochen, Gewichts-Ansicht | am Ort, nur solange es zählt |
+| Viewport | Dauerhaftes XYZ-Orientierungs-Gizmo; zusätzlich Achslinie im Tweak, Wert am Cursor, Name am aktuellen Knochen und Gewichts-Ansicht | Raumorientierung immer; Gesten-Feedback und kontextuelle Hinweise nur solange sie zählen |
 
 **Bewusst nicht:** keine Werkzeugleiste mit Icons, keine Eigenschaftsfenster, kein eigener Weight-Paint-Modus. Werkzeuge bleiben auf Tasten und im künftigen Menü am Cursor.
 
@@ -110,6 +120,7 @@ Zuerst kommt, was Zustände sichtbar macht und nur liest: Es hilft beim Modellie
 | --- | --- | --- | --- |
 | **Jetzt** | Statusleiste neu gewichtet: Modus-Leiste mit Pose, Warnmarke „Pose aktiv / gebunden“, aktueller Knochen und aktuelles Ziel; Seltenes (Look, Display, View, Fixed) in eine einklappbare Zweitebene | L2, L3, L7 | nur `src/hud.py` und lesende Zugriffe |
 | **Jetzt** | Achslinie im Viewport, solange eine Geste mit Sperre läuft (auch Hover-Tweak ohne Gizmo) | L1 | Overlay im Fenster, Daten aus dem laufenden Tweak |
+| **Jetzt** | **Permanentes XYZ-Orientierungs-Gizmo** als allgemeine Raumorientierung; unabhängig von Auswahl, Tool und laufender Geste | L11 | kleines, lesendes Viewport-Overlay; Weltachsen relativ zur Kamera darstellen |
 | **Jetzt** | Wert am Cursor bei Halte-Gesten (`N`, `7`, `8`, `L`, Soft-Radius) | Blick bleibt am Mesh | Overlay im Fenster |
 | **Jetzt** | Gewichts-Ansicht zum Einschalten (aktueller Knochen als Wärmefarben), Name am aktuellen Knochen | L4, Teil von L5 | ein Anzeige-Befehl, Taste `PROVISIONAL` |
 | **Jetzt** | Gesperrte Hinweise grau statt gleich hell | L8 | Daten existieren schon |
@@ -130,7 +141,8 @@ Nur eine Frage blockiert den Start (E1); alles andere klärt ein Praxistest mit 
 | E2 | Soll sich Pose wie ein fünfter Modus neben `1`–`4` anfühlen? | Product Truth | Praxistest in Phase A, dein KEEP / ITERATE / REJECT |
 | E3 | Achslinie im Viewport: wie auffällig? (dünn durch den Pivot, bis zum Rand, farbig nach Achse) | Product Truth | Varianten im Praxistest A |
 | E4 | HUD A (Leiste) gegen B (Ecke) | Product Truth | geht in Phase A auf: die neue Leiste wird wieder in beiden Lagen umschaltbar getestet; das alte Urteil kann dann geschlossen werden |
-| E5 | Achse einmalig gegen dauerhaft (Praxistest K1–K4 vom 2026-10-28, noch ohne Eintrag) | Product Truth | unabhängig; bestimmt nur, wie wichtig die Achslinie ist |
+| E5 | Aktive Transformationsachse: einmaliges gegen dauerhaftes Feedback (Praxistest K1–K4 vom 2026-10-28, noch ohne Eintrag) | Product Truth | betrifft nur die aktive Werkzeugachse/Achslinie, **nicht** das permanente XYZ-Orientierungs-Gizmo |
+| E8 | Permanente Raumorientierung: Größe, Platzierung und visuelle Form des XYZ-Gizmos | Product Truth | Ausgangshypothese: klein und unaufdringlich in einer Viewport-Ecke; im Praxistest beurteilen |
 | E6 | Panel fest am Rand oder schwebend über dem Viewport? | Product Truth | Varianten im Praxistest C |
 | E7 | Elternknochen umhängen und Knochen frei benennen: wann nötig? | Priorität / Intent | später; Umhängen geht vorher als zweite Meinung ins Projekt „Mirai Bastel“ |
 
@@ -144,13 +156,13 @@ Vier kleine Phasen; A und B hängen nicht voneinander ab, das Panel (C) braucht 
 
 Phase A ist ein Discovery-Paket für eine Testsitzung von 20–40 Minuten; die Übergabe an Claude Code steht im Tab „Handoff Phase A“.
 
-**Review-Hinweis (2026-11-03, Vorschlag — noch kein Manu-Verdikt):** Die fünf „Jetzt“-Punkte aus §5 sollten nicht als ein einziger Implementierungsblock behandelt werden. Sinnvoll wäre die Trennung in **A1 Statusklarheit** (read-only HUD: sichtbarer Arbeitsmodus und relevante Morph-/Rig-Zustände), **A2 Gesten-Feedback** (Achse und Wert direkt am Cursor) und **A3 dauerhafte Gewichtsansicht**. A1 ist der kleinste gemeinsame Einstieg. A3 braucht eine eigene technische Klärung: Die heutige Gewichts-/Soft-Färbung teilt sich den Shading-Overlay-Pfad und die Gewichtsanzeige gehört derzeit zur laufenden Geste. Eine dauerhafte Vorschau darf nicht nebenbei die Soft-Selection-Anzeige oder deren Lebensdauer übernehmen.
+**Review-Hinweis (2026-11-03, Vorschlag — noch kein Manu-Verdikt):** Die „Jetzt“-Punkte aus §5 sollten nicht als ein einziger Implementierungsblock behandelt werden. Sinnvoll wäre die Trennung in **A1 Statusklarheit und Raumorientierung** (read-only HUD plus dauerhaftes XYZ-Orientierungs-Gizmo: sichtbarer Arbeitsmodus, relevante Morph-/Rig-Zustände und jederzeitige Orientierung im Weltraum), **A2 Gesten-Feedback** (aktive Achse und Wert direkt am Cursor) und **A3 dauerhafte Gewichtsansicht**. A1 bleibt der kleinste gemeinsame Einstieg. A3 braucht eine eigene technische Klärung: Die heutige Gewichts-/Soft-Färbung teilt sich den Shading-Overlay-Pfad und die Gewichtsanzeige gehört derzeit zur laufenden Geste. Eine dauerhafte Vorschau darf nicht nebenbei die Soft-Selection-Anzeige oder deren Lebensdauer übernehmen.
 
 Zur Übergabe: Handoff Phase A
 
 | Phase | Fertig, wenn | Modus (M5) |
 | --- | --- | --- |
-| A | Leiste, Achslinie, Wert am Cursor, Gewichts-Ansicht gebaut, umschaltbar, getestet; dein Urteil zu E2–E4 steht in GUI\_STAGE1\_HUD | Discovery |
+| A | Leiste, permanentes XYZ-Orientierungs-Gizmo, Achslinie, Wert am Cursor und Gewichts-Ansicht gebaut, umschaltbar und getestet; dein Urteil zu E2–E4 und E8 steht in GUI\\_STAGE1\\_HUD | Discovery |
 | B | Klick löst Befehle über `dispatch_command` mit allen Sperren aus; Ziehen folgt dem Druck; die AD-027-Szenario-Tests laufen unverändert | Production (Input-Architektur) |
 | C | Panel mit Morph-Zielen, Knochen und Gruppen; Klick = aktuell, Halte-Taste = Wert; zwei Lagen umschaltbar; dein Urteil zu E6 | Discovery |
 | D | Umbenennen per Text; Entwurf Hotkey-Editor und Menü am Cursor | zuerst Discovery |
