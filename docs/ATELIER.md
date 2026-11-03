@@ -56,6 +56,7 @@ Bereichsdokumenten.
 | D1c | **Viewport-Performance**: Stufe 2 und GPU-Picking sind in der App; offen ist Move/Rotate/Scale großer Auswahlen, vor allem mit Soft Selection (dein Verdikt 2026-10-21: vorerst so lassen) | [AD-022 §11](architecture/AD-022-GPU-PICKING.md) · [AD-023 §9](architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) |
 | D1f | **Symmetrie + Soft Selection auf dem Körper**: über dem 8-ms-Wert ab 15 % Radius; ob die Viewport-Aufgabe vor J kommt | [AD-SYM-04, Addendum 2026-10-15](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#addendum-2026-10-15-reference-pc-run-d-4) |
 | D3 | **Messlauf Knochen auf deinem PC**: zeigt, ob das Drehen des Kiefers auf Kopf und Körper flüssig ist und ob ein GPU-Zeichenweg das nächste Thema wird | [AD-028, Praxistest Schritt 9](architecture/AD-028-SKELETON-AND-SKINNING.md#praxistest-für-manu-nach-dem-bau-deutsch-ca-20-minuten) |
+| D4 | **Modellieren an der sichtbaren, verformten Form** (Morph offen, Kiefer posiert): ein Vorschlag fürs langfristige Ziel. Vier kurze Fragen an dich entscheiden, ob und womit eine Architektur-Untersuchung beginnt | [Vorschlag, Kurzfassung](design/MODELING_ON_DEFORMED_SURFACES.md#kurzfassung-für-manu-deutsch) |
 | D2 | **Priorität**: was als Nächstes (Abschnitt 3) | — |
 
 ### Bewusst geparkt (kein Handlungsbedarf, nur damit es nicht verloren geht)
