@@ -69,6 +69,14 @@ class LayerId(ElementId):
     __slots__ = ()
 
 
+class BoneId(ElementId):
+    """ID eines Knochens im Rig der Scene (AD-028 §3.1), kein Mesh-Element: derselbe Vertrag
+    (monoton, nie wiederverwendet, mit dem Counter serialisiert); Gültigkeit prüft `Rig.bones`.
+    Im Gewichts-Layer eines Meshes ist sie der Schlüssel (dort ein opakes int)."""
+
+    __slots__ = ()
+
+
 class IdAllocator:
     """Monotoner Counter-Allocator für einen einzelnen Element-Typ.
 

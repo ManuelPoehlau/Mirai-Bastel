@@ -208,7 +208,7 @@ negative. A weights layer accepts only `new_point = "interpolate"` (an unweighte
 **Data model** (names `PROVISIONAL`):
 
 - `LayerId(ElementId)` in `core/ids.py`: monotonic, never reused, counter forward only (AD-001; the `ObjectId` precedent).
-- `PointLayerInfo` (frozen): `name` (non-empty, unique per mesh), `kind` (`LayerKind.VECTOR`; `WEIGHTS` reserved),
+- `PointLayerInfo` (frozen): `name` (non-empty, unique per mesh), `kind` (`LayerKind.VECTOR`; `WEIGHTS` built with Phase 6, [AD-028](AD-028-SKELETON-AND-SKINNING.md) §3.3),
   `new_point` (`"interpolate"` | `"zero"`, H2; validated per kind). No merge field: the merge rule is the average (§13 M-5);
   another rule would be an additive field.
 - The mesh holds `_layer_meta: tuple[tuple[LayerId, PointLayerInfo], ...]` (order = display order) and
@@ -461,7 +461,9 @@ here with the measured numbers, status → IMPLEMENTED (Phase 2).
 
 - **Skinning data model:** influence keys, maximum influences, normalization tolerance, bind pose, where bindings live
   beyond AD-021 §4.9 — and therefore the final shape of the weights kind. Decided in
-  [AD-028](AD-028-SKELETON-AND-SKINNING.md) (Manu, 2026-11-02); built with Phase 6.
+  [AD-028](AD-028-SKELETON-AND-SKINNING.md) (Manu, 2026-11-02); implemented: the Core part (the weights kind, the
+  rig) and the evaluation 2026-11-02, the app (bones, pose mode, the weight gestures, the policies) and the acceptance
+  (the jaw scenario) 2026-11-03 (AD-028 §17).
 - ~~**Evaluation location and chain**~~ — decided with Phase 4 (§17.1): CPU (`morph_mix`), the stage chain above H7,
   SubD on the mixed cage, normals from the evaluated mesh. Still open: a GPU path (its trigger in §17.1).
 - ~~**Multi-target evaluation rules**~~ — decided with Phase 4 (§17.1): additive, 0–100 %, no clamping or normalization,
@@ -542,7 +544,8 @@ non-topology step (no topology rebuild, its mirror entry `mesh_step=False`).
   in every layer (H3, the position's arithmetic). A merged survivor losing its offset in a `zero` layer would be a dent,
   which H2 does not ask for.
 - `LayerKind.WEIGHTS` exists for the rule validation (`PointLayerInfo` refuses `new_point="zero"` for it); `add_point_layer`
-  and the file refuse the kind until Phase 6 builds its values.
+  and the file refuse the kind until Phase 6 builds its values. *Built 2026-11-02 (AD-028 §3.3–§3.6): the four places
+  of the arithmetic go through one per-kind combiner, the vector expressions unchanged.*
 - `load_state` under a journal: whole-layer records for layers that appear or go, per-element records for the differing
   values of a layer that stays.
 - Gate key space beyond the §4.4 list: `CContext.NONE` is non-mesh; `SPLIT_EDGE`, `KNIFE_COMMIT`, `KNIFE_LIFT`,

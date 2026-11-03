@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -426,6 +426,42 @@ vertex record shapes, point layers; (5) tests `tests/test_core_face_uvs.py` (eve
 exactness, file validation, random sequences against U1 and exact Undo), `tests/mesh_invariants.assert_uv_invariants`,
 `tests/test_obj_uvs.py`, `tests/test_point_layers.py` (the pinned export key list now ends with `"face_uvs"`).
 
+**Decision:** AD-028 skeleton and skinning, Core part (2026-11-02; [AD-028](AD-028-SKELETON-AND-SKINNING.md) §3, §9;
+Manu's go 2026-11-02: "Go for AD-028 and the Core change with C1–C3; S1–S8 as recommended")
+
+The reserved `LayerKind.WEIGHTS` is built, and the Scene's reserved `rig` slot holds a typed value. **Weights**
+(`core/mesh.py`): a value is 1–4 pairs `(key, w)` — opaque int keys in `[0, 2^31)` (the app's `BoneId`s), `0 < w ≤ 1`,
+keys ascending, `Σw ≤ 1` with the object's share `1 − Σw` implicit, the default `()` never stored; every write
+canonicalizes (W1–W4: zero weights dropped, sorted, `Σw ≤ 1 + 1e-9` divided out, the snap — `Σw` within 1e-12 of 1
+becomes exactly 1.0 by `math.fsum`, the smallest weight taking the last ulp so the form is idempotent); invalid values
+raise `MeshError` before any write. **One per-kind combiner** `combine_values(kind, sources, rule)` (exported) is
+used by all four places that combine values — `_origin_values` (`add_vertex(origin=…)`, `split_face(origins=…)`),
+`_blend_values` (`split_edge`), `collapse_edge` and `collapse.py` `_layer_means`; for weights the convex combination
+per key, the four largest kept (ties: the smaller key) and renormalized, then the snap; for vectors each place keeps
+its AD-025 Phase 2 expression bit for bit (rules `"affine"`, `"midpoint"`, `"mean"`). Storage
+(`core/layer_storage.py`): `PackedWeights` over the same append-only `LayerSlots` — four 32-bit keys, four float64
+weights and a count byte per slot (49 bytes), the `PackedValues` mapping semantics, copy-on-write unchanged. File:
+the layer entry with `"kind": "weights"`, values `[[key, w], …]`, accepted only in canonical form. **Rig**
+(`core/rig.py`, new): `Bone` / `Rig` (frozen, validated: ids below the counter and unique, parents exist, no cycle,
+unique names, no degenerate bone), pure updates (`with_new_bone` never reuses an id; `without_bone` re-parents the
+children), `rest_frame` (AD-028 §3.1), dict round trip; `BoneId` (`core/ids.py`); `Scene.rig: Rig | None` (a typed
+property, `None` as before). `serialization.py` writes **version 7** only when the scene has a rig or a mesh a weights
+layer (else 4 / 5 / 6 as before) and reads 2–7; an invalid rig makes the file invalid. Freeze rule (§7):
+(1) requirement — the jaw scenario: bones and weights that survive topology edits, Undo, Knife checkpoints,
+rollback and save / load (Manu 2026-10-29); (2) weights outside the Mesh desynchronize on Undo, checkpoints and
+rollback and give new points no values (AD-025 X-1, X-2); the rig needs a typed, immutable value for History and a
+validated file, which the Core can only do for a type it knows (the `MirrorPair` / `ObjectMaterial` precedent);
+(3) AD-028 and its review DEVCHAT-001; (4) smallest extension — not touched: `Operation`, `OperationContext`,
+`HistoryStack`, `MeshDeltaCommand`, `MeshStateCommand`, `Selection`, the journal's record shapes, every existing
+signature's behaviour; **a mesh without a weights layer and a scene without a rig are byte-identical** (export,
+file version; checked by a differential run against `main` and pinned bit-wise for the moved vector arithmetic);
+(5) contract tests `tests/test_weights_layer.py` (T-1: W1–W4, the combiner against an exact rational oracle, each
+primitive's rule, refusals with mesh and counters unchanged, layered random journal sequences with a weights layer,
+nested rollback, the file, `PackedWeights` against a dict oracle, the vector branch bit for bit),
+`tests/test_rig.py` (T-2), `tests/mesh_invariants.assert_weights_value`; every existing layer test and the T-1 / T-2
+journal oracles unchanged and green, except the one assertion that pinned the reservation itself
+(`test_point_layers.test_layer_info_validation`: a weights layer now exists and refuses a vector value).
+
 ## 2. Was vor dem Freeze validiert wurde
 
 ### Phase A — Invarianten
@@ -511,10 +547,13 @@ Folgende Systeme werden nicht nachträglich in Core V1 hineingezogen:
 - generisches Change-Set-System — *seit 2026-10-21 als Änderungs-Journal im Core (§7.1, AD-023 §9)*
 - Herkunfts-/Provenance-Metadaten — *bleibt draußen: seit 2026-10-27 werden Herkünfte beim Erzeugen eines Vertex
   angewendet, nicht gespeichert ([AD-025](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md) §4.1, §7.1)*
-- Skin-Weight-Remapping
+- Skin-Weight-Remapping — *seit 2026-11-02 im Core als Gewichts-Layer: Gewichte sind ein Punkt-Layer der Art
+  WEIGHTS, neue Punkte bekommen ihre Gewichte über die angewendeten Herkünfte (Kantenmischung, baryzentrisch,
+  Kopie, Mittelwert) wie Morph-Ziele ([AD-028](AD-028-SKELETON-AND-SKINNING.md) §3.3–§3.5, §7.1)*
 - Morph Targets — *Speicherung seit 2026-10-27 im Core als Punkt-Layer (AD-025 Phase 2, §7.1; seit Phase 4 gepackt, §7.1);
   Auswertung (die Mischung mehrerer Ziele), Editier-Ansicht und Gewichte bleiben außerhalb (`src/mirai`)*
-- Rigging / Bones
+- Rigging / Bones — *seit 2026-11-02 liegen nur die Ruhedaten im Core (`core.rig`: Knochen mit Ruhelage,
+  `Scene.rig`; AD-028 §3.1, §7.1); Pose, Auswertung (Skinning), Commands und Anzeige bleiben außerhalb (`src/mirai`)*
 - Animation
 - Soft Selection / Influence-System
 - vollständiges Extension-/Plugin-System

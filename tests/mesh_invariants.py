@@ -203,6 +203,9 @@ def assert_layer_invariants(mesh: Mesh, *, kinds: dict | None = None) -> None:
             assert kinds.setdefault(lid, kind) is kind, "L4: a layer's kind changed"
         for vid, value in mesh.layer_items(lid):
             assert mesh.is_valid_vertex(vid), f"L1: value for dead vertex {vid!r}"
+            if kind.value == "weights":
+                assert_weights_value(value)
+                continue
             assert value != (0.0, 0.0, 0.0), "L2: default value stored"
             assert isinstance(value, tuple) and len(value) == 3, "L3: not a 3-tuple"
             assert all(isinstance(c, float) and math.isfinite(c) for c in value), "L3: not finite floats"
@@ -211,6 +214,25 @@ def assert_layer_invariants(mesh: Mesh, *, kinds: dict | None = None) -> None:
         for entry in state["point_layers"]:
             keys = list(entry["values"])
             assert keys == sorted(keys), "export not ascending"
+
+
+def assert_weights_value(value) -> None:
+    """A stored weights value in canonical form (AD-028 §3.3 W1-W4): 1-4 pairs (int key in
+    [0, 2^31), finite float 0 < w <= 1), keys strictly ascending, Σw (fsum) <= 1 and snapped - either
+    exactly 1.0 or below 1 - 1e-12; the default () is never stored (W3)."""
+    import math
+
+    assert isinstance(value, tuple) and 1 <= len(value) <= 4, f"W1/W3: {value!r}"
+    keys = []
+    for pair in value:
+        assert isinstance(pair, tuple) and len(pair) == 2, f"W1: not a pair {pair!r}"
+        key, w = pair
+        assert type(key) is int and 0 <= key < 2**31, f"W1: key {key!r}"
+        assert type(w) is float and math.isfinite(w) and 0.0 < w <= 1.0, f"W1: weight {w!r}"
+        keys.append(key)
+    assert keys == sorted(set(keys)), f"W1/W4: keys not strictly ascending {value!r}"
+    total = math.fsum(w for _, w in value)
+    assert total == 1.0 or total < 1.0 - 1e-12, f"W2/W4: Σw {total!r} not snapped"
 
 
 def assert_uv_invariants(mesh: Mesh) -> None:

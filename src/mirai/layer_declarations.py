@@ -35,6 +35,7 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from core import Mesh
+from core.mesh import LayerKind
 
 from .interaction import commands
 from .object_mirror import mirror_mesh
@@ -105,6 +106,9 @@ POSITION_ONLY = "position-only"
 DECLARED = "declared"
 MORPH = "morph"  # the target lifecycle, weight and view keys (`mirai.morph_targets`): they handle layers
 RESOLVED = "resolved"  # gated where the operation is resolved (C: the context)
+#: AD-028 §8.6: the rig, pose and weight commands (`commands.RIG_COMMANDS`, `controllers.skeleton`): like MORPH they
+#: handle the weights layer themselves (the bones live on the Scene, the weights through `skin_weights`).
+RIG = "rig"
 LOCKED = "locked"
 
 _NON_MESH_COMMANDS = (
@@ -176,6 +180,7 @@ COMMAND_CLASSES: Mapping[str, str] = MappingProxyType(
         **{c: NON_MESH for c in _KNIFE_SESSION_COMMANDS},
         **{c: LOCKED for c in _LOCKED_COMMANDS},
         **{c: MORPH for c in _MORPH_COMMANDS},
+        **{c: RIG for c in commands.RIG_COMMANDS},
         commands.CONNECT: RESOLVED,
         **{c: DECLARED for c in LAYER_SAFE_OPERATIONS if isinstance(c, str) and c not in _DECLARED_METHODS},
     }
@@ -253,10 +258,57 @@ def layer_refusal(key: Any) -> str | None:
         cls = COMMAND_CLASSES.get(key)
         if cls is None:
             cls = METHOD_CLASSES.get(key)
-    if cls in (NON_MESH, POSITION_ONLY, RESOLVED, MORPH, "commands", "new mesh", "host", "non-mesh"):
+    if cls in (NON_MESH, POSITION_ONLY, RESOLVED, MORPH, RIG, "commands", "new mesh", "host", "non-mesh"):
         return None
     label = _LABELS.get(key, getattr(key, "name", None) or str(key))
     return f"{label}: locked while this mesh has morph targets"
+
+
+#: AD-028 §8.6 (S8): declared operations whose rule holds for vector layers only. Mirror copy: a copy bound to the
+#: same bones would deform mirrored geometry with the source side's bones - deterministic but wrong for any
+#: off-centre bone - so a source with a weights layer is refused until bones can be mirrored
+#: (`object_mirror.mirror_mesh` raises as the backstop).
+VECTOR_ONLY_OPERATIONS = frozenset({"mirror_copy"})
+
+
+def kind_refusal(key: Any, meshes) -> str | None:
+    """The kind-aware part of the gate (AD-028 §8.6): the refusal text if `key` is declared for vector layers only
+    and one of `meshes` has a weights layer; None otherwise. Pure."""
+    if key not in VECTOR_ONLY_OPERATIONS:
+        return None
+    if not any(_has_weights_layer(mesh) for mesh in meshes):
+        return None
+    label = _LABELS.get(key, str(key))
+    return f"{label}: locked while this mesh has skin weights (bones cannot be mirrored yet)"
+
+
+def _has_weights_layer(mesh) -> bool:
+    return any(mesh.point_layer_info(lid).kind is LayerKind.WEIGHTS for lid in mesh.point_layer_ids())
+
+
+#: AD-028 §7.1: the classes that change a mesh's positions or topology - refused on a posed, bound edit mesh
+#: (the stage-7 policy reads them through `edits_positions_or_topology`). Apply transform keeps the world shape of
+#: the pose (§3.2) and stays allowed.
+_EDITING_CLASSES = frozenset({POSITION_ONLY, DECLARED, RESOLVED, LOCKED})
+_EDITING_METHODS = frozenset({"apply_mesh_change"})
+
+
+def edits_positions_or_topology(key: Any) -> bool:
+    """True if `key` (a command constant, a `CContext` or a method name) changes positions or topology by the gate's
+    classification: position-only, declared, resolved (`C`) and locked - except Apply transform - and the host
+    method `apply_mesh_change`. Unknown keys count as editing (fail-closed)."""
+    if key == commands.APPLY_TRANSFORM:
+        return False
+    if key in _EDITING_METHODS:
+        return True
+    if isinstance(key, CContext):
+        return key is not CContext.NONE
+    cls = COMMAND_CLASSES.get(key)
+    if cls is None:
+        cls = METHOD_CLASSES.get(key)
+    if cls is None:
+        return True
+    return cls in _EDITING_CLASSES
 
 
 # -- the editing view of a morph target (AD-025 §15, H4: shape edits on the view, topology on the base) --
@@ -273,6 +325,10 @@ _VIEW_BASE_ONLY = frozenset(
 #: Methods that run on the view: the host entry (positions are written as offsets, the rest is reverted
 #: by `TargetView.translate`), scene loads (they close the view) and the morph methods.
 _VIEW_METHODS = frozenset({"init_scene", "load_scene", "apply_mesh_change"})
+#: AD-028 §8.2: on the editing view the pose commands run (view state); the bone and weight commands are base-only.
+_VIEW_RIG_ALLOWED = frozenset(
+    {commands.POSE_MODE, commands.POSE_TOGGLE_REST, commands.POSE_RESET_BONE, commands.BONE_NEXT, commands.BONE_PREVIOUS}
+)
 
 _VIEW_HINT = "on the base only (Tab returns to it)"
 
@@ -290,6 +346,8 @@ def view_refusal(key: Any) -> str | None:
             cls = METHOD_CLASSES.get(key)
     if key in _VIEW_BASE_ONLY:
         cls = LOCKED
+    if cls == RIG:
+        cls = NON_MESH if key in _VIEW_RIG_ALLOWED else LOCKED
     if cls in (NON_MESH, POSITION_ONLY, MORPH, "commands") or key in _VIEW_METHODS or key is CContext.NONE:
         return None
     label = _LABELS.get(key, getattr(key, "name", None) or str(key))

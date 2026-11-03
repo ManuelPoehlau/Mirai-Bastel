@@ -127,6 +127,7 @@ from .controllers.knife import KnifeController
 from .controllers.morph import MorphController
 from .controllers.objects import PLACEMENT_COMMANDS, ObjectController, selection_state
 from .controllers.pointer_tools import PointerToolsController
+from .controllers.skeleton import SkeletonController
 from .controllers.symmetry import SymmetryController
 from .interaction.session import (
     PASS,
@@ -146,7 +147,7 @@ from .interaction.session import (
     Wheel,
 )
 from . import symmetry_declarations
-from .layer_declarations import PER_TARGET_COMMANDS, layer_refusal
+from .layer_declarations import PER_TARGET_COMMANDS, kind_refusal, layer_refusal
 from .topology.contextual_c import CContext, resolve_c_context
 from .topology.border import BORDER_LABEL, CAP_LABEL, CapRefused, apply_cap, border_select
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
@@ -156,6 +157,7 @@ from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
 from .topology import selection_steps
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
 from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, install_morph_bindings
+from .skinning import SkinDisplay
 from .surface_chain import SurfaceChain
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.camera import nearest_standard_view
@@ -428,7 +430,7 @@ class Application:
         # keys; `_services` is what the controllers get instead of this object (§3.4).
         self.interaction: InteractionSlot = InteractionSlot()
         self._services = AppServices(self)
-        # `can_run` stage 7 (AD-027 §3.5): (command, ctx) -> Refusal | None per mode; none yet.
+        # `can_run` stage 7 (AD-027 §3.5): (command, ctx) -> Refusal | None per mode; the skeleton's three below.
         self._mode_policies: tuple[Callable[[str, RunContext], Refusal | None], ...] = ()
 
         # The hold-key gestures (W/E/R, T, G, S, I, Ctrl+B; the gizmo / Tweak drag) as sessions in the slot, their
@@ -506,11 +508,21 @@ class Application:
         # (`morph`, view state), the editing view and the weight drag.
         self._morph = MorphController(self._services)
         self.morph: MorphDisplay = self._morph.display
-        # AD-025 Phase 4 (H5b): the viewport's replacement surface as a chain - the morph mix, then the
-        # SubD preview of the mixed cage (`mirai.surface_chain`); either alone sits in the slot itself.
-        self.surface_chain = SurfaceChain((self.morph.provider, self.subdivision.provider))
+        # AD-028 §5.2: the skin stage (view state; the pose is set through `skin.provider.set_pose`) between
+        # the mix and SubD - wanted only while the rig is posed and the edit mesh (or the morph base beside
+        # its editing view) has a weights layer.
+        self.skin = SkinDisplay(lambda: self.scene, self._morph_entries_for_skin, self._skin_beside)
+        # AD-025 Phase 4 (H5b): the viewport's replacement surface as a chain - the morph mix, the skin
+        # (AD-028), then the SubD preview of the cage before it (`mirai.surface_chain`); one alone sits in
+        # the slot itself.
+        self.surface_chain = SurfaceChain((self.morph.provider, self.skin.provider, self.subdivision.provider))
         self.morph.chain = self.surface_chain
+        self.skin.chain = self.surface_chain
         self.subdivision.chain = self.surface_chain
+        # AD-028 §6-§8 (`controllers.skeleton`): bones, the pose (view state, written to `skin.provider`), the pose
+        # mode, the weight gestures; its three policies are `can_run` stage 7 (pose mode, posed + bound, placement).
+        self._skeleton = SkeletonController(self._services, self._gestures)
+        self._mode_policies = self._skeleton.policies
 
         # The Knife session (AD-017, `controllers.knife` since AD-027 M3): its settings live in the controller.
         self._knife = KnifeController(self._services)
@@ -684,6 +696,8 @@ class Application:
             self.viewport, subd_overlay_type() if subd_overlay_type is not None else None
         )
         self.morph.attach(self.viewport)
+        self.skin.attach(self.viewport)  # a load starts at rest (the pose is not saved, AD-028 §6)
+        self._skeleton.reset()
         self._morph.ab.clear()
         self._objects.pick_caches = {}
         self._objects.sync_views()
@@ -1004,6 +1018,7 @@ class Application:
 
         objects, gestures, tools = self._objects, self._gestures, self._pointer_tools
         add(MORPH_COMMANDS, self._run_morph)
+        add(commands.RIG_COMMANDS, self._run_rig)
         add(TRANSFORM_COMMANDS, self._run_gesture)
         add((commands.UNDO, commands.REDO), self._run_undo_redo)
         add(_SESSION_SWITCH_COMMANDS, key_only(lambda command, input: self._session_switch(command)))
@@ -1018,7 +1033,7 @@ class Application:
         add(_LOOK_COMMANDS, plain(self._look_command))
         add(_SOFT_COMMANDS, plain(self._soft_command))
         add(SUBD_COMMANDS, plain(self._subd_command))
-        add(_MODE_COMMANDS, plain(lambda command: self._set_selection_mode(_MODE_COMMANDS[command])))
+        add(_MODE_COMMANDS, plain(self._run_mode))
         add(PLACEMENT_COMMANDS, plain(objects.placement_command))
         add((commands.TOGGLE_REFERENCE,), plain(lambda command: objects.reference_command()))
         add((commands.CONNECT,), plain(lambda command: self._connect_command()))
@@ -1041,6 +1056,23 @@ class Application:
         if command == commands.MORPH_WEIGHT_DRAG and ctx.source == "key":
             return self._morph.weight_hold.arm(ctx.input.value)
         return self._morph.command(command)
+
+    def _run_rig(self, command: str, ctx: RunContext, context: Optional[dict]) -> bool:
+        """The rig, pose and weight commands (`SkeletonController`, AD-028 §8.3); the two weight gestures are hold keys
+        (a key arms them; there is nothing to hold from the API)."""
+        if command in (commands.WEIGHTS_FROM_GROUP, commands.WEIGHT_SET):
+            if ctx.source != "key" or self._gesture is not None or self.viewport is None:
+                return False
+            origin = self._gestures.origin(ctx.input.value)
+            if command == commands.WEIGHTS_FROM_GROUP:
+                return self._skeleton.arm_falloff(ctx.input.value, origin)
+            return self._skeleton.arm_weight(ctx.input.value, origin)
+        return self._skeleton.command(command)
+
+    def _run_mode(self, command: str) -> bool:
+        """1/2/3/4: leave pose mode (AD-028 §8.2), then the mode."""
+        self._skeleton.leave_pose_mode()
+        return self._set_selection_mode(_MODE_COMMANDS[command])
 
     def _run_gesture(self, command: str, ctx: RunContext, context: Optional[dict]) -> bool:
         """A hold-key gesture: a key arms it (W/E/R also set the tool the gizmo uses - a tap sets it, "tool set");
@@ -2168,6 +2200,8 @@ class Application:
         if self._gesture is not None or self.viewport is None:
             return False
         origin = self._gestures.origin(key)
+        if self._skeleton.pose_mode and command in TWEAK_TRANSFORMS:
+            return self._skeleton.arm_bone_gesture(command, key, origin)  # W/E/R pose the current bone (AD-028 §8.4)
         if command == commands.EXTRUDE:
             return self._gestures.arm_extrude(key, origin)
         if command == commands.LOOP_SLIDE:
@@ -2924,6 +2958,7 @@ class Application:
             if self.viewport is not None:
                 self.viewport.on_selection_changed()  # an object step can change mode / selection
         self._morph.after_history()
+        self._skeleton.after_history()
         self._prune_ghost_selection()
         # AD-021 §4.6: refresh the view of the objects an object step touched; an object step
         # may be a placement (M2-2), so the pick caches re-project too (`ObjectController.placement_changed`).
@@ -2955,6 +2990,12 @@ class Application:
             raise RuntimeError(
                 f"apply_mesh_change({description!r}) while the {owner} interaction runs"
             )
+        posed = self._skeleton.posed_text("apply_mesh_change")
+        if posed is not None:
+            # AD-028 §7.1: a posed, bound edit mesh refuses position and topology edits - also the host's (False,
+            # status posted, nothing changed).
+            self._set_status(posed.replace("apply_mesh_change", description, 1))
+            return False
         return self._mesh_transaction(
             description, lambda _mesh: mutate(), moved_of=lambda moved: moved
         ).changed
@@ -3117,7 +3158,8 @@ class Application:
         4. object mode (AD-021 L-1);
         5. hidden geometry next to a topology command (`ctx.operands`: reads selection and hover);
         6. the running session's `allows` (a held gesture, a drag selection);
-        7. mode policies (none yet: a pose mode adds its rule here).
+        7. mode policies (AD-028 §8.2, `SkeletonController.policies`): pose mode; a posed, bound edit mesh refuses
+           position and topology edits; a bound object's placement is locked.
 
         A check that runs after a side effect stays in the command as its outcome (a second W/E/R after it set
         `tweak_command`, every "nothing selected", `C: nothing to do here`)."""
@@ -3177,7 +3219,7 @@ class Application:
         targets = (self.scene.mesh,) if meshes is None else meshes
         if not any(mesh.has_point_layers() for mesh in targets):
             return None
-        return layer_refusal(key)
+        return layer_refusal(key) or kind_refusal(key, targets)
 
     def _layer_gate_refuses(self, key, meshes=None) -> bool:
         """`_layer_refusal` at an operation's own site (a method, a `C` context, Apply on several meshes):
@@ -3194,6 +3236,18 @@ class Application:
     def morph_view_open(self) -> bool:
         """True while a morph target's editing view is the edit object (H4)."""
         return self._morph.view is not None
+
+    def _morph_entries_for_skin(self) -> dict:
+        """AD-028 §5.2 (H7-E): the morph stage's entry surfaces while that stage runs - the skin stage's
+        input for the base beside the editing view (mix + pose); {} when the stage is not shown."""
+        if self.surface_chain.wanted(self.morph.provider):
+            return self.morph.provider.entry_surfaces
+        return {}
+
+    def _skin_beside(self) -> tuple:
+        """AD-028 §5.3: the object shown posed beside the edit object - the morph base beside its view."""
+        view = self._morph.view
+        return () if view is None else (view.base_obj.id,)
 
     @property
     def morph_document_object(self) -> SceneObject:
@@ -3703,6 +3757,8 @@ class Application:
         sich tatsächlich geändert (nur dann wird der Viewport benachrichtigt)."""
         if self.viewport is None:
             return False
+        if self._skeleton.pose_mode:
+            return self._skeleton.pick_bone(x, y)  # AD-028 §8.4: a click in pose mode picks a bone
         if self.selection.mode is SelectionMode.OBJECT:
             return self._objects.select_at(command, x, y)
         selection = self.selection
@@ -3807,6 +3863,40 @@ class Application:
             items += _gizmo.pivot_marker_items(self.camera, world, scale=self.gizmo_scale, preview=True)
         return items
 
+    # -- Skeleton (AD-028 §6-§8, `controllers.skeleton`; keys and texts `PROVISIONAL`) ------------------------
+
+    def bone_items(self) -> list:
+        """What the window draws for the bones (`viewport.gizmo.DrawItem`, world space, AD-028 §8.5): a line head ->
+        tail per bone in its posed placement and a cross at its head, the current bone highlighted, dimmed outside pose
+        mode; [] without a rig or viewport, and during a Knife session."""
+        if self.viewport is None or self.knife_active:
+            return []
+        return self._skeleton.bone_items(self.camera, self.gizmo_scale)
+
+    @property
+    def pose_mode(self) -> bool:
+        """True while pose mode is on (a mode read by `can_run`, AD-028 §8.2)."""
+        return self._skeleton.pose_mode
+
+    @property
+    def current_bone(self):
+        """The current bone's `BoneId` (the one pose, Reset and the weight gestures act on), None without bones."""
+        return self._skeleton.current_bone
+
+    @property
+    def pose(self) -> dict:
+        """The pose (view state, AD-028 §6): `BoneId -> skinning.BonePose`, rest bones absent."""
+        return dict(self._skeleton.pose)
+
+    @property
+    def posed(self) -> bool:
+        """Some bone of the rig has a non-identity pose (AD-028 §7.1)."""
+        return self._skeleton.posed()
+
+    def rig_status_text(self) -> str | None:
+        """The HUD's "Rig" row (AD-028 §8.5): current bone · n bones · rest / posed · pose mode; None without a rig."""
+        return self._skeleton.status_text()
+
     # -- Transform gizmo (2026-10-21, promoted from the Playground, Manu "Gizmo nach src/") -----
     #
     # AD-016 D3 (Artist verdict 2026-09-21): the gizmo is an entry point. An LMB press on a handle (no
@@ -3833,6 +3923,8 @@ class Application:
         viewport = self.viewport
         if not self.gizmo_enabled or viewport is None or self.knife_active:
             return None
+        if self._skeleton.pose_mode:
+            return self._skeleton.gizmo_pivot()  # AD-028 §8.4: at the current bone's posed head
         if self.selection.mode is SelectionMode.OBJECT:
             return self._gizmo_object_pivot()
         ids = self._pointer_tools.active_selection_ids()
@@ -3879,7 +3971,11 @@ class Application:
         selection's frame (`transform_space.normal_frame`: X/Y/Z for one face, Z only otherwise, nothing
         but the free handles when the selection has no normal). Mode `4` stays on the world axes (the
         object gesture). Cached with the same key as the pivot."""
-        if self._gestures.orientation == transform_space.WORLD or self.selection.mode is SelectionMode.OBJECT:
+        if (
+            self._gestures.orientation == transform_space.WORLD
+            or self.selection.mode is SelectionMode.OBJECT
+            or self._skeleton.pose_mode
+        ):
             return _gizmo.WORLD_AXES, _gizmo.WORLD_PLANES
         # The pivot is computed first (`_gizmo_pivot`), so its cache key is current here.
         key = self._gizmo_cache[0] if self._gizmo_cache is not None else None
@@ -4064,6 +4160,8 @@ class Application:
             self.flush_hover()
             self._objects.sync_highlight()
             self._push_region_tints()
+            # skin first: the morph stage keeps its surface while a later stage (skin, SubD) reads it
+            self.skin.refresh()
             self.morph.refresh()
             self.viewport.sync()
 

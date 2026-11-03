@@ -146,6 +146,16 @@ Modellier-Werkzeuge (2026-10-29, Manu „Inset, Chamfer/Bevel, Slide (Vertices)�
 - Ctrl+B (halten)         → Bevel der Vertices (V), Kanten (E) bzw. der Kanten der Faces (F)
 - G (halten, Vertex-Modus) → Vertex Slide entlang der Kante, auf die die Maus zeigt
 
+Knochen und Gewichte (AD-028 §8.3, 2026-11-03; alle Tasten `PROVISIONAL`, nicht in keymap.json):
+- 5               → Pose-Modus an/aus (W/E/R drehen/verschieben/skalieren den aktuellen Knochen, Klick wählt
+                    einen Knochen; 1/2/3/4 verlassen ihn)
+- 6               → Ruhe <-> letzte Pose; Alt+6 = aktueller Knochen in Ruhe
+- 7 (halten)      → Gewichte des aktuellen Knochens aus der aktiven Gruppe, Maus links/rechts = Auslaufbreite
+- 8 (halten)      → Gewicht des aktuellen Knochens auf der Auswahl, Maus links/rechts = Wert (Ctrl: 0,1-Raster)
+- Ctrl+J          → Knochen anlegen (Working Pivot -> Mitte der Auswahl), Ctrl+Shift+J umbenennen,
+                    Alt+Shift+J löschen, Alt+J / Ctrl+Alt+J nächster / voriger Knochen
+J und Shift+J bleiben frei (Kiefer-Tasten des Morph Lab).
+
 Der Kontext "topology" hat seit 2026-10-28 keine Defaults mehr (die toten L/R
 des Topology Lab sind entfernt; kein Host löst ihn auf).
 
@@ -401,6 +411,23 @@ def build_default_bindings() -> BindingSet:
     # WP Ortho / Views (Manu V-2 2026-10-28, "one toggle key Ortho <-> Persp"; no numpad): `PROVISIONAL`
     # engineering key - bare U was free in the code defaults and in config/keymap.json.
     bs.set_default(_key("u"), cmd.TOGGLE_ORTHO)
+
+    # --- Skeleton and skinning (AD-028 §8.3, 2026-11-03; every key `PROVISIONAL`, engineering choices) ----------
+    # Checked against config/keymap.json (none of them is there) and free in every context the app resolves and in
+    # the Morph Lab's (bare J / Shift+J are the Lab's jaw keys, so no bone key is bare J or Shift+J). The rig row of
+    # the digits next to `4`: 5 = pose mode (the AD's proposal), 6 = rest <-> pose, Alt+6 = the current bone to rest,
+    # hold 7 = weights from the active group, hold 8 = set the weight (no modifier on the hold keys: Ctrl snaps and
+    # Alt orbits during a gesture). The bone family is J with modifiers, as the morph family is N.
+    bs.set_default(_key("5"), cmd.POSE_MODE)
+    bs.set_default(_key("6"), cmd.POSE_TOGGLE_REST)
+    bs.set_default(_key("6", "alt"), cmd.POSE_RESET_BONE)
+    bs.set_default(_key("7"), cmd.WEIGHTS_FROM_GROUP)
+    bs.set_default(_key("8"), cmd.WEIGHT_SET)
+    bs.set_default(_key("j", "ctrl"), cmd.BONE_ADD)
+    bs.set_default(_key("j", "ctrl", "shift"), cmd.BONE_RENAME)
+    bs.set_default(_key("j", "alt", "shift"), cmd.BONE_DELETE)
+    bs.set_default(_key("j", "alt"), cmd.BONE_NEXT)
+    bs.set_default(_key("j", "ctrl", "alt"), cmd.BONE_PREVIOUS)
 
     # --- Soft Selection (WP-SOFT-01 S2a, AD-020; PROVISIONAL) -----------------
     # O = on/off ("O passt erstmal", Manu 2026-10-10; O was the old display key,

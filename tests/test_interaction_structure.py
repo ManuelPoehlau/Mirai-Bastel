@@ -33,11 +33,11 @@ NON_MODAL_FIELDS = {
     # document state and the core structures
     "scene", "selection", "history", "_selection_undo_stack", "_selection_redo_stack", "_last_undo_redo_mesh_step",
     # construction and wiring: the slot, the services, the controllers, the command table, mode policies (stage 7)
-    "interaction", "_services", "_gestures", "_objects", "_symmetry", "_morph", "_knife", "_pointer_tools",
+    "interaction", "_services", "_gestures", "_objects", "_symmetry", "_morph", "_knife", "_pointer_tools", "_skeleton",
     "_handlers", "_mode_policies", "tool_manager", "bindings", "keymap_load",
     # view state: camera, display, the viewport and its sinks and caches, picking
     "camera", "display", "viewport", "viewport_width", "viewport_height", "_look_row_index", "_pick_cache",
-    "gpu_picking", "subdivision", "morph", "surface_chain", "_soft_overlay", "_soft_bands", "_soft_shading_overlay",
+    "gpu_picking", "subdivision", "morph", "skin", "surface_chain", "_soft_overlay", "_soft_bands", "_soft_shading_overlay",
     "_soft_shading", "_mask_overlay", "_tints_seen", "gizmo_enabled", "_gizmo_cache", "_gizmo_frame_cache",
     # input tracking and the hover (AD-019 `PointerGestures` included: navigation owns no keys, H2-R2)
     "pointer", "_cursor", "_press_point", "_shift_held", "_ctrl_held", "_alt_held", "coalesce_hover", "_hover_stale",

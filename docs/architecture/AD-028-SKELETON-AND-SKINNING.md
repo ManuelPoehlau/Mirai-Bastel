@@ -3,7 +3,9 @@
 **Status:** **DECIDED (Manu, 2026-11-02: "Go for AD-028 and the Core change with C1–C3; S1–S8 as recommended")**,
 after the second opinion [DEVCHAT-001](../archive/deformation/reviews/AD-028_REVIEW_DEVCHAT_001.md) (Development chat,
 2026-11-02): ACCEPT WITH CHANGES, disposition in §16. Was PROPOSED the same day as the Architecture Gate (Type C) of
-AD-025 Phase 6. The go covers the Core change of §9 (CORE_V1_FREEZE §7, step 6). Not built yet.
+AD-025 Phase 6. The go covers the Core change of §9 (CORE_V1_FREEZE §7, step 6). **Slices 1–2 (Core, evaluation) built
+2026-11-02, slices 3–4 (app, acceptance) 2026-11-03** (§17); open are Manu's practical test and the reference-PC run
+of the probe ("Praxistest" at the end).
 **Mode (M5):** Production, in fresh sessions with this AD as the handoff (§12).
 **Baseline:** `main` @ `0af65eb`. Every code fact below was read there (file:line).
 **Answers:** AD-025 §11 "Skinning data model" (influence keys, maximum influences, normalization tolerance, bind pose,
@@ -60,8 +62,12 @@ mit deinem Go für den Bau:
 **Zur Kenntnis (keine Frage):** Nur das bearbeitete Objekt zeigt die Pose (Zähne als eigenes Objekt folgen in dieser
 Phase nicht). Auswahl und Hover liegen wie bei Morph auf der Ruheform.
 
-**Nächster Schritt:** der Bau (§12). Danach ein Durchgang am Kopf oder an Gollum und ein Messlauf auf deinem PC
-(Abschnitt „Praxistest“ am Ende).
+**Stand 2026-11-03: gebaut.** Die Tasten (Vorschläge, `PROVISIONAL`): `5` Pose-Modus, `6` Ruhe ↔ Pose, `Alt+6`
+aktueller Knochen in Ruhe, `7` halten = Gewichte aus der Gruppe, `8` halten = Gewicht setzen, `Strg+J` Knochen
+anlegen (`Strg+Shift+J` umbenennen, `Alt+Shift+J` löschen, `Alt+J` / `Strg+Alt+J` nächster / voriger Knochen).
+
+**Nächster Schritt:** ein Durchgang am Kopf oder an Gollum und ein Messlauf auf deinem PC (Abschnitt „Praxistest“ am
+Ende).
 
 ---
 
@@ -633,29 +639,208 @@ C1–C3; S1–S8 as recommended." Nothing beyond the points below was changed.
 | C2 | questions to Manu in plain German without jargon, only for Intent, Product Truth, Priority, Promotion; technical defaults stated, not asked; for the implementation note and the ATELIER line | **adopted:** the rule in §12 "Done" for the implementation note; the ATELIER line rewritten in plain words, without a question |
 | C3 | delete the stale branch `claude/jolly-hawking-eqqvmz` (the older draft `AD-028-SKINNING-RIG-AND-POSE-MODE.md`, 2026-11-01) | that draft (one commit `19018cd`, no PR) is superseded by this AD. The deletion is left to Manu on GitHub: this session's Git access reaches only its own branch (two attempts refused, 2026-11-02) |
 
+## 17. Implementation note
+
+### 17.1 Slice 1 — Core (2026-11-02; CORE_V1_FREEZE §7.1 entry of the same date)
+
+Built as §3 and §9 say; tests `tests/test_weights_layer.py` (T-1), `tests/test_rig.py` (T-2). Findings and the
+direction taken (AGENTS §5):
+
+- **The combiner takes a rule** — `combine_values(kind, sources, rule)` with `"affine"` / `"midpoint"` / `"mean"`. The
+  four places of F-2 had three different vector expressions (Σ a·v chained; `(x + y) / 2.0`; `sum(…) / n`), which differ
+  in the sign of zero for `(−0.0, −0.0)` — a realistic input (a mirrored target's seam offsets). One expression for all
+  would have broken "bit-identical"; the rule keeps each one. For weights all three rules are the same convex
+  combination (factors ½ and 1/n). Pinned bit-wise in T-1; a differential run of 2,400 scene JSON texts (vector layers,
+  −0.0, Collapse, Knife origins) against `main` hashed identically.
+- **The snap is made exact and idempotent.** Dividing by `Σw` leaves `Σw` within an ulp or two of 1 (e.g.
+  0.9999999999999999), and a second canonicalization would divide again and move bits — a stored value would then fail
+  the file's "canonical only" check. The smallest weight (ties: the smaller key) takes the last ulp, so `Σw` (`math.fsum`)
+  is exactly 1.0 after a snap. A stored value therefore has `Σw == 1.0` or `Σw < 1 − 1e-12`. `Σw` is `math.fsum`
+  throughout the Core (order-free: the combination does not depend on the order of its sources).
+- **Written values:** `Σw > 1 + 1e-9` is refused (W2); `1 < Σw ≤ 1 + 1e-9` is divided out. Keys are ints in
+  `[0, 2^31)` — the 32-bit key storage of §3.6 bounds them (`BoneId`s count from 0; unreachable in practice). An int
+  weight in a file is accepted as its float (the value is canonical); a bool is not a number; `[]` (the default) is
+  not a stored value and makes the file invalid.
+- **`load_state` of an unrelated state** that reuses a `LayerId` with the other kind replaces the layer whole
+  (whole-layer record, rollback exact). A layer's kind still never changes within a history (L4).
+- **Rig API (names `PROVISIONAL`):** `Rig.with_new_bone(…)` allocates the next id and returns `(rig, id)`; `with_bone`
+  only replaces an existing id (an absent id below the counter would be a reused one); `without_bone` re-parents the
+  children (§3.4). `rest_frame(bone)` takes no rig — rig space is world space; the rig parameter comes with a rig
+  transform. `Scene.rig` is a typed property. An empty rig is a value (its counter persists) and writes version 7.
+- **One existing assertion changed:** `test_point_layers.test_layer_info_validation` pinned the reservation itself
+  (`add_point_layer(WEIGHTS)` refused); it now asserts the layer exists and refuses a vector value. Every other layer
+  test and the T-1 / T-2 journal oracles are unchanged and green. `tests/mesh_invariants.assert_layer_invariants`
+  checks W1–W4 for weights layers (`assert_weights_value`).
+- **Hand mutation checks (Core), each caught by T-1:** truncation keeping the smallest; the snap missing; the snap
+  without the last-ulp step; weights through a non-combiner path in `split_edge`.
+
+**[C] measurements** (container, Python 3.13; scratch probe, not kept: a dense weights layer with 1–3 keys per point
+on the example meshes, `split_edge` on 3,000 random edges, median / p95):
+
+| | gollum_20k (21,875 V) | gollum (87,500 V) |
+|---|---|---|
+| `PackedWeights` buffers | 1.02 MiB (49.0 B per point) | 4.09 MiB |
+| the shared slot map (once per mesh, all layers; `layer_storage_bytes` estimate) | ≈ 2.1 MiB | ≈ 8.3 MiB |
+| traced for the layer incl. the slot map | 3.4 MiB | 12.7 MiB |
+| `set_layer_value` (weights, validated) | ≈ 4.8 µs per point (vector: ≈ 1.7 µs) | — |
+
+`split_edge` at 20k: 15.4 / 26.4 µs without layers, 16.8 / 25.0 µs with a dense vector layer, **23.5 / 35.8 µs with a
+dense weights layer** (the combination ≈ 4.4 µs per call for two sources, four keys).
+
+### 17.2 Slice 2 — evaluation (2026-11-02)
+
+Built as §5.1–§5.2 and §3.4 say: `src/mirai/skinning.py` (`BonePose`, `skin_transforms`, `object_transforms`,
+`evaluate`, `SkinSurface`, the stage `SkinSurfaceProvider` / `SkinDisplay`), `src/mirai/skin_weights.py`
+(`set_bone_weight`, `soft_target`, `WeightStroke`, `delete_bone_weights`), the chain
+`SurfaceChain((morph, skin, subdivision))` in `Application`; tests `tests/test_skinning.py` (T-3),
+`tests/test_skin_stage.py` (T-4), `tests/test_skin_weights.py` (T-8). No UI: the pose is set through
+`app.skin.provider.set_pose(...)`. Findings and the direction taken:
+
+- **`c = 1 − Σ` of the posed keys' weights (`math.fsum`)** — the same value as §5.1's `r + Σ` unposed / dead, computed
+  from what the point sums anyway; a fully bound, fully posed point has `c == 0` exactly and drops the `c·p` term.
+  A bone with an identity pose under a posed parent takes the parent's transform as it is (the short-circuit
+  extended down the hierarchy: no product with an identity is formed).
+- **Wanted = the rig is posed and the mesh has a weights layer** (a layer, not "a stored value"): the check runs every
+  frame and must not scan the layer; an empty layer shows its input. §7.1's "bound" (a stored value) stays the
+  definition for the slice-3 policies.
+- **Refresh order: skin before morph.** The morph stage keeps its surface while a later stage reads it; it must see
+  the skin stage's want of the same frame, else SubD's and the skin's inputs switch twice (a rebuild each).
+- **The pose lives in the provider for now** (`SkinSurfaceProvider.pose`, `set_pose`, view state: no History, not
+  saved, `reset` on every scene load). Slice 3's SkeletonController owns it (§6) and writes it there; nothing else
+  changes. `PROVISIONAL`.
+- **H7-E:** the morph base beside its editing view is posed whatever its mix weight (the host names it,
+  `Application._skin_beside`); its input is the morph stage's entry surface while that stage runs, else the base.
+  Other objects with a morph weight keep their mix without the pose (§5.3, F-16).
+- **A new scene cleared no subsystem slot.** `scene_objects.reset_scene` (a primitive or OBJ scene) left `Scene.rig`
+  (and `morph_targets`, `animation`) as they were — harmless while they were always `None`; a rig would have
+  leaked into the next scene. It now resets the three; `replace_scene` (a file) copies them as before.
+- **`SkinSurface` caches the weights** of its points (as the mix caches its offsets), kept in step with the base's
+  weights journal; the cache is also the bone → points index. Without it a pose step cost ≈ 1.4–1.6 µs per moved
+  point [C], with it ≈ 0.9–1.2 µs.
+- **An input switch rebuilds** the skin surface (the morph mix appearing or going while posed — a first target, the
+  last one deleted); pose steps, morph weight steps, weight writes, edits and the rest ↔ pose toggle patch.
+- **Ties in the write rule** ("keep the three largest") are decided on the float values: a share equal in exact
+  arithmetic can lose by an ulp (`0.3 − 0.1` < `0.2`). Deterministic; T-8 avoids such near-ties.
+- **Hand mutation checks (evaluation), each caught by T-3 / T-4 / T-8:** the identity short-circuit missing (rest not
+  bit-exact); the placement not conjugated; the chain feeding the edit mesh to the skin stage instead of the mix; a
+  weight write without the journal; a stroke computing from the previous step instead of the press values; a lowered
+  share going to the object instead of the parent; `keep_edit_surface` missing (SubD rebuilt on the toggle); the pose
+  candidates missed (no recompute on a pose change); the weights cache not kept in step.
+
+**[C] measurements** (container, Python 3.13; scratch probe, not kept: §5.4's region rule — the lowest-Y share of the
+points, 70 % on one bone, 30 % on two, a rotation about X; 40 pose steps through `SkinSurface.update`, median / p95;
+`evaluate` over all points once):
+
+| Mesh | region | points | pose step (LBS + writes) | per moved point | `evaluate`, all points |
+|---|---|---|---|---|---|
+| head_basemesh (326 V) | 100 % | 326 | 0.28 / 0.72 ms | 0.85 µs | 0.6 ms (1.9 µs per bound point) |
+| Man_With_Shoes (928 V) | 100 % | 928 | 0.82 / 1.09 ms | 0.88 µs | 1.4 ms |
+| gollum_20k (21,875 V) | 5 % | 1,093 | 1.02 / 2.20 ms | 0.93 µs | 9.6 ms (≈ 0.4 µs per unbound point) |
+| | 15 % | 3,281 | 3.12 / 5.28 ms | 0.95 µs | 10.2 ms |
+| | 100 % | 21,875 | 25.6 / 32.5 ms | 1.17 µs | 29.7 ms |
+
+The evaluation stays within §5.4's 0.5–1 µs per point; the step a user sees adds the viewport's per-vertex patch
+(≈ 11 µs per moved point, §5.4) — measured with the probe of slice 4 (`--only-skin`).
+
+### 17.3 Slices 3–4 — app and acceptance (2026-11-03)
+
+Built as §6–§8 say: `src/mirai/controllers/skeleton.py` (`SkeletonController`, `RigCommand`, the gesture kinds
+`BoneGesture`, `FalloffGesture`, `WeightGesture`, the three stage-7 policies), the ten commands of §8.3
+(`commands.RIG_COMMANDS`; the two weight commands in `HOLD_COMMANDS`), the gate's `RIG` class and the kind-aware
+mirror copy (`layer_declarations.kind_refusal`, `object_mirror.mirror_mesh` raises `ValueError` as the backstop),
+`Application.bone_items()` (drawn with the gizmo items, `src/main.py`), the HUD row "Rig", and the probe
+`--only-skin`. Tests: `tests/test_application_rig.py` (T-6), `tests/test_weights_topology_ops.py` (T-5),
+`tests/test_jaw_scenario.py` (T-7, with an E5 (iv) purity run of the whole scenario); shared setup
+`tests/rig_support.py`. `AppServices` gains `active_region` and `skin` (reasons in their docstrings); `Application`
+one field (`_skeleton`, wiring). Findings and the direction taken (AGENTS §5):
+
+- **Keys (code defaults, `PROVISIONAL`; checked against `config/keymap.json` - none is there - and free in the
+  global, Knife, SubD, morph and window contexts and in the Morph Lab's):** `5` pose mode (the AD's proposal), `6`
+  rest ↔ pose, `Alt+6` reset bone, hold `7` weights from the group, hold `8` set weight; `Ctrl+J` add bone,
+  `Ctrl+Shift+J` rename, `Alt+Shift+J` delete, `Alt+J` / `Ctrl+Alt+J` next / previous bone (the J family as the
+  morph family is N; bare `J` and `Shift+J` are the Lab's jaw keys). The hold keys carry no modifier: Ctrl snaps
+  and Alt orbits while a gesture runs.
+- **Pose mode** is entered from any mode with a bone (refused without: "Pose mode: no bone yet (Ctrl+J adds one)");
+  `1`/`2`/`3`/`4` leave it (and do what they always do). In it W/E/R arm the `BoneGesture`, a click picks the
+  nearest bone (10 px), the gizmo sits at the current bone's posed head on the world axes and its handle drag is
+  the bone gesture; `K` makes the constraint keys bone-local. A bone gesture computes the bone's local pose from the
+  press pose: rotate about the posed head `R' = Fᵀ·Q·F·R` (`F` the parent-posed rest frame), move
+  `t' = t + Fᵀ·d / s_parent`, scale `s' = f·s`.
+- **Policy order** (stage 7): pose mode → posed and bound → bound placement. The posed policy skips mode `4`
+  (object level; Delete there removes objects) and pose mode's own commands; it reads
+  `layer_declarations.edits_positions_or_topology` (position-only, declared, resolved, locked, except Apply
+  transform; unknown keys count as editing). Locked constants keep the layer gate's earlier text (stage 3).
+  The placement policy reads the object selection, so it runs only with `ctx.operands` (the HUD does not grey
+  W/E/R for it). `apply_mesh_change` on a posed, bound mesh returns False with the status line (it raises only
+  while an interaction runs, as before).
+- **Bound cache:** per mesh behind a `Mesh.watch()`, re-read only after that mesh's layers changed (pinned:
+  no layer scan across repeated asks; Undo of the weights flips it).
+- **Weight gestures:** nothing is written before the first motion; the recording (and the "Skin" layer, if absent)
+  starts there; Esc and an ended-without-release gesture roll back. `FalloffGesture`: 2 px per percent of the
+  bounding radius from the Soft radius step, a tap = the start width; `WeightGesture`: 300 px for 0 → 1 from the
+  selection's mean share, Ctrl = steps of 0.1, a tap writes nothing; a fully masked point keeps its value, a
+  partial mask m scales the change by (1 − m). Under symmetry the partners get the same target (Soft: the
+  symmetric field). The rig, pose and weight commands are refused under every held gesture (`GESTURE_REFUSES`).
+- **Undo of "Add bone" takes the bone's pose channel**, and Redo brings the bone back at rest (§6's rule for a
+  deleted bone; the jaw scenario states it). An Esc of a weight gesture leaves the layer-ID counter one higher
+  (counters only move forward, AD-001).
+- **Seen, not changed (outside this AD):** the shared rotate dial (`interaction/dial.py`) gives 0° when the camera's
+  eye lies exactly on the rotation plane in perspective (e.g. rotate about X from a yaw-0 persp view of a
+  symmetric head: every ray from the eye meets the plane only at the eye). The object gesture has the same case; a
+  snapped standard view is ortho and unaffected. The jaw scenario turns the view aside first. A fix belongs to the
+  dial (treat the eye-on-plane case like the grazing one).
+- **Hand mutation checks (app), each caught by T-6 / T-7:** a weight write outside the gesture's recording; a
+  weight gesture computing from the previous step instead of the press values; a deleted bone's share going to the
+  object instead of the parent; the posed policy missing declared operations; the bound cache never refreshed; the
+  placement policy off; symmetry partners not written; a bone rotation about the origin instead of the head.
+
+**[C] measurements** — the probe `xvfb-run -a python experiments/drag_cost/probe_morph_gl.py --only-skin` (container,
+Python 3.13, llvmpipe; 200 pose steps per row through the real GL chain: pose mode, E held, one mouse move + the
+frame, render excluded; p50 / p95 ms; the region = the lowest-Y share of the points, 70 % on the jaw, 30 % shared
+with its child):
+
+| Mesh | region (points) | plain | one target at 60 % | SubD level 2 |
+|---|---|---|---|---|
+| head_basemesh (326 V) | 5 % (16) | 0.66 / 0.97 | 0.90 / 1.08 | 10.1 / 16.0 |
+| | 15 % (48) | 1.15 / 1.38 | 0.94 / 1.41 | 16.2 / 25.2 |
+| | 100 % (326) | 2.72 / 4.40 | 2.69 / 4.56 | 42.9 / 72.5 |
+| Man_With_Shoes (928 V) | 5 % (46) | 0.94 / 1.42 | 0.95 / 1.47 | 18.3 / 29.7 |
+| | 15 % (139) | 1.53 / 2.54 | 1.60 / 2.33 | 40.6 / 65.5 |
+| | 100 % (928) | 6.97 / 9.76 | 7.07 / 12.0 | 152 / 247 |
+| gollum_20k (21,875 V) | 5 % (1,093) | 11.2 / 17.2 | 11.2 / 17.4 | refused (SubD: > 25,000 faces at level 1) |
+| | 15 % (3,281) | 30.8 / 51.1 | 30.8 / 49.9 | refused |
+| | 100 % (21,875) | 218 / 316 | 204 / 295 | refused |
+
+Reading (P-1): the decided acceptance holds in the container with a wide margin - head and body, jaw-sized regions (≤ 15 %), with and
+without a target: p95 ≤ 2.6 ms; even every body point posed stays at 9.8 / 12.0 ms. gollum_20k is "usable, not fluid" as
+§5.4 expected (5 %: 11 / 17 ms, 15 %: 31 / 51 ms - the forecast was 12 / 18 and 37 / 57 ms). With the SubD preview on
+the step is SubD's patch of the posed cage (head 15 %: 16 / 25 ms, body 15 %: 41 / 66 ms) - over the bar, as the morph weight
+step with SubD is (AD-025 §17.3: head 1 × 15 % 21 / 31 ms); SubD was not part of P-1's bar. The 16.7 ms bar is the reference PC's to confirm ("Praxistest", step 9).
+
 ---
 
 ## Praxistest für Manu nach dem Bau (Deutsch, ca. 20 Minuten)
 
 Ein Durchgang, keine Abhakliste: melde dich, wenn etwas Probleme macht. Am Kopf (`python src/main.py`) oder an Gollum
-(`python src/main.py examples/meshes/gollum_20k.obj`). Die Tasten außer `5` stehen erst nach dem Bau fest (Vorschläge);
-die Schritte bleiben.
+(`python src/main.py examples/meshes/gollum_20k.obj`). Die Tasten sind Vorschläge (`PROVISIONAL`); sag „Taste passt“,
+wenn eine bleiben soll, oder nenne eine andere.
 
-1. **Gruppe.** In `3` die Flächen des Unterkiefers wählen, `Strg+G`, Name „Kiefer“ — oder eine vorhandene Gruppe aktiv
-   machen.
-2. **Knochen.** `P` halten und ins Kiefergelenk klicken (der Pivot landet in der Kopfmitte), die Kiefer-Flächen gewählt
-   lassen, *Knochen anlegen*: eine Linie vom Gelenk zum Kinn erscheint.
-3. **Gewichte aus der Gruppe.** Taste halten, Maus links/rechts: die Auslaufbreite (die Färbung zeigt den Anteil des
-   Knochens), loslassen. `Strg+Z` nimmt es zurück.
-4. **Drehen.** `5` (Pose-Modus), den Knochen anklicken, `E` halten (gern mit `X`) und ziehen: der Kiefer öffnet sich,
-   Mundwinkel und Wange laufen weich aus. `Esc` während des Ziehens bricht ab.
-5. **Mundwinkel korrigieren.** `1`, Punkte am Mundwinkel wählen, Soft an (`O`), *Gewicht setzen*: Taste halten + Maus,
-   die Pose zeigt das Ergebnis sofort; loslassen = ein `Strg+Z`.
+1. **Gruppe.** Symmetrie an (`Shift+S`), in `3` die Flächen des Unterkiefers wählen, `Strg+G` — oder eine vorhandene
+   Gruppe aktiv machen (`Shift+G`). `Strg+Alt+N` (mehrmals) gibt ihr den Namen „Jaw“.
+2. **Knochen.** `P` halten und ins Kiefergelenk klicken (der Pivot landet in der Kopfmitte, auf der Symmetrieebene),
+   die Kiefer-Flächen gewählt lassen, `Strg+J`: eine Linie vom Gelenk zur Mitte der Auswahl erscheint.
+3. **Gewichte aus der Gruppe.** `7` halten, Maus links/rechts: die Auslaufbreite (die Flächenfärbung zeigt den Anteil
+   des Knochens), loslassen. `Strg+Z` nimmt es zurück.
+4. **Drehen.** `5` (Pose-Modus), den Knochen anklicken, `E` halten (gern nach `X`) und ziehen: der Kiefer öffnet sich,
+   Mundwinkel und Wange laufen weich aus. `Esc` während des Ziehens bricht ab. Am besten leicht schräg von vorn
+   schauen (genau von vorn dreht `E` mit `X` in der Perspektive nicht).
+5. **Mundwinkel korrigieren.** `1`, Punkte am Mundwinkel wählen, Soft an (`O`), `8` halten + Maus: die Pose zeigt das
+   Ergebnis sofort; loslassen = ein `Strg+Z`.
 6. **Ausdruck als Morph.** `Strg+N`, `Tab`, ein Lächeln formen, `Tab` zurück, `N` halten + Maus: das Lächeln sitzt im
    geöffneten Kiefer.
-7. **Loop einfügen.** Versuche `I` in der Pose: die Meldung nennt die Ruhe-Taste. *Ruhe ↔ Pose*, `2`, Kante am
-   Mundwinkel, `I`, dann wieder *Ruhe ↔ Pose*: der neue Loop geht mit Kiefer und Lächeln mit, ohne Delle.
+7. **Loop einfügen.** `2`, eine Kante am Mundwinkel, `I`: in der Pose kommt die Meldung „… the mesh is posed (6 = rest
+   pose)“. `6` (Ruhe), `I`, wieder `6`: der neue Loop geht mit Kiefer und Lächeln mit, ohne Delle.
 8. **Speichern.** `Strg+S`, Fenster schließen, über `Leertaste` laden: Knochen, Gewichte und Morph sind da (Ruhepose,
    Gewicht 0 %).
 9. **Messlauf auf deinem PC:** `python experiments/drag_cost/probe_morph_gl.py --only-skin`, die Ausgabe in den Chat
-   (die 16,7-ms-Grenze kann nur dein PC bestätigen).
+   (die 16,7-ms-Grenze kann nur dein PC bestätigen; sie entscheidet, ob ein GPU-Zeichenweg das nächste Thema wird).

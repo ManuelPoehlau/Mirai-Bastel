@@ -9,8 +9,9 @@ festgelegten Architekturgrenzen tatsächlich haltbar sind - nicht eine
 vollständige Modeling-Feature-Menge.
 """
 
-from .ids import VertexId, EdgeId, FaceId, LayerId, ObjectId
-from .mesh import FaceRegion, FaceRegions, LayerKind, Mesh, PointLayerInfo, SymmetryDefinition
+from .ids import VertexId, EdgeId, FaceId, LayerId, ObjectId, BoneId
+from .mesh import FaceRegion, FaceRegions, LayerKind, Mesh, PointLayerInfo, SymmetryDefinition, combine_values
+from .rig import Bone, Rig, rest_frame
 from .selection import Selection, SelectionMode
 from .history import HistoryStack, Command
 from .operation import Operation, OperationContext
@@ -25,10 +26,15 @@ __all__ = [
     "FaceId",
     "ObjectId",
     "LayerId",
+    "BoneId",
     "Mesh",
     "LayerKind",
     "PointLayerInfo",
     "SymmetryDefinition",
+    "combine_values",
+    "Bone",
+    "Rig",
+    "rest_frame",
     "FaceRegion",
     "FaceRegions",
     "Selection",

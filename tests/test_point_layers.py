@@ -245,8 +245,11 @@ def test_layer_info_validation():
         PointLayerInfo("W", LayerKind.WEIGHTS, "zero")  # a weights layer only interpolates
     PointLayerInfo("W", LayerKind.WEIGHTS)
     mesh = _grid(1)
+    # built with AD-028 (Phase 6): a weights layer exists and refuses a vector value (W1)
+    weights = mesh.add_point_layer(PointLayerInfo("W", LayerKind.WEIGHTS))
     with pytest.raises(MeshError):
-        mesh.add_point_layer(PointLayerInfo("W", LayerKind.WEIGHTS))  # not built before Phase 6
+        mesh.set_layer_value(weights, mesh.all_vertex_ids()[0], (1.0, 0.0, 0.0))
+    mesh.remove_point_layer(weights)
     lid = mesh.add_point_layer(PointLayerInfo("A"))
     with pytest.raises(MeshError):
         mesh.add_point_layer(PointLayerInfo("A"))

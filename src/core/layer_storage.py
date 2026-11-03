@@ -17,6 +17,11 @@ shares one `LayerSlots` map from `VertexId` to slot.
   bit-exact). Iteration is in slot order, which is not semantic (AD-025 §4.2 exactness point 4: every
   reader is order-free or sorts).
 - **Copy-on-write** stays the Mesh's rule (`_layer_shared`); `copy()` is two buffer copies.
+
+`PackedWeights` (AD-028 §3.6, CORE_V1_FREEZE §7.1 2026-11-02) is the same mapping for the WEIGHTS kind
+over the same `LayerSlots`: per slot four keys (`array('i')`, 32-bit), four float64 weights and a count
+byte (0 = absent) - 49 bytes per slot. Values are the canonical tuples `((key, w), ...)` the Mesh
+validated (W1-W4, `core.mesh`); this class stores and returns them bit-exactly and checks nothing.
 """
 
 from __future__ import annotations
@@ -52,9 +57,11 @@ class LayerSlots:
 
 
 class PackedValues(MutableMapping):
-    """One layer's stored values over a shared `LayerSlots` (module docstring)."""
+    """One vector layer's stored values over a shared `LayerSlots` (module docstring)."""
 
     __slots__ = ("slots", "_index", "_data", "_present", "_count")
+    #: the kind's default value (never stored, L2)
+    default = _ZEROS
 
     def __init__(self, slots: LayerSlots, values: Mapping | None = None) -> None:
         self.slots = slots
@@ -236,3 +243,162 @@ class PackedValues(MutableMapping):
     def nbytes(self) -> int:
         """Bytes of the value buffers (without the shared slot map)."""
         return self._data.buffer_info()[1] * self._data.itemsize + len(self._present)
+
+
+#: Influences per point of a weights layer (AD-028 §3.3 W1).
+WEIGHTS_WIDTH = 4
+#: Keys are stored as 32-bit signed ints (`array('i')`); the Mesh refuses larger ones.
+WEIGHTS_KEY_LIMIT = 2**31
+
+
+class PackedWeights(MutableMapping):
+    """One weights layer's stored values over a shared `LayerSlots` (module docstring): a
+    `MutableMapping[VertexId, tuple[tuple[int, float], ...]]` with the semantics of `PackedValues`.
+    Unused entries of a slot (beyond its count, or an absent slot) hold key 0 and weight +0.0, so
+    two layers compare by their buffers (stored weights are > 0: no -0.0)."""
+
+    __slots__ = ("slots", "_index", "_keys", "_weights", "_n", "_count")
+    default = ()
+
+    def __init__(self, slots: LayerSlots, values: Mapping | None = None) -> None:
+        if array("i").itemsize != 4:  # pragma: no cover - every supported platform has a 32-bit int
+            raise RuntimeError("PackedWeights needs a 32-bit array('i')")
+        self.slots = slots
+        self._index = slots.index
+        self._keys = array("i")
+        self._weights = array("d")
+        self._n = bytearray()
+        self._count = 0
+        if values:
+            for vid, value in values.items():
+                self[vid] = value
+
+    # -- reading ------------------------------------------------------------------------------------
+
+    def get(self, vid, default=None):
+        s = self._index.get(vid)
+        if s is None:
+            return default
+        try:
+            n = self._n[s]
+        except IndexError:
+            return default
+        if not n:
+            return default
+        i = WEIGHTS_WIDTH * s
+        k, w = self._keys, self._weights
+        if n == 1:
+            return ((k[i], w[i]),)
+        return tuple(zip(k[i:i + n], w[i:i + n]))
+
+    def __getitem__(self, vid):
+        value = self.get(vid)
+        if value is None:
+            raise KeyError(vid)
+        return value
+
+    def __contains__(self, vid) -> bool:
+        s = self._index.get(vid)
+        return s is not None and s < len(self._n) and self._n[s] != 0
+
+    def __len__(self) -> int:
+        return self._count
+
+    def __bool__(self) -> bool:
+        return self._count > 0
+
+    def __iter__(self) -> Iterator[VertexId]:
+        return iter(self.keys())
+
+    def keys(self):
+        return list(compress(self.slots.vertices, self._n))
+
+    def items(self):
+        get = self.get
+        return [(vid, get(vid)) for vid in compress(self.slots.vertices, self._n)]
+
+    def values(self):
+        return [value for _, value in self.items()]
+
+    # -- writing ------------------------------------------------------------------------------------
+
+    def _grow(self, s: int) -> None:
+        n = max(s + 1, len(self.slots))
+        extra = n - len(self._n)
+        if extra > 0:
+            self._n.extend(bytes(extra))
+            self._keys.frombytes(bytes(4 * WEIGHTS_WIDTH * extra))
+            self._weights.frombytes(bytes(8 * WEIGHTS_WIDTH * extra))
+
+    def __setitem__(self, vid, value) -> None:
+        n = len(value)
+        if not 0 < n <= WEIGHTS_WIDTH:
+            raise ValueError(f"a weights value holds 1-{WEIGHTS_WIDTH} pairs: {value!r}")
+        s = self._index.get(vid)
+        if s is None:
+            s = self.slots.slot(vid)
+        if s >= len(self._n):
+            self._grow(s)
+        i = WEIGHTS_WIDTH * s
+        k, w = self._keys, self._weights
+        for j in range(WEIGHTS_WIDTH):
+            if j < n:
+                k[i + j], w[i + j] = value[j]
+            else:
+                k[i + j] = 0
+                w[i + j] = 0.0
+        if not self._n[s]:
+            self._count += 1
+        self._n[s] = n
+
+    def __delitem__(self, vid) -> None:
+        s = self._index.get(vid)
+        if s is None or s >= len(self._n) or not self._n[s]:
+            raise KeyError(vid)
+        i = WEIGHTS_WIDTH * s
+        for j in range(WEIGHTS_WIDTH):
+            self._keys[i + j] = 0
+            self._weights[i + j] = 0.0
+        self._n[s] = 0
+        self._count -= 1
+
+    def copy(self) -> "PackedWeights":
+        out = PackedWeights.__new__(PackedWeights)
+        out.slots = self.slots
+        out._index = self._index
+        out._keys = array("i", self._keys)
+        out._weights = array("d", self._weights)
+        out._n = bytearray(self._n)
+        out._count = self._count
+        return out
+
+    # -- comparison ---------------------------------------------------------------------------------
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, PackedWeights) and other.slots is self.slots:
+            if self._count != other._count:
+                return False
+            a, b = (self, other) if len(self._n) <= len(other._n) else (other, self)
+            n = len(a._n)
+            if a._n != b._n[:n] or any(b._n[n:]):
+                return False
+            m = WEIGHTS_WIDTH * n
+            return a._keys == b._keys[:m] and a._weights.tobytes() == b._weights[:m].tobytes()
+        if isinstance(other, Mapping):
+            return len(other) == self._count and dict(self.items()) == dict(other.items())
+        return NotImplemented
+
+    __hash__ = None  # type: ignore[assignment]
+
+    def __repr__(self) -> str:
+        return f"PackedWeights({dict(sorted(self.items()))!r})"
+
+    # -- measurement --------------------------------------------------------------------------------
+
+    def nbytes(self) -> int:
+        """Bytes of the value buffers (without the shared slot map): 49 per slot."""
+        return (
+            self._keys.buffer_info()[1] * self._keys.itemsize
+            + self._weights.buffer_info()[1] * self._weights.itemsize
+            + len(self._n)
+        )

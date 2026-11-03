@@ -122,6 +122,18 @@ class AppServices:
         return self._app._soft
 
     @property
+    def active_region(self):
+        """The edit object's active polygroup (`Application.active_region`), None without groups. Reason for the member
+        (AD-028 §8.1, F-11): the weights come from the group ("Weights from group"); the groups stay in `Application`."""
+        return self._app.active_region
+
+    @property
+    def skin(self):
+        """The skin stage (`skinning.SkinDisplay`; its provider takes the pose). Reason for the member (AD-028 §8.1):
+        the pose is the skeleton controller's view state and the stage shows it - wired as the morph display is."""
+        return self._app.skin
+
+    @property
     def pick_cache(self):
         """The edit object's screen-space pick cache. Reason for the member (AD-027 M3): the Knife picks with its
         own occlusion tests on the shared cache (`knife_pick`, `snap_own_point`, the planner's `set_view`);
