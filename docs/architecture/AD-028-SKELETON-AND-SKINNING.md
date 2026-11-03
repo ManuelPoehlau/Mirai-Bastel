@@ -473,12 +473,16 @@ binds `J` — so the toggle does not take `J`); `config/keymap.json` is not touc
   mirror bone (not yet)"), fail-closed.
 - **Weight display:** while a weight gesture runs, the Soft Selection shading overlay shows the current bone's share
   (`soft_selection.shading`, a weight map in, heat colours out), so the width is visible also at rest.
+  *(2026-11-03: also outside a gesture, as the weight view - see the [addendum](#addendum-2026-11-03-the-weight-view-gui-phase-a3-w1a).)*
 
 ### 8.5 Drawing and HUD
 
 `Application.bone_items()` (line items in world space: a line head → tail per bone in its posed placement, a small
 cross at the head, the current bone highlighted, dimmed outside pose mode) joins `gizmo_items() + pivot_marker_items()`
 in the window (`src/main.py:670`). HUD row "Rig" (only with a rig): current bone, `n` bones, rest / posed, pose mode.
+
+HUD entry "Weights" (only while the weight view is on): the bone whose share is shown, or why nothing is
+([addendum 2026-11-03](#addendum-2026-11-03-the-weight-view-gui-phase-a3-w1a)).
 
 The cross-feature GUI inventory for Morph, Rig and modelling states is [GUI_Bestandsaufnahme.md](../design/GUI_Bestandsaufnahme.md)
 (2026-11-03). Its proposals are non-normative; this AD remains the technical source of truth for rig and skinning.
@@ -491,6 +495,44 @@ The cross-feature GUI inventory for Morph, Rig and modelling states is [GUI_Best
   and `mirror_mesh` raises as a backstop (F-12).
 - Every declared operation's rule fixture gains a weights layer (plain and symmetric): the result equals §3.5's rule,
   satisfies W1–W4, Undo is exact (DoD).
+
+### Addendum 2026-11-03: the weight view (GUI Phase A3, W1a)
+
+**Decision Manu 2026-11-03 (W1a):** the weight view is a display owner inside the existing Soft display routing
+(`Application._soft_show`, the face-shading sink) - no second sink, no shader path. Extra check: it must follow a change of
+the current bone and of the edit object reliably. A2 (axis line, value at the cursor) is skipped for now. Engineering
+details below are `PROVISIONAL`; the Artist test is [GUI_STAGE1_HUD.md §8](../design/GUI_STAGE1_HUD.md#8-stufe-1c--phase-a3-dauerhafte-gewichtsansicht).
+
+- **Command** `WEIGHT_VIEW_TOGGLE` (code default `9`, global; free in `config/keymap.json`, every app context and the
+  Morph Lab's; `config/keymap.json` untouched): session view state - not saved, no History entry, kept across a scene
+  load. Runs in the component modes and in pose mode (in `POSE_MODE_ALLOWS`; switching it on at object level is
+  refused); gate class `NON_MESH`, not a rig command (it changes no rig, pose or weights data).
+- **Ownership (extends §8.4 "Weight display"):** while on and no gesture owns the display, the face shading shows the
+  current bone's share (`bone_shares`) on the edit mesh and the Soft preview (bands and faces) shows nothing. A running
+  Soft or weight gesture owns the display as before; at its end (commit or Esc) the share is shown again, not the Soft
+  preview. Off = the Soft preview returns through its normal refresh. The rule sits in `_soft_preview_refresh`, so every
+  existing preview trigger and every gesture end lands on the share; with the view off that path is unchanged.
+- **Triggers** (recompute, never per pointer move): toggle on; current bone (`Alt+J` / `Ctrl+Alt+J`, add, delete - the
+  rig commands' handler; a pick in pose mode); edit object (`set_edit_object` reaches the routing point through
+  `_follow_edit_object` → `_hidden_push`), scene load (after the skeleton's reset); weight commit, Undo / Redo, topology
+  change, bind / unbind (the existing preview triggers). The share is cached per (mesh, skin layer, bone) behind a
+  `Mesh.watch()` (`controllers.skeleton.ShareCache`): only layer or topology changes of that mesh recompute it, so the
+  preview triggers that land here with nothing changed (selection, Soft settings) cost a cache hit. Hover changes compute
+  nothing while the view is on.
+- **Nothing to show** (the view stays on, the sink is empty, the HUD says why): no rig / no bone, an edit object without
+  the Skin layer (unbound), object level (`4`), and the morph target editing view (`PROVISIONAL`: the view object is an
+  unbound copy without layers, §5.2 - the share is not shown on the target).
+- **Posed (finding, fixed in the same sink):** the extra overlays sync at the edit mesh, i.e. at rest; while posed, the
+  share - also the weight gestures' share of §8.4 - lay on the closed jaw, not on the shown, open one. The face-shading
+  sink now takes a cage source (`GLSoftShadingOverlay.set_cage_source`, `Application._shown_cage`: the skin stage's
+  shown surface, else the morph mix - the mesh with the edit mesh's IDs that the wire already follows) and places its
+  triangles there; a watch on that mesh re-syncs the positions on a pose step. Topology, picking, the selection and the
+  Soft bands stay on the rest cage (§5.2). This holds for every face shading (Soft preview and gestures too).
+- **HUD** (A1 strip): primary entry "Weights · Jaw" while on ("Weights · — (no rig)" etc. when there is nothing to show);
+  the Soft entry adds "preview hidden (weights view)".
+- **Cost** (container, no GL drawing): a recompute on the head 0.07 / 0.10 ms (p50 / p95), a cached trigger 0.007 ms;
+  per frame only the sink's `dirty` check while something is shaded (≈ 50-70 ns); 150 orbit frames: no recompute, no push.
+  Tests: `tests/test_weight_view.py`.
 
 ## 9. Core change (CORE_V1_FREEZE §7)
 

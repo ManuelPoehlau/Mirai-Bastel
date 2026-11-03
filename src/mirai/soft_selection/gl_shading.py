@@ -10,11 +10,18 @@ the selection / hover fills and edge highlights, so those stay on top of the tra
 mesh's current positions - it never computes influence. The touched-triangle list (a scan over all
 faces) is kept until the weights change or a `MeshWatch` reports a face change, so hover and selection
 syncs and drags cost one position lookup per shaded corner.
+
+Deformed cage (GUI Phase A3, 2026-11-03, `PROVISIONAL`): with a cage source set (`set_cage_source`, the app's
+`_shown_cage`: the skin stage's posed surface, else the morph mix - one mesh with the edit mesh's IDs and topology,
+patched in place) the triangles are placed at the cage's positions, so the shading sits on the surface the window
+shows (the wire follows it too); the topology still comes from the synced edit mesh. A watch on the cage makes a
+pose or weight step re-sync the positions; with nothing shaded the cage is not watched. Picking, the selection and
+the Soft bands stay on the rest cage (AD-028 §5.2).
 """
 
 from __future__ import annotations
 
-from typing import Mapping
+from typing import Callable, Mapping, Optional
 
 from core import Mesh, VertexId
 from viewport.gl_triangle_overlay import GLTriangleOverlay
@@ -62,6 +69,10 @@ class GLSoftShadingOverlay(GLTriangleOverlay):
     _program = None  # own program, not the flat-colour one of the parent
 
     def __init__(self) -> None:
+        self._dirty = False
+        self._cage_source: Optional[Callable[[], Optional[Mesh]]] = None
+        self._cage: Optional[Mesh] = None
+        self._cage_watch = None
         super().__init__()
         self._shown: Mapping[VertexId, float] = {}
         self.look = "color"
@@ -91,6 +102,27 @@ class GLSoftShadingOverlay(GLTriangleOverlay):
     def weights(self) -> Mapping[VertexId, float]:
         return self._shown
 
+    @property
+    def dirty(self) -> bool:
+        """Viewport contract: re-sync - the weights changed, or the shown cage was swapped or moved."""
+        if self._dirty:
+            return True
+        if not self._shown or self._cage_source is None:
+            return False
+        cage = self._cage_source()
+        if cage is not self._cage:
+            return True
+        return cage is not None and bool(self._cage_watch.peek().vertices)
+
+    @dirty.setter
+    def dirty(self, value: bool) -> None:
+        self._dirty = bool(value)
+
+    def set_cage_source(self, source: Optional[Callable[[], Optional[Mesh]]]) -> None:
+        """`source()` = the deformed cage of the synced mesh (same IDs) the window shows, None = the rest shape."""
+        self._cage_source = source
+        self._dirty = True
+
     def set_weights(self, weights: Mapping[VertexId, float]) -> None:
         self._shown = weights
         self._triangles = None
@@ -114,6 +146,7 @@ class GLSoftShadingOverlay(GLTriangleOverlay):
         """Viewport contract. Positions at the mesh's current vertex positions."""
         self.dirty = False
         self._follow_topology(mesh)
+        cage = self._follow_cage()
         if not self._shown:
             self._set_shading([], [])
             return
@@ -121,7 +154,26 @@ class GLSoftShadingOverlay(GLTriangleOverlay):
             self._triangles = shaded_triangles(mesh, self._shown)
             self._corner_colors = triangle_colors(self._shown, self._triangles, self.look)
             self.scans += 1
-        self._set_shading(triangle_positions(mesh, self._triangles), self._corner_colors)
+        positions = None
+        if cage is not None:
+            try:
+                positions = triangle_positions(cage, self._triangles)
+            except (KeyError, ValueError):
+                positions = None  # the cage is behind the mesh's topology for this frame: the rest shape
+        self._set_shading(positions if positions is not None else triangle_positions(mesh, self._triangles),
+                          self._corner_colors)
+
+    def _follow_cage(self) -> Optional[Mesh]:
+        """The cage the triangles sit on now (None = the synced mesh); watched only while something is shaded."""
+        cage = self._cage_source() if self._cage_source is not None and self._shown else None
+        if cage is not self._cage:
+            if self._cage_watch is not None:
+                self._cage_watch.close()
+            self._cage = cage
+            self._cage_watch = cage.watch() if cage is not None else None
+        elif cage is not None:
+            self._cage_watch.take()
+        return cage
 
     def _follow_topology(self, mesh: Mesh) -> None:
         """Drop the cached triangles when the mesh was swapped or a face changed since the last sync."""

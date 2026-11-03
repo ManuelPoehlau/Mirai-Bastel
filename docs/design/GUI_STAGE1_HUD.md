@@ -2,6 +2,7 @@
 
 **Status:** IMPLEMENTED 2026-10-23 (Discovery, M5; Look, Texte und beide Layouts `PROVISIONAL`) ·
 **Stufe 1b (Phase A1: Statusleiste, Knochenname, XYZ-Achsenkreuz):** IMPLEMENTED 2026-11-03, Praxistest offen (§7) ·
+**Stufe 1c (Phase A3: dauerhafte Gewichtsansicht, `9`):** IMPLEMENTED 2026-11-03, Praxistest offen (§8) ·
 **Artist-Urteil A vs. B:** durch §7 abgelöst, offen (siehe §4) · **Code:** `src/hud.py`, Verdrahtung `src/main.py`
 (`install_handlers(..., hud=, triad=, bone_tag=)`), Tests `tests/test_hud.py`, `tests/test_hud_strip.py`,
 `tests/test_gl_hud_marks.py`, `tests/test_main_wiring.py`
@@ -226,3 +227,112 @@ Alles Gefühlte (Lesbarkeit, Ecke, Größe, Form, oben/unten, kompakt/voll, Schr
 echtem GL (Schritt 8). Im Container geprüft: Zeilen je Zustand, Abweichungs-Filter, Marke, Dimmen, Morph-Zusatz,
 Knochen-Marke, Achsenrichtungen aller Standardansichten, Platz zur Leiste in beiden Ecken/Lagen, „nie neu bauen“, Pixel
 des echten pyglet-Wegs (`tests/test_gl_hud_marks.py`).
+
+## 8. Stufe 1c — Phase A3: dauerhafte Gewichtsansicht
+
+**Status:** IMPLEMENTED 2026-11-03 (Discovery, M5; Taste, Texte und Look `PROVISIONAL`) · Basis `main` @ `ee19908` ·
+Architektur: **W1a, Entscheidung Manu 2026-11-03** — die Ansicht ist ein Anzeige-Besitzer im bestehenden Soft-Routing
+(`Application._soft_show`, Flächenfärbung), kein zweiter Kanal, kein Shader-Weg · Regeln:
+[AD-028 §8.4/§8.5, Addendum 2026-11-03](../architecture/AD-028-SKELETON-AND-SKINNING.md#addendum-2026-11-03-the-weight-view-gui-phase-a3-w1a),
+[AD-020 §5, Notiz 2026-11-03](../architecture/AD-020-SOFT-SELECTION-APP-PATH.md#52-rejected-alternatives) · A2
+(Achslinie, Wert am Cursor) ist vorerst übersprungen.
+
+### 8.1 Was gebaut ist
+
+- **`9` = Gewichtsansicht an/aus** (`WeightViewToggle`, Sitzungszustand: nicht gespeichert, kein Undo-Schritt, bleibt
+  über ein Laden an). In `1`/`2`/`3` und im Pose-Modus; in `4` wird das Einschalten abgelehnt
+  („Weights view: in 1/2/3 or pose mode (5)“).
+- **An:** die Flächenfärbung zeigt den Anteil des **aktuellen Knochens** am Edit-Mesh (dieselben Wärmefarben wie die
+  Färbung während `7`/`8`), ohne etwas zu schreiben. Die **Soft-Vorschau ruht** solange (keine Bänder, keine
+  Soft-Färbung); Soft selbst, Radius und die Gesten bleiben unverändert.
+- **Gesten besitzen die Anzeige wie bisher:** ein W/E/R-Zug mit Soft zeigt während des Zugs seine eigenen Gewichte,
+  `7`/`8` zeigen den Anteil ihres Strichs; beim Loslassen (oder `Esc`) kommt **die Gewichtsansicht** zurück, nicht die
+  Soft-Vorschau.
+- **Aus:** die Soft-Vorschau kommt über ihren normalen Refresh zurück.
+- **Nichts zu zeigen** — die Ansicht bleibt an, die Färbung ist leer, die Leiste sagt warum: `Weights · — (no rig)`,
+  `— (no bone)`, `— (no weights on 'cube')` (Objekt ohne Skin-Layer, ungebunden), `— (object level)` (`4`),
+  `— (target view)` (Morph-Bearbeitungsansicht, `Tab`: der Anteil wird nicht auf dem Ziel gezeigt).
+- **Leiste:** primärer Eintrag `Weights · Jaw` (mit Taste `9`), nur solange die Ansicht an ist; der Soft-Eintrag sagt
+  dann `… · preview hidden (weights view)`.
+- **Posiert:** die Flächenfärbung sitzt jetzt auf dem **gezeigten** Mesh (Pose, sonst Morph-Mischung) — siehe 8.2.
+
+### 8.2 Engineering-Entscheidungen und Befunde (`PROVISIONAL`)
+
+- **Taste `9`:** neben `7`/`8`, ohne Modifier (Alt orbitet, Strg rastet während Gesten). Frei in `config/keymap.json`,
+  in allen Kontexten der App (global, Knife, SubD, Morph, Fenster) und im Morph Lab
+  (`tests/test_weight_view.py::test_the_key_is_free_and_the_command_only_shows`). `config/keymap.json` ist unverändert.
+- **Besitzregel an einer Stelle:** `_soft_preview_refresh` zeigt bei eingeschalteter Ansicht den Anteil statt der
+  Vorschau. Damit führt jeder bestehende Auslöser (Auswahl, Modus, Einstellungen, Laden, Undo/Redo, Topologie,
+  Gestenende, Edit-Objekt über `_hidden_push`) automatisch zum Anteil zurück. Bei ausgeschalteter Ansicht ist der Weg
+  unverändert (Stop-Punkt 1 nicht berührt). Hover-Wechsel rechnen bei eingeschalteter Ansicht nichts.
+- **Auslöser ohne Soft-Refresh** hatten alle einen bestehenden Haken in `Application`, kein neuer Controller-Vertrag
+  (Stop-Punkt 2 nicht berührt): Knochenbefehle (`Alt+J`, neu, löschen; `_run_rig`), Klick im Pose-Modus (`select_at`),
+  Laden (nach `SkeletonController.reset`).
+- **Neu rechnen nur bei Bedarf:** ein kleiner Cache (`ShareCache`, `controllers/skeleton.py`) je (Mesh, Skin-Layer,
+  Knochen) hinter einem `Mesh.watch()` — neu gerechnet wird nur, wenn sich Knochen/Objekt ändern oder das Mesh Layer-
+  bzw. Topologie-Änderungen meldet (Gewicht-Commit, Undo/Redo, Topologie, Binden/Lösen, Knochen löschen). Positionen
+  allein rechnen nie neu. Die Berechnung `bone_shares` teilt sich die Geste (`_show_share`).
+- **Zielansicht (Stop-Punkt 3):** eindeutig — das Bearbeitungsobjekt ist eine ungebundene Kopie ohne Layer
+  (AD-025 §15, AD-028 §5.2); die Ansicht zeigt dort nichts und sagt `target view`.
+- **Befund: die Färbung blieb in der Pose am Ruhe-Mesh.** Die Annahme des Auftrags („folgt über die bestehende
+  Positions-Synchronisation“) traf nicht zu: Zusatz-Overlays synchronisieren am Edit-Mesh (Ruheform); gemessen lagen
+  69 von 69 Overlay-Punkten auf Ruhepositionen. Das betraf auch die heutige Färbung während `8` in der Pose
+  (AD-028-Praxistest Schritt 5). **Behoben im bestehenden Kanal:** die Flächenfärbung (`GLSoftShadingOverlay`) bekommt
+  eine Käfig-Quelle (`set_cage_source`, `Application._shown_cage`: die gezeigte Pose-Fläche, sonst die Morph-Mischung —
+  dasselbe Mesh mit denselben IDs, das die Kanten schon zeigen) und liest die Positionen dort; ein Watch auf diese
+  Fläche lässt einen Pose-Schritt die Positionen nachziehen. Topologie, Auswahl, Picking und die Soft-**Bänder**
+  bleiben am Ruhekäfig (AD-028 §5.2). Das gilt für jede Flächenfärbung, also auch Soft-Vorschau und Gesten.
+- **`8` mit eingeschalteter Ansicht:** der Strich der Geste umfasst schon alle Punkte, die den Knochen beim Drücken
+  hatten — die Färbung während des Zugs ist darum die volle Ansicht, kein Ausschnitt.
+
+### 8.3 Messung (Container, Python 3.13, Xvfb, ohne GL-Zeichnen; p50 / p95)
+
+| Was | Kopf (326 V, 264 mit Knochen) | Körper (928 V, 240 mit Knochen) |
+|---|---|---|
+| Anteil neu rechnen (`bone_shares`) | 0,07 / 0,10 ms | 0,09 / 0,11 ms |
+| Auslöser mit Neuberechnung + Übergabe an die Färbung | 0,08 / 0,12 ms | 0,10 / 0,11 ms |
+| Auslöser ohne Änderung (Auswahl, Soft-Einstellung: Cache) | 0,007 / 0,009 ms | 0,007 / 0,010 ms |
+| `Alt+J` als ganzer Tastendruck (Driver, inkl. Frame-Tick) | 1,4 / 3,3 ms | 1,3 / 2,5 ms |
+| pro Frame neu: `dirty`-Prüfung der Färbung (nur solange etwas gefärbt ist) | ≈ 50–70 ns | ≈ 50 ns |
+| 150 Orbit-Frames mit Ansicht an: Neuberechnungen / Übergaben | 0 / 0 | 0 / 0 |
+
+Zur Einordnung: `gollum` (87 500 V, synthetischer Skin-Layer) 15 % gewichtet 12 / 18 ms, 100 % 95 ms pro Auslöser
+(nicht pro Frame; `Mesh.layer_items` sortiert). Kein Ergebnis für den Referenz-PC: echtes GL und das Zeichnen der
+Färbung beim Orbit misst nur dein PC (Schritt 7).
+
+### 8.4 Praxistest für Manu (Discovery, eine Sitzung, ca. 20–40 Minuten)
+
+Kein Abhaken: melde, was Probleme macht. Start: `python src/main.py` (Kopf). Rig wie im
+[AD-028-Praxistest](../architecture/AD-028-SKELETON-AND-SKINNING.md#praxistest-für-manu-nach-dem-bau-deutsch-ca-20-minuten)
+Schritte 1–3 (Symmetrie, Gruppe „Jaw“, `P` + `Strg+J`, `7` halten). Die Taste `9` ist ein Vorschlag; sag „Taste
+passt“ oder nenne eine andere.
+
+1. **Gewichtsansicht an.** `1`, dann `9`: der Kiefer färbt sich nach dem Anteil des Knochens, in der Leiste steht
+   `Weights · Jaw`. Kannst du einen Mundwinkel prüfen, ohne `8` zu halten? Sind die Farben lesbar (stark rot … schwach
+   blau)?
+2. **Knochen wechseln.** Mit `P` + `Strg+J` einen zweiten Knochen anlegen (die Färbung wird leer: er hat noch keine
+   Gewichte), dann `Alt+J`: springt die Ansicht sofort auf „Jaw“ zurück? Im Pose-Modus (`5`) beide Knochen anklicken:
+   springt sie bei jedem Klick richtig mit?
+3. **Edit-Objekt wechseln.** `Shift+A` → einen Würfel hinzufügen (er ist danach in `4` gewählt), `1`: der Würfel ist
+   das Edit-Objekt, die Färbung ist leer, die Leiste sagt `Weights · — (no weights on 'cube')`. In `4` den Kopf wählen,
+   `1`: die Gewichte sind sofort wieder da. Ist klar, dass es auf dem Würfel nichts gibt? (In `4` steht
+   `— (object level)`, in der Morph-Bearbeitungsansicht `Tab` steht `— (target view)`.)
+4. **Gewicht ändern und zurücknehmen.** Mundwinkel-Punkte wählen, `8` halten + Maus, loslassen: die Ansicht zeigt das
+   neue Gewicht. `Strg+Z`, `Strg+Y`: bleibt die Färbung stimmig?
+5. **Soft und Ansicht.** `O` (Soft an) bei eingeschalteter Ansicht: die Soft-Bänder fehlen, im Soft-Eintrag steht
+   `preview hidden (weights view)`. Ist klar, warum? Einen Punkt wählen, `W` halten und ziehen: während des Zugs die
+   Soft-Zone, nach dem Loslassen wieder die Gewichte? `9` aus: kommt die Soft-Vorschau zurück?
+6. **Posiert und gebunden.** `5`, Knochen anklicken, `E` halten und den Kiefer öffnen: folgt die Färbung dem
+   geöffneten Kiefer (nicht mehr dem geschlossenen)? Auch während `8` in der Pose? (Die Auswahlpunkte bleiben bewusst
+   am Ruhe-Mesh.)
+7. **Tempo.** Orbit und Zoom mit Ansicht an und aus: spürbar langsamer?
+
+### 8.5 Was noch den Referenz-PC braucht
+
+Alles Gefühlte (Lesbarkeit der Färbung, Taste, ob die ruhende Soft-Vorschau verständlich ist, ob die Färbung auf der
+Pose richtig sitzt) und die Orbit-Kosten mit echtem GL (Schritt 7). Im Container geprüft (`tests/test_weight_view.py`):
+Anzeige beim Einschalten, Soft-Vorschau unterdrückt und zurück, Soft- und Gewichtsgeste besitzen die Anzeige und geben
+an die Ansicht zurück (auch `Esc`), Knochenwechsel (`Alt+J`, Pick, neu, löschen), Edit-Objekt (auch ohne Rig und direkt
+über `set_edit_object`), Undo/Redo, Topologie, Binden/Lösen, Laden, Zielansicht, Hover ohne Rechnung, Färbung auf der
+Pose und zurück in Ruhe, Leisteneinträge und Taste.
+

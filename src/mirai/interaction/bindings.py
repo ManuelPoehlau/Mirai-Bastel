@@ -433,6 +433,9 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("6", "alt"), cmd.POSE_RESET_BONE)
     bs.set_default(_key("7"), cmd.WEIGHTS_FROM_GROUP)
     bs.set_default(_key("8"), cmd.WEIGHT_SET)
+    # GUI Phase A3 (W1a, 2026-11-03; `PROVISIONAL` engineering key): 9 = the weight view on / off, next to the weight
+    # keys 7 / 8. Bare 9 was free in config/keymap.json, in every context the app resolves and in the Morph Lab's.
+    bs.set_default(_key("9"), cmd.WEIGHT_VIEW_TOGGLE)
     bs.set_default(_key("j", "ctrl"), cmd.BONE_ADD)
     bs.set_default(_key("j", "ctrl", "shift"), cmd.BONE_RENAME)
     bs.set_default(_key("j", "alt", "shift"), cmd.BONE_DELETE)

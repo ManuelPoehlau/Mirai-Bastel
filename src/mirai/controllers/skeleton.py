@@ -103,7 +103,7 @@ POSE_MODE_ALLOWS = frozenset(
         commands.SOFT_TOGGLE, commands.SOFT_RADIUS_UP, commands.SOFT_RADIUS_DOWN, commands.SOFT_CURVE_CYCLE,
         commands.SOFT_METRIC_CYCLE, commands.SOFT_CURVE_SHAPE_ROUNDER, commands.SOFT_CURVE_SHAPE_SHARPER,
         commands.SOFT_BANDS_TOGGLE, commands.SOFT_VIEW_MODE_CYCLE, commands.SOFT_LOOK_CYCLE,
-        commands.SOFT_FLOW_LOOP, commands.SOFT_FLOW_RING,
+        commands.SOFT_FLOW_LOOP, commands.SOFT_FLOW_RING, commands.WEIGHT_VIEW_TOGGLE,
         commands.UNDO, commands.REDO, commands.CANCEL,
         *commands.MODE_COMMANDS,
         commands.SELECT, commands.SELECT_ADD, commands.SELECT_REMOVE, commands.SELECT_TOGGLE,
@@ -420,12 +420,7 @@ class _WeightsGesture(_RigGesture):
     def _show_share(self) -> None:
         """The current bone's share on the shading overlay (§8.4), so the width shows also at rest."""
         stroke = self.stroke
-        mesh = self.mesh
-        shares = {}
-        for v in stroke.press:
-            w = bone_share(mesh.layer_value(stroke.layer, v), self.bone)
-            if w > 0.0:
-                shares[v] = w
+        shares = bone_shares(self.mesh, stroke.layer, self.bone, stroke.press)
         if self.services.show_soft_weights(shares, SHARE_VIEW_MODE):
             self.soft_op_running = True
             self.soft_shown = True
@@ -565,6 +560,56 @@ class WeightGesture(_WeightsGesture):
             return
         if self.begun:
             self._write()
+
+
+def bone_shares(mesh, layer, bone: BoneId, vertices=None) -> dict:
+    """`{vertex: share > 0}` of `bone` in the weights `layer` - over `vertices`, or every stored value (a vertex at the
+    layer default has no bone). What the weight display shows (§8.4; the weight view, GUI Phase A3)."""
+    if vertices is None:
+        items = mesh.layer_items(layer)
+    else:
+        items = ((v, mesh.layer_value(layer, v)) for v in vertices)
+    shares = {}
+    for v, value in items:
+        w = bone_share(value, bone)
+        if w > 0.0:
+            shares[v] = w
+    return shares
+
+
+class ShareCache:
+    """The weight view's share (GUI Phase A3): `bone_shares` of one (mesh, layer, bone), recomputed only when that key
+    changed or the mesh's layers or topology changed since the last read (a `Mesh.watch()`); positions alone never
+    recompute it. `computes` counts the recomputations (tests, probe)."""
+
+    def __init__(self) -> None:
+        self._watch = None
+        self._key: tuple | None = None
+        self.shares: dict = {}
+        self.computes = 0
+
+    def get(self, mesh, layer, bone: BoneId) -> dict:
+        watch = self._watch
+        if watch is None or watch.mesh is not mesh:
+            if watch is not None:
+                watch.close()
+            self._watch = mesh.watch()
+            self._key = None
+        else:
+            change = watch.take()
+            if change.layers_touched or change.edges or change.faces:
+                self._key = None
+        key = (id(mesh), layer, bone)
+        if self._key != key:
+            self.shares = bone_shares(mesh, layer, bone)
+            self._key = key
+            self.computes += 1
+        return self.shares
+
+    def close(self) -> None:
+        if self._watch is not None:
+            self._watch.close()
+        self._watch, self._key, self.shares = None, None, {}
 
 
 # -- the controller ------------------------------------------------------------------------------------------

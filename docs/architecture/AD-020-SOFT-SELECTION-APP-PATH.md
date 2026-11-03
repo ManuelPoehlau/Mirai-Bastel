@@ -861,6 +861,14 @@ under a symmetry definition the bands show the symmetric field, both sides, with
 (`PROVISIONAL`). Cost per §7: the preview reuses the app's symmetry report (keyed by the geometry); the reference-PC run of
 the symmetric `soft_w_sym` rows is open.
 
+*Note 2026-11-03 (GUI Phase A3, W1a - Decision Manu 2026-11-03; [AD-028 addendum](AD-028-SKELETON-AND-SKINNING.md#addendum-2026-11-03-the-weight-view-gui-phase-a3-w1a)):*
+the display has a second owner besides the preview and a running op. The ownership rule is now: **a running op owns
+the display; else, while the weight view is on, the face shading shows the current bone's share and the preview shows
+nothing; else the preview.** Still one routing point (`_soft_show`) and two sinks with only one non-empty; the weight view
+sits inside `_soft_preview_refresh`, so an op's end hands back to it. With the view off, when and how the preview is
+computed is unchanged. The face-shading sink places its triangles on the shown deformed cage (pose, else morph mix)
+when there is one (`set_cage_source`); the bands stay on the rest cage.
+
 ---
 
 ## 6. Q5 — Minimal S2 controls

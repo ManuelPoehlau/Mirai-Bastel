@@ -381,6 +381,10 @@ POSE_RESET_BONE = "PoseResetBone"
 #: current bone's weight on the selection (Soft: falling off outside it). Release = one Undo step, Esc = nothing.
 WEIGHTS_FROM_GROUP = "WeightsFromGroup"
 WEIGHT_SET = "WeightSet"
+#: GUI Phase A3 (W1a, Manu 2026-11-03; name and key `PROVISIONAL`): the weight view - the current bone's share on the
+#: edit mesh at rest, in the Soft face-shading sink; while on, the Soft preview shows nothing. View state (session
+#: only, not saved, no Undo step); not a rig command (it changes no rig, pose or weights data).
+WEIGHT_VIEW_TOGGLE = "WeightViewToggle"
 #: The rig, pose and weight commands (`layer_declarations.RIG`: they handle the weights layer themselves).
 RIG_COMMANDS = (
     BONE_ADD,

@@ -143,6 +143,8 @@ _NON_MESH_COMMANDS = (
     commands.SOFT_METRIC_CYCLE, commands.SOFT_CURVE_SHAPE_ROUNDER, commands.SOFT_CURVE_SHAPE_SHARPER,
     commands.SOFT_BANDS_TOGGLE, commands.SOFT_VIEW_MODE_CYCLE, commands.SOFT_LOOK_CYCLE,
     commands.SOFT_FLOW_LOOP, commands.SOFT_FLOW_RING,
+    # GUI Phase A3: the weight view only shows (the Soft face-shading sink)
+    commands.WEIGHT_VIEW_TOGGLE,
     commands.SUBD_CYCLE_VIEW, commands.SUBD_LEVEL_1, commands.SUBD_LEVEL_2, commands.SUBD_LEVEL_3,
     commands.SUBD_TOGGLE_CAGE_DEPTH, commands.SUBD_CYCLE_SECONDARY,
 )

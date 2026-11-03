@@ -14,8 +14,9 @@ variants, not saved). Key hints come from the binding layer (`BindingSet.inputs_
 Rows have a tier. Badges (posed + bound, invalid keymap) come first; the primary rows are the mode (Vertex /
 Edge / Face / Object / Pose in one row, the morph editing view as a suffix), the tool or running gesture, and
 every setting that is *not at its default* (Axis, Space, Pivot, Sym, Soft, SubD) plus the current morph target
-and bone when they exist; the secondary rows (Display, View, Look, Region, Targets, Rig, Fixed) show in the
-"full" detail. A key hint of a command `HudState.unavailable` lists (AD-027 section 3.3, `can_run` for source "ui")
+and bone when they exist and, Phase A3 (2026-11-03, "Stufe 1c"), the weight view while it is on ("Weights · Jaw",
+"Weights · — (no rig)"; the Soft entry then says its preview is hidden); the secondary rows (Display, View, Look,
+Region, Targets, Rig, Fixed) show in the "full" detail. A key hint of a command `HudState.unavailable` lists (AD-027 section 3.3, `can_run` for source "ui")
 is dimmed.
 
 Change detection: `Hud.update` builds the snapshot every frame (a handful of attribute reads, no
@@ -146,6 +147,8 @@ class HudState:
     pose_locked: bool = False
     #: Phase A1: the target whose editing view is open (AD-025 section 15), the suffix of the mode; None = none.
     morph_view: Optional[str] = None
+    #: Phase A3: the weight view - None = off; else the bone whose share is shown, or "— (<why>)" = nothing to show.
+    weights: Optional[str] = None
 
 
 def hud_state(app) -> HudState:
@@ -208,6 +211,7 @@ def hud_state(app) -> HudState:
         posed=app.posed,
         pose_locked=app.edit_mesh_posed_and_bound,
         morph_view=app.morph_editing_target_name,
+        weights=app.weight_view_text,
     )
 
 
@@ -265,6 +269,7 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
         None,
     ),
     "Bone": ((commands.BONE_NEXT, commands.WEIGHT_SET), None),
+    "Weights": ((commands.WEIGHT_VIEW_TOGGLE,), None),
     "Rest": ((commands.POSE_TOGGLE_REST,), None),
     # Window commands (never an app command): the strip's own footer.
     "HUD": ((commands.TOGGLE_HUD,), WINDOW_CONTEXT),
@@ -354,6 +359,8 @@ def hud_rows(
     soft = (
         f"on · {state.soft_radius_percent} % · {state.soft_curve}" if state.soft_on else "off"
     )
+    if state.soft_on and state.weights is not None:
+        soft += " · preview hidden (weights view)"  # Phase A3: the weight view owns the display
     if state.subd_view == VIEW_OFF:
         subd = "off"
     else:
@@ -387,6 +394,8 @@ def hud_rows(
     if state.bone is not None:  # only a scene with a rig and a bone: the one 7 / 8 and the pose gestures act on
         rows.append(row("Bone", f"{state.bone!r} · {'posed' if state.posed else 'rest'}",
                         on=state.pose_mode or state.posed))
+    rows.append(row("Weights", state.weights if state.weights is not None else "off",
+                    on=state.weights is not None and not state.weights.startswith("—"), quiet=state.weights is None))
     rows += [
         row("Display", state.display, tier=SECONDARY),
         row("View", state.view, on=state.view != "Persp", tier=SECONDARY),

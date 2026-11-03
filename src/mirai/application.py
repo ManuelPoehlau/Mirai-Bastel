@@ -127,7 +127,7 @@ from .controllers.knife import KnifeController
 from .controllers.morph import MorphController
 from .controllers.objects import PLACEMENT_COMMANDS, ObjectController, selection_state
 from .controllers.pointer_tools import PointerToolsController
-from .controllers.skeleton import SkeletonController
+from .controllers.skeleton import SHARE_VIEW_MODE, ShareCache, SkeletonController
 from .controllers.symmetry import SymmetryController
 from .interaction.session import (
     PASS,
@@ -157,7 +157,7 @@ from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
 from .topology import selection_steps
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
 from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, install_morph_bindings
-from .skinning import SkinDisplay
+from .skinning import SkinDisplay, skin_layer
 from .surface_chain import SurfaceChain
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.camera import nearest_standard_view
@@ -469,6 +469,12 @@ class Application:
         # `_soft_bands` / `_soft_shading` is non-empty at a time.
         self._soft_shading_overlay = None
         self._soft_shading: dict[VertexId, float] = {}
+        # GUI Phase A3 (W1a, Manu 2026-11-03, `PROVISIONAL`): the weight view - a display owner inside the same
+        # routing: while on (and no Soft / weight gesture owns the display) the face-shading sink shows the current
+        # bone's share on the edit mesh and the Soft preview shows nothing. Session state: not saved, no History,
+        # kept across scene loads. None = off; on = its `ShareCache` (per (mesh, layer, bone) behind a `Mesh.watch()`,
+        # re-read only after that mesh's layers or topology changed), so the Soft triggers that land here cost nothing.
+        self._weight_view: ShareCache | None = None
         # Shift+S, the symmetry display and its report cache, Re-Symmetrize (AD-027 M1, `controllers.symmetry`).
         self._symmetry = SymmetryController(self._services)
 
@@ -678,6 +684,8 @@ class Application:
             self.viewport.add_overlay(self._soft_overlay)
         if soft_shading_overlay_type is not None:
             self._soft_shading_overlay = soft_shading_overlay_type()
+            if hasattr(self._soft_shading_overlay, "set_cage_source"):
+                self._soft_shading_overlay.set_cage_source(self._shown_cage)
             self.viewport.add_overlay(self._soft_shading_overlay)
         self._masks.clear()  # their IDs belong to the old meshes
         self._hiddens.clear()
@@ -698,6 +706,7 @@ class Application:
         self.morph.attach(self.viewport)
         self.skin.attach(self.viewport)  # a load starts at rest (the pose is not saved, AD-028 §6)
         self._skeleton.reset()
+        self._weight_view_follow()  # the view stays on across a load; the new scene's current bone is shown
         self._morph.ab.clear()
         self._objects.pick_caches = {}
         self._objects.sync_views()
@@ -1032,6 +1041,7 @@ class Application:
         add(_DISPLAY_COMMANDS, plain(self._display_command))
         add(_LOOK_COMMANDS, plain(self._look_command))
         add(_SOFT_COMMANDS, plain(self._soft_command))
+        add((commands.WEIGHT_VIEW_TOGGLE,), plain(lambda command: self._weight_view_toggle()))
         add(SUBD_COMMANDS, plain(self._subd_command))
         add(_MODE_COMMANDS, plain(self._run_mode))
         add(PLACEMENT_COMMANDS, plain(objects.placement_command))
@@ -1068,7 +1078,9 @@ class Application:
             if command == commands.WEIGHTS_FROM_GROUP:
                 return self._skeleton.arm_falloff(ctx.input.value, origin)
             return self._skeleton.arm_weight(ctx.input.value, origin)
-        return self._skeleton.command(command)
+        done = self._skeleton.command(command)
+        self._weight_view_follow()  # the current bone may have changed (Alt+J, add, delete)
+        return done
 
     def _run_mode(self, command: str) -> bool:
         """1/2/3/4: leave pose mode (AD-028 §8.2), then the mode."""
@@ -2786,6 +2798,96 @@ class Application:
             if self._soft_shading_overlay is not None:
                 self._soft_shading_overlay.set_weights(shading)
 
+    # -- the weight view (GUI Phase A3, W1a; AD-028 §8.4 / §8.5 addendum, AD-020 §5 note; `PROVISIONAL`) -----------
+
+    @property
+    def weight_view(self) -> bool:
+        """The weight view is on (session state: not saved, no History)."""
+        return self._weight_view is not None
+
+    @property
+    def weight_share_computes(self) -> int:
+        """How often the weight view computed the share since it was switched on (diagnostics: tests, probe)."""
+        return 0 if self._weight_view is None else self._weight_view.computes
+
+    @property
+    def weight_view_text(self) -> str | None:
+        """The HUD's "Weights" entry: None = the view is off; else the current bone's name, or "— (<why>)" when
+        there is nothing to show. Read-only (no share is computed)."""
+        if self._weight_view is None:
+            return None
+        target = self._weight_view_target()
+        if isinstance(target, str):
+            return f"— ({target})"
+        return self._skeleton.bone_name(target[2])
+
+    def _weight_view_target(self):
+        """(mesh, skin layer, bone) the weight view shows, or the reason it shows nothing (a short text). In the
+        morph target editing view the share is not shown on the target (`PROVISIONAL`: the view object is an unbound
+        copy without layers, AD-025 §15 / AD-028 §5.2); at object level (`4`) nothing is shown either."""
+        if self.morph_editing_target_name is not None:
+            return "target view"
+        if self.selection.mode is SelectionMode.OBJECT and not self._skeleton.pose_mode:
+            return "object level"
+        rig = self.scene.rig
+        if rig is None or not rig.bones:
+            return "no rig"
+        bone = self._skeleton.current_bone
+        if bone is None:
+            return "no bone"
+        mesh = self.scene.mesh
+        lid = skin_layer(mesh)
+        if lid is None:
+            return f"no weights on {self.scene.edit_object.name!r}"
+        return mesh, lid, bone
+
+    def _shown_cage(self) -> Mesh | None:
+        """The deformed cage the window shows for the edit mesh (same IDs and topology): the skin stage's posed
+        surface, else the morph mix; None = the rest shape. The face shading sits on it (GUI Phase A3)."""
+        chain = self.surface_chain
+        cage = None
+        for stage in (self.morph.provider, self.skin.provider):
+            if stage.surface_mesh is not None and chain.holds(stage):
+                cage = stage.surface_mesh
+        return cage
+
+    def _weight_view_share(self) -> dict[VertexId, float]:
+        """The current bone's share on the edit mesh ({} = nothing to show). Recomputed only when the mesh, its
+        skin layer or the bone changed, or the mesh's layers / topology changed since the last read (its watch)."""
+        target = self._weight_view_target()
+        if isinstance(target, str) or self._weight_view is None:
+            return {}
+        return self._weight_view.get(*target)
+
+    def _weight_view_follow(self) -> None:
+        """A weight-view trigger the Soft triggers do not cover (the current bone: rig commands, a pose-mode pick, a
+        scene load's skeleton reset): show the share again. An edit-object change needs none (`_hidden_push`)."""
+        if self._weight_view is not None:
+            self._soft_preview_refresh()
+
+    def _weight_view_toggle(self) -> bool:
+        """`WEIGHT_VIEW_TOGGLE`: the view on / off. Off = the Soft preview returns through its normal refresh. In
+        component modes and pose mode (refused at object level, `4`)."""
+        view = self._weight_view
+        if view is None and self.selection.mode is SelectionMode.OBJECT and not self._skeleton.pose_mode:
+            self._set_status("Weights view: in 1/2/3 or pose mode (5)")
+            return False
+        if view is None:
+            self._weight_view = ShareCache()
+        else:
+            view.close()
+            self._weight_view = None
+        self._soft_preview_refresh()
+        key = self._skeleton.key_text(commands.WEIGHT_VIEW_TOGGLE)
+        if self._weight_view is None:
+            soft = " - Soft preview back" if self._soft.enabled else ""
+            self._set_status(f"Weights view off{soft}")
+            return True
+        what = self.weight_view_text
+        hidden = " · Soft preview hidden" if self._soft.enabled else ""
+        self._set_status(f"Weights view: {what}{hidden} ({key} = off)")
+        return True
+
     def _soft_selection_seeds(self) -> set[VertexId]:
         selection = self.selection
         return set(resolve_selection_vertices(self.scene.mesh, selection, selection.mode))
@@ -2809,8 +2911,8 @@ class Application:
         running (its target owns the display), and never for a pointer move over the same
         component."""
         soft = self._soft
-        if not (soft.enabled and soft.bands_visible) or self._gesture is not None:
-            return
+        if not (soft.enabled and soft.bands_visible) or self._gesture is not None or self._weight_view is not None:
+            return  # (the weight view owns the display: a hover changes nothing it shows)
         if self._soft_overlay is None and self._soft_shading_overlay is None:
             return
         if self._soft_selection_seeds():
@@ -2822,11 +2924,18 @@ class Application:
         display. Soft off, hidden (`bands_visible` False) or no target (no selection and no hovered
         component) show nothing; under a symmetry definition the preview is the symmetric field
         (AD-SYM-04 D-5, slice SS3). The display mode (`view_mode`) only routes the same weights.
-        True = weights are shown now (a hover-armed gesture then owns them, `GestureSession.soft_shown`)."""
+        True = weights are shown now (a hover-armed gesture then owns them, `GestureSession.soft_shown`).
+
+        The weight view (GUI Phase A3, W1a) is the other display owner: while it is on, this routing point shows the
+        current bone's share in the face shading instead (never the preview; False - a gesture does not own the
+        share), so every trigger that ends here - and a gesture's end - returns to the share."""
         gesture = self._gesture
         if (self._soft_overlay is None and self._soft_shading_overlay is None) or (
             gesture is not None and gesture.soft_op_running
         ):
+            return False
+        if self._weight_view is not None:
+            self._soft_show(self._weight_view_share() or None, SHARE_VIEW_MODE)
             return False
         soft = self._soft
         # Hidden (S2d E7): no influence work for display, nothing shown.
@@ -3764,7 +3873,10 @@ class Application:
         if self.viewport is None:
             return False
         if self._skeleton.pose_mode:
-            return self._skeleton.pick_bone(x, y)  # AD-028 §8.4: a click in pose mode picks a bone
+            picked = self._skeleton.pick_bone(x, y)  # AD-028 §8.4: a click in pose mode picks a bone
+            if picked:
+                self._weight_view_follow()
+            return picked
         if self.selection.mode is SelectionMode.OBJECT:
             return self._objects.select_at(command, x, y)
         selection = self.selection
