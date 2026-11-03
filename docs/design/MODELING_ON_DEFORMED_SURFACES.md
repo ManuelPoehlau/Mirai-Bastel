@@ -1,7 +1,8 @@
 # Modeling on deformed surfaces — product requirement
 
-**Status:** **PROPOSED (2026-11-03), pending Manu's review.** Not decided, not an architecture decision, no Artist
-verdict, no implementation commitment. Every decided rule it touches stays in force until Manu decides otherwise:
+**Status:** **PROPOSED (2026-11-03), pending Manu's review**, except the first slice: **picking and hover on the
+morph mix while editing the base, decided by Manu 2026-11-03 (chat), §15**; it is built in a fresh session. The rest
+is not decided, not an architecture decision, no Artist verdict, no implementation commitment. Every decided rule it touches stays in force until Manu decides otherwise:
 AD-028 §7.1 (S5, "Modellieren nur in Ruhe"), AD-025 §15 (H4/J-5, the target edited beside the base), AD-013 H7-R2
 (the replacement surface is display only), Morph Lab 6a ("Picking auf der Ruheform hilft").
 **Mode (M5):** Discovery: requirement and audit. No code, test or configuration was changed.
@@ -428,3 +429,63 @@ prioritised: **a separate architecture investigation, in a fresh session**, scop
    behaviour).
 
 Suggested: Claude Opus, effort high, a fresh session (Erzeuger ≠ Bewerter for the later review).
+
+## 15. Decided first slice: picking on the morph mix (Manu, 2026-11-03)
+
+**Manu (chat, entered by the agent):** „wenn beim Morphing das Hover/Picking direkt auf den gemorphten Zustand wirken
+würde, zB BaseEditing Mode aber 50% oder 100% geöffneter Mund, dann würde das ja schon das Problem lösen. Ein
+Split/Cut o.ä wird ja sowieso direkt auf dem gemorphtem Zustand sichtbar, auch wenn man eigentlich das Base mesh
+editiert. Also würde ich tatsächlich jetzt in einem frischen Session genau dieses Problem beheben, dass wenn zB. 100%
+gemorphed ist, man auch in diesem Zustand hovert und selektiert und das richtige trifft.“
+This answers Kurzfassung question 4 for the morph case (stage 1 + 2 of §13, morph only). Mode (M5): Production, in a
+fresh session with this section as the handoff.
+
+**Reading of the decision** (`PROVISIONAL`, Manu corrects in one sentence):
+
+- (a) **Base editing stays.** Every edit changes the base (rest positions); the offsets stay as they are (AD-025 J-3,
+  C-1). Move shows exactly on screen (the morph moves each point by a constant offset). Rotate/Scale turn the rest
+  positions while the offsets keep their direction (C-1), so a region with large offsets does not turn rigidly on
+  screen. Known, not changed here.
+- (b) **Morph only.** In a pose nothing changes: S5 refusal, selection on the rest cage (AD-028 §7.1).
+- (c) **No rest-picking toggle.** Tap `N` (0 % ↔ last) is the rest reference. Morph Lab 6a ("Picking auf der Ruheform
+  hilft") is superseded for base editing at a weight above 0.
+- (d) **SubD on:** picking on the mixed cage (what the cage lines show), not on the SubD surface.
+- (e) **The editing view (`Tab`) unchanged:** it already is the edit object at `b + d`.
+
+**Scope.** With a target dialled in on the edit object: hover, click, box, lasso and paint select (GPU and CPU, with
+occlusion by the drawn mix), the Knife's targets and its planner, and the overlays (selection, hover, edge/face
+highlights, Knife and loop previews, Soft bands, gizmo pivot, symmetry marks) work on the drawn mix. Also every
+screen↔world mapping a drag uses (W/E/R, Tweak, Extrude drag plane). A cut, a loop or a selection made at 50 % or 100 %
+lands on the element drawn under the cursor. At 0 % and without targets the behaviour is bit-identical to today.
+**Not in scope:** the pose, attributing position edits to a target, picking the SubD surface, other objects.
+
+**Verified leads** (facts at `34d2ba2`, not a design; the session chooses the mechanism):
+
+- The drawn mix is `morph.provider.surface_mesh` (`morph_mix.MixSurface`), a `core.Mesh` with the edit mesh's IDs and
+  topology, patched in place. `Application._shown_cage` (`application.py:2844`) returns the **skin** surface when posed,
+  so it does not fit (b) as it is.
+- The CPU pickers take the mesh to test (`mirai/viewport/picking.py`). `PickCache` keys on `id(mesh)` and watches the
+  mesh it is given (`picking_cache.py:119–135`, `:286–289`). The GPU ID pass draws `Viewport.render_mesh`, the edit
+  mesh (`viewport.py:840–851`). `GpuPicker.can_pick` checks only the store type and camera uniforms
+  (`gpu_picker.py:117`), so a surface `RenderMesh` may qualify [H, unverified].
+- Overlays read `Viewport.mesh` (`viewport.py:726–736`); the wire already reads `_wire_mesh()` (`:757`).
+- Knife: an edge `t` means the same on the mix and on the base (straight edges). An interior point's position must
+  reach `split_face` as its **rest** position, Σ oⱼ·bⱼ from its origin; at the hit point Σ oⱼ·pⱼ equals the hit. The
+  planner reads mesh positions with the camera (`controllers/knife.py:567–576`). The kept-call report
+  (`KeptSplitEdge` / `KeptSplitFace`, `topology/knife_resolve.py:140`, `:155`) and its symmetric replay
+  (`symmetric_knife.py:286–371`) already resolve on one side and replay on another.
+- Drag depth and pivot read rest positions: `move.py:308` (anchor), `selection_pivot` (`selection_helpers.py:119`),
+  `Application._gizmo_pivot` (`application.py:4067`). The Soft field is computed on the rest mesh
+  (`application.py:2948`; keeping it intrinsic is fine); its bands are drawn at rest.
+- Decided text that changes with this slice, in the same commit (AGENTS §5): AD-013 H7-R2 ("no picking"; an addendum
+  allowing queries on a replacement surface with the edit mesh's IDs, never written back), AD-025 §6 / §15.1 item 4,
+  the `morph_targets.py` and `surface_chain.py` docstrings. Tests pinning the old behaviour change with it:
+  `tests/test_morph_targets.py:653`, `tests/test_morph_multi.py:487` (`tests/test_skin_stage.py:335` stays, (b)).
+
+**Acceptance:** DS-AC1 and DS-AC2 for the morph mix (a test where rest and mix differ by more than the pick radius;
+GPU path in the GL tests); DS-AC3 through real picks for Split, Edge Connect, Loop Insert, Knife (open, closed,
+self-crossing), Extrude and Collapse, plain and symmetric; DS-AC6; 0 % / no-target equivalence; hover-pick and
+weight-step cost measured with the existing probe (container, plus the line for the reference PC). Runs per AGENTS
+§8a: `tests/` fully, GL tests in their own process, `experiments/morph_lab/tests`, the Knife oracle. Done also means
+an implementation note here, the AD amendments, `docs/ATELIER.md` and a short German practical test for Manu
+(head_basemesh, a "mouth open" target at 50 % and 100 %: hover, select, Loop Insert, Knife inside the mouth).
