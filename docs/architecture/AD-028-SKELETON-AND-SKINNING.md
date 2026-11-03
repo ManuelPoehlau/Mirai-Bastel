@@ -4,7 +4,8 @@
 after the second opinion [DEVCHAT-001](../archive/deformation/reviews/AD-028_REVIEW_DEVCHAT_001.md) (Development chat,
 2026-11-02): ACCEPT WITH CHANGES, disposition in §16. Was PROPOSED the same day as the Architecture Gate (Type C) of
 AD-025 Phase 6. The go covers the Core change of §9 (CORE_V1_FREEZE §7, step 6). **Slices 1–2 (Core, evaluation) built
-2026-11-02** (§17); slices 3–4 (app, acceptance) follow.
+2026-11-02, slices 3–4 (app, acceptance) 2026-11-03** (§17); open are Manu's practical test and the reference-PC run
+of the probe ("Praxistest" at the end).
 **Mode (M5):** Production, in fresh sessions with this AD as the handoff (§12).
 **Baseline:** `main` @ `0af65eb`. Every code fact below was read there (file:line).
 **Answers:** AD-025 §11 "Skinning data model" (influence keys, maximum influences, normalization tolerance, bind pose,
@@ -61,8 +62,12 @@ mit deinem Go für den Bau:
 **Zur Kenntnis (keine Frage):** Nur das bearbeitete Objekt zeigt die Pose (Zähne als eigenes Objekt folgen in dieser
 Phase nicht). Auswahl und Hover liegen wie bei Morph auf der Ruheform.
 
-**Nächster Schritt:** der Bau (§12). Danach ein Durchgang am Kopf oder an Gollum und ein Messlauf auf deinem PC
-(Abschnitt „Praxistest“ am Ende).
+**Stand 2026-11-03: gebaut.** Die Tasten (Vorschläge, `PROVISIONAL`): `5` Pose-Modus, `6` Ruhe ↔ Pose, `Alt+6`
+aktueller Knochen in Ruhe, `7` halten = Gewichte aus der Gruppe, `8` halten = Gewicht setzen, `Strg+J` Knochen
+anlegen (`Strg+Shift+J` umbenennen, `Alt+Shift+J` löschen, `Alt+J` / `Strg+Alt+J` nächster / voriger Knochen).
+
+**Nächster Schritt:** ein Durchgang am Kopf oder an Gollum und ein Messlauf auf deinem PC (Abschnitt „Praxistest“ am
+Ende).
 
 ---
 
@@ -737,29 +742,105 @@ points, 70 % on one bone, 30 % on two, a rotation about X; 40 pose steps through
 The evaluation stays within §5.4's 0.5–1 µs per point; the step a user sees adds the viewport's per-vertex patch
 (≈ 11 µs per moved point, §5.4) — measured with the probe of slice 4 (`--only-skin`).
 
+### 17.3 Slices 3–4 — app and acceptance (2026-11-03)
+
+Built as §6–§8 say: `src/mirai/controllers/skeleton.py` (`SkeletonController`, `RigCommand`, the gesture kinds
+`BoneGesture`, `FalloffGesture`, `WeightGesture`, the three stage-7 policies), the ten commands of §8.3
+(`commands.RIG_COMMANDS`; the two weight commands in `HOLD_COMMANDS`), the gate's `RIG` class and the kind-aware
+mirror copy (`layer_declarations.kind_refusal`, `object_mirror.mirror_mesh` raises `ValueError` as the backstop),
+`Application.bone_items()` (drawn with the gizmo items, `src/main.py`), the HUD row "Rig", and the probe
+`--only-skin`. Tests: `tests/test_application_rig.py` (T-6), `tests/test_weights_topology_ops.py` (T-5),
+`tests/test_jaw_scenario.py` (T-7, with an E5 (iv) purity run of the whole scenario); shared setup
+`tests/rig_support.py`. `AppServices` gains `active_region` and `skin` (reasons in their docstrings); `Application`
+one field (`_skeleton`, wiring). Findings and the direction taken (AGENTS §5):
+
+- **Keys (code defaults, `PROVISIONAL`; checked against `config/keymap.json` - none is there - and free in the
+  global, Knife, SubD, morph and window contexts and in the Morph Lab's):** `5` pose mode (the AD's proposal), `6`
+  rest ↔ pose, `Alt+6` reset bone, hold `7` weights from the group, hold `8` set weight; `Ctrl+J` add bone,
+  `Ctrl+Shift+J` rename, `Alt+Shift+J` delete, `Alt+J` / `Ctrl+Alt+J` next / previous bone (the J family as the
+  morph family is N; bare `J` and `Shift+J` are the Lab's jaw keys). The hold keys carry no modifier: Ctrl snaps
+  and Alt orbits while a gesture runs.
+- **Pose mode** is entered from any mode with a bone (refused without: "Pose mode: no bone yet (Ctrl+J adds one)");
+  `1`/`2`/`3`/`4` leave it (and do what they always do). In it W/E/R arm the `BoneGesture`, a click picks the
+  nearest bone (10 px), the gizmo sits at the current bone's posed head on the world axes and its handle drag is
+  the bone gesture; `K` makes the constraint keys bone-local. A bone gesture computes the bone's local pose from the
+  press pose: rotate about the posed head `R' = Fᵀ·Q·F·R` (`F` the parent-posed rest frame), move
+  `t' = t + Fᵀ·d / s_parent`, scale `s' = f·s`.
+- **Policy order** (stage 7): pose mode → posed and bound → bound placement. The posed policy skips mode `4`
+  (object level; Delete there removes objects) and pose mode's own commands; it reads
+  `layer_declarations.edits_positions_or_topology` (position-only, declared, resolved, locked, except Apply
+  transform; unknown keys count as editing). Locked constants keep the layer gate's earlier text (stage 3).
+  The placement policy reads the object selection, so it runs only with `ctx.operands` (the HUD does not grey
+  W/E/R for it). `apply_mesh_change` on a posed, bound mesh returns False with the status line (it raises only
+  while an interaction runs, as before).
+- **Bound cache:** per mesh behind a `Mesh.watch()`, re-read only after that mesh's layers changed (pinned:
+  no layer scan across repeated asks; Undo of the weights flips it).
+- **Weight gestures:** nothing is written before the first motion; the recording (and the "Skin" layer, if absent)
+  starts there; Esc and an ended-without-release gesture roll back. `FalloffGesture`: 2 px per percent of the
+  bounding radius from the Soft radius step, a tap = the start width; `WeightGesture`: 300 px for 0 → 1 from the
+  selection's mean share, Ctrl = steps of 0.1, a tap writes nothing; a fully masked point keeps its value, a
+  partial mask m scales the change by (1 − m). Under symmetry the partners get the same target (Soft: the
+  symmetric field). The rig, pose and weight commands are refused under every held gesture (`GESTURE_REFUSES`).
+- **Undo of "Add bone" takes the bone's pose channel**, and Redo brings the bone back at rest (§6's rule for a
+  deleted bone; the jaw scenario states it). An Esc of a weight gesture leaves the layer-ID counter one higher
+  (counters only move forward, AD-001).
+- **Seen, not changed (outside this AD):** the shared rotate dial (`interaction/dial.py`) gives 0° when the camera's
+  eye lies exactly on the rotation plane in perspective (e.g. rotate about X from a yaw-0 persp view of a
+  symmetric head: every ray from the eye meets the plane only at the eye). The object gesture has the same case; a
+  snapped standard view is ortho and unaffected. The jaw scenario turns the view aside first. A fix belongs to the
+  dial (treat the eye-on-plane case like the grazing one).
+- **Hand mutation checks (app), each caught by T-6 / T-7:** a weight write outside the gesture's recording; a
+  weight gesture computing from the previous step instead of the press values; a deleted bone's share going to the
+  object instead of the parent; the posed policy missing declared operations; the bound cache never refreshed; the
+  placement policy off; symmetry partners not written; a bone rotation about the origin instead of the head.
+
+**[C] measurements** — the probe `xvfb-run -a python experiments/drag_cost/probe_morph_gl.py --only-skin` (container,
+Python 3.13, llvmpipe; 200 pose steps per row through the real GL chain: pose mode, E held, one mouse move + the
+frame, render excluded; p50 / p95 ms; the region = the lowest-Y share of the points, 70 % on the jaw, 30 % shared
+with its child):
+
+| Mesh | region (points) | plain | one target at 60 % | SubD level 2 |
+|---|---|---|---|---|
+| head_basemesh (326 V) | 5 % (16) | 0.66 / 0.97 | 0.90 / 1.08 | 10.1 / 16.0 |
+| | 15 % (48) | 1.15 / 1.38 | 0.94 / 1.41 | 16.2 / 25.2 |
+| | 100 % (326) | 2.72 / 4.40 | 2.69 / 4.56 | 42.9 / 72.5 |
+| Man_With_Shoes (928 V) | 5 % (46) | 0.94 / 1.42 | 0.95 / 1.47 | 18.3 / 29.7 |
+| | 15 % (139) | 1.53 / 2.54 | 1.60 / 2.33 | 40.6 / 65.5 |
+| | 100 % (928) | 6.97 / 9.76 | 7.07 / 12.0 | 152 / 247 |
+| gollum_20k (21,875 V) | 5 % (1,093) | 11.2 / 17.2 | 11.2 / 17.4 | refused (SubD: > 25,000 faces at level 1) |
+| | 15 % (3,281) | 30.8 / 51.1 | 30.8 / 49.9 | refused |
+| | 100 % (21,875) | 218 / 316 | 204 / 295 | refused |
+
+Reading (P-1): the decided acceptance holds in the container with a wide margin - head and body, jaw-sized regions (≤ 15 %), with and
+without a target: p95 ≤ 2.6 ms; even every body point posed stays at 9.8 / 12.0 ms. gollum_20k is "usable, not fluid" as
+§5.4 expected (5 %: 11 / 17 ms, 15 %: 31 / 51 ms - the forecast was 12 / 18 and 37 / 57 ms). With the SubD preview on
+the step is SubD's patch of the posed cage (head 15 %: 16 / 25 ms, body 15 %: 41 / 66 ms) - over the bar, as the morph weight
+step with SubD is (AD-025 §17.3: head 1 × 15 % 21 / 31 ms); SubD was not part of P-1's bar. The 16.7 ms bar is the reference PC's to confirm ("Praxistest", step 9).
+
 ---
 
 ## Praxistest für Manu nach dem Bau (Deutsch, ca. 20 Minuten)
 
 Ein Durchgang, keine Abhakliste: melde dich, wenn etwas Probleme macht. Am Kopf (`python src/main.py`) oder an Gollum
-(`python src/main.py examples/meshes/gollum_20k.obj`). Die Tasten außer `5` stehen erst nach dem Bau fest (Vorschläge);
-die Schritte bleiben.
+(`python src/main.py examples/meshes/gollum_20k.obj`). Die Tasten sind Vorschläge (`PROVISIONAL`); sag „Taste passt“,
+wenn eine bleiben soll, oder nenne eine andere.
 
-1. **Gruppe.** In `3` die Flächen des Unterkiefers wählen, `Strg+G`, Name „Kiefer“ — oder eine vorhandene Gruppe aktiv
-   machen.
-2. **Knochen.** `P` halten und ins Kiefergelenk klicken (der Pivot landet in der Kopfmitte), die Kiefer-Flächen gewählt
-   lassen, *Knochen anlegen*: eine Linie vom Gelenk zum Kinn erscheint.
-3. **Gewichte aus der Gruppe.** Taste halten, Maus links/rechts: die Auslaufbreite (die Färbung zeigt den Anteil des
-   Knochens), loslassen. `Strg+Z` nimmt es zurück.
-4. **Drehen.** `5` (Pose-Modus), den Knochen anklicken, `E` halten (gern mit `X`) und ziehen: der Kiefer öffnet sich,
-   Mundwinkel und Wange laufen weich aus. `Esc` während des Ziehens bricht ab.
-5. **Mundwinkel korrigieren.** `1`, Punkte am Mundwinkel wählen, Soft an (`O`), *Gewicht setzen*: Taste halten + Maus,
-   die Pose zeigt das Ergebnis sofort; loslassen = ein `Strg+Z`.
+1. **Gruppe.** Symmetrie an (`Shift+S`), in `3` die Flächen des Unterkiefers wählen, `Strg+G` — oder eine vorhandene
+   Gruppe aktiv machen (`Shift+G`). `Strg+Alt+N` (mehrmals) gibt ihr den Namen „Jaw“.
+2. **Knochen.** `P` halten und ins Kiefergelenk klicken (der Pivot landet in der Kopfmitte, auf der Symmetrieebene),
+   die Kiefer-Flächen gewählt lassen, `Strg+J`: eine Linie vom Gelenk zur Mitte der Auswahl erscheint.
+3. **Gewichte aus der Gruppe.** `7` halten, Maus links/rechts: die Auslaufbreite (die Flächenfärbung zeigt den Anteil
+   des Knochens), loslassen. `Strg+Z` nimmt es zurück.
+4. **Drehen.** `5` (Pose-Modus), den Knochen anklicken, `E` halten (gern nach `X`) und ziehen: der Kiefer öffnet sich,
+   Mundwinkel und Wange laufen weich aus. `Esc` während des Ziehens bricht ab. Am besten leicht schräg von vorn
+   schauen (genau von vorn dreht `E` mit `X` in der Perspektive nicht).
+5. **Mundwinkel korrigieren.** `1`, Punkte am Mundwinkel wählen, Soft an (`O`), `8` halten + Maus: die Pose zeigt das
+   Ergebnis sofort; loslassen = ein `Strg+Z`.
 6. **Ausdruck als Morph.** `Strg+N`, `Tab`, ein Lächeln formen, `Tab` zurück, `N` halten + Maus: das Lächeln sitzt im
    geöffneten Kiefer.
-7. **Loop einfügen.** Versuche `I` in der Pose: die Meldung nennt die Ruhe-Taste. *Ruhe ↔ Pose*, `2`, Kante am
-   Mundwinkel, `I`, dann wieder *Ruhe ↔ Pose*: der neue Loop geht mit Kiefer und Lächeln mit, ohne Delle.
+7. **Loop einfügen.** `2`, eine Kante am Mundwinkel, `I`: in der Pose kommt die Meldung „… the mesh is posed (6 = rest
+   pose)“. `6` (Ruhe), `I`, wieder `6`: der neue Loop geht mit Kiefer und Lächeln mit, ohne Delle.
 8. **Speichern.** `Strg+S`, Fenster schließen, über `Leertaste` laden: Knochen, Gewichte und Morph sind da (Ruhepose,
    Gewicht 0 %).
 9. **Messlauf auf deinem PC:** `python experiments/drag_cost/probe_morph_gl.py --only-skin`, die Ausgabe in den Chat
-   (die 16,7-ms-Grenze kann nur dein PC bestätigen).
+   (die 16,7-ms-Grenze kann nur dein PC bestätigen; sie entscheidet, ob ein GPU-Zeichenweg das nächste Thema wird).

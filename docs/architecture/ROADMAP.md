@@ -565,6 +565,14 @@ Deformation
 
 Rigging research may proceed earlier; production rigging should not be pulled forward merely because it is part of the long-term vision.
 
+**Status (2026-11-03):** the foundation for the jaw scenario is in Production —
+[AD-028](AD-028-SKELETON-AND-SKINNING.md): one rig per scene (`Scene.rig`, bones with rest frames in world space = the
+bind pose), weights as the WEIGHTS point layer (≤ 4 influences, carried through every topology operation, Undo and the
+file), CPU linear blend skinning as the chain stage morph → skin → SubD, the pose as view state with a pose mode, the
+weights from a face group and their correction with Soft. Not yet: bone mirroring and symmetric weights of off-centre
+bones, rigid parts / objects parented to bones, IK and constraints, editing on the posed surface, a GPU drawing path
+(its trigger: the reference-PC run of the probe, AD-028 §5.4), animation.
+
 ---
 
 ## Animation Foundation

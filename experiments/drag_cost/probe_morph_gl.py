@@ -7,6 +7,7 @@ Usage (from the repo root, Windows and Linux alike; opens a hidden pyglet window
     python experiments/drag_cost/probe_morph_gl.py --only-topology      # the Phase 5 rows only
     python experiments/drag_cost/probe_morph_gl.py --only-phase4        # Phase 4: 1 / 10 targets, with SubD
     python experiments/drag_cost/probe_morph_gl.py --memory             # Phase 4: layer memory, no window
+    python experiments/drag_cost/probe_morph_gl.py --only-skin          # AD-028: pose steps of a jaw-like region
 
 Headless container: prefix with `xvfb-run -a`.
 
@@ -39,6 +40,14 @@ offset; the offsets are a smooth bump):
                  of the points, a per-element write of one dense target under one recording, a bulk frame change
                  (`map_vector_layers`, the Apply-transform write) of all of them under one recording plus five
                  watches (time, traced peak, journal records) and its Undo. Defaults: gollum_20k and gollum.
+
+- `skin`         (AD-028 §5.4, `--only-skin`) per asset and region (the lowest-Y 5 / 15 / 100 % of the points; 70 %
+                 of the region on the jaw bone alone, 30 % shared with its child bone): the pose step as the hand
+                 makes it - pose mode (`5`), E held, one mouse move (the bone gesture sets the pose) + the frame (the
+                 skin stage patches the posed surface, `Viewport.sync` uploads it) - plain, with one morph target
+                 (offsets on 15 % of the points) dialled in at 60 %, and with the SubD preview on (level 2; head
+                 and body: gollum_20k is over SubD's face limit). The AD-028 P-1 bar: <= 16.7 ms p95 on head and
+                 body for a region <= 15 % on the reference PC; gollum_20k "usable, not fluid" (H5c).
 
 Numbers from a container must be labelled as such (`docs/architecture/REFERENCE_HARDWARE.md` §4); only
 the reference PC decides the 16.7 ms bar. Output is plain ASCII.
@@ -74,6 +83,8 @@ DEFAULT_REPS = 5
 TOPOLOGY_OPS = ("knife", "loop insert", "extrude", "collapse")
 OCCUPANCIES = (15, 100)
 THRESHOLD_P95_MS = 16.7
+SKIN_REGIONS = (5, 15, 100)
+SKIN_VARIANTS = ("plain", "morph 60 %", "SubD L2")
 
 
 def resolve_mesh(name: str) -> Path:
@@ -101,6 +112,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--targets", type=int, nargs="+", default=list(PHASE4_COUNTS),
                         help="target counts of the Phase 4 rows (default 1 10)")
     parser.add_argument("--no-subd", action="store_true", help="Phase 4 rows without the SubD variant")
+    parser.add_argument("--only-skin", action="store_true",
+                        help="AD-028: pose steps of a jaw-like region (5 / 15 / 100 %%), plain, with a target, with SubD")
     parser.add_argument("--memory", action="store_true",
                         help="Phase 4: layer memory and journal cost only (no window; default assets gollum_20k, gollum)")
     return parser
@@ -451,12 +464,105 @@ def memory_rows(path: Path) -> list[str]:
     return lines
 
 
+# -- AD-028: pose steps of a skinned jaw-like region ---------------------------------------------------------
+
+
+def rig_region(app, share: int) -> int:
+    """The jaw-like rig (AD-028 §5.4's region rule): the lowest-Y `share` % of the points weighted - the lower 70 %
+    of them fully to the jaw bone, the upper 30 % half jaw, half its child bone - written through the host entry
+    in one step; the jaw from above the region's centre down to it, the child below. Returns the weighted count."""
+    from core import PointLayerInfo
+    from core.mesh import LayerKind
+    from core.rig import Rig
+
+    mesh = app.scene.mesh
+    ids = sorted(mesh.all_vertex_ids(), key=lambda v: (mesh.vertex_position(v)[1], int(v)))
+    region = ids[: max(1, len(ids) * share // 100)]
+    full = len(region) * 70 // 100
+    pts = [mesh.vertex_position(v) for v in region]
+    centre = tuple(sum(p[i] for p in pts) / len(pts) for i in range(3))
+    top = max(p[1] for p in pts)
+    low = min(p[1] for p in pts)
+    span = max(top - low, 1e-3)
+    rig, jaw = Rig().with_new_bone("Jaw", (centre[0], top + 0.3 * span, centre[2]), centre)
+    rig, tip = rig.with_new_bone("Tip", centre, (centre[0], low, centre[2] + 0.2 * span), parent=jaw)
+    app.scene.rig = rig
+
+    def write():
+        lid = mesh.add_point_layer(PointLayerInfo("Skin", LayerKind.WEIGHTS))
+        for i, v in enumerate(region):
+            mesh.set_layer_value(lid, v, ((int(jaw), 1.0),) if i < full else ((int(jaw), 0.5), (int(tip), 0.5)))
+
+    app.apply_mesh_change("probe weights", lambda: write() or set())
+    app._skeleton.current = jaw
+    return len(region)
+
+
+def pose_rows(app, steps: int) -> Stats:
+    """`steps` pose steps: pose mode, E held (the dial about the view axis from a point right of the jaw's head),
+    one mouse move each (back and forth) + the frame."""
+    app.pointer_motion(560, 300, 0.0, 0.0)
+    app.key_press(_key("5"))
+    e = _key("e")
+    app.key_press(e)
+    app.pointer_motion(560, 296, 0.0, -4.0)
+    frame(app)
+    samples = []
+    for i in range(steps):
+        dy = -4.0 if (i // 20) % 2 == 0 else 4.0
+        t0 = time.perf_counter()
+        app.pointer_motion(560, 296, 0.0, dy)
+        _, draw = frame(app)
+        samples.append((time.perf_counter() - t0) * 1000.0 - draw)
+    app.key_release(e)
+    if not app.posed:
+        raise RuntimeError(f"pose rows: not posed ({app.status_message})")
+    app.key_press(_key("6"))  # rest
+    app.key_press(_key("5"))  # pose mode off
+    frame(app)
+    return Stats.of(samples)
+
+
+def skin_rows(path: Path, steps: int) -> list[str]:
+    lines = []
+    for share in SKIN_REGIONS:
+        for variant in SKIN_VARIANTS:
+            window, app = build_app(path)
+            count = rig_region(app, share)
+            if variant == "morph 60 %":
+                app.key_press(_key("n", "ctrl"))
+                fill_target(app, 15, app.morph_current_target)
+                app.set_morph_weight(60)
+            elif variant == "SubD L2":
+                if not app.subdivision.set_view("cage") or app.subdivision.level != 2:  # level 2 = the default
+                    lines.append(f"{path.stem:<26} region {share:>3} % SubD L2: refused ({app.status_message})")
+                    window.close()
+                    continue
+                frame(app)
+                if app.subdivision.provider.surface_mesh is None:
+                    lines.append(f"{path.stem:<26} region {share:>3} % SubD L2: refused ({app.status_message})")
+                    window.close()
+                    continue
+            frame(app)
+            step = pose_rows(app, steps)
+            verdict = "ok" if step.p95 <= THRESHOLD_P95_MS else "OVER"
+            lines.append(
+                f"{path.stem:<26} {len(app.scene.mesh.all_vertex_ids()):>6} V  region {share:>3} % ({count:>6})"
+                f"  {variant:<10}  pose step {step.text()}  [{verdict}]"
+            )
+            window.close()
+    return lines
+
+
 def _header(args) -> list[str]:
     from pyglet.gl import gl_info
 
     lines = machine_info(gl_info.get_version_string(), gl_info.get_renderer())
-    lines.append(f"Morph probe (AD-025 Phases 3, 4 and 5), {args.steps} weight steps per row; bar {THRESHOLD_P95_MS} ms p95;"
-                 f" {args.reps} runs per topology row")
+    if args.only_skin:
+        lines.append(f"Skin probe (AD-028 §5.4), {args.steps} pose steps per row; bar {THRESHOLD_P95_MS} ms p95")
+    else:
+        lines.append(f"Morph probe (AD-025 Phases 3, 4 and 5), {args.steps} weight steps per row; bar {THRESHOLD_P95_MS} ms p95;"
+                     f" {args.reps} runs per topology row")
     return lines
 
 
@@ -471,6 +577,14 @@ def main(argv=None) -> int:
         return 0
     paths = [resolve_mesh(a) for a in args.assets]
     lines = []
+    if args.only_skin:
+        for path in paths:
+            rows = skin_rows(path, args.steps)
+            if not lines:
+                lines = _header(args)
+            lines += rows
+        print("\n".join(lines))
+        return 0
     if args.only_phase4:
         for path in paths:
             rows = phase4_rows(path, args.steps, args.targets, not args.no_subd)

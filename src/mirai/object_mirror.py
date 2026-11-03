@@ -13,6 +13,7 @@ rounding (§3). No Application, no Scene mutation: the commands are in `scene_ob
 from __future__ import annotations
 
 from core import Mesh, MirrorPair, ObjectTransform, SceneObject
+from core.mesh import LayerKind
 
 from .scene_factory import mesh_from_positions_and_faces
 
@@ -91,6 +92,11 @@ def mirror_mesh(mesh: Mesh, normal: Vec3) -> Mesh:
     with its name and rule, through the same index map; a vector value maps like a position, `v -> H v`
     (bit-exact mirror for an axis plane: H holds only 0 and ±1). Face-corner UVs (AD-026) follow
     their corners through the reversed winding, values unchanged."""
+    for lid in mesh.point_layer_ids():
+        if mesh.point_layer_info(lid).kind is not LayerKind.VECTOR:
+            # AD-028 §8.6 (S8): the backstop behind the gate's kind-aware refusal - a weights layer has no mirror
+            # rule until bones can be mirrored.
+            raise ValueError("mirror_mesh: a weights layer cannot be mirrored (bones cannot be mirrored yet)")
     h = reflection_matrix(normal)
     vertex_ids = sorted(mesh.all_vertex_ids())
     index = {vid: i for i, vid in enumerate(vertex_ids)}

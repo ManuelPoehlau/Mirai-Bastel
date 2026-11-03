@@ -23,7 +23,7 @@ from core import PointLayerInfo, SelectionMode
 from mirai import application as application_module
 from mirai.controllers import gestures as gestures_module, knife as knife_module, morph as morph_module
 from mirai.controllers import objects as objects_module, pointer_tools as pointer_tools_module
-from mirai.controllers import symmetry as symmetry_controller_module
+from mirai.controllers import skeleton as skeleton_module, symmetry as symmetry_controller_module
 from mirai import layer_declarations as gate
 from mirai import symmetry_declarations
 from mirai.application import Application
@@ -97,6 +97,7 @@ CONTROLLERS = {
     "_objects": objects_module,
     "_pointer_tools": pointer_tools_module,
     "_symmetry": symmetry_controller_module,
+    "_skeleton": skeleton_module,
 }
 #: The slot's stages and the session / hold-key method each of them calls.
 _SLOT_CALLS = {"grab": {"handle"}, "handle": {"handle"}, "claim": {"claims"}, "background": {"background"},

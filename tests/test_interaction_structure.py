@@ -33,7 +33,7 @@ NON_MODAL_FIELDS = {
     # document state and the core structures
     "scene", "selection", "history", "_selection_undo_stack", "_selection_redo_stack", "_last_undo_redo_mesh_step",
     # construction and wiring: the slot, the services, the controllers, the command table, mode policies (stage 7)
-    "interaction", "_services", "_gestures", "_objects", "_symmetry", "_morph", "_knife", "_pointer_tools",
+    "interaction", "_services", "_gestures", "_objects", "_symmetry", "_morph", "_knife", "_pointer_tools", "_skeleton",
     "_handlers", "_mode_policies", "tool_manager", "bindings", "keymap_load",
     # view state: camera, display, the viewport and its sinks and caches, picking
     "camera", "display", "viewport", "viewport_width", "viewport_height", "_look_row_index", "_pick_cache",

@@ -25,6 +25,7 @@ stehen im jeweiligen Dokument, nicht hier.
 | Soft Selection | Weiche Transform-Einflüsse mit sichtbarer Zone, Radius im Zug, Fluss entlang Loop/Ring | [AD-020](architecture/AD-020-SOFT-SELECTION-APP-PATH.md) |
 | SubD | `V` Käfig/Fläche/Isolinien, `Strg+1/2/3` Stufe | [SubD in Production](../src/mirai/subdivision/README.md) |
 | Morph-Ziele | Mehrere Ziele pro Mesh, daneben formen, Gewicht und Mischung, auch mit SubD und Topologie-Werkzeugen | [AD-025, Kurzfassung](architecture/AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#kurzfassung-für-manu-deutsch) |
+| Knochen und Gewichte | Knochen anlegen (`Strg+J`), Gewichte aus einer Gruppe (`7` halten) und weich korrigieren (`8` halten), im Pose-Modus (`5`) den Kiefer drehen, Ruhe ↔ Pose (`6`); ein Morph fährt mit, weitermodelliert wird in Ruhe | [AD-028, Praxistest](architecture/AD-028-SKELETON-AND-SKINNING.md#praxistest-für-manu-nach-dem-bau-deutsch-ca-20-minuten) |
 | Objekte | Mehrere Objekte, Referenzen, Add Mesh, Platzieren, Transform übernehmen, Spiegelpaare | [AD-021](architecture/AD-021-OBJECT-COMPONENT-MODEL.md#kurzfassung-für-manu-deutsch) |
 | Szenen und OBJ | Szene speichern/laden, `Leertaste`-Menü; OBJ mit UVs und Textur importieren/exportieren | [`src/scene_files.py`](../src/scene_files.py) · [INPUT_WIRING_MAP §10](design/INPUT_WIRING_MAP.md) · [AD-026, Kurzfassung](architecture/AD-026-FACE-CORNER-UVS-AND-TEXTURE.md#kurzfassung-für-manu-deutsch) |
 | Symmetrie | Symmetrische Werkzeuge und Soft Selection, Re-Symmetrize auf `Alt+M` | [AD-SYM-04](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#kurzfassung-für-manu-deutsch) |
@@ -52,6 +53,7 @@ Bereichsdokumenten.
 | B2d | **Symmetrischer Knife**: Wahl zwischen den Spiegel-Varianten V-a / V-b / V-c (V-b bleibt Start) und F6 (Schnittstart im leeren Raum) | [AD-SYM-03 §10.8](architecture/AD-SYM-03-SYMMETRIC-TOPOLOGY-COORDINATION.md) |
 | D1c | **Viewport-Performance**: Stufe 2 und GPU-Picking sind in der App; offen ist Move/Rotate/Scale großer Auswahlen, vor allem mit Soft Selection (dein Verdikt 2026-10-21: vorerst so lassen) | [AD-022 §11](architecture/AD-022-GPU-PICKING.md) · [AD-023 §9](architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) |
 | D1f | **Symmetrie + Soft Selection auf dem Körper**: über dem 8-ms-Wert ab 15 % Radius; ob die Viewport-Aufgabe vor J kommt | [AD-SYM-04, Addendum 2026-10-15](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#addendum-2026-10-15-reference-pc-run-d-4) |
+| D3 | **Messlauf Knochen auf deinem PC**: zeigt, ob das Drehen des Kiefers auf Kopf und Körper flüssig ist und ob ein GPU-Zeichenweg das nächste Thema wird | [AD-028, Praxistest Schritt 9](architecture/AD-028-SKELETON-AND-SKINNING.md#praxistest-für-manu-nach-dem-bau-deutsch-ca-20-minuten) |
 | D2 | **Priorität**: was als Nächstes (Abschnitt 3) | — |
 
 ### Bewusst geparkt (kein Handlungsbedarf, nur damit es nicht verloren geht)
@@ -69,7 +71,6 @@ Mehlsack Lab (oben).
 
 | Kandidat | Was es dir bringt | Wo |
 |---|---|---|
-| **Knochen und Gewichte (wird gebaut, entschieden am 2026-11-02)** | Den Kiefer mit einem Knochen drehen; ein Ausdruck als Morph fährt mit; danach weiter modellieren und speichern, ohne dass etwas verloren geht. Wenn es fertig ist: ein Durchgang am Kopf und ein Messlauf auf deinem PC | [AD-028, Kurzfassung](architecture/AD-028-SKELETON-AND-SKINNING.md#kurzfassung-für-manu-deutsch) |
 | Symmetrie-Spur J: symmetrische Soft Selection fertig, Re-Symmetrize prüfen | Symmetrie als durchgehender Werkzeugfluss | [AD-SYM-04](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#kurzfassung-für-manu-deutsch) · [AD-SYM-05](architecture/AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) |
 | Hover-/Navigations-Optimierung auf dichten Meshes | flüssigeres Arbeiten auf dichten Meshes | D1c |
 | Toolbox-Lücken: Subdivide (B2) | die fehlenden Alltagswerkzeuge | [WP Toolbox-Lücken](WP_TOOLBOX_GAPS_PLAN.md) |

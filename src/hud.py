@@ -111,6 +111,8 @@ class HudState:
     #: AD-027 §3.3 (data only): the hinted commands `Application.can_run` refuses right now (source "ui",
     #: no selection-dependent stage). The rows look the same; whether they grey out is the UX project's call.
     unavailable: frozenset = frozenset()
+    #: AD-028 §8.5: the rig - current bone · n bones · rest / posed · pose mode; None = no rig.
+    rig: Optional[str] = None
 
 
 def hud_state(app) -> HudState:
@@ -160,6 +162,7 @@ def hud_state(app) -> HudState:
         pivot=_pivot_text(app),
         view=app.view_text,
         unavailable=_unavailable(app),
+        rig=app.rig_status_text(),
     )
 
 
@@ -210,6 +213,11 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
     ),
     "Morph": ((commands.MORPH_NEW, commands.MORPH_EDIT_TOGGLE, commands.MORPH_WEIGHT_DRAG), MORPH_CONTEXT),
     "Targets": ((commands.MORPH_NEXT, commands.MORPH_PREVIOUS), MORPH_CONTEXT),
+    "Rig": (
+        (commands.POSE_MODE, commands.POSE_TOGGLE_REST, commands.BONE_ADD, commands.WEIGHTS_FROM_GROUP,
+         commands.WEIGHT_SET),
+        None,
+    ),
     "HUD": ((commands.TOGGLE_HUD,), WINDOW_CONTEXT),
 }
 
@@ -295,6 +303,9 @@ def hud_rows(state: HudState, hints: dict[str, str]) -> list[HudRow]:
         rows.append(HudRow("Morph", state.morph, hints.get("Morph", ""), on=True))
     if state.morph_targets is not None:  # several targets (AD-025 Phase 4)
         rows.append(HudRow("Targets", state.morph_targets, hints.get("Targets", ""), on=True))
+    if state.rig is not None:  # only a scene with a rig gets the row (AD-028 §8.5)
+        parts = state.rig.split(" · ")
+        rows.append(HudRow("Rig", state.rig, hints.get("Rig", ""), on="posed" in parts or "pose mode" in parts))
     # AD-013 addendum 2026-10-28: the modifier grammar is no binding; it is listed read-only.
     rows.append(HudRow("Fixed", FIXED_ROW, ""))
     if state.keymap_problem is not None:  # loud and lasting, unlike the status line

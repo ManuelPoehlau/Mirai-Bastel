@@ -346,13 +346,46 @@ MORPH_WEIGHT_DRAG = "MorphWeightDrag"
 MORPH_NEXT = "MorphNext"
 MORPH_PREVIOUS = "MorphPrevious"
 
+# --- Skeleton and skinning (AD-028 §8.3, 2026-11-03; names, keys and texts `PROVISIONAL`; `controllers.skeleton`) ---
+#: Bone commands, one History entry each (a `RigCommand`; Delete also rewrites the weights). BONE_ADD: head = the
+#: Working Pivot, tail = the centre of the component selection, parent = the current bone. RENAME cycles a name list.
+BONE_ADD = "BoneAdd"
+BONE_DELETE = "BoneDelete"
+BONE_RENAME = "BoneRename"
+#: The current bone (the one pose, Reset and the weight gestures act on): view state, no Undo step.
+BONE_NEXT = "BoneNext"
+BONE_PREVIOUS = "BonePrevious"
+#: Pose mode (a mode read by `can_run`, not a `SelectionMode`): W/E/R pose the current bone, a click picks a bone;
+#: 1/2/3/4 leave it. The pose is view state like the morph weight (AD-028 §6): no Undo, not saved.
+POSE_MODE = "PoseMode"
+#: Rest <-> the last pose (one key each way), and the current bone back to rest.
+POSE_TOGGLE_REST = "PoseToggleRest"
+POSE_RESET_BONE = "PoseResetBone"
+#: Hold keys (mouse left / right): the current bone's weights from the active group with a falloff width, and the
+#: current bone's weight on the selection (Soft: falling off outside it). Release = one Undo step, Esc = nothing.
+WEIGHTS_FROM_GROUP = "WeightsFromGroup"
+WEIGHT_SET = "WeightSet"
+#: The rig, pose and weight commands (`layer_declarations.RIG`: they handle the weights layer themselves).
+RIG_COMMANDS = (
+    BONE_ADD,
+    BONE_DELETE,
+    BONE_RENAME,
+    BONE_NEXT,
+    BONE_PREVIOUS,
+    POSE_MODE,
+    POSE_TOGGLE_REST,
+    POSE_RESET_BONE,
+    WEIGHTS_FROM_GROUP,
+    WEIGHT_SET,
+)
+
 # --- Hold commands (AD-013 addendum 2026-10-28) -------------------------------------------------------------
 #: Commands armed by holding a key (AD-016 hold-key-hover and its family): `Application` ends them on the release
 #: of that key's value, which only a `key` input has, so a keymap entry may bind them to `kind: "key"` only.
 HOLD_COMMANDS = frozenset(
     {
         MOVE, ROTATE, SCALE, EXTRUDE, LOOP_SLIDE, SMOOTH, RELAX, INSET, BEVEL, LASSO_ARM, LIGHT_DRAG,
-        MORPH_WEIGHT_DRAG, PIVOT_PLACE,
+        MORPH_WEIGHT_DRAG, PIVOT_PLACE, WEIGHTS_FROM_GROUP, WEIGHT_SET,
     }
 )
 

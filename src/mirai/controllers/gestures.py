@@ -136,6 +136,8 @@ CONSTRAINT_SPACES: dict[str, str] = {
 GESTURE_REFUSES = frozenset(
     {
         *MORPH_COMMANDS,
+        # AD-028: the rig, pose and weight commands (a bone gesture refuses them too: one rig change at a time)
+        *commands.RIG_COMMANDS,
         commands.LASSO_ARM,
         commands.PIVOT_PLACE,
         commands.LIGHT_DRAG,

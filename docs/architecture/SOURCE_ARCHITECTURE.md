@@ -144,10 +144,14 @@ Die Application-Schicht verbindet und orchestriert die großen Systeme. Seit AD-
   Klicks, Drags, das Rad, `dispatch_command` (der öffentliche, gegatete Einstieg für GUI und Skripte) und das HUD;
   sieben Stufen (exklusive Session, Host-Gate, Layer/Morph-Ansicht, Objektmodus, verborgene Geometrie, laufende
   Session, Modus-Policies).
-- **Controller** (`src/mirai/controllers/`): Knife, Morph, Objekte, Symmetrie, Gesten, Pointer-Tools. Ein
+- **Controller** (`src/mirai/controllers/`): Knife, Morph, Objekte, Symmetrie, Gesten, Pointer-Tools, Skelett. Ein
   Controller bekommt `AppServices` (`controllers/services.py`, feste Mitgliederliste), nie die `Application`, und
-  importiert nichts aus `mirai.application`. Die einzige Abhängigkeit zwischen Controllern: die Objekt-Geste ist
-  eine Gesten-Art (`objects` → `gestures`, einseitig).
+  importiert nichts aus `mirai.application`. Die einzigen Abhängigkeiten zwischen Controllern: die Objekt-Geste und
+  die Knochen- und Gewichtsgesten sind Gesten-Arten (`objects` → `gestures`, `skeleton` → `gestures`, einseitig).
+  Der Skelett-Controller (AD-028) hält Pose, aktuellen Knochen und Pose-Modus (Ansichtszustand) und stellt die drei
+  Modus-Policies von `can_run` (Pose-Modus; gepostes, gebundenes Mesh; gesperrte Platzierung gebundener Objekte);
+  die Knochen liegen als Wert auf `Scene.rig` (`core/rig.py`), die Gewichte als Punkt-Layer im Mesh, die Auswertung
+  in `mirai/skinning.py` (Stufe morph → skin → SubD), die Schreibregel in `mirai/skin_weights.py`.
 
 `Application` selbst behält Konstruktion und Verdrahtung, den Szenen-Lebenszyklus, die öffentlichen Einstiege
 (Eingabe → Slot → `can_run` → Kommandotabelle), `can_run`, History und Auswahl-Spiegel, Hover und Picking,

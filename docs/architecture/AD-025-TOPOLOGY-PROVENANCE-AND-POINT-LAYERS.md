@@ -461,8 +461,9 @@ here with the measured numbers, status → IMPLEMENTED (Phase 2).
 
 - **Skinning data model:** influence keys, maximum influences, normalization tolerance, bind pose, where bindings live
   beyond AD-021 §4.9 — and therefore the final shape of the weights kind. Decided in
-  [AD-028](AD-028-SKELETON-AND-SKINNING.md) (Manu, 2026-11-02); the Core part (the weights kind, the rig) built
-  2026-11-02 (AD-028 "Implementation note").
+  [AD-028](AD-028-SKELETON-AND-SKINNING.md) (Manu, 2026-11-02); implemented: the Core part (the weights kind, the
+  rig) and the evaluation 2026-11-02, the app (bones, pose mode, the weight gestures, the policies) and the acceptance
+  (the jaw scenario) 2026-11-03 (AD-028 §17).
 - ~~**Evaluation location and chain**~~ — decided with Phase 4 (§17.1): CPU (`morph_mix`), the stage chain above H7,
   SubD on the mixed cage, normals from the evaluated mesh. Still open: a GPU path (its trigger in §17.1).
 - ~~**Multi-target evaluation rules**~~ — decided with Phase 4 (§17.1): additive, 0–100 %, no clamping or normalization,

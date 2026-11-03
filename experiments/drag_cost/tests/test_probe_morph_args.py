@@ -48,3 +48,12 @@ def test_phase4_rows_and_memory_mode():
     assert probe.build_parser().parse_args(["--memory"]).memory
     assert probe.MEMORY_COUNTS == (10, 50) and probe.OCCUPANCIES == (15, 100)
     assert probe.resolve_mesh(probe.MEMORY_ASSETS[1]).name == "gollum.obj"
+
+
+def test_skin_rows_mode():
+    """AD-028 §5.4: `--only-skin` - pose steps of a jaw-like region of 5 / 15 / 100 %, plain, with a target and with
+    SubD level 2."""
+    args = probe.build_parser().parse_args(["--only-skin"])
+    assert args.only_skin and not args.only_phase4 and args.assets == list(probe.DEFAULT_ASSETS)
+    assert probe.SKIN_REGIONS == (5, 15, 100)
+    assert probe.SKIN_VARIANTS == ("plain", "morph 60 %", "SubD L2")

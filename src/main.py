@@ -667,7 +667,7 @@ def install_handlers(
         window.clear()
         app.viewport.sync()
         app.viewport.render()
-        gizmo = app.gizmo_items() + app.pivot_marker_items()
+        gizmo = app.gizmo_items() + app.pivot_marker_items() + app.bone_items()
         if gizmo:
             draw_gizmo(gizmo, app.gizmo_camera_uniforms())
         box = app.selection_box
