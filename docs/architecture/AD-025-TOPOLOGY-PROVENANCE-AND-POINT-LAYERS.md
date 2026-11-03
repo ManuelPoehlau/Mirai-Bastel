@@ -472,6 +472,9 @@ here with the measured numbers, status → IMPLEMENTED (Phase 2).
   export (OBJ / glTF).
 - ~~**Editing-view mechanics**~~ — decided with Phase 3 (§15). Still open: editing on a deformed pose; symmetric target
   editing beyond what the app's symmetric tools already do on the view (they mirror positions, so offsets come out mirrored).
+  *(2026-11-03: the long-term product requirement for modeling on the visible, deformed surface — morph mix, pose, both —
+  is proposed, pending Manu's review, in [MODELING_ON_DEFORMED_SURFACES](../design/MODELING_ON_DEFORMED_SURFACES.md);
+  nothing in this AD changes.)*
 - **Weights as document state / animation** (`Scene.morph_targets` stays reserved, `null`).
 - A merge rule other than the average (H3 alternative); face- and corner-domain layers. (Packed storage: built, §17.)
 

@@ -667,6 +667,9 @@ edit object; GPU skinning or a GPU drawing path; editing on the posed surface; b
 bone mirroring (L/R) and symmetric weights of off-centre bones; GUI panels; `config/keymap.json`; removing the Morph
 Lab; transfer between meshes (Phase 7).
 
+*(2026-11-03: a long-term product requirement for editing on the posed surface is proposed, pending Manu's review, in
+[MODELING_ON_DEFORMED_SURFACES](../design/MODELING_ON_DEFORMED_SURFACES.md). §7.1 (S5) stays the decided behaviour.)*
+
 ## 16. Review disposition
 
 Second opinion [DEVCHAT-001](../archive/deformation/reviews/AD-028_REVIEW_DEVCHAT_001.md) (Development chat,

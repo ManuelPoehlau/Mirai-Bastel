@@ -586,6 +586,8 @@ Two separate sub-hypotheses that do not stand or fall together:
 
 **Boundary to the existing technical experiment:** V2 explicitly did *not* list topology changes under active deformation as candidates because `experiments/rigging-skinning-morphing/` owns that question. This remains correct for the mechanical question (“does the RigController survive the mutation?”). The question posed here is different: *Does it help the Artist think?* Two responsibilities, one subject. This is a deliberate clarification of the V2 statement, not a silent change.
 
+*Cross-reference (2026-11-03):* a product requirement derived from 6b, with the current implementation baseline and a DCC comparison, is proposed (pending Manu's review) in [MODELING_ON_DEFORMED_SURFACES.md](../design/MODELING_ON_DEFORMED_SURFACES.md). This research section is unchanged; PQ-11 / EX-D stay open there as risk R-1.
+
 ---
 
 ## Playground Questions
