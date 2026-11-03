@@ -161,6 +161,8 @@ Phase A ist ein Discovery-Paket für eine Testsitzung von 20–40 Minuten; die �
 
 Zur Übergabe: Handoff Phase A
 
+*Stand 2026-11-03: A1 ist gebaut, Praxistest offen — [GUI_STAGE1_HUD §7 „Stufe 1b“](GUI_STAGE1_HUD.md#7-stufe-1b--phase-a1-statusklarheit-und-raumorientierung).*
+
 | Phase | Fertig, wenn | Modus (M5) |
 | --- | --- | --- |
 | A | Leiste, permanentes XYZ-Orientierungs-Gizmo, Achslinie, Wert am Cursor und Gewichts-Ansicht gebaut, umschaltbar und getestet; dein Urteil zu E2–E4 und E8 steht in GUI\_STAGE1\_HUD | Discovery |

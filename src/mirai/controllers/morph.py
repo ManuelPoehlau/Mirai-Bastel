@@ -123,6 +123,12 @@ class MorphController:
         """The weight of the document edit object's current target in whole percent (view state)."""
         return self.display.provider.weight(self.document_object.id)
 
+    @property
+    def editing_target_name(self) -> str | None:
+        """The name of the target whose editing view is open (the HUD's mode suffix), None = no view."""
+        view = self.view
+        return None if view is None else view.name
+
     def status_text(self) -> str | None:
         """The HUD's morph row (the current target): None = the document edit object has no target."""
         obj = self.document_object

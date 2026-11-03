@@ -548,7 +548,7 @@ def test_deactivate_closes_the_mirror_menu(mirror_wired):
 # -- GUI Stage 1: the HUD (`src/hud.py`) ------------------------------------------------------
 
 
-def test_h_steps_the_hud_and_is_not_forwarded():
+def test_h_shows_and_hides_the_hud_and_is_not_forwarded():
     from hud import Hud
 
     app = Application()
@@ -560,15 +560,42 @@ def test_h_steps_the_hud_and_is_not_forwarded():
     serial = app.status_serial
     press = window.handlers["on_key_press"]
     assert press(key.H, 0) == pyglet.event.EVENT_HANDLED
-    assert (hud.visible, hud.variant) == (True, "corner")
-    press(key.H, 0)
     assert not hud.visible
     press(key.H, 0)
-    assert (hud.visible, hud.variant) == (True, "bar")
+    assert hud.visible
     assert app.status_serial == serial  # H never reached the app
     # The other keys still reach the app.
     press(key._2, 0)
     assert app.selection.mode.name == "EDGE"
+
+
+def test_f3_to_f6_switch_the_session_variants_and_are_not_forwarded():
+    """GUI Phase A1: F3 strip position, F4 detail, F5 / F6 the triad's corner / size - window commands (no app
+    command, no status line: the change is its own feedback); without their host object the key does nothing."""
+    from hud import Hud, OrientationTriad
+
+    app = Application()
+    app.init_scene("cube")
+    app.set_viewport_size(WIDTH, HEIGHT)
+    window = FakeWindow()
+    hud, triad = Hud(app.bindings), OrientationTriad()
+    main_module.install_handlers(window, app, hud=hud, triad=triad)
+    press = window.handlers["on_key_press"]
+    serial = app.status_serial
+    for symbol in (key.F3, key.F4, key.F5, key.F6):
+        assert press(symbol, 0) == pyglet.event.EVENT_HANDLED
+    assert app.status_serial == serial  # nothing reached the application
+    assert (hud.position, hud.detail, triad.corner, triad.size) == ("top", "full", "top-right", "S")
+    for symbol in (key.F3, key.F4, key.F5, key.F6):
+        press(symbol, 0)
+    assert (hud.position, hud.detail, triad.corner, triad.size) == ("bottom", "compact", "bottom-left", "M")
+    # No host object, no switch: the key only reaches the application, which has no such command.
+    bare_window, bare_app = FakeWindow(), Application()
+    bare_app.init_scene("cube")
+    main_module.install_handlers(bare_window, bare_app)
+    serial = bare_app.status_serial
+    assert bare_window.handlers["on_key_press"](key.F5, 0) == pyglet.event.EVENT_HANDLED
+    assert bare_app.status_serial == serial
 
 
 def test_without_a_hud_h_reaches_the_application_and_does_nothing(wired):
@@ -578,8 +605,8 @@ def test_without_a_hud_h_reaches_the_application_and_does_nothing(wired):
     assert app.status_serial == serial
 
 
-def test_main_wires_a_hud():
-    assert "Hud" in main_module.main.__code__.co_names
+def test_main_wires_a_hud_a_triad_and_a_bone_tag():
+    assert {"Hud", "OrientationTriad", "BoneTag"} <= set(main_module.main.__code__.co_names)
 
 
 # -- AD-013 addendum 2026-10-28: the window keys are bindings, not literals ---------------------
@@ -619,6 +646,10 @@ def test_every_former_literal_window_key_resolves_through_the_window_context():
     assert main_module.window_command(app, k("s", "ctrl")) == commands.SAVE_SCENE
     assert main_module.window_command(app, k("s", "ctrl", "shift")) == commands.TOGGLE_SYMMETRY_DISPLAY
     assert main_module.window_command(app, k("h")) == commands.TOGGLE_HUD
+    assert main_module.window_command(app, k("f3")) == commands.HUD_POSITION_TOGGLE
+    assert main_module.window_command(app, k("f4")) == commands.HUD_DETAIL_TOGGLE
+    assert main_module.window_command(app, k("f5")) == commands.TRIAD_CORNER_TOGGLE
+    assert main_module.window_command(app, k("f6")) == commands.TRIAD_SIZE_TOGGLE
     # The GLOBAL fallback is no window command, and neither is "no input".
     assert main_module.window_command(app, k("w")) is None
     assert main_module.window_command(app, None) is None

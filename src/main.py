@@ -250,11 +250,17 @@ Scope (binding, see the handoffs):
   editing the cage. Lives in
   `Application` (binding context `subd`); this file only adds its GL sink `GLSubdLineOverlay` to `GL_TYPES`.
 - HUD (GUI Stage 1, 2026-10-23, `PROVISIONAL` look, `src/hud.py`): a read-only state display over the
-  viewport (mode, tool, constraint, symmetry, display, Soft, SubD, last status message) replaces the console
-  as the place to read the status; the console print stays as a fallback. `H` (Input Truth
-  `application.toggle_hud`, binding context `window`, never resolved by `Application`) steps bar -> corner
-  -> hidden while both layout variants are on trial. Window level like the menus: `install_handlers(...,
-  hud=None)` keeps the old wiring for the Labs.
+  viewport replaces the console as the place to read the status; the console print stays as a fallback. `H`
+  (Input Truth `application.toggle_hud`, binding context `window`, never resolved by `Application`) shows /
+  hides it. GUI Phase A1 (2026-11-03, docs/design/GUI_STAGE1_HUD.md "Stufe 1b"): the HUD is a compact status
+  strip - mode incl. Pose in one row, the tool or running gesture, only the settings that are not at their
+  default, the current target / bone, a warning badge while the edit mesh is posed and bound, dimmed hints for
+  commands `can_run` refuses; Display / View / Look / Region / Fixed in the "full" detail. F3 = strip bottom
+  <-> top, F4 = compact <-> full, F5 / F6 = the orientation triad's corner / size (window commands, session
+  variants, not saved, `PROVISIONAL`). The triad (`OrientationTriad`: world X/Y/Z turned by the camera, always
+  drawn, not clickable) and the current bone's name (`BoneTag`) are read-only overlays after the strip.
+  Window level like the menus: `install_handlers(..., hud=None, triad=None, bone_tag=None)` keeps the old
+  wiring for the Labs.
 - Input truth (AD-013 addendum 2026-10-28): every key resolves through `app.bindings`, the one
   BindingSet - code defaults (`mirai.interaction.bindings`, engineering, `PROVISIONAL`) under Manu's
   repo-tracked `config/keymap.json` (`KEYMAP_PATH`, `Application(keymap_path=...)`). The window keys
@@ -323,7 +329,7 @@ from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 from viewport.gl_symmetry_overlay import GLSymmetryOverlay  # noqa: E402
 from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
-from hud import Hud  # noqa: E402
+from hud import BoneTag, Hud, OrientationTriad  # noqa: E402
 from morph_bridge import send_to_morph_lab  # noqa: E402
 from obj_files import ObjFiles  # noqa: E402
 from scene_files import SceneFiles, is_scene_file  # noqa: E402
@@ -440,6 +446,8 @@ def install_handlers(
     add_menu: SceneMenu | None = None,
     mirror_menu: SceneMenu | None = None,
     hud: Hud | None = None,
+    triad: OrientationTriad | None = None,
+    bone_tag: BoneTag | None = None,
 ) -> None:
     """Translates the window's events to `app` (WP-SYM-LAB-03 H6). Needs only
     `window.event` (decorator), `window.width`/`height` and, when drawn,
@@ -467,8 +475,12 @@ def install_handlers(
     the same way as `add_menu`; `None` (default) keeps the wiring as it was.
 
     `hud` (GUI Stage 1, `PROVISIONAL`, `src/hud.py`): the read-only state display, drawn last but
-    under an open menu; `H` steps its layout / hides it. It only reads `app`. `None` (default) keeps
-    the wiring as it was."""
+    under an open menu; `H` shows / hides it, F3 / F4 switch its position (bottom / top) and detail (compact /
+    full) for the session. It only reads `app`. `None` (default) keeps the wiring as it was.
+
+    `triad` (GUI Phase A1, `PROVISIONAL`, `src/hud.py`): the permanent XYZ orientation triad in a viewport
+    corner, F5 / F6 switch its corner and size for the session. `bone_tag`: the current bone's name at its posed
+    head. Both only read `app`; `None` (default) keeps the wiring as it was."""
 
     # Temporary scene loader: last known cursor (None = centre of the window).
     cursor: tuple[float, float] | None = None
@@ -560,6 +572,9 @@ def install_handlers(
             return pyglet.event.EVENT_HANDLED
         if hud is not None and command == commands.TOGGLE_HUD:
             hud.toggle()
+            return pyglet.event.EVENT_HANDLED
+        # GUI Phase A1: the session variants of the practical test (window commands, not saved).
+        if _variant_switch(command, hud, triad):
             return pyglet.event.EVENT_HANDLED
         track_shift(symbol, True)
         track_ctrl(symbol, True)
@@ -676,12 +691,40 @@ def install_handlers(
         lasso = app.selection_lasso
         if lasso is not None:
             draw_selection_lasso(lasso, through=app.selection_through)
+        inset_top = inset_bottom = 0
         if hud is not None:
             hud.update(app, window.width, window.height)
             hud.draw()
+            inset_top, inset_bottom = hud.inset_top, hud.inset_bottom
+        if triad is not None:  # always: also during gestures, in pose mode and in snapped ortho views
+            triad.draw(app.camera, window.width, window.height, inset_top, inset_bottom)
+        if bone_tag is not None:
+            bone_tag.draw(app.current_bone_tag(), app.camera, window.width, window.height)
         shown = open_menu()
         if shown is not None:
             shown.draw()
+
+
+def _variant_switch(command: str | None, hud: Hud | None, triad: OrientationTriad | None) -> bool:
+    """GUI Phase A1: applies a variant window command (strip position / detail, triad corner / size) to the object
+    that owns it. True = handled; False = not a variant command or its host part is missing (the key then goes on
+    to `Application`, which has no such command). The change is its own feedback - this file posts no status
+    (`tests/test_command_gate.py`: `src/main.py` never calls `set_status`)."""
+    if hud is not None:
+        if command == commands.HUD_POSITION_TOGGLE:
+            hud.toggle_position()
+            return True
+        if command == commands.HUD_DETAIL_TOGGLE:
+            hud.toggle_detail()
+            return True
+    if triad is not None:
+        if command == commands.TRIAD_CORNER_TOGGLE:
+            triad.toggle_corner()
+            return True
+        if command == commands.TRIAD_SIZE_TOGGLE:
+            triad.toggle_size()
+            return True
+    return False
 
 
 #: Rubber band / lasso colour (look `PROVISIONAL`): pale yellow = only what is visible; cool blue
@@ -833,6 +876,8 @@ def main() -> None:
         add_menu=add_menu,
         mirror_menu=mirror_menu,
         hud=Hud(app.bindings),
+        triad=OrientationTriad(),
+        bone_tag=BoneTag(),
     )
     run(window, app)
 

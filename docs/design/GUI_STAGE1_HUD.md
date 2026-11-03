@@ -1,8 +1,10 @@
 # GUI Stufe 1 — Zustandsanzeige (read-only HUD)
 
 **Status:** IMPLEMENTED 2026-10-23 (Discovery, M5; Look, Texte und beide Layouts `PROVISIONAL`) ·
-**Artist-Urteil A vs. B:** offen (siehe §4) · **Code:** `src/hud.py`, Verdrahtung `src/main.py`
-(`install_handlers(..., hud=)`), Tests `tests/test_hud.py`, `tests/test_main_wiring.py`
+**Stufe 1b (Phase A1: Statusleiste, Knochenname, XYZ-Achsenkreuz):** IMPLEMENTED 2026-11-03, Praxistest offen (§7) ·
+**Artist-Urteil A vs. B:** durch §7 abgelöst, offen (siehe §4) · **Code:** `src/hud.py`, Verdrahtung `src/main.py`
+(`install_handlers(..., hud=, triad=, bone_tag=)`), Tests `tests/test_hud.py`, `tests/test_hud_strip.py`,
+`tests/test_gl_hud_marks.py`, `tests/test_main_wiring.py`
 
 **Aktuelle Bestandsaufnahme (2026-11-03):** [GUI_Bestandsaufnahme.md](GUI_Bestandsaufnahme.md) erfasst den heutigen HUD-/Viewport-Bestand sowie die zusätzlichen Morph- und Rig-Zustände. Sie ist ein nicht-normativer Arbeitsstand mit `[V]`/`[H]`/`[O]`, keine neue GUI-Spezifikation.
 
@@ -13,11 +15,12 @@
   Achsen-/Ebenen-Constraint, Symmetrie-Achse, Display-Modus (+ Wire), Soft Selection (an/aus, Radius,
   Kurve), SubD-Vorschau (Ansicht, Stufe, Linien versteckt) und die letzte Statusmeldung.
   „An“-Zustände sind farbig (gelb), Tastenhinweise blau. Später kamen die bedingten Zeilen „Morph“, „Targets“ und
-  „Rig“ hinzu; Pose-Modus und Bind-Status sind damit noch nicht als eigener, klar priorisierter Zustand dargestellt.
+  „Rig“ hinzu; Pose-Modus und Bind-Status waren damit noch nicht als eigener, klar priorisierter Zustand dargestellt
+  (**seit Stufe 1b gelöst, §7**).
 - Zwei Layout-Varianten: **A `bar`** = Leiste unten (Segmente in einer Zeile, bei schmalem Fenster zwei,
   darunter die Statusmeldung); **B `corner`** = Panel oben links (eine Zeile pro Eintrag, Statusmeldung
-  darunter). `H` schaltet **A → B → aus → A** (nur solange beide in Erprobung sind; nach dem Urteil wird
-  `H` ein reines Ein/Aus).
+  darunter). `H` schaltete **A → B → aus → A**. *(Seit Stufe 1b ersetzt: das Eck-Panel B ist entfallen, es gibt die
+  Leiste oben/unten, kompakt/voll, und `H` ist ein reines Ein/Aus — §7.)*
 - Die Konsolen-Ausgabe der Statusmeldung bleibt als Fallback (`main.run`).
 
 ## 2. Engineering-Entscheidungen (hier gesetzt)
@@ -51,8 +54,8 @@
 - **Gates:** Der öffentliche Einstieg `Application.dispatch_command(...)` ist inzwischen bereits gegatet: Er prüft
   `can_run(command, RunContext("api"))` und leitet erst danach an den Handler weiter. Interne App-Aufrufe nutzen
   `_execute(...)` nach ihrem jeweiligen Gate. Für eine UI-Schaltfläche kann `can_run(command, RunContext("ui", operands=False))`
-  die Verfügbarkeit bestimmen (dieser read-only Status steckt bereits in `HudState.unavailable`, wird aber noch nicht
-  gezeichnet); ausgelöst wird anschließend über `dispatch_command(...)`. Der Fenstercode besitzt aktuell weiterhin keinen
+  die Verfügbarkeit bestimmen (dieser read-only Status steckt in `HudState.unavailable`; seit Stufe 1b dimmt die Leiste die Tastenhinweise
+  dieser Befehle, §7); ausgelöst wird anschließend über `dispatch_command(...)`. Der Fenstercode besitzt aktuell weiterhin keinen
   Panel-Hit-Test oder klickbaren GUI-Pfad.
 - **Drags (Slider):** AD-027 sieht eine `SliderDrag`-Session mit Esc-Restore vor; `cursor_wrap_active` ist als
   wiederverwendbare Grundlage vorgesehen. Das ist eine Architektur-Naht, noch kein implementierter Morph-Slider.
@@ -63,6 +66,9 @@
 ## 4. Artist-Urteil (Manu) — A (`bar`) vs. B (`corner`)
 
 _Offen. Nach dem Praxistest hier eintragen: welche Variante, was fehlt, was stört (Datum, Wortlaut)._
+
+Seit Stufe 1b (§7) wird nicht mehr Leiste gegen Eck-Panel verglichen, sondern die neue Leiste **oben gegen unten** und
+**kompakt gegen voll** (E4 der Bestandsaufnahme). Dein Urteil dazu, hier eingetragen, schließt auch diesen A/B-Punkt.
 
 ## 5. Offene Fragen für Stufe 2
 
@@ -78,6 +84,9 @@ _Offen. Nach dem Praxistest hier eintragen: welche Variante, was fehlt, was stö
 Die aktuelle Bestandsaufnahme und ihre vorläufigen Prioritäten stehen in [GUI_Bestandsaufnahme.md](GUI_Bestandsaufnahme.md); sie ersetzen die offenen Artist-Urteile in diesem Dokument nicht.
 
 ## 6. Testschritte für Manu (Praxistest)
+
+> Die Schritte 1 und 5 beschreiben die alte A/B-Erprobung; sie sind durch den Praxistest in §7 ersetzt (die übrigen
+> Schritte gelten weiter, nur ist die Leiste jetzt kompakt — `F4` zeigt alles).
 
 Start: `python src/main.py` (Kopf) — das HUD ist sofort unten als Leiste sichtbar.
 
@@ -98,3 +107,122 @@ Start: `python src/main.py` (Kopf) — das HUD ist sofort unten als Leiste sicht
    sich besser an? Was fehlt? Was stört (verdeckt Mesh, zu klein, zu bunt, zu viel)? → §4 / Chat.
 6. **Tempo:** Orbit (Alt+LMB ziehen) und Zoom (Mausrad) mit HUD an und aus vergleichen — fühlt es sich auf
    dem alten PC langsamer an als vorher?
+
+## 7. Stufe 1b — Phase A1: Statusklarheit und Raumorientierung
+
+**Status:** IMPLEMENTED 2026-11-03 (Discovery, M5; alles `PROVISIONAL`) · Basis `main` @ `b1971ec` · Auftrag:
+[GUI_Bestandsaufnahme §7](GUI_Bestandsaufnahme.md) (Review-Hinweis 2026-11-03; A2 Gesten-Feedback und A3 dauerhafte
+Gewichtsansicht sind eigene Pakete) · rein lesend: kein Befehl, keine Sperre, keine Geste, kein Core und
+`config/keymap.json` sind geändert.
+
+### 7.1 Was gebaut ist
+
+- **Statusleiste** (`src/hud.py`, ersetzt die alte 16-Zeilen-Liste): *Warnmarken* zuerst (rot hinterlegt),
+  dann **Modus** als eine Zeile `Vertex Edge Face Object Pose` mit dem aktuellen Modus in Gelb — Pose ist der fünfte
+  Eintrag (aus `SkeletonController.pose_mode`, der Auswahlmodus darunter bleibt unberührt) und die Morph-Bearbeitungsansicht
+  hängt als Zusatz daran (`Face · target 'Smile'`), dann **Tool bzw. laufende Geste** (im Pose-Modus `Bone · Rotate`,
+  laufend `Bone · Rotate (running)`; eine Gewichtsgeste heißt `Set weight`, nicht mehr wie ihr Befehlsname), dann **nur
+  Abweichungen vom Standard**: Axis (gesetzt oder sticky), Space (Normal), Pivot (nicht „off“), Sym, Soft, SubD — und
+  **aktuelles Morph-Ziel** und **aktueller Knochen** (`'Jaw' · rest/posed`), wenn es sie gibt. *Voll* (`F4`) zeigt
+  zusätzlich alles Alte: Display, View, Look, Region, Targets-Liste, Rig-Text, Fixed (und die Standardwerte).
+- **Warnmarke „Pose · 6 = rest“**, solange das Edit-Mesh posiert **und** gebunden ist (AD-028 §7.1: dann lehnt
+  `can_run` Positions- und Topologiebefehle ab). Die Taste kommt aus den Bindings. Ebenso eine Marke „Keymap invalid“.
+- **Gedimmte Tastenhinweise** für Befehle in `HudState.unavailable` (`can_run`, Quelle „ui“, `operands=False`): im
+  Pose-Modus sind z. B. `Shift+S` (Symmetrie) und `P` dunkel, im posierten Face-Modus `W/E/R` — die Ablehnung wird
+  vorher sichtbar, nicht erst danach.
+- **Name am Knochen** (`BoneTag`): der aktuelle Knochen mit Namen am posierten Kopf, im Pose-Modus und in `1`/`2`/`3`,
+  solange es ein Rig gibt (nicht in `4`, nicht im Knife) — damit sieht man, auf welchen Knochen `8` schreibt.
+- **XYZ-Achsenkreuz** (`OrientationTriad`): die Weltachsen, nur um die Blickrotation der Kamera gedreht (keine
+  Perspektive, Zoom und Pan ändern nichts), in den Gizmo-Farben (X rot, Y grün, Z blau), beschriftet, klein in einer
+  Ecke, **immer** gezeichnet — auch während Gesten, im Pose-Modus und in den Ortho-Ansichten. Eine Achse, die auf den
+  Betrachter zu oder von ihm weg zeigt (z. B. Z in `Front`), ist ein Punkt, ihr Buchstabe steht neben der Mitte; Achsen,
+  die vom Betrachter weg zeigen, sind dunkler. Nicht anklickbar (Klicks sind Phase B). Es hält Abstand zur Leiste:
+  `Hud.inset_top/inset_bottom` sagen ihm, wie viel Platz sie braucht, auch wenn sie umbricht.
+
+### 7.2 Varianten für den Test (Fenster-Commands im Kontext `window`, nur diese Sitzung, nicht gespeichert, `PROVISIONAL`)
+
+| Taste | Befehl | Wirkung |
+|---|---|---|
+| `H` | `ToggleHud` | Leiste ein/aus (kein Umschalten A/B mehr) |
+| `F3` | `HudPositionToggle` | Leiste unten ↔ oben (Start: unten) |
+| `F4` | `HudDetailToggle` | kompakt ↔ voll (Start: kompakt) |
+| `F5` | `TriadCornerToggle` | Achsenkreuz unten links ↔ oben rechts (Start: unten links) |
+| `F6` | `TriadSizeToggle` | Achsenkreuz M (40 px Achsenlänge) ↔ S (26 px) (Start: M) |
+
+Konfliktcheck: `F3`–`F6` waren in den Code-Defaults (alle Kontexte) und in `config/keymap.json` frei
+(`tests/test_hud_strip.py::test_the_new_keys_are_window_commands_and_conflict_with_nothing`, `…_keymap_json_has_no_entry…`);
+die Tasten stehen als Hinweis am Ende der Leiste („F4: more · H: HUD“, voll: alle vier). Eine Taste steht erst mit
+deinem Wort in `config/keymap.json` (AGENTS.md §7).
+
+### 7.3 Engineering-Entscheidungen und Ergebnisse zu §3 / §5
+
+- **Nähte (§3):** Der Datenpfad bleibt `hud_state` → `hud_rows` → Layout. Neu sind nur lesende Zugriffe:
+  `Application.current_bone_name`, `edit_mesh_posed_and_bound`, `current_bone_tag()`, `gesture_label`,
+  `morph_editing_target_name` (und die Entsprechung im `MorphController`); `HudRow` trägt Rang (Marke / primär /
+  sekundär), „leise“ (Standardwert), die Tastenhinweise einzeln mit Dim-Flag und beim Modus die Auswahl. Der
+  Layout-Teil bleibt pyglet-eigen und toolkit-frei trennbar; das Achsenkreuz und die Knochen-Marke sind die ersten
+  Viewport-Elemente des Fensters, die **nicht** von `Application` gezeichnet werden und nichts anklicken.
+- **Kein Neuaufbau pro Frame:** Das Achsenkreuz (3 Linien, 3 Buchstaben) und die Marke (1 Label, 1 Platte) werden einmal
+  angelegt und nur bewegt — und nur, wenn sich Kamera, Fenster, Leiste oder Variante ändern (`moves`). Die Leiste wird wie
+  zuvor nur bei geänderter `HudState` / Größe / Variante neu gebaut.
+- **Zu §5 offene Fragen:** (1) Leiste unten/oben und kompakt/voll — Test unten; (2) fehlende Einträge: Modus, Pose,
+  Bind-Status, Ziel und Knochen sind jetzt da; Auswahl-Anzahl, Licht-Preset, Soft-Metrik bleiben offen; (5) Ablehnungen
+  hebt die Statuszeile weiterhin nicht ab (A2); (8) Schrift: unverändert 10 pt, am Referenz-PC prüfen.
+- **Bewusst nicht gebaut:** Achslinie und Wert am Cursor (A2), dauerhafte Gewichtsansicht (A3; sie teilt sich heute die
+  Soft-Färbung und lebt nur in der Gewichtsgeste, AD-028 §8.4), Klickbares, Treffertest, Panels.
+
+### 7.4 Messung (Container, Xvfb, Software-GL, 1024×768, Kopf im Pose-Modus, posiert und gebunden)
+
+| Was | Wert |
+|---|---|
+| `hud_state(app)` pro Frame (inkl. `can_run` für ~60 Befehle) | ≈ 0,15 ms |
+| `Hud.update` (Snapshot + Vergleich) | ≈ 0,10 ms |
+| Leiste zeichnen (fertiger Batch) | kompakt ≈ 0,4 ms, voll ≈ 0,6 ms (alt: 0,7 ms) |
+| Leiste neu bauen (nur bei Änderung) | kompakt ≈ 4 ms, voll ≈ 14–20 ms (alt, Leiste unten: ≈ 12 ms) |
+| Achsenkreuz: bewegen / zeichnen pro Orbit-Frame | ≈ 0,03 ms / ≈ 0,25 ms |
+| Knochen-Marke: `current_bone_tag()` / zeichnen | ≈ 0,01 ms / ≈ 0,25 ms |
+| 150 Orbit-Frames: Leiste neu gebaut / Labels erzeugt | 0 / 0 (Achsenkreuz 151× bewegt, Marke 1× Text gesetzt) |
+| Orbit-Frame gesamt, alles aus → alles an (Median) | 5,0 ms → 6,0 ms (+1,0 ms in Software-GL) |
+
+Das ist **kein** Ergebnis für den Referenz-PC (`docs/architecture/REFERENCE_HARDWARE.md`): Software-GL hat andere
+Kosten, und das Textlayout läuft in Python auf der CPU. Die frühere Angabe „`update()` ≈ 5 µs“ (§2) stammt von vor
+`HudState.unavailable`; heute kostet der Snapshot ≈ 0,1 ms.
+
+### 7.5 Praxistest für Manu (Discovery, eine Sitzung, ca. 20–40 Minuten)
+
+**Annahme (bitte mit einem Satz korrigieren):** Phase A1 kommt zuerst (E1 der Bestandsaufnahme ist noch nicht
+entschieden; die Review-Notiz schlägt A1 als Einstieg vor, ein Verdikt von dir gibt es nicht). Das hier ist der Test
+dazu, keine Checkliste: melde, was Probleme macht (Manu, 2026-10-29).
+
+Start: `python src/main.py` (Kopf). Für die Pose-Schritte ein Rig wie im [AD-028-Praxistest](../architecture/AD-028-SKELETON-AND-SKINNING.md#praxistest-für-manu-nach-dem-bau-deutsch-ca-20-minuten)
+(Schritte 1–4: Symmetrie, Gruppe, `P` + `Strg+J`, `7` halten, `5`, `E`).
+
+1. **Modus auf einen Blick.** Leiste unten, kompakt: `1`/`2`/`3`/`4` drücken — der Modus leuchtet in der Zeile
+   `Vertex Edge Face Object Pose`. `W` halten (mit Auswahl): „Tweak · Move (running)“. Siehst du Modus und laufende
+   Geste, ohne nach unten zu schauen? (Dazu `F3`: Leiste oben.)
+2. **Pose als fünfter Modus (E2).** `5`: „Pose“ leuchtet, „Tool“ sagt „Bone · Rotate“, `E` halten: „Bone · Rotate
+   (running)“. Fühlt sich Pose neben `1`–`4` richtig an, oder ist es ein anderer Ort (Zusatz, eigene Marke)?
+3. **Posiert und gebunden.** Nach dem Drehen: die rote Marke „Pose · 6 = rest“. `1` drücken: `W/E/R` sind gedimmt.
+   Merkst du, dass das Mesh posiert ist, **bevor** `W`/`I`/`Strg+J` abgelehnt werden? `6` → die Marke geht.
+4. **Welcher Knochen?** Im Pose-Modus und in `1`/`2`/`3` steht der Name am Knochenkopf. Weißt du, auf welchen Knochen
+   `8` schreibt? Stört der Name? (In `4` und im Knife ist er weg.)
+5. **Morph-Ziel.** `Strg+N`, `Tab`: im Modus steht „· target 'Target 1'“, in der Leiste das Ziel. `Tab` zurück: der Zusatz
+   geht.
+6. **Achsenkreuz (E8).** Orbit (`Alt`+LMB), in Ortho-Ansichten (`Shift` im Orbit): X rot nach rechts, Y grün nach oben
+   in „Front“; Z ist dort ein Punkt mit Buchstabe. Hilft es beim Orbit und in den Ortho-Ansichten, oder stört es?
+   Auch beim Halten von `W`/`E`/`R` und im Pose-Modus bleibt es. `F5`: Ecke unten links ↔ oben rechts, `F6`: Größe.
+   Welche Ecke, welche Größe, welche Form (Linien mit Buchstaben, Pfeilspitzen, Kugeln)?
+7. **Leiste (E4).** `F3` oben/unten, `F4` kompakt/voll: arbeite eine Weile in jeder Lage. Oben oder unten? Kompakt
+   genug, oder fehlt in kompakt etwas, das du ständig brauchst (dann sag was)? Deine Wahl schließt auch das alte A/B-Urteil
+   (§4). `H` blendet ein/aus.
+8. **Tempo.** Orbit und Zoom mit allem an und mit `H` aus: spürbar langsamer? (Messung im Container: +1 ms in
+   Software-GL, kein Neuaufbau beim Orbit — aber nur dein PC zeigt es wirklich.)
+
+Trag dein Urteil (Datum, Wortlaut) in §4 ein.
+
+### 7.6 Was noch den Referenz-PC braucht
+
+Alles Gefühlte (Lesbarkeit, Ecke, Größe, Form, oben/unten, kompakt/voll, Schrift bei HiDPI) und die Orbit-/Zoom-Kosten mit
+echtem GL (Schritt 8). Im Container geprüft: Zeilen je Zustand, Abweichungs-Filter, Marke, Dimmen, Morph-Zusatz,
+Knochen-Marke, Achsenrichtungen aller Standardansichten, Platz zur Leiste in beiden Ecken/Lagen, „nie neu bauen“, Pixel
+des echten pyglet-Wegs (`tests/test_gl_hud_marks.py`).

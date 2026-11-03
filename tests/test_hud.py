@@ -13,7 +13,18 @@ import pytest
 
 import tests._bootstrap  # noqa: F401
 
-from hud import FIXED_ROW, VARIANTS, Hud, HudState, hud_rows, hud_state, key_hint, key_hints
+from hud import (
+    DETAILS,
+    FIXED_ROW,
+    POSITIONS,
+    Hud,
+    HudState,
+    hud_rows,
+    hud_state,
+    key_hint,
+    key_hints,
+    strip_rows,
+)
 from mirai.application import Application
 from mirai.interaction import commands
 from mirai.interaction.input import WINDOW_CONTEXT, BindingSet, Input
@@ -113,7 +124,7 @@ def test_hud_never_assigns_to_the_app(app):
 
 def test_key_hints_come_from_the_bindings(app):
     hints = key_hints(app.bindings)
-    assert hints["Mode"] == "1/2/3/4"
+    assert hints["Mode"] == "1/2/3/4/5"  # 5 = pose mode, the fifth mode of the row
     assert hints["Tool"] == "W/E/R"
     assert hints["Axis"] == "X/Y/Z/F7"  # F7: one-shot <-> sticky (session switch, 2026-10-28)
     assert hints["Sym"] == "Shift+S/Alt+M/Alt+Shift+S"
@@ -121,6 +132,7 @@ def test_key_hints_come_from_the_bindings(app):
     assert hints["Soft"] == "O"
     assert hints["SubD"] == "V"
     assert hints["HUD"] == "H"
+    assert (hints["Strip"], hints["Detail"], hints["Triad"]) == ("F3", "F4", "F5/F6")
 
 
 def test_a_rebinding_changes_the_hint():
@@ -147,7 +159,7 @@ def test_rows_text(app):
     app.key_press(_key("o"))
     rows = {row.label: row for row in hud_rows(hud_state(app), key_hints(app.bindings))}
     assert list(rows) == [
-        "Mode", "Tool", "Axis", "Space", "Pivot", "Sym", "Display", "View", "Soft", "SubD", "Region", "Look", "Fixed"
+        "Mode", "Tool", "Axis", "Space", "Pivot", "Sym", "Soft", "SubD", "Display", "View", "Region", "Look", "Fixed"
     ]
     # WP Ortho / Views: the view row with the toggle key; on once it is not the plain perspective.
     assert rows["View"].value == "Persp" and rows["View"].keys == "U" and not rows["View"].on
@@ -162,7 +174,7 @@ def test_rows_text(app):
     assert rows["Axis"].value == "X · one-shot" and rows["Axis"].on
     assert rows["Sym"].value == "off" and not rows["Sym"].on
     assert rows["Soft"].value == "on · 15 % · smooth" and rows["Soft"].on
-    assert rows["Mode"].keys == "1/2/3/4"
+    assert rows["Mode"].keys == "1/2/3/4/5"
     state = dataclasses.replace(hud_state(app), constraint="yz", subd_view="iso", subd_lines=False, active="Knife")
     rows = {row.label: row for row in hud_rows(state, {})}
     assert rows["Axis"].value == "YZ plane · one-shot"
@@ -175,14 +187,18 @@ def test_rows_text(app):
 # -- the HUD: H cycle, change detection, layouts ------------------------------------------------
 
 
-def test_h_cycles_bar_corner_hidden(app):
+def test_h_shows_and_hides_and_the_strip_variants_switch(app):
     hud = Hud(app.bindings)
-    assert (hud.visible, hud.variant) == (True, "bar")
-    assert hud.toggle() == "corner"
-    assert hud.toggle() is None and not hud.visible
-    assert hud.toggle() == "bar" and hud.visible
+    assert (hud.visible, hud.position, hud.detail) == (True, "bottom", "compact")
+    assert hud.toggle() is False and not hud.visible
+    assert hud.toggle() is True and hud.visible
+    assert hud.toggle_position() == "top" and hud.toggle_position() == "bottom"
+    assert hud.toggle_detail() == "full" and hud.toggle_detail() == "compact"
+    assert (POSITIONS, DETAILS) == (("bottom", "top"), ("compact", "full"))
     with pytest.raises(ValueError):
-        Hud(app.bindings, variant="side")
+        Hud(app.bindings, position="side")
+    with pytest.raises(ValueError):
+        Hud(app.bindings, detail="tiny")
 
 
 class FakeLabel:
@@ -195,17 +211,20 @@ class FakeLabel:
 
 
 class FakeBuilder:
+    last = None
+
     def __init__(self, sink):
         self.batch = None  # nothing to draw headless
         self.sink = sink
         self.rects = []
+        FakeBuilder.last = self
 
     def label(self, text, x, y, color):
         label = FakeLabel(text, x, y)
         self.sink.append(label)
         return label
 
-    def rect(self, x, y, width, height):
+    def rect(self, x, y, width, height, color=None, badge=False):
         self.rects.append((x, y, width, height))
 
 
@@ -234,7 +253,7 @@ def test_rebuild_only_on_change(app):
     hud.draw()
     assert hud.update(app, 1024, 768) is True  # resize
     hud.draw()
-    hud.toggle()  # layout switch
+    hud.toggle_position()  # variant switch
     assert hud.update(app, 1024, 768) is True
     hud.draw()
     assert hud.rebuilds == 5
@@ -245,23 +264,32 @@ def test_rebuild_only_on_change(app):
     assert hud.rebuilds == 5
 
 
-@pytest.mark.parametrize("variant", VARIANTS)
-def test_layouts_place_every_row(app, variant):
-    hud = _hud(app, variant=variant)
+@pytest.mark.parametrize("detail", DETAILS)
+@pytest.mark.parametrize("position", POSITIONS)
+def test_layouts_place_every_row(app, position, detail):
+    hud = _hud(app, position=position, detail=detail)
     app.set_status("Mode: Edge")
     hud.update(app, 1024, 768)
     hud.draw()
     texts = [item.text for item in hud._drawables]
-    for row in hud_rows(hud.state, hud.hints):
-        assert row.label in texts and row.value in texts
-    assert "Mode: Edge" in texts and "H: HUD" in texts
+    for row in strip_rows(hud_rows(hud.state, hud.hints, hud.hint_parts), detail):
+        assert (row.value if not row.choices else row.chosen) in texts
+        if row.tier != "badge":
+            assert row.label in texts
+    assert "Mode: Edge" in texts and any("H: HUD" in text for text in texts)
     for item in hud._drawables:
         assert 0 <= item.x and item.x + item.content_width <= 1024, (item.text, item.x)
         assert 0 <= item.y <= 768
+    # The strip's background sits at its end of the window and the HUD reports how much room it takes.
+    x, y, width, height = FakeBuilder.last.rects[0]
+    assert (x, width) == (0, 1024) and height > 0
+    assert (y, hud.inset_bottom, hud.inset_top) == (
+        (0, height, 0) if position == "bottom" else (768 - height, 0, height)
+    )
 
 
 def test_bar_wraps_when_narrow(app):
-    hud = _hud(app, variant="bar")
+    hud = _hud(app, position="bottom", detail="full")
     hud.update(app, 1600, 768)
     hud.draw()
     wide = {item.y for item in hud._drawables}
@@ -270,6 +298,7 @@ def test_bar_wraps_when_narrow(app):
     narrow = {item.y for item in hud._drawables}
     assert len(narrow) > len(wide)
     assert all(item.x + item.content_width <= 500 for item in hud._drawables if item.text != hud.state.status)
+    assert hud.inset_bottom > 0
 
 
 def test_state_is_hashable_signature(app):

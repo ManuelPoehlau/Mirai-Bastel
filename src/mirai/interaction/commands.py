@@ -121,9 +121,19 @@ OPEN_MIRROR_MENU = "OpenMirrorMenu"
 SAVE_SCENE = "SaveScene"
 SEND_TO_MORPH_LAB = "SendToMorphLab"
 TOGGLE_SYMMETRY_DISPLAY = "ToggleSymmetryDisplay"
+# GUI Phase A1 (2026-11-03, window context, keys `PROVISIONAL`): session variants of the practical test, not saved -
+# the status strip top <-> bottom and compact <-> full, the orientation triad's corner and size. H stays show / hide.
+HUD_POSITION_TOGGLE = "HudPositionToggle"
+HUD_DETAIL_TOGGLE = "HudDetailToggle"
+TRIAD_CORNER_TOGGLE = "TriadCornerToggle"
+TRIAD_SIZE_TOGGLE = "TriadSizeToggle"
 WINDOW_COMMANDS = frozenset(
     {
         TOGGLE_HUD,
+        HUD_POSITION_TOGGLE,
+        HUD_DETAIL_TOGGLE,
+        TRIAD_CORNER_TOGGLE,
+        TRIAD_SIZE_TOGGLE,
         OPEN_SCENE_MENU,
         OPEN_ADD_MENU,
         OPEN_MIRROR_MENU,

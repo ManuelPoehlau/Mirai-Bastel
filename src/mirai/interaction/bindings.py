@@ -56,6 +56,8 @@ Host den passenden Hook übergeben hat, sonst gehen sie an `Application` weiter:
 - Leertaste      → Szenen-Menü, Shift+A → Add Mesh, Shift+M → Mirror-Menü
 - M              → Objekt ins Morph Lab schicken (Brücke)
 - Ctrl+S         → Szene speichern, Ctrl+Shift+S → Symmetrie-Anzeige an/aus
+- F3 / F4        → HUD-Leiste unten ↔ oben / kompakt ↔ voll (GUI Phase A1, nur diese Sitzung)
+- F5 / F6        → XYZ-Achsenkreuz: Ecke / Größe wechseln (GUI Phase A1, nur diese Sitzung)
 
 Transform (WP-06 B3, Artist Input Truth / AD-013 Addendum 2026-09-26):
 - W              → Move (MoveTool)
@@ -388,6 +390,12 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("m"), cmd.SEND_TO_MORPH_LAB, context=WINDOW_CONTEXT)
     bs.set_default(_key("s", "ctrl"), cmd.SAVE_SCENE, context=WINDOW_CONTEXT)
     bs.set_default(_key("s", "ctrl", "shift"), cmd.TOGGLE_SYMMETRY_DISPLAY, context=WINDOW_CONTEXT)
+    # GUI Phase A1 (2026-11-03): session variants of the practical test, F-keys next to F7 / F8 so no letter Manu might
+    # want is taken (checked against the code defaults and `config/keymap.json`: F3..F6 were free). Not saved.
+    bs.set_default(_key("f3"), cmd.HUD_POSITION_TOGGLE, context=WINDOW_CONTEXT)
+    bs.set_default(_key("f4"), cmd.HUD_DETAIL_TOGGLE, context=WINDOW_CONTEXT)
+    bs.set_default(_key("f5"), cmd.TRIAD_CORNER_TOGGLE, context=WINDOW_CONTEXT)
+    bs.set_default(_key("f6"), cmd.TRIAD_SIZE_TOGGLE, context=WINDOW_CONTEXT)
 
     # --- Maus (WP-06 B2; RMB/MMB bewusst ungebunden) -------------------------
     bs.set_default(_mouse("LEFT"), cmd.SELECT)

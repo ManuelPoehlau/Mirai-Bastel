@@ -3267,6 +3267,11 @@ class Application:
         """The weight of the document edit object's current target in whole percent (view state)."""
         return self._morph.weight
 
+    @property
+    def morph_editing_target_name(self) -> str | None:
+        """The name of the target whose editing view is open (the HUD's mode suffix), None = no view."""
+        return self._morph.editing_target_name
+
     def morph_status_text(self) -> str | None:
         """The HUD's morph row (the current target): None = the document edit object has no target."""
         return self._morph.status_text()
@@ -3897,6 +3902,38 @@ class Application:
     def rig_status_text(self) -> str | None:
         """The HUD's "Rig" row (AD-028 §8.5): current bone · n bones · rest / posed · pose mode; None without a rig."""
         return self._skeleton.status_text()
+
+    @property
+    def current_bone_name(self) -> str | None:
+        """The current bone's name (what `7` / `8` and the pose gestures act on), None without bones."""
+        bone = self._skeleton.current_bone
+        return None if bone is None else self._skeleton.bone_name(bone)
+
+    @property
+    def edit_mesh_posed_and_bound(self) -> bool:
+        """AD-028 §7.1: the rig is posed and the edit mesh is bound - position and topology edits are refused
+        (`can_run` stage 7, policy 2). Read-only; the HUD's warning badge."""
+        skeleton = self._skeleton
+        return skeleton.posed() and skeleton.bound(self.scene.mesh)
+
+    def current_bone_tag(self) -> tuple[str, tuple[float, float, float]] | None:
+        """(name, posed head in world) of the current bone for the window's name tag, shown in pose mode and in the
+        component modes (so the name is readable where `8` writes); None without a rig / bone / viewport, in
+        object mode outside pose mode and during a Knife session."""
+        if self.viewport is None or self.knife_active:
+            return None
+        skeleton = self._skeleton
+        if not skeleton.pose_mode and self.selection.mode is SelectionMode.OBJECT:
+            return None
+        head = skeleton.gizmo_pivot()
+        name = self.current_bone_name
+        return None if head is None or name is None else (name, head)
+
+    @property
+    def gesture_label(self) -> str | None:
+        """The running hold-key gesture's own label ("Pose Rotate", "Set weight", ...), None = no gesture."""
+        gesture = self._gesture
+        return None if gesture is None else getattr(gesture, "label", None)
 
     # -- Transform gizmo (2026-10-21, promoted from the Playground, Manu "Gizmo nach src/") -----
     #
