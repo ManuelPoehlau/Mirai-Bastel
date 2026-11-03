@@ -1043,6 +1043,25 @@ adjusted).
 
 **Not done here:** the joint practical test J; the reference-PC timing of an open on a large symmetric mesh.
 
+## Implementation note (2026-11-03): Seam to plane (repair of a seam moved with symmetry off)
+
+**Trigger (Manu, 2026-11-03):** with symmetry off a few mid-seam vertices were moved and the scene saved. Shift+S re-derives
+the seam by E3 (exactly `0.0`, no tolerance), finds it with a gap, the seam no longer splits the mesh into two sides and
+Re-Symmetrize refuses (*„Seam teilt das Mesh in 1 Teile“*); almost every vertex shows magenta. Reproduced on
+`man_with_shoes_basemesh`: one seam vertex nudged by 0.001 in X → 42 instead of 44 seam edges, 1 component. Manu chose
+solution B („B für jetzt … dann kann ich es selber ohne Script wieder reparieren“); C (keep the seam while symmetry is
+off, a Core/format change) is left for later.
+
+| Piece | Where | Note |
+|---|---|---|
+| Plan + apply | `mirai.symmetry_axis.plan_seam_to_plane` / `apply_seam_to_plane` | The selected vertices (any mode, resolved to vertices) get the axis component exactly `0.0`; the seam is **extended** by every edge at a selected vertex whose endpoints then all lie exactly on the plane. Existing seam edges are never removed. No tolerance (E4 holds): the artist's selection is the decision. |
+| Command | `commands.SEAM_TO_PLANE = "SeamToPlane"`, default **Shift+Alt+S** (`PROVISIONAL`, not in `keymap.json`) | `SymmetryController.seam_to_plane`: one Undo step `Seam to plane <axis>`, reported as a topology change like Shift+S (K-3). Status line: points moved, the largest distance (to see whether the selection really was the seam), seam edges added, and whether the seam now splits the mesh in two („Re-Symmetrize möglich“). Refused: symmetry off, no selection, while an interaction owns the keys, in mode `4`, during a gesture. |
+| Gates | `layer_declarations` | Position-only on a layered mesh; base-only on a morph target's editing view (it writes the definition, like Shift+S). |
+
+Tests: `tests/test_application_seam_to_plane.py` (the reported case end to end: refused Re-Symmetrize → repair → the seam
+equals the clean seam → Re-Symmetrize opens; edge mode; Undo/Redo of positions and seam; second press records nothing;
+refusals; gate classification).
+
 ## Kurzfassung für Manu (Deutsch)
 
 **Worum es geht.** Du hast entschieden: Symmetrie kommt in die App (`src/main.py`), danach baut man dort die symmetrische
@@ -1225,3 +1244,11 @@ ich nicht als eigene Session gemacht, sondern nach deinem „noch offen" direkt 
 | 2 | Alt+M | magenta Punkte verschwinden, Symmetrie `valid`; Strg+Z bringt alles zurück, Strg+Y wieder | |
 | 3 | Alt+M, dann Esc | nichts ändert sich | |
 | 4 | Gefühl | Öffnen und Ausführen ohne spürbare Pause | |
+
+**Seam auf Ebene legen (2026-11-03, deine Wahl B):** Wenn die Mittel-Naht bei Symmetrie aus verschoben wurde, findet
+`Shift+S` sie nur noch lückenhaft, und Re-Symmetrize lehnt ab („Seam teilt das Mesh in 1 Teile“). Reparatur in der App:
+Symmetrie einschalten, die Naht-Punkte auswählen (Vertex-, Edge- oder Face-Modus; z. B. den Mittel-Loop), `Shift+Alt+S`.
+Die Punkte liegen danach exakt auf der Ebene, die Seam ist ergänzt, die Statuszeile sagt „Re-Symmetrize möglich“. Dann wie
+gewohnt einen Punkt auf der Seite wählen, die bleiben soll, und `Alt+M` / `Alt+M`. Ein Undo-Schritt, keine Toleranz:
+du entscheidest durch die Auswahl, was zur Naht gehört. Die Taste ist vorläufig und nicht in `keymap.json`. Für später
+offen: Lösung C (die Seam bleibt gespeichert, auch wenn Symmetrie aus ist).

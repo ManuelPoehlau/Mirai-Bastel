@@ -27,6 +27,7 @@ from ..interaction.session import (
     RunContext,
     Wheel,
 )
+from ..interaction.tools.selection_helpers import resolve_selection_vertices
 from ..resymmetrize import (
     ResymmetrizeRejected,
     ResymPlan,
@@ -37,7 +38,15 @@ from ..resymmetrize import (
 )
 from ..subdivision.preview import key_label
 from ..symmetry import CorrespondenceState, symmetry_state, vertex_correspondence
-from ..symmetry_axis import current_axis, next_axis, set_symmetry_axis
+from ..symmetry_axis import (
+    SeamToPlaneRejected,
+    apply_seam_to_plane,
+    current_axis,
+    next_axis,
+    plan_seam_to_plane,
+    set_symmetry_axis,
+)
+from ..symmetry_topology import topological_sides
 from ..symmetry_display import ReportCache, SymmetryDisplay
 from .services import AppServices
 
@@ -215,6 +224,37 @@ class SymmetryController:
         ).changed
         services.status(symmetry_status_text(services.scene.mesh))
         return changed
+
+    # -- Seam auf Ebene legen (Manu 2026-11-03, Lösung B) ---------------------------------------
+
+    def seam_to_plane(self) -> bool:
+        """The selected vertices (any mode) exactly onto the plane, the seam extended by the edges
+        that then lie on it (`mirai.symmetry_axis.plan_seam_to_plane`); one Undo step. Reported as a
+        topology change, like Shift+S (K-3): the seam changed, every overlay re-derives. The status
+        line says whether the seam now splits the mesh in two (what Re-Symmetrize needs)."""
+        services = self.services
+        if services.interaction_owner is not None:
+            return False
+        mesh = services.scene.mesh
+        selection = services.selection
+        try:
+            plan = plan_seam_to_plane(mesh, resolve_selection_vertices(mesh, selection, selection.mode))
+        except SeamToPlaneRejected as exc:
+            services.status(f"Seam auf Ebene: {exc}")
+            return False
+        changed = services.mesh_transaction(
+            f"Seam to plane {plan.axis}", lambda mesh: apply_seam_to_plane(mesh, plan)
+        ).changed
+        parts = topological_sides(services.scene.mesh).component_count
+        split = "Re-Symmetrize möglich" if parts == 2 else f"Seam teilt das Mesh in {parts} Teile (nötig: 2)"
+        if not changed:
+            services.status(f"Seam auf Ebene: schon auf {plan.axis} = 0 — kein Schritt | {split}")
+            return False
+        services.status(
+            f"Seam auf Ebene {plan.axis}: {len(plan.moves)} Punkte bewegt (max. {plan.max_distance:.4g}), "
+            f"Seam +{len(plan.added_seam_edges)} Edges | {split}"
+        )
+        return True
 
     # -- the display (Shift+Ctrl+S, AD-SYM-04 A2) --------------------------------------------------
 

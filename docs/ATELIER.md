@@ -29,7 +29,7 @@ stehen im jeweiligen Dokument, nicht hier.
 | GUI / Zustände | HUD zeigt bereits Morph-, Target- und Rig-Status als Text; wichtige Zustände und Viewport-Rückmeldungen sind noch schwerer erkennbar. Neue UX-Vorschläge sind noch nicht Artist-entschieden | [GUI-Bestandsaufnahme](design/GUI_Bestandsaufnahme.md) · [HUD](design/GUI_STAGE1_HUD.md) |
 | Objekte | Mehrere Objekte, Referenzen, Add Mesh, Platzieren, Transform übernehmen, Spiegelpaare | [AD-021](architecture/AD-021-OBJECT-COMPONENT-MODEL.md#kurzfassung-für-manu-deutsch) |
 | Szenen und OBJ | Szene speichern/laden, `Leertaste`-Menü; OBJ mit UVs und Textur importieren/exportieren | [`src/scene_files.py`](../src/scene_files.py) · [INPUT_WIRING_MAP §10](design/INPUT_WIRING_MAP.md) · [AD-026, Kurzfassung](architecture/AD-026-FACE-CORNER-UVS-AND-TEXTURE.md#kurzfassung-für-manu-deutsch) |
-| Symmetrie | Symmetrische Werkzeuge und Soft Selection, Re-Symmetrize auf `Alt+M` | [AD-SYM-04](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#kurzfassung-für-manu-deutsch) |
+| Symmetrie | Symmetrische Werkzeuge und Soft Selection, Re-Symmetrize auf `Alt+M`, Seam auf Ebene legen auf `Shift+Alt+S` | [AD-SYM-04](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#kurzfassung-für-manu-deutsch) |
 | Undo/Redo | `Strg+Z` / `Strg+Y`, jede Operation ein Schritt | [AD-023 §9](architecture/AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) |
 
 ### Nur in Labs (nicht Produkt)

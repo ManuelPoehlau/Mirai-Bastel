@@ -151,7 +151,7 @@ _NON_MESH_COMMANDS = (
 #: W/E/R are the object gesture (placement only).
 _POSITION_ONLY_COMMANDS = (
     commands.MOVE, commands.ROTATE, commands.SCALE, commands.TWEAK, commands.LOOP_SLIDE,
-    commands.SMOOTH, commands.RELAX, commands.RESYMMETRIZE,
+    commands.SMOOTH, commands.RELAX, commands.RESYMMETRIZE, commands.SEAM_TO_PLANE,
 )
 
 #: Locked: constants no `Application` path handles (fail-closed). Phase 5 lifted the H1 locks.
@@ -317,8 +317,8 @@ def edits_positions_or_topology(key: Any) -> bool:
 #: component level (mode `4` and the object commands): base only.
 _VIEW_BASE_ONLY = frozenset(
     {
-        commands.SYMMETRY_CYCLE, commands.REGION_NEW, commands.REGION_NAME, commands.REGION_ADD,
-        commands.REGION_REMOVE, commands.REGION_DELETE, commands.SET_OBJECT_MODE,
+        commands.SYMMETRY_CYCLE, commands.SEAM_TO_PLANE, commands.REGION_NEW, commands.REGION_NAME,
+        commands.REGION_ADD, commands.REGION_REMOVE, commands.REGION_DELETE, commands.SET_OBJECT_MODE,
         commands.CLEAR_TRANSFORM, commands.TOGGLE_REFERENCE,
     }
 )

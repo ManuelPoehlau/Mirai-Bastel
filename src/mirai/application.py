@@ -1043,6 +1043,7 @@ class Application:
         add((commands.CAP,), plain(lambda command: self._cap_command()))
         add((commands.SYMMETRY_CYCLE,), plain(lambda command: self._symmetry.cycle()))
         add((commands.RESYMMETRIZE,), plain(lambda command: self._symmetry.open()))
+        add((commands.SEAM_TO_PLANE,), plain(lambda command: self._symmetry.seam_to_plane()))
         add(_MASK_COMMANDS, plain(self._mask_command))
         add(_HIDE_COMMANDS, plain(self._hide_command))
         add(_REGION_COMMANDS, plain(self._region_command))

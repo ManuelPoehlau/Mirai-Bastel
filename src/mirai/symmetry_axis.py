@@ -22,9 +22,10 @@ wie eine Definition entsteht:
 
 from __future__ import annotations
 
-from typing import Optional
+from dataclasses import dataclass
+from typing import Iterable, Optional
 
-from core import EdgeId, Mesh, SymmetryDefinition
+from core import EdgeId, Mesh, SymmetryDefinition, VertexId
 
 ORIGIN = (0.0, 0.0, 0.0)
 AXIS_INDEX = {"X": 0, "Y": 1, "Z": 2}
@@ -82,3 +83,73 @@ def set_symmetry_axis(mesh: Mesh, axis: Optional[str]) -> None:
     """Setzt die Definition für `axis` (E1, Seam nach E3); `None` = aus. Keine History —
     der Aufrufer ist eine Mesh-Transaktion von `Application` (E2)."""
     mesh.symmetry_definition = definition_for_axis(mesh, axis)
+
+
+# -- Seam auf Ebene legen (Manu 2026-11-03, Lösung B) ---------------------------------------------
+#
+# Eine bei Symmetrie aus verschobene Mittel-Naht wird von E3 beim Wiedereinschalten nur lückenhaft
+# gefunden (exakt `0.0`, keine Toleranz); dann teilt die Seam das Mesh nicht mehr in zwei Seiten und
+# Re-Symmetrize lehnt ab. Der Artist wählt die Naht-Punkte selbst aus — die Auswahl ist die
+# Entscheidung, keine Toleranz (E4 bleibt) — und legt sie exakt auf die Ebene. Die Seam wird nur
+# ergänzt: jede Edge an einem gewählten Punkt, deren beide Endpunkte danach exakt auf der Ebene
+# liegen. Bestehende Seam-Edges bleiben (auch solche, die Topologie-Operationen deklariert haben).
+
+
+class SeamToPlaneRejected(ValueError):
+    """Nicht möglich; `str(exc)` ist der Grund für die Statuszeile."""
+
+
+@dataclass(frozen=True)
+class SeamToPlanePlan:
+    axis: str
+    #: Vertex → neue Position (nur die, die nicht schon exakt auf der Ebene liegen).
+    moves: dict
+    #: Seam-Edges, die hinzukommen.
+    added_seam_edges: frozenset
+    #: Größter Abstand eines bewegten Punkts zur Ebene (Anzeige: war die Auswahl wirklich die Naht?).
+    max_distance: float
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.moves and not self.added_seam_edges
+
+
+def plan_seam_to_plane(mesh: Mesh, vertex_ids: Iterable[VertexId]) -> SeamToPlanePlan:
+    axis = current_axis(mesh)
+    if axis is None:
+        raise SeamToPlaneRejected("Symmetrie aus")
+    selected = {v for v in vertex_ids if mesh.is_valid_vertex(v)}
+    if not selected:
+        raise SeamToPlaneRejected("keine Auswahl")
+    i = AXIS_INDEX[axis]
+    moves = {}
+    max_distance = 0.0
+    for vid in selected:
+        position = mesh.vertex_position(vid)
+        if position[i] != 0.0:
+            after = list(position)
+            after[i] = 0.0
+            moves[vid] = tuple(after)
+            max_distance = max(max_distance, abs(position[i]))
+
+    def on_plane(v: VertexId) -> bool:
+        return v in selected or mesh.vertex_position(v)[i] == 0.0
+
+    seam = mesh.symmetry_definition.seam_edges
+    added = set()
+    for vid in selected:
+        for eid in mesh.vertex_edges(vid):
+            if eid not in seam and all(on_plane(v) for v in mesh.edge_vertices(eid)):
+                added.add(eid)
+    return SeamToPlanePlan(axis, moves, frozenset(added), max_distance)
+
+
+def apply_seam_to_plane(mesh: Mesh, plan: SeamToPlanePlan) -> None:
+    """Setzt Positionen und ergänzte Seam — ohne History (der Aufrufer ist eine Mesh-Transaktion)."""
+    for vid, position in plan.moves.items():
+        mesh.set_vertex_position(vid, position)
+    if plan.added_seam_edges:
+        d = mesh.symmetry_definition
+        mesh.symmetry_definition = SymmetryDefinition(
+            d.plane_point, d.plane_normal, d.seam_edges | plan.added_seam_edges
+        )

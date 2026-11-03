@@ -282,6 +282,8 @@ def build_default_bindings() -> BindingSet:
     # the Lab's M (Artist A7) is taken in `src/main.py` by the Morph Lab bridge (Manu 2026-10-17),
     # and AD-013 A5 promotes the capability, not the Lab's key.
     bs.set_default(_key("m", "alt"), cmd.RESYMMETRIZE)
+    # Seam auf Ebene legen (Manu 2026-11-03, Lösung B). PROVISIONAL key, not in keymap.json.
+    bs.set_default(_key("s", "alt", "shift"), cmd.SEAM_TO_PLANE)
     # Mask Geometry (`PROVISIONAL`): Ctrl+M masks / unmasks the selection, Ctrl+Shift+M inverts, Alt+Shift+M clears.
     bs.set_default(_key("m", "ctrl"), cmd.MASK_TOGGLE)
     bs.set_default(_key("m", "ctrl", "shift"), cmd.MASK_INVERT)

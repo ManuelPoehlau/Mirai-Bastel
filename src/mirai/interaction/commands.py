@@ -232,6 +232,12 @@ REGION_CLICK = "RegionClick"
 # `mirai.resymmetrize` / `mirai.controllers.symmetry.SymmetryController.open`.
 RESYMMETRIZE = "ReSymmetrize"
 
+# SEAM_TO_PLANE (Manu 2026-11-03, Lösung B „Seam auf Ebene legen"): legt die ausgewählten Punkte (jeder Modus)
+# exakt auf die Symmetrie-Ebene und ergänzt die Seam um die Edges an ihnen, die danach ganz auf der Ebene liegen;
+# ein Undo-Schritt. Repariert eine bei Symmetrie aus verschobene Mittel-Naht, damit Re-Symmetrize wieder geht.
+# Siehe `mirai.symmetry_axis.plan_seam_to_plane` / `SymmetryController.seam_to_plane`.
+SEAM_TO_PLANE = "SeamToPlane"
+
 # Practical-test session switches (2026-10-28, Manu A1/A4; keys `PROVISIONAL`, nothing is saved):
 # CONSTRAINT_MODE_TOGGLE = axis constraints one-shot <-> sticky, GIZMO_SIZE_CYCLE = gizmo size S -> M -> L.
 CONSTRAINT_MODE_TOGGLE = "ConstraintModeToggle"

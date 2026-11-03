@@ -201,7 +201,7 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
     ),
     "Space": ((commands.TOGGLE_TRANSFORM_SPACE,), None),
     "Pivot": ((commands.PIVOT_PLACE,), None),
-    "Sym": ((commands.SYMMETRY_CYCLE, commands.RESYMMETRIZE), None),
+    "Sym": ((commands.SYMMETRY_CYCLE, commands.RESYMMETRIZE, commands.SEAM_TO_PLANE), None),
     "Display": ((commands.CYCLE_DISPLAY_MODE, commands.TOGGLE_WIREFRAME_OVERLAY), None),
     "View": ((commands.TOGGLE_ORTHO,), None),
     "Soft": ((commands.SOFT_TOGGLE,), None),

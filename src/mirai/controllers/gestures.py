@@ -151,6 +151,7 @@ GESTURE_REFUSES = frozenset(
         commands.CAP,
         commands.SYMMETRY_CYCLE,
         commands.RESYMMETRIZE,
+        commands.SEAM_TO_PLANE,
         *commands.MASK_COMMANDS,
         *commands.HIDE_COMMANDS,
         *commands.POLYGROUP_COMMANDS,
