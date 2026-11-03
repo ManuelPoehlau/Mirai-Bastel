@@ -1054,7 +1054,7 @@ off, a Core/format change) is left for later.
 
 | Piece | Where | Note |
 |---|---|---|
-| Plan + apply | `mirai.symmetry_axis.plan_seam_to_plane` / `apply_seam_to_plane` | The selected vertices (any mode, resolved to vertices) get the axis component exactly `0.0`; the seam is **extended** by every edge at a selected vertex whose endpoints then all lie exactly on the plane. Existing seam edges are never removed. No tolerance (E4 holds): the artist's selection is the decision. |
+| Plan + apply | `mirai.symmetry_axis.plan_seam_to_plane` / `apply_seam_to_plane` | The selected vertices (any mode, resolved to vertices) get the axis component exactly `0.0`; the seam is **extended** by every edge at a selected vertex whose endpoints then all lie exactly on the plane. Existing seam edges are never removed. Selected vertices with an exact mirror partner (`PAIRED`) are not seam vertices and are skipped (refused if all are): flattening them would take both sides their pair (fail-closed guard). No tolerance (E4 holds): the artist's selection is the decision. |
 | Command | `commands.SEAM_TO_PLANE = "SeamToPlane"`, default **Shift+Alt+S** (`PROVISIONAL`, not in `keymap.json`) | `SymmetryController.seam_to_plane`: one Undo step `Seam to plane <axis>`, reported as a topology change like Shift+S (K-3). Status line: points moved, the largest distance (to see whether the selection really was the seam), seam edges added, and whether the seam now splits the mesh in two („Re-Symmetrize möglich“). Refused: symmetry off, no selection, while an interaction owns the keys, in mode `4`, during a gesture. |
 | Gates | `layer_declarations` | Position-only on a layered mesh; base-only on a morph target's editing view (it writes the definition, like Shift+S). |
 
@@ -1248,7 +1248,7 @@ ich nicht als eigene Session gemacht, sondern nach deinem „noch offen" direkt 
 **Seam auf Ebene legen (2026-11-03, deine Wahl B):** Wenn die Mittel-Naht bei Symmetrie aus verschoben wurde, findet
 `Shift+S` sie nur noch lückenhaft, und Re-Symmetrize lehnt ab („Seam teilt das Mesh in 1 Teile“). Reparatur in der App:
 Symmetrie einschalten, die Naht-Punkte auswählen (Vertex-, Edge- oder Face-Modus; z. B. den Mittel-Loop), `Shift+Alt+S`.
-Die Punkte liegen danach exakt auf der Ebene, die Seam ist ergänzt, die Statuszeile sagt „Re-Symmetrize möglich“. Dann wie
+Punkte mit Spiegelpartner werden übersprungen (sie gehören nicht zur Naht). Die Punkte liegen danach exakt auf der Ebene, die Seam ist ergänzt, die Statuszeile sagt „Re-Symmetrize möglich“. Dann wie
 gewohnt einen Punkt auf der Seite wählen, die bleiben soll, und `Alt+M` / `Alt+M`. Ein Undo-Schritt, keine Toleranz:
 du entscheidest durch die Auswahl, was zur Naht gehört. Die Taste ist vorläufig und nicht in `keymap.json`. Für später
 offen: Lösung C (die Seam bleibt gespeichert, auch wenn Symmetrie aus ist).

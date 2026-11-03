@@ -247,6 +247,8 @@ class SymmetryController:
         ).changed
         parts = topological_sides(services.scene.mesh).component_count
         split = "Re-Symmetrize möglich" if parts == 2 else f"Seam teilt das Mesh in {parts} Teile (nötig: 2)"
+        if plan.skipped_paired:
+            split += f" | {plan.skipped_paired} mit Spiegelpartner übersprungen"
         if not changed:
             services.status(f"Seam auf Ebene: schon auf {plan.axis} = 0 — kein Schritt | {split}")
             return False

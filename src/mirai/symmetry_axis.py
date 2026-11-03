@@ -93,6 +93,9 @@ def set_symmetry_axis(mesh: Mesh, axis: Optional[str]) -> None:
 # Entscheidung, keine Toleranz (E4 bleibt) — und legt sie exakt auf die Ebene. Die Seam wird nur
 # ergänzt: jede Edge an einem gewählten Punkt, deren beide Endpunkte danach exakt auf der Ebene
 # liegen. Bestehende Seam-Edges bleiben (auch solche, die Topologie-Operationen deklariert haben).
+# Punkte mit exaktem Spiegelpartner (`PAIRED`) gehören nicht zur Naht und werden übersprungen: sie
+# auf die Ebene zu legen, nähme beiden Seiten ihr Paar (Fail-closed-Guard, `test_symmetry_fail_closed_guard`).
+# So bleibt auch eine Face-Auswahl an der Mitte brauchbar.
 
 
 class SeamToPlaneRejected(ValueError):
@@ -108,6 +111,8 @@ class SeamToPlanePlan:
     added_seam_edges: frozenset
     #: Größter Abstand eines bewegten Punkts zur Ebene (Anzeige: war die Auswahl wirklich die Naht?).
     max_distance: float
+    #: Ausgewählte Punkte mit Spiegelpartner, die unverändert bleiben.
+    skipped_paired: int = 0
 
     @property
     def is_empty(self) -> bool:
@@ -121,6 +126,14 @@ def plan_seam_to_plane(mesh: Mesh, vertex_ids: Iterable[VertexId]) -> SeamToPlan
     selected = {v for v in vertex_ids if mesh.is_valid_vertex(v)}
     if not selected:
         raise SeamToPlaneRejected("keine Auswahl")
+    # Local import: `mirai.symmetry` is the semantics layer above this setup module.
+    from .symmetry import CorrespondenceState, vertex_correspondence
+
+    correspondence = vertex_correspondence(mesh)
+    paired = {v for v in selected if correspondence[v].state is CorrespondenceState.PAIRED}
+    selected -= paired
+    if not selected:
+        raise SeamToPlaneRejected("alle gewählten Punkte haben einen Spiegelpartner — keine Naht-Punkte")
     i = AXIS_INDEX[axis]
     moves = {}
     max_distance = 0.0
@@ -141,7 +154,7 @@ def plan_seam_to_plane(mesh: Mesh, vertex_ids: Iterable[VertexId]) -> SeamToPlan
         for eid in mesh.vertex_edges(vid):
             if eid not in seam and all(on_plane(v) for v in mesh.edge_vertices(eid)):
                 added.add(eid)
-    return SeamToPlanePlan(axis, moves, frozenset(added), max_distance)
+    return SeamToPlanePlan(axis, moves, frozenset(added), max_distance, len(paired))
 
 
 def apply_seam_to_plane(mesh: Mesh, plan: SeamToPlanePlan) -> None:

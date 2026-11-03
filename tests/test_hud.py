@@ -116,7 +116,7 @@ def test_key_hints_come_from_the_bindings(app):
     assert hints["Mode"] == "1/2/3/4"
     assert hints["Tool"] == "W/E/R"
     assert hints["Axis"] == "X/Y/Z/F7"  # F7: one-shot <-> sticky (session switch, 2026-10-28)
-    assert hints["Sym"] == "Shift+S/Alt+M"
+    assert hints["Sym"] == "Shift+S/Alt+M/Alt+Shift+S"
     assert hints["Display"] == "D/Shift+D"
     assert hints["Soft"] == "O"
     assert hints["SubD"] == "V"

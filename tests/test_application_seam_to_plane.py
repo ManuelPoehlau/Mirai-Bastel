@@ -118,6 +118,21 @@ def test_rejected_when_symmetry_off_or_nothing_selected():
         plan_seam_to_plane(mesh, set())
 
 
+def test_paired_vertices_are_skipped_or_refused():
+    mesh, vid = broken_mesh()
+    mesh.symmetry_definition = definition_for_axis(mesh, "X")
+    from mirai.symmetry import CorrespondenceState, vertex_correspondence
+
+    paired = next(v for v, c in vertex_correspondence(mesh).items() if c.state is CorrespondenceState.PAIRED)
+    before = mesh.vertex_position(paired)
+    plan = plan_seam_to_plane(mesh, {vid, paired})
+    assert set(plan.moves) == {vid} and plan.skipped_paired == 1
+    apply_seam_to_plane(mesh, plan)
+    assert mesh.vertex_position(paired) == before
+    with pytest.raises(SeamToPlaneRejected, match="Spiegelpartner"):
+        plan_seam_to_plane(mesh, {paired})
+
+
 def test_gate_classification():
     assert layer_refusal(commands.SEAM_TO_PLANE) is None  # positions + the definition, layers untouched
     assert view_refusal(commands.SEAM_TO_PLANE) is not None  # writes the symmetry definition: base only
