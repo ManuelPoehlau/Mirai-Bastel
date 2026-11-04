@@ -330,3 +330,78 @@ def test_subd_surface_hides_the_derived_faces_of_hidden_cage_faces():
     app.key_press(ALT_H)
     app.viewport.sync()
     assert len(lines.segments["subd_cage"]) == full_cage and len(lines.segments["subd_iso"]) == full_iso
+
+
+# -- Base and morph target share one visibility (Manu 2026-11-04, I2) ------------------------------------------
+
+
+def _target_app():
+    from tests.test_application_delete_dissolve import _app as grid_app
+    from tests.test_morph_multi import _targets
+
+    app = grid_app(4)
+    _targets(app, 1)
+    app.selection.mode = SelectionMode.FACE
+    return app
+
+
+def _hide_faces(app, *indices) -> set:
+    faces = app.scene.mesh.all_face_ids()
+    app.selection.mode = SelectionMode.FACE
+    app.selection.set({faces[i] for i in indices})
+    app.viewport.on_selection_changed()
+    assert app.key_press(CTRL_H), app.status_message
+    app.update_viewport(0.0)
+    mesh = app.scene.mesh
+    return {f for f in mesh.all_face_ids() if app._hidden.is_hidden_face(mesh, f)}
+
+
+def _drawn_hidden(app) -> set:
+    from tests.test_surface_display_state import _dead_faces
+
+    vp = app.viewport
+    return _dead_faces(vp.surface_render_mesh or vp.render_mesh)
+
+
+TAB = _key("tab")
+
+
+def test_what_is_hidden_on_the_base_is_hidden_on_the_target_view():
+    app = _target_app()
+    base = app.scene.edit_object
+    hidden = _hide_faces(app, 5)
+    vertices = app._hidden.vertices()
+    faces = app.scene.mesh.all_face_ids()
+    app.selection.set({faces[5], faces[0]})  # faces[5] is hidden now: Hide took it out; faces[0] carries over
+    assert app.key_press(TAB), app.status_message
+    app.update_viewport(0.0)
+    assert app.scene.edit_object is not base and app._morph.view is not None
+    assert app._hidden.vertices() == vertices
+    assert _drawn_hidden(app) == hidden
+    assert app._pick_cache.hidden == vertices
+    assert not (app.selection.faces & hidden)  # the carried selection holds nothing hidden
+
+
+def test_hide_and_show_all_on_the_target_view_act_on_the_base():
+    app = _target_app()
+    assert app.key_press(TAB), app.status_message
+    hidden = _hide_faces(app, 10)
+    assert app.key_press(TAB), app.status_message  # back to the base
+    app.update_viewport(0.0)
+    assert app._morph.view is None
+    assert _drawn_hidden(app) == hidden
+    assert app.key_press(TAB)
+    assert app.key_press(ALT_H), app.status_message
+    assert app.key_press(TAB)
+    app.update_viewport(0.0)
+    assert not app._hidden and _drawn_hidden(app) == set()
+
+
+def test_an_undo_that_closes_the_target_view_keeps_the_shared_hidden_set():
+    app = _target_app()
+    assert app.key_press(TAB), app.status_message
+    hidden = _hide_faces(app, 3)
+    assert app.key_press(_key("z", "ctrl"))  # undoes the target's creation: the view closes with it
+    app.update_viewport(0.0)
+    assert app._morph.view is None
+    assert _drawn_hidden(app) == hidden

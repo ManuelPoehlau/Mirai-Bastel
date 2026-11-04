@@ -34,7 +34,8 @@ the values, their journal, Undo and the file; this module gives them their meani
   position change is refused before it runs by the view gate (`layer_declarations.view_refusal`:
   topology only on the base); `translate` is the fail-closed backstop (it reverts such a change).
   The view lives while it is the edit object: an Undo that brings back another edit object, `4`
-  (refused), a scene load or the toggle key close it.
+  (refused), a scene load or the toggle key close it. Base and view share one visibility (Manu 2026-11-04, I2):
+  Hide / Isolate / Show All on either act on the base's hidden set (`Application._hidden_owner`; same IDs).
 
 The module depends on `core` only (plus `interaction` for the keys); `Application` wires it.
 """

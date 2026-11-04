@@ -421,7 +421,7 @@ class MorphController:
     def close_if_left(self):
         """Closes the editing view once it is no longer the edit object (Tab, an Undo that brings back another edit
         object, a scene load). Back on its base, the camera follows back. Returns the closed view object's id (the
-        app drops its mask and hidden set), None when nothing closed."""
+        app drops its mask; its hidden set is the base's), None when nothing closed."""
         view = self.view
         scene = self.services.scene
         if view is None or scene.edit_object_id == view.view_obj.id:

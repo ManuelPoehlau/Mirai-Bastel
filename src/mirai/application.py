@@ -855,8 +855,7 @@ class Application:
         while it is the edit object: it closes here when another object became the edit object."""
         closed = self._morph.close_if_left()
         if closed is not None:
-            self._masks.pop(closed, None)
-            self._hiddens.pop(closed, None)
+            self._masks.pop(closed, None)  # the view's hidden set is its base's (`_hidden_owner`): nothing to drop
         obj = self.scene.edit_object
         self._pick_cache.invalidate()
         self.selection.hovered = None
@@ -2282,8 +2281,15 @@ class Application:
         return self._masks.setdefault(self.scene.edit_object_id, VertexMask())
 
     @property
+    def _hidden_owner(self) -> ObjectId:
+        """Whose hidden set the edit object shows: the document object - the base while its morph target's editing view
+        is open (Manu 2026-11-04, I2 "share one visibilty": the view is ID-identical, Base and Target hide the same
+        geometry), else the edit object. Other objects keep their own sets."""
+        return self._morph.document_object.id
+
+    @property
     def _hidden(self) -> HiddenSet:
-        return self._hiddens.setdefault(self.scene.edit_object_id, HiddenSet())
+        return self._hiddens.setdefault(self._hidden_owner, HiddenSet())
 
     def _mask_values(self, seeds: Iterable[VertexId] = ()) -> dict[VertexId, float]:
         """The mask a gesture on `seeds` begins with (stale IDs dropped, symmetric pairs protected alike); `{}` = none.
@@ -2358,7 +2364,7 @@ class Application:
         selection (else the hovered element) touches a hidden vertex, or - the Knife, `C` with nothing
         selected - anything is hidden at all. Cheap exit when nothing is hidden. Pure (reads, never creates,
         the edit object's `HiddenSet`)."""
-        hidden = self._hiddens.get(self.scene.edit_object_id)
+        hidden = self._hiddens.get(self._hidden_owner)
         if not hidden or self.selection.mode is SelectionMode.OBJECT:
             return None
         mesh = self.scene.mesh

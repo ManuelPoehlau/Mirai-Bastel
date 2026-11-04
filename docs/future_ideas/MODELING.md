@@ -32,7 +32,9 @@ Beide sollen die aktuelle Auswahl oder einen gezielten Bereich berücksichtigen,
 > (Connect, Knife, Collapse, Delete/Dissolve, Extrude, Loop Insert/Slide, Re-Symmetrize) neben verstecktem werden
 > abgelehnt („hidden geometry in the way“). Der Zustand ist flüchtig wie die Maske (kein History-Eintrag, nicht in
 > Szenendateien, pro Edit-Objekt, beim Szenenwechsel geleert). Mit dem Objektwechsel behält jetzt auch die Maske ihren
-> Zustand pro Objekt (vorher leakte sie). Offen: Speichern in Szenendateien, Hide für weitere Objekte gleichzeitig,
+> Zustand pro Objekt (vorher leakte sie). Basis und Morph-Ziel (Tab, Bearbeitungsansicht) teilen eine Sichtbarkeit
+> (Manu 2026-11-04, I2 „share one visibilty“): was auf der Basis versteckt ist, ist es auch auf dem Ziel und umgekehrt;
+> jede Ersatzfläche (Morph-Mischung, SubD, Pose) zeigt dieselbe Menge (2026-11-04, Manu I4). Offen: Speichern in Szenendateien, Hide für weitere Objekte gleichzeitig,
 > Verhalten von Shrink an der Grenze zu Verstecktem.
 
 Ein Mesh soll sich lokal leichter bearbeiten lassen:
