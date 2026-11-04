@@ -179,17 +179,6 @@ def group_lock(mesh: Mesh, seeds: Iterable[VertexId]) -> set[VertexId]:
     return {v for v in mesh.all_vertex_ids() if v not in allowed}
 
 
-def interior_vertices(mesh: Mesh, faces: Iterable[FaceId]) -> set[VertexId]:
-    """The vertices of `faces` that no other face touches: hiding them hides exactly `faces` and leaves every
-    other face visible (a face is hidden when one of its corners is)."""
-    face_set = set(faces)
-    border: set[VertexId] = set()
-    for f in mesh.all_face_ids():
-        if f not in face_set:
-            border.update(mesh.face_vertices(f))
-    return region_vertices(mesh, face_set) - border
-
-
 def region_vertices(mesh: Mesh, faces: Iterable[FaceId]) -> set[VertexId]:
     out: set[VertexId] = set()
     for f in faces:

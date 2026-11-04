@@ -162,7 +162,9 @@ Scope (binding, see the handoffs):
   they are hidden as well; on empty space shows all. Ctrl+Alt+Shift+M switches Mask by Polygroup: W/E/R, Smooth / Relax only move the
   groups of the selection (or hover), the rest is masked for the gesture.
 - Hide / Isolate (`PROVISIONAL`, `src/mirai/hidden.py`): Ctrl+H hides the selection, Ctrl+Shift+H isolates it, Alt+H shows
-  all; hidden geometry is neither drawn nor picked nor moved, and topology edits next to it are refused.
+  all; in face mode exactly the selected faces (their neighbours stay whole), in vertex / edge mode the selected vertices
+  and what touches them; hidden geometry is neither drawn nor picked nor moved, loops stop at it, and topology edits next
+  to it are refused.
 - Mask Geometry (`PROVISIONAL`, `src/mirai/mask.py`): Ctrl+M masks / unmasks the selection, Ctrl+Shift+M inverts,
   Alt+Shift+M clears; masked points are skipped by W/E/R and Smooth / Relax and drawn dark (`GLMaskOverlay` in `GL_TYPES`).
 - Symmetry display (Shift+Ctrl+S, window level): shows / hides the symmetry plane and the seam / problem

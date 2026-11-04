@@ -76,7 +76,7 @@ def test_container_derives_edges_and_faces_from_vertices():
     face = next(f for f in mesh.all_face_ids() if vids[0] in mesh.face_vertices(f))
     assert hidden.is_hidden_edge(mesh, edge) and hidden.is_hidden_face(mesh, face)
     far = vids[-1]
-    assert not hidden.is_hidden_vertex(far)
+    assert not hidden.is_hidden_vertex(mesh, far)
     assert touches_hidden(mesh, hidden, [mesh.edge_vertices(edge)[1]])
     assert not touches_hidden(mesh, hidden, [far])
     hidden.show_all()

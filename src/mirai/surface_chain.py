@@ -98,10 +98,10 @@ class ChainedSurface:
     def entry_topology_changed(self) -> set:
         return self._merged("entry_topology_changed", set)
 
-    def set_hidden(self, vertex_ids) -> None:
+    def set_hidden(self, vertex_ids, face_ids=()) -> None:
         for stage in self.stages:
             if hasattr(stage, "set_hidden"):
-                stage.set_hidden(vertex_ids)
+                stage.set_hidden(vertex_ids, face_ids)
 
     @property
     def hidden_key(self):

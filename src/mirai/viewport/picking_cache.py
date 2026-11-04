@@ -45,6 +45,8 @@ from __future__ import annotations
 
 import math
 
+from viewport.hidden_rule import resolve
+
 #: Edge length (px) of a `face_grid` cell (`PROVISIONAL`, engineering default from the Slice-2
 #: measurement). A power of two, so `x * (1 / cell)` is exact and the cell of a point is the
 #: exact floor - a face whose bbox contains the point is always in that point's cell.
@@ -93,18 +95,21 @@ class PickCache:
         self._scans = 0
         self._watch = None
         self._project = None
-        #: Hide / Isolate (`mirai.hidden`): hidden vertices have no screen position (every vertex and
-        #: edge pick skips them), `hidden_faces` are the faces with a hidden corner (no pick, no occluder).
+        #: Hide / Isolate (`mirai.hidden`), resolved by `viewport.hidden_rule` at each full refresh: hidden vertices
+        #: have no screen position (every vertex and edge pick skips them), `hidden_edges` are not picked (also an
+        #: edge between hidden faces whose corners stay), `hidden_faces` are neither picked nor occluders.
+        self._explicit: tuple[frozenset, frozenset] = (frozenset(), frozenset())
         self.hidden: frozenset = frozenset()
+        self.hidden_edges: frozenset = frozenset()
         self.hidden_faces: frozenset = frozenset()
 
-    def set_hidden(self, vertices) -> None:
-        """Replaces the hidden vertex set; the next `refresh()` re-projects everything."""
-        vertices = frozenset(vertices)
-        if vertices == self.hidden:
+    def set_hidden(self, vertices, faces=()) -> None:
+        """Replaces the hidden vertex and face sets; the next `refresh()` re-projects everything."""
+        explicit = (frozenset(vertices), frozenset(faces))
+        if explicit == self._explicit:
             return
-        self.hidden = vertices
-        self.hidden_faces = frozenset()
+        self._explicit = explicit
+        self.hidden = self.hidden_edges = self.hidden_faces = frozenset()
         self._signature = None
         self._generation += 1
 
@@ -151,16 +156,14 @@ class PickCache:
                 return camera.project_to_screen(point, width, height)
         self._project = project
         position = mesh.vertex_position
+        resolved = resolve(mesh, *self._explicit)
+        self.hidden, self.hidden_edges, self.hidden_faces = resolved.vertices, resolved.edges, resolved.faces
         hidden = self.hidden
         vertex_screen = {vid: project(position(vid)) for vid in mesh.all_vertex_ids() if vid not in hidden}
         self.vertex_screen = vertex_screen
 
         face_vertices = mesh.face_vertices
         self.face_bbox = {fid: _bbox(vertex_screen, face_vertices(fid)) for fid in mesh.all_face_ids()}
-        self.hidden_faces = (
-            frozenset(fid for fid in self.face_bbox if not hidden.isdisjoint(face_vertices(fid)))
-            if hidden else frozenset()
-        )
 
     def _patch(self, mesh, change, old_signature) -> bool:
         """Re-projects what `change` touched (same camera, size and mesh), and moves the touched
@@ -169,6 +172,12 @@ class PickCache:
         if change.is_empty():
             self._keep_grid(grid, old_signature)
             return True
+        if (self._explicit[0] or self._explicit[1]) and (
+            change.faces or change.edges or any(
+                (vid in self.vertex_screen or vid in self.hidden) != mesh.is_valid_vertex(vid) for vid in change.vertices
+            )
+        ):
+            return False  # the topology changed beside hidden geometry: resolve the hidden sets again
         if len(change.vertices) + len(change.faces) > PATCH_MAX_FRACTION * (
             len(self.vertex_screen) + len(self.face_bbox)
         ):
@@ -200,10 +209,6 @@ class PickCache:
             box = face_bbox[fid] = _bbox(vertex_screen, face_vertices(fid))
             if grid is not None:
                 grid.move(fid, box)
-        if hidden:
-            gone = {f for f in self.hidden_faces if not is_valid_face(f)}
-            now = {f for f in faces if not hidden.isdisjoint(face_vertices(f))}
-            self.hidden_faces = (self.hidden_faces - gone - faces) | now
         self._keep_grid(grid, old_signature)
         return True
 

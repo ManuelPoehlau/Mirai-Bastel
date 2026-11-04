@@ -59,7 +59,7 @@ from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig vo
 from viewport.resource_store import ResourceStore, TraceStore
 
 from . import regions as face_regions_api
-from .hidden import HiddenSet, touches_hidden, visible
+from .hidden import HiddenSet, mirrored_faces, touches_hidden
 from .mask import (
     VertexMask,
     effective_mask,
@@ -1392,7 +1392,7 @@ class Application:
             return False
         walk = edge_loop if command == commands.EDGE_LOOP else edge_ring
         mesh = self.scene.mesh
-        blocked = self._hidden.vertices()  # a loop / ring ends at hidden geometry, it does not run through it
+        blocked = self._hidden.resolve(mesh)  # a loop / ring ends at hidden geometry, it does not run through it
         found: set[EdgeId] = set()
         for edge in sorted(seeds):
             if edge in found:
@@ -1456,7 +1456,7 @@ class Application:
         if not edges:
             self._set_status(f"{label}: select edges of a loop")
             return False
-        blocked = self._hidden.vertices()
+        blocked = self._hidden.resolve(mesh)
         if command == commands.LOOP_GROW:
             return self._apply_selection_step(label, selection_steps.loop_grow(mesh, edges, blocked))
         if command == commands.LOOP_SHRINK:
@@ -1468,15 +1468,13 @@ class Application:
         hidden = self._hidden
         if not hidden or not ids:
             return ids
-        mesh = self.scene.mesh
-        mode = self.selection.mode
-        if mode is SelectionMode.VERTEX:
-            return {i for i in ids if not hidden.is_hidden_vertex(i)}
-        if mode is SelectionMode.EDGE:
-            return {i for i in ids if not hidden.is_hidden_edge(mesh, i)}
-        if mode is SelectionMode.FACE:
-            return {i for i in ids if not hidden.is_hidden_face(mesh, i)}
-        return ids
+        resolved = hidden.resolve(self.scene.mesh)
+        gone = {
+            SelectionMode.VERTEX: resolved.vertices,
+            SelectionMode.EDGE: resolved.edges,
+            SelectionMode.FACE: resolved.faces,
+        }.get(self.selection.mode)
+        return ids if gone is None else {i for i in ids if i not in gone}
 
     def _apply_selection_step(self, label: str, ids: set, note: str = "") -> bool:
         selection = self.selection
@@ -1498,7 +1496,7 @@ class Application:
         (Shift+Right) or left; for a piece whose neighbours lie above / below each other on
         screen, up counts as right. A piece without quads on that side stays."""
         mesh = self.scene.mesh
-        blocked = self._hidden.vertices()
+        blocked = self._hidden.resolve(mesh)
         out: set[EdgeId] = set()
         stuck = 0
         for piece in selection_steps.loop_pieces(mesh, edges, blocked):
@@ -1558,7 +1556,7 @@ class Application:
         if seeds is None:
             return False
         mesh = self.scene.mesh
-        blocked = self._hidden.vertices()  # the ring ends at hidden geometry (Isolate): only visible quads are cut
+        blocked = self._hidden.resolve(mesh)  # the ring ends at hidden geometry (Isolate): only visible quads are cut
         ring: set[EdgeId] = set()
         for edge in sorted(seeds):
             if edge not in ring:
@@ -2305,7 +2303,9 @@ class Application:
             locked = face_regions_api.group_lock(mesh, seeds)
         if not self._mask and not hidden and not locked:
             return {}
-        return effective_mask(mesh, self._mask, extra_full=hidden.vertices() | locked)
+        # Hidden vertices - also a corner whose faces are all hidden - are fully masked; a corner a visible face
+        # still uses moves with it (Blender).
+        return effective_mask(mesh, self._mask, extra_full=hidden.resolve(mesh).vertices | locked)
 
     def _mask_changed(self, status: str) -> bool:
         self._mask.prune(self.scene.mesh)
@@ -2317,7 +2317,7 @@ class Application:
         """The mask overlay shows the edit object's mask without its hidden vertices."""
         if self._mask_overlay is None:
             return
-        hidden = self._hidden.vertices()
+        hidden = self._hidden.resolve(self.scene.mesh).vertices
         values = {v: m for v, m in self._mask.values().items() if v not in hidden}
         self._mask_overlay.set_values(values)
         if self.viewport is not None:
@@ -2330,10 +2330,10 @@ class Application:
         mesh = self.scene.mesh
         hidden = self._hidden
         hidden.prune(mesh)
-        vertices = hidden.vertices()
+        vertices, faces = hidden.vertices(), hidden.faces()
         if self.viewport is not None:
-            self.viewport.set_hidden(vertices)
-        self._pick_cache.set_hidden(vertices)
+            self.viewport.set_hidden(vertices, faces, hidden.resolve(mesh))
+        self._pick_cache.set_hidden(vertices, faces)
         self._prune_hidden_selection()
         self._mask_push()
         self._soft_preview_refresh()
@@ -2343,19 +2343,16 @@ class Application:
         if not hidden:
             return
         mesh = self.scene.mesh
+        resolved = hidden.resolve(mesh)
         selection = self.selection
-        selection.vertices = {v for v in selection.vertices if not hidden.is_hidden_vertex(v)}
-        selection.edges = {
-            e for e in selection.edges if mesh.is_valid_edge(e) and not hidden.is_hidden_edge(mesh, e)
-        }
-        selection.faces = {
-            f for f in selection.faces if mesh.is_valid_face(f) and not hidden.is_hidden_face(mesh, f)
-        }
+        selection.vertices = {v for v in selection.vertices if v not in resolved.vertices}
+        selection.edges = {e for e in selection.edges if mesh.is_valid_edge(e) and e not in resolved.edges}
+        selection.faces = {f for f in selection.faces if mesh.is_valid_face(f) and f not in resolved.faces}
         h = selection.hovered
-        if (
-            (isinstance(h, VertexId) and hidden.is_hidden_vertex(h))
-            or (isinstance(h, EdgeId) and mesh.is_valid_edge(h) and hidden.is_hidden_edge(mesh, h))
-            or (isinstance(h, FaceId) and mesh.is_valid_face(h) and hidden.is_hidden_face(mesh, h))
+        if (  # IDs of different kinds compare equal as ints: test the kind first
+            (isinstance(h, VertexId) and h in resolved.vertices)
+            or (isinstance(h, EdgeId) and h in resolved.edges)
+            or (isinstance(h, FaceId) and h in resolved.faces)
         ):
             selection.hovered = None
 
@@ -2384,7 +2381,10 @@ class Application:
 
     def _hide_command(self, command: str) -> bool:
         """Ctrl+H / Ctrl+Shift+H / Alt+H: hide the selection, isolate it (hide everything else), show all.
-        No History, no mesh change; the selection loses what became hidden. Refused during a running gesture."""
+        No History, no mesh change; the selection loses what became hidden. Refused during a running gesture.
+        Face mode hides exactly the selected faces (Manu 2026-11-04, I1 "Hide exactly the selected Polygons"): a
+        neighbour that shares a corner stays whole. Vertex and edge mode hide the selected vertices (a face or edge
+        with one of them goes)."""
         if self._gesture is not None:
             return False
         mesh = self.scene.mesh
@@ -2393,12 +2393,20 @@ class Application:
             if not hidden:
                 self._set_status("Nothing is hidden")
                 return False
-            count = len(hidden)
+            count = hidden.describe()
             hidden.show_all()
             self._hidden_push()
-            self._set_status(f"Shown all ({count} points)")
+            self._set_status(f"Shown all ({count})")
             return True
         selection = self.selection
+        if selection.mode is SelectionMode.FACE:
+            faces = {f for f in selection.faces if mesh.is_valid_face(f)}
+            if not faces:
+                self._set_status("Hide: select faces first (Ctrl+H)")
+                return False
+            if mesh.symmetry_definition is not None:
+                faces |= mirrored_faces(mesh, faces)  # a pair is hidden together
+            return self._hide_faces(command, faces)
         target = set(resolve_selection_vertices(mesh, selection, selection.mode))
         if not target:
             self._set_status("Hide: select vertices first (Ctrl+H)")
@@ -2408,7 +2416,7 @@ class Application:
         return self._hide_vertices(command, target)
 
     def _hide_vertices(self, command: str, target: set[VertexId]) -> bool:
-        """Hide or isolate `target` (the shared body of Ctrl+H / Ctrl+Shift+H and the region isolate)."""
+        """Hide or isolate the vertices `target` (vertex and edge mode)."""
         mesh = self.scene.mesh
         hidden = self._hidden
         if command == commands.ISOLATE_SELECTION:
@@ -2417,13 +2425,29 @@ class Application:
         else:
             hidden.hide(target)
             label = f"Hid {len(target)} points"
-        if len(hidden) >= len(mesh.all_vertex_ids()):
+        return self._hide_applied(label)
+
+    def _hide_faces(self, command: str, faces: set[FaceId]) -> bool:
+        """Hide or isolate exactly the faces `faces` (face mode, the group isolate / hide)."""
+        mesh = self.scene.mesh
+        hidden = self._hidden
+        if command == commands.ISOLATE_SELECTION:
+            hidden.isolate_faces(mesh, faces)
+            label = f"Isolated {len(faces)} faces"
+        else:
+            hidden.hide_faces(faces)
+            label = f"Hid {len(faces)} faces"
+        return self._hide_applied(label)
+
+    def _hide_applied(self, label: str) -> bool:
+        hidden = self._hidden
+        if hidden.hides_everything(self.scene.mesh):
             hidden.show_all()  # nothing visible is a trap: refuse instead
             self._hidden_push()
             self._set_status("Hide: everything would be hidden")
             return False
         self._hidden_push()  # a hidden element leaves the selection; Isolate keeps what it isolated
-        self._set_status(f"{label} ({len(hidden)} hidden, Alt+H shows all)")
+        self._set_status(f"{label} ({hidden.describe()} hidden, Alt+H shows all)")
         return True
 
     def _mask_command(self, command: str) -> bool:
@@ -2564,13 +2588,12 @@ class Application:
         if not faces:
             self._set_status(f"{name}: no faces left")
             return False
-        vertices = face_regions_api.region_vertices(mesh, faces)
         # Isolate and mask act on the whole group, hidden parts included (Isolate shows them again); only the
-        # selection skips what is hidden.
+        # selection skips what is hidden. Isolate keeps exactly the group's faces (polygon-exact Hide).
         if command == commands.REGION_ISOLATE:
-            return self._hide_vertices(commands.ISOLATE_SELECTION, vertices)
+            return self._hide_faces(commands.ISOLATE_SELECTION, set(faces))
         if command == commands.REGION_MASK:
-            return self._mask_vertices(vertices)
+            return self._mask_vertices(face_regions_api.region_vertices(mesh, faces))
         selection = self.selection
         if selection.mode is SelectionMode.OBJECT:
             return False
@@ -2624,32 +2647,29 @@ class Application:
         for name in names:
             group |= face_regions_api.live_faces(mesh, name)
         label = " + ".join(names)
-        vertices = face_regions_api.region_vertices(mesh, group)
+        # Polygon-exact (Manu 2026-11-04, I1): the group's faces themselves are hidden or kept, so a neighbour that
+        # shares its border stays whole and a group without interior vertices can be hidden too.
         if not hidden:
-            hidden.isolate(mesh, vertices)
+            hidden.isolate_faces(mesh, group)
             self._hidden_push()
             self._set_status(f"{label} isolated (Shift+Ctrl+click again inverts, on empty space shows all)")
             return True
         rest = [f for f in mesh.all_face_ids() if f not in group and not hidden.is_hidden_face(mesh, f)]
         if not rest:
             # G is everything that is visible: invert (the whole rest visible, only G hidden).
-            interior = face_regions_api.interior_vertices(mesh, group)
             hidden.show_all()
-            if interior:
-                hidden.hide(interior)
+            hidden.hide_faces(group)
+            if hidden.hides_everything(mesh):
+                hidden.show_all()
+                self._hidden_push()
+                self._set_status(f"{label} is the whole mesh; everything is visible")
+                return True
             self._hidden_push()
-            self._set_status(
-                f"{label} hidden, the rest is visible (Shift+Ctrl+click on empty space shows all)" if interior
-                else f"{label} has no interior to hide; everything is visible"
-            )
+            self._set_status(f"{label} hidden, the rest is visible (Shift+Ctrl+click on empty space shows all)")
             return True
-        own = vertices - face_regions_api.region_vertices(mesh, rest)  # the corners no face that stays visible needs
-        if not own:
-            self._set_status(f"{label}: nothing to hide without hiding its neighbours")
-            return False
-        hidden.hide(own)
+        hidden.hide_faces(group)
         self._hidden_push()
-        self._set_status(f"{label} hidden ({len(hidden)} hidden points, Shift+Ctrl+click on empty space shows all)")
+        self._set_status(f"{label} hidden ({hidden.describe()} hidden, Shift+Ctrl+click on empty space shows all)")
         return True
 
     def _region_edit(self, command: str, name: str) -> bool:

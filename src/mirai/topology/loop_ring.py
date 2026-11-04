@@ -16,11 +16,33 @@ Konservative Regeln (Absicht, kein Zwischenstand):
 - `blocked` (Hide / Isolate, `mirai.hidden`): Vertices, die nicht betreten werden. Ein Ring läuft nicht in eine
   Face mit blockierter Ecke und endet an einer solchen wie an einem Mesh-Rand (die sichtbare Gegenkante gehört
   noch dazu); ein Loop endet vor einer Kante mit blockiertem Endpunkt. Leer (Default) = bisheriges Verhalten.
+  Statt der Vertex-Menge darf `blocked` das aufgelöste Hide sein (`viewport.hidden_rule.Resolved`, 2026-11-04,
+  polygon-exaktes Hide): dann endet ein Loop vor einer versteckten Kante und ein Ring an einer versteckten Face -
+  beide halten an den Ecken versteckter Faces, statt durch sie zu laufen.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from viewport.hidden_rule import Resolved
+
+
+def _edge_blocked(mesh, edge_id, blocked) -> bool:
+    if not blocked:
+        return False
+    if isinstance(blocked, Resolved):
+        return edge_id in blocked.edges
+    v0, v1 = mesh.edge_vertices(edge_id)
+    return v0 in blocked or v1 in blocked
+
+
+def _face_blocked(mesh, face_id, blocked) -> bool:
+    if not blocked:
+        return False
+    if isinstance(blocked, Resolved):
+        return face_id in blocked.faces
+    return not blocked.isdisjoint(mesh.face_vertices(face_id))
 
 
 class LoopRingError(ValueError):
@@ -55,9 +77,9 @@ def _loop_step(mesh, edge_id, from_vertex, blocked=frozenset()):
     if len(candidates) != 1:
         return None
     next_edge = candidates[0]
-    v0, v1 = mesh.edge_vertices(next_edge)
-    if blocked and (v0 in blocked or v1 in blocked):
+    if _edge_blocked(mesh, next_edge, blocked):
         return None
+    v0, v1 = mesh.edge_vertices(next_edge)
     next_vertex = v1 if v0 == from_vertex else v0
     return next_edge, next_vertex
 
@@ -95,13 +117,13 @@ def _ring_step(mesh, edge_id, through_face, blocked=frozenset()):
     boundary_edges = mesh.face_edges(through_face)
     if len(boundary_edges) != 4:
         return None
-    if blocked and not blocked.isdisjoint(mesh.face_vertices(through_face)):
+    if _face_blocked(mesh, through_face, blocked):
         return None
     idx = boundary_edges.index(edge_id)
     opposite_edge = boundary_edges[(idx + 2) % 4]
     other_faces = [f for f in mesh.edge_faces(opposite_edge) if f != through_face]
     next_face = other_faces[0] if other_faces else None
-    if blocked and next_face is not None and not blocked.isdisjoint(mesh.face_vertices(next_face)):
+    if next_face is not None and _face_blocked(mesh, next_face, blocked):
         next_face = None  # a hidden face ends the ring like a mesh border
     return opposite_edge, next_face
 
@@ -113,7 +135,7 @@ def edge_ring(mesh, start_edge, blocked=frozenset()) -> Traversal:
 
     adjacent_faces = mesh.edge_faces(start_edge)
     if blocked:
-        adjacent_faces = [f for f in adjacent_faces if blocked.isdisjoint(mesh.face_vertices(f))]
+        adjacent_faces = [f for f in adjacent_faces if not _face_blocked(mesh, f, blocked)]
     visited = {start_edge}
 
     def walk(through_face):

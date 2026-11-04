@@ -142,7 +142,7 @@ def test_loop_insert_only_cuts_the_visible_quads(app):
     for f, boundary in hidden_faces.items():
         assert mesh.is_valid_face(f)  # hidden faces survive (one border edge got a vertex)
     # nothing was added above y = 0 except the border midpoint
-    assert all(mesh.vertex_position(v)[1] <= 0.0 or app._hidden.is_hidden_vertex(v) for v in mesh.all_vertex_ids())
+    assert all(mesh.vertex_position(v)[1] <= 0.0 or app._hidden.is_hidden_vertex(mesh, v) for v in mesh.all_vertex_ids())
     assert app.key_press(_key("z", "ctrl"))
     assert len(mesh.all_face_ids()) == faces_before
 

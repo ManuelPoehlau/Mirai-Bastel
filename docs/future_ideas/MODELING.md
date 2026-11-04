@@ -23,14 +23,18 @@ Beide sollen die aktuelle Auswahl oder einen gezielten Bereich berücksichtigen,
 ### Hide/Show Geometry und Isolate
 
 > Gebaut (2026-10-25, `PROVISIONAL`, `src/mirai/hidden.py`): `Ctrl+H` versteckt die Auswahl (Spiegelpartner mit),
-> `Ctrl+Shift+H` isoliert sie (alles andere versteckt), `Alt+H` zeigt alles. Versteckt werden Vertices; eine Face oder
-> Kante ist versteckt, sobald eine Ecke es ist (neue Topologie bleibt dadurch konsistent). Versteckte Geometrie wird
+> `Ctrl+Shift+H` isoliert sie (alles andere versteckt), `Alt+H` zeigt alles. Im Vertex- und Edge-Modus werden Vertices
+> versteckt; eine Face oder Kante ist versteckt, sobald eine Ecke es ist (neue Topologie bleibt dadurch konsistent). Im
+> Face-Modus werden genau die ausgewählten Faces versteckt (2026-11-04, Manu I1 „Hide exactly the selected Polygons“):
+> Nachbarn mit gemeinsamer Ecke bleiben ganz; eine Kante oder ein Vertex verschwindet erst, wenn alle angrenzenden Faces
+> versteckt sind (eine davon explizit). Eine Regel für alle Stellen: `src/viewport/hidden_rule.py`. Versteckte Geometrie wird
 > nicht gezeichnet (degenerierte Dreiecke im Index-Buffer, Shading, Tiefe und GPU-Face-ID-Pass sehen dasselbe), nicht
 > gepickt (GPU und CPU, Box/Lasso) und verdeckt nichts; die SubD-Fläche und ihre Käfig-/Isolinien blenden die Teile
 > versteckter Käfig-Faces aus. Die Auswahl enthält nie Verstecktes (Hide nimmt es heraus, Grow/Shrink/Loop wählen es nicht
 > an). Transformationen, Soft Selection und Smooth/Relax behandeln Verstecktes wie voll maskiert. Topologie-Befehle
 > (Connect, Knife, Collapse, Delete/Dissolve, Extrude, Loop Insert/Slide, Re-Symmetrize) neben verstecktem werden
-> abgelehnt („hidden geometry in the way“). Der Zustand ist flüchtig wie die Maske (kein History-Eintrag, nicht in
+> abgelehnt („hidden geometry in the way“) — auch an der Ecke einer versteckten Face; Loops enden an einer versteckten
+> Kante, Ringe an einer versteckten Face. Der Zustand ist flüchtig wie die Maske (kein History-Eintrag, nicht in
 > Szenendateien, pro Edit-Objekt, beim Szenenwechsel geleert). Mit dem Objektwechsel behält jetzt auch die Maske ihren
 > Zustand pro Objekt (vorher leakte sie). Basis und Morph-Ziel (Tab, Bearbeitungsansicht) teilen eine Sichtbarkeit
 > (Manu 2026-11-04, I2 „share one visibilty“): was auf der Basis versteckt ist, ist es auch auf dem Ziel und umgekehrt;
@@ -79,7 +83,9 @@ Die Maske muss sichtbar und leicht zu ändern/aufzuheben sein. Zuerst den Scope 
 > Fläche), `Ctrl+Alt+D` blendet sie ein/aus (Standard an). **Shift+Ctrl+Klick** (ZBrush-artig, Manu 2026-10-25) nimmt die
 > Gruppen unter dem Cursor (Vertex/Edge im Vertex-/Edge-Modus: alle Gruppen, die er berührt): Ist nichts versteckt, werden sie
 > isoliert; sind nur sie sichtbar, kehrt sich die Sichtbarkeit um (Rest sichtbar, sie versteckt); ist schon etwas anderes
-> versteckt, werden sie zusätzlich versteckt. Ins Leere zeigt alles.
+> versteckt, werden sie zusätzlich versteckt. Ins Leere zeigt alles. Isolieren, Umkehren und Verstecken wirken seit
+> 2026-11-04 auf die Faces der Gruppe (polygon-exakt, Manu I1): Nachbar-Faces bleiben ganz, auch eine Gruppe ohne
+> innere Vertices lässt sich verstecken (der frühere Umweg über die inneren Vertices ist entfernt).
 > **Mask by Polygroup** (`Ctrl+Alt+Shift+M`, Schalter, Standard aus, Manu 2026-10-25, ZBrush-artig): Solange an, wirken W/E/R
 > (auch Soft), Smooth/Relax und die Soft-Vorschau nur auf die Gruppen der Auswahl (ohne Auswahl: des gehoverten Elements);
 > alles außerhalb ist für diese Geste maskiert, die eigene Maske bleibt unberührt. Gruppen der Auswahl = die der Faces, die
