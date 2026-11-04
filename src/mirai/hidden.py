@@ -9,8 +9,9 @@ scene load, kept per object by the `Application`.
 Where it acts (one choke point each, all fed by `Application._hidden_push`):
 
 - drawing and GPU picking: the viewport uploads a degenerate triangle for a hidden face
-  (`RenderMesh.set_hidden`), so shading, depth and the face-ID pass agree; the SubD surface hides the
-  derived faces of hidden control faces;
+  (`RenderMesh.set_hidden`), so shading, depth and the face-ID pass agree; every replacement surface follows
+  (the morph mix and the pose take the same vertices, the SubD surface hides the derived faces of hidden control
+  faces), also one switched on after the Hide (2026-11-04, AD-013 H7 note);
 - CPU picking and box / lasso: `PickCache.set_hidden`;
 - selection: it never contains a hidden element (Hide removes them; steps and loops stop at them);
 - transforms: hidden vertices count as fully masked (`Application._mask_values`);

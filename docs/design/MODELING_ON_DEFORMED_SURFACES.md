@@ -523,7 +523,10 @@ the Rotate dial, Inset / Bevel width per pixel, Loop / Vertex Slide screen direc
   offsets whose mix is exactly the aimed point; a self-crossing point is the resolver's blend of its stretch ends (affine
   inside one triangle, AD-025 §16.2). The symmetric session view and the commit coordinator get the rest path.
 - **Hide on the mix:** when the morph surface is the cage it gets the edit mesh's hidden set (drawn and picked like the
-  edit mesh). Before, hidden faces stayed drawn on the mix (found here).
+  edit mesh). Before, hidden faces stayed drawn on the mix (found here). Since 2026-11-04 (audit Hide/Show + Region
+  Colours; AD-013 "H7 note: display state on replacement surfaces"), every surface drawn for the edit mesh carries the
+  hidden set and the region tints (DS-F2): the mix at every weight, the mix kept at 0 % under SubD, Morph + SubD after
+  a Hide made before SubD, and the pose (Manu I4).
 
 **Limits (known, not changed):** Rotate / Scale turn rest positions about a rest pivot, so a region with large offsets
 does not turn rigidly on screen (C-1, reading (a)); normal-space constraints and Extrude directions are the rest normals;

@@ -1557,6 +1557,29 @@ hits what is visible. Production, implemented in the same change.
 - Not reviewed independently (AGENTS §6: the change is additive, reversible by not setting a source, and Manu decided
   the product behaviour); the GL tests pin the ID pass on the mix (`tests/test_gl_morph_picking.py`).
 
+### H7 note: display state on replacement surfaces (2026-11-04)
+
+**Why:** the audit "Hide/Show, Region Colours and Morph" (2026-11-04) found the H7 contract incomplete. The morph mix
+was drawn without the region colours. A provider set *after* a Hide never learned the hidden set, so SubD drew hidden
+faces or hid shown ones, and picking disagreed with drawing. The surface cache keys survived a new surface RenderMesh
+for the same surface mesh (the mix kept at 0 %). **Decision (Manu, 2026-11-04, chat, I4 "Yes"):** a pose honours Hide
+and Region Colours too.
+
+- **Rule.** Every surface the viewport draws for the edit mesh shows the edit mesh's Hide / Isolate and region
+  colours, whichever provider supplies it.
+  - An **ID-identical** surface (`p.wire_follows_surface` True: the morph mix, the posed skin surface, a chain whose
+    output is one of them) takes the edit mesh's own sets unchanged.
+  - A **derived** surface (SubD) maps them through provenance, as before (`p.set_hidden`, `p.hidden_key`,
+    `p.hidden_surface_faces()`, `p.surface_face_tints()`).
+- **Lifecycle.** `Viewport.set_surface_provider` hands the current hidden set to the new provider (every stage of a
+  `ChainedSurface`). Both caches are keyed by the surface RenderMesh and cleared with it. The former "surface is the
+  cage" hide special case is part of the rule.
+- **Unchanged.** H7-R1 (without a provider nothing changes), H7-R2 and its amendment (display, plus read-only queries
+  on the cage; picking in a pose stays on the rest cage, AD-028 §7.1 S5), H7-R3 and H7-R4. The Application still owns
+  the hidden set and the colours; no provider holds a copy beyond SubD's existing one.
+- **Code:** `src/viewport/viewport.py` (`_sync_surface_display_state`). **Tests:** `tests/test_surface_display_state.py`
+  (Application -> chain -> viewport -> RenderMesh), `tests/test_gl_region_tint.py`, `tests/test_gl_morph_picking.py`.
+
 ## Addendum (2026-10-28, the active BindingSet is the single input truth, Manu's keymap in the repo)
 
 **Status:** **DECIDED ✓** (Artist decisions: Manu, 2026-10-28; engineering decisions: set in the handoff "AD-013

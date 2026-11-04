@@ -104,3 +104,46 @@ def test_the_switch_is_one_uniform_and_changes_nothing_on_the_gpu(gl_window):
     assert off == _draw(gl_window, rm2, camera2)
     rm.store.release()
     rm2.store.release()
+
+
+class _SameIdSurface:
+    """An ID-identical replacement surface (like the morph mix or a pose, `wire_follows_surface`): a copy of the edit
+    mesh with the same IDs."""
+
+    wire_follows_surface = True
+    dirty = False
+
+    def __init__(self, mesh: Mesh) -> None:
+        self.surface_mesh = Mesh.from_state(mesh.export_state())
+
+    def sync(self, mesh, selection) -> set:
+        return set()
+
+
+def test_an_id_identical_replacement_surface_is_drawn_with_the_region_colours(gl_window):
+    """Audit 2026-11-04 (F1): the viewport gives the edit mesh's colours to the surface it draws instead (the morph mix
+    had none)."""
+    from core import Selection
+    from viewport.viewport import Viewport
+
+    gl_window.switch_to()
+    mesh = _plane()
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.2, yaw=0.0, pitch=0.0)
+    vp = Viewport(mesh, selection=Selection(), store_type=GLRenderStore)
+    vp.bind_camera(camera)
+    vp.on_camera_changed(1.0)
+    vp.set_face_tints({mesh.all_face_ids()[0]: (0.95, 0.55, 0.55)})
+    vp.set_surface_provider(_SameIdSurface(mesh))
+    vp.sync()
+    rm = vp.surface_render_mesh
+    assert rm is not None and rm.mesh is vp.surface_provider.surface_mesh
+    tinted = _draw(gl_window, rm, camera)
+    rm.store.set_region_tint(False)
+    plain = _draw(gl_window, rm, camera)
+    left, right = SIZE // 2 - 20, SIZE // 2 + 20
+    low, high = SIZE // 2 - 20, SIZE // 2 + 20
+    r, g, b = _pixel(tinted, left, low)
+    assert r > g + 30 and r > b + 30
+    for x, y in ((right, low), (left, high), (right, high)):
+        assert _pixel(tinted, x, y) == _pixel(plain, x, y)
+    vp.set_surface_provider(None)

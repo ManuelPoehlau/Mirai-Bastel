@@ -192,3 +192,28 @@ def test_at_zero_percent_the_id_pass_draws_the_edit_mesh(app):
     app.update_viewport(0.0)
     assert app.viewport.cage_mesh is None
     assert app._gpu_pick_mesh() is app.viewport.render_mesh
+
+
+def test_faces_hidden_on_the_mix_are_not_in_the_id_pass(app):
+    """Audit 2026-11-04: Hide on the mix reaches the ID pass through the viewport's display state on the surface
+    RenderMesh - also for a pick right after the Hide, with no frame in between."""
+    from mirai.interaction.input import Input
+
+    mesh = app.scene.mesh
+    app.selection.mode = F
+    seen = {}
+    for x, y in _cursors(5):
+        face = app._pick(x, y)
+        if face is not None:
+            seen.setdefault(face, (x, y))
+    assert len(seen) > 40
+    victims = sorted(seen)[:: max(1, len(seen) // 8)][:8]
+    app.selection.set(set(victims))
+    app.viewport.on_selection_changed()
+    assert app.key_press(Input("key", "h", frozenset({"ctrl"}))), app.status_message
+    hidden = {f for f in mesh.all_face_ids() if app._hidden.is_hidden_face(mesh, f)}
+    assert set(victims) <= hidden
+    app.selection.mode = F
+    for face, (x, y) in seen.items():  # no update_viewport in between
+        if face in hidden:
+            assert app._pick(x, y) not in hidden, face

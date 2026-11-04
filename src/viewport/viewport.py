@@ -115,6 +115,14 @@ Käfig-Quelle (2026-11-03, unten).
 Optional (2026-10-27, AD-025 Phase 5): `p.entry_topology_changed` (Menge von Eintrags-Schlüsseln) heißt dasselbe wie
 `surface_topology_changed` für die Ersatzflächen der Objekt-Einträge (H7-E).
 
+Anzeige-Zustand auf der Ersatzfläche (2026-11-04, Audit Hide/Show + Region Colours; AD-013 H7-Notiz): jede Fläche, die für
+das Edit-Mesh gezeichnet wird, zeigt dessen Hide / Isolate (`set_hidden`) und Regionsfarben (`set_face_tints`), gleich welcher
+Provider sie liefert. Eine ID-identische Fläche (`p.wire_follows_surface` True: die Morph-Mischung, die Pose) bekommt die
+Mengen des Edit-Mesh unverändert; eine abgeleitete (SubD) über `p.set_hidden(vertices)` / `p.hidden_key` /
+`p.hidden_surface_faces()` / `p.surface_face_tints(tints)` (Provenienz). Ein neu gesetzter Provider erfährt die aktuelle
+versteckte Menge sofort (`set_surface_provider`), und jeder neue Flächen-RenderMesh bekommt beides neu - auch für dasselbe
+Flächen-Mesh. Picking folgt derselben Menge (`gpu_pick_mesh`).
+
 H7-E (2026-10-17, Morph Lab): Ersatzfläche auch für **Objekt-Einträge**. Optional liest der Viewport nach
 `p.sync(...)` `p.entry_surfaces` (`dict[key, Mesh]`, `key` wie bei `set_object_entry`) und `p.entry_moved`
 (`dict[key, set[VertexId]]`, bewegte Vertices je Mesh; fehlt ein Key, gilt "neu aufgebaut/unverändert"). Für jeden
@@ -227,7 +235,7 @@ class Viewport:
             line_overlay_type() if line_overlay_type is not None else None
         )
         self.edge_segments: list = []
-        #: Hide / Isolate (`set_hidden`); `_surface_hidden_key` = was die SubD-Fläche zuletzt davon bekam
+        #: Hide / Isolate (`set_hidden`); `_surface_hidden_key` / `_surface_tint_key` = what the surface RenderMesh last got
         self.hidden_vertices: frozenset = frozenset()
         self._surface_hidden_key = None
         #: Saved regions' colours (`mirai.regions.region_tints`, pushed by the host) and whether they are drawn
@@ -258,7 +266,6 @@ class Viewport:
         #: Käfig ist (SubD zeigt die glatte Fläche), und das Journal, aus dem er nachgezogen wird
         self._cage_render_mesh: RenderMesh | None = None
         self._cage_rm_watch = None
-        self._cage_hidden_key = None
         # Startzustand = DisplayState-Default (Shaded, kein Overlay).
         self.show_faces = True
         self.show_edges = False
@@ -478,6 +485,8 @@ class Viewport:
         provider = self.surface_provider
         if provider is not None and getattr(provider, "dirty", False):
             self._sync_surface()
+        else:
+            self._sync_surface_display_state()  # a pick right after Hide reads the surface's own RenderMesh
         self._follow_cage()
         return self.cage_mesh
 
@@ -501,13 +510,6 @@ class Viewport:
             self._selection_overlays_dirty = True
             self._extra_overlays_dirty = True
             self._edges_dirty = True
-        rm = self.surface_render_mesh
-        if cage is not None and rm is not None and rm.mesh is cage:
-            # Die Ersatzfläche ist der Käfig: Hide / Isolate gilt für sie wie für das Edit-Mesh (gezeichnet und gepickt).
-            key = (id(rm), self.hidden_vertices)
-            if key != self._cage_hidden_key:
-                self._cage_hidden_key = key
-                rm.set_hidden(self.hidden_vertices)
         return changed
 
     def _release_cage_render_mesh(self) -> None:
@@ -556,13 +558,22 @@ class Viewport:
         self.surface_provider = provider
         self._extra_overlays_dirty = True
         self._edges_dirty = True  # a provider whose wire follows its surface (or none any more)
+        self._surface_hidden_key = None
+        self._surface_tint_key = None
+        if provider is not None and hasattr(provider, "set_hidden"):
+            # A provider installed after a Hide / Show All learns the current set (it only hears `set_hidden` while it
+            # sits in the slot): otherwise SubD drew what is hidden, or hid what is shown (audit 2026-11-04, F3).
+            provider.set_hidden(self.hidden_vertices)
         if provider is None:
             self._release_surface()
 
     def _release_surface(self) -> None:
         rm = self.surface_render_mesh
         self.surface_render_mesh = None
-        self._cage_hidden_key = None
+        # The next surface RenderMesh starts without hidden faces and colours, even for the same surface mesh (the
+        # morph mix is kept at 0 %): the display state is applied to it afresh.
+        self._surface_hidden_key = None
+        self._surface_tint_key = None
         if rm is not None:
             release = getattr(rm.store, "release", None)
             if release is not None:
@@ -646,15 +657,36 @@ class Viewport:
         elif moved:
             rm.mark_vertices_dirty(set(moved))
         rm.sync()
-        hidden_faces = getattr(self.surface_provider, "hidden_surface_faces", None)
+        self._sync_surface_display_state()
+
+    def _sync_surface_display_state(self) -> None:
+        """Hide / Isolate and the region colours of the edit mesh on the surface RenderMesh (module docstring, display
+        state): an ID-identical surface (`wire_follows_surface`) takes the edit mesh's own sets, a derived one (SubD)
+        the provider's mapping (`hidden_surface_faces`, `surface_face_tints`). Keyed by the RenderMesh, so a new one
+        for the same surface mesh is never skipped; cheap when nothing changed."""
+        rm = self.surface_render_mesh
+        provider = self.surface_provider
+        if rm is None or provider is None:
+            return
+        if getattr(provider, "wire_follows_surface", False):
+            key = (id(rm), self.hidden_vertices)
+            if key != self._surface_hidden_key:
+                self._surface_hidden_key = key
+                rm.set_hidden(self.hidden_vertices)
+            key = (id(rm), self._tint_version)
+            if key != self._surface_tint_key:
+                self._surface_tint_key = key
+                rm.set_face_tints(self._face_tints)
+            return
+        hidden_faces = getattr(provider, "hidden_surface_faces", None)
         if hidden_faces is not None:
-            key = (id(mesh), self.surface_provider.hidden_key)
+            key = (id(rm), provider.hidden_key)
             if key != self._surface_hidden_key:
                 self._surface_hidden_key = key
                 rm.set_hidden(faces=hidden_faces())
-        surface_tints = getattr(self.surface_provider, "surface_face_tints", None)
+        surface_tints = getattr(provider, "surface_face_tints", None)
         if surface_tints is not None:
-            key = (id(mesh), self.surface_provider.hidden_key, self._tint_version)
+            key = (id(rm), provider.hidden_key, self._tint_version)
             if key != self._surface_tint_key:
                 self._surface_tint_key = key
                 rm.set_face_tints(surface_tints(self._face_tints))
@@ -819,6 +851,7 @@ class Viewport:
         elif self.surface_render_mesh is not None:
             # Kamera/Aspect (kein Provider-Auslöser) kommen wie bei den Objekt-Einträgen jeden Frame an.
             self.surface_render_mesh.sync()
+            self._sync_surface_display_state()  # e.g. new region colours without any other trigger
         if self._cage_source is not None and self._follow_cage():
             changed = True  # the overlays sit on the cage (after the provider: it patches the cage)
         if self._selection_overlays_dirty:
@@ -856,11 +889,11 @@ class Viewport:
     def set_hidden(self, vertex_ids) -> None:
         """Hide / Isolate (`mirai.hidden`): `vertex_ids` (ersetzt die bisherige Menge) und alles, was sie
         als Ecke oder Endpunkt hat, wird nicht gezeichnet und nicht gepickt; leer zeigt alles. Der
-        Aufrufer sorgt dafür, dass die Auswahl nichts Verstecktes enthält. Eine SubD-Fläche (H7-Provider
-        mit `set_hidden`) versteckt die Teilflächen der versteckten Käfig-Faces."""
+        Aufrufer sorgt dafür, dass die Auswahl nichts Verstecktes enthält. Die Ersatzfläche folgt beim nächsten
+        `sync()` (Modul-Docstring, Anzeige-Zustand): eine SubD-Fläche (H7-Provider mit `set_hidden`) versteckt die
+        Teilflächen der versteckten Käfig-Faces, eine ID-identische dieselben Vertices."""
         self.hidden_vertices = frozenset(vertex_ids)
         self.render_mesh.set_hidden(self.hidden_vertices)
-        self._cage_hidden_key = None
         provider = self.surface_provider
         if provider is not None and hasattr(provider, "set_hidden"):
             provider.set_hidden(self.hidden_vertices)
