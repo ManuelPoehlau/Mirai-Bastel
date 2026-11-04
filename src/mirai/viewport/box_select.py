@@ -137,7 +137,10 @@ def elements_in_region(
 
     if mode is SelectionMode.EDGE:
         edges = set()
+        hidden_edges = cache.hidden_edges
         for eid in mesh.all_edge_ids():
+            if eid in hidden_edges:
+                continue  # Hide / Isolate
             a, b = mesh.edge_vertices(eid)
             if a in inside_vertices and b in inside_vertices:
                 if occluded is not None:
@@ -154,7 +157,10 @@ def elements_in_region(
         return edges
 
     faces = set()
+    hidden_faces = cache.hidden_faces
     for fid in mesh.all_face_ids():
+        if fid in hidden_faces:
+            continue  # Hide / Isolate: a hidden polygon whose corners stay visible
         corners = mesh.face_vertices(fid)
         if not all(v in inside_vertices for v in corners):
             continue

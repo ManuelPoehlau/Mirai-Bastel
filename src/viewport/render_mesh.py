@@ -88,6 +88,7 @@ from core import EdgeId, FaceId, Mesh, VertexId
 from .benchmark import BenchmarkCounters
 from .category import DirtyState
 from .derived import DerivedGeometry, _normalize, face_normal, triangulate_face
+from .hidden_rule import NOTHING, Resolved, resolve
 from .overlay import SelectionOverlay
 from .resource_store import ResourceStore, TraceStore
 
@@ -255,9 +256,12 @@ class RenderMesh:
         # nicht gepickt werden. Die Dreiecks-Slots bleiben belegt; hochgeladen wird ein degeneriertes
         # Dreieck (wie ein freier Slot), so dass Shading, Tiefe und Face-ID-Pass dasselbe sehen.
         self._hidden: frozenset[VertexId] = frozenset()
-        # Dasselbe für ganze Faces (die abgeleitete SubD-Fläche versteckt die Teilflächen versteckter Käfig-Faces,
-        # deren Vertices sie mit sichtbaren teilt).
+        # Dasselbe für ganze Faces (Face-Modus, polygon-exakt; die abgeleitete SubD-Fläche versteckt die Teilflächen
+        # versteckter Käfig-Faces, deren Vertices sie mit sichtbaren teilt).
         self._hidden_faces: frozenset[FaceId] = frozenset()
+        # Was daraus folgt (`hidden_rule.resolve`): auch eine Kante / ein Vertex, deren Faces alle versteckt sind.
+        # Nach jedem Topologie-Sync neu aufgelöst; nur die Differenz wird hochgeladen.
+        self._resolved: Resolved = NOTHING
         # Region colours (`mirai.regions.region_tints`, pushed by the host): FaceId -> rgb, written into the free `.w`
         # slots of texels 1-3 of the face row; (0, 0, 0) = no region, the row stays what it always was.
         self._tints: dict[FaceId, tuple[float, float, float]] = {}
@@ -288,6 +292,8 @@ class RenderMesh:
 
     def _full_rebuild(self) -> None:
         self.derived.full_recompute(self.mesh)
+        if self._hidden or self._hidden_faces:
+            self._resolved = resolve(self.mesh, self._hidden, self._hidden_faces)
         self._rebuild_index_mapping()
         self._rebuild_resources()
         self.layout_revision += 1
@@ -305,9 +311,10 @@ class RenderMesh:
         self._free_edge_slots = list(range(n + spare_e - 1, n - 1, -1))
         flat = array("I", bytes(4 * 2 * (n + spare_e)))
         i = 0
+        hidden_edges = self._resolved.edges
         for eid in eids:
             a, b = edge_vertices(eid)
-            if a not in hidden and b not in hidden:
+            if a not in hidden and b not in hidden and eid not in hidden_edges:
                 flat[i] = index[a]
                 flat[i + 1] = index[b]
             i += 2
@@ -324,7 +331,7 @@ class RenderMesh:
         if not 0 <= slot < len(self._slot_edge):
             return None
         edge = self._slot_edge[slot]
-        if edge is not None and self._hidden and not self._edge_visible(edge):
+        if edge is not None and (self._hidden or self._resolved) and not self._edge_visible(edge):
             return None
         return edge
 
@@ -332,21 +339,34 @@ class RenderMesh:
         if not 0 <= slot < len(self._slot_vertex):
             return None
         vertex = self._slot_vertex[slot]
-        return None if vertex in self._hidden else vertex
+        return None if self.is_vertex_hidden(vertex) else vertex
 
     def _edge_visible(self, edge: EdgeId) -> bool:
+        if edge in self._resolved.edges:
+            return False
         a, b = self.mesh.edge_vertices(edge)
         return a not in self._hidden and b not in self._hidden
 
     @property
     def hidden_vertices(self) -> frozenset[VertexId]:
+        """The explicitly hidden vertices (`set_hidden`)."""
         return self._hidden
+
+    @property
+    def hidden_faces(self) -> frozenset[FaceId]:
+        """The explicitly hidden faces (`set_hidden`)."""
+        return self._hidden_faces
+
+    @property
+    def resolved_hidden(self) -> Resolved:
+        """Every hidden vertex, edge and face (`hidden_rule`), as last synced."""
+        return self._resolved
 
     def _triangle_hidden(self, t: int, tri) -> bool:
         """A face with a hidden corner is hidden whole - also the triangles of its triangulation that do not
         contain that corner."""
         face = self._row_face[self._triangle_face_rows[t]]
-        if face in self._hidden_faces:
+        if face in self._hidden_faces or face in self._resolved.faces:
             return True
         return bool(self._hidden) and not self._hidden.isdisjoint(self._face_boundary.get(face, tri))
 
@@ -358,40 +378,53 @@ class RenderMesh:
         index = self._vertex_index
         return (float(index[tri[0]]), float(index[tri[1]]), float(index[tri[2]]))
 
-    def set_hidden(self, vertices=(), faces=()) -> None:
-        """Versteckt `vertices` (ersetzt die bisherige Menge): ihre Dreiecke und Kanten werden nicht mehr
-        gezeichnet und nicht mehr gepickt; `faces` versteckt ganze Faces (ihre Dreiecke), ohne ihre
-        Vertices anzufassen. Eine Face mit einer versteckten Ecke ist ganz versteckt. Leere Mengen zeigen alles. Patcht nur die betroffenen Slots (kein Rebuild);
-        `content_revision` macht den GPU-Picker-Cache ungültig."""
+    def set_hidden(self, vertices=(), faces=(), resolved: Resolved | None = None) -> None:
+        """Versteckt `vertices` und `faces` (ersetzt die bisherigen Mengen; Regel: `hidden_rule`): eine Face mit einer
+        versteckten Ecke oder in `faces` ist ganz versteckt, eine Kante / ein Vertex, wenn ein Endpunkt in `vertices`
+        liegt oder alle ihre Faces versteckt sind. Leere Mengen zeigen alles. Patcht nur die betroffenen Slots (kein
+        Rebuild); `content_revision` macht den GPU-Picker-Cache ungültig. `resolved`: dieselben Mengen, vom Aufrufer
+        für genau diese Mesh schon aufgelöst (`hidden_rule.resolve`) - spart die zweite Auflösung."""
         hidden, hidden_faces = frozenset(vertices), frozenset(faces)
         pending = self._watch.peek()
         if pending.vertices or pending.edges or pending.faces:
             # The mesh changed since the last sync: the slot layout must catch up before slots are patched.
             self.mark_topology_dirty()
             self.sync()
-        changed = self._hidden ^ hidden
-        changed_faces = self._hidden_faces ^ hidden_faces
-        if not changed and not changed_faces:
+        if hidden == self._hidden and hidden_faces == self._hidden_faces:
             return
         self._hidden, self._hidden_faces = hidden, hidden_faces
-        touched = {f for f, boundary in self._face_boundary.items() if not changed.isdisjoint(boundary)}
-        touched |= changed_faces & self._face_boundary.keys()
+        self._apply_hidden(resolved)
+
+    def _apply_hidden(self, resolved: Resolved | None = None) -> None:
+        """Resolves the hidden sets again (or takes `resolved`) and uploads the triangles and edge slots whose
+        visibility changed."""
+        old = self._resolved
+        if not self._hidden and not self._hidden_faces:
+            resolved = NOTHING
+        elif resolved is None:
+            resolved = resolve(self.mesh, self._hidden, self._hidden_faces)
+        new = self._resolved = resolved
+        changed_faces = (old.faces ^ new.faces) & self._face_boundary.keys()
+        changed_edges = old.edges ^ new.edges
+        if not changed_faces and not changed_edges:
+            return
         tri_slots = {
             t: self._triangle_values(t, self._triangle_indices[t])
-            for f in touched for t in self._face_triangles[f]
+            for f in changed_faces for t in self._face_triangles[f]
         }
-        edge_vertices, index = self.mesh.edge_vertices, self._vertex_index
-        for slot, edge in enumerate(self._slot_edge):
-            if edge is None or not changed:
+        edge_vertices, index, edge_slot = self.mesh.edge_vertices, self._vertex_index, self._edge_slot
+        for edge in changed_edges:
+            slot = edge_slot.get(edge)
+            if slot is None:
                 continue
             a, b = edge_vertices(edge)
-            if a in changed or b in changed:
-                visible = a not in hidden and b not in hidden
-                self.edge_indices[2 * slot] = index[a] if visible else 0
-                self.edge_indices[2 * slot + 1] = index[b] if visible else 0
-                if self._edge_dirty is not None:
-                    self._edge_dirty.add(slot)
+            visible = edge not in new.edges
+            self.edge_indices[2 * slot] = index[a] if visible else 0
+            self.edge_indices[2 * slot + 1] = index[b] if visible else 0
+            if self._edge_dirty is not None:
+                self._edge_dirty.add(slot)
         self._upload_vec3("indices", tri_slots)
+        self._upload_triangle_uvs(tri_slots)
         self.content_revision += 1
 
     def set_face_tints(self, tints) -> None:
@@ -412,7 +445,7 @@ class RenderMesh:
             self._upload_rows(rows)
 
     def is_vertex_hidden(self, vertex_id: VertexId) -> bool:
-        return vertex_id in self._hidden
+        return vertex_id in self._hidden or vertex_id in self._resolved.vertices
 
     def face_of_triangle(self, triangle: int) -> FaceId | None:
         """Die Face des Dreiecks-Slots `triangle` (= `gl_PrimitiveID` im Draw des Index-Buffers);
@@ -895,7 +928,7 @@ class RenderMesh:
                 slot = edge_slot[e] = self._free_edge_slots.pop()
                 self._slot_edge[slot] = e
             a, b = edge_vertices(e)
-            visible = a not in self._hidden and b not in self._hidden
+            visible = self._edge_visible(e)
             edge_indices[2 * slot] = index[a] if visible else 0
             edge_indices[2 * slot + 1] = index[b] if visible else 0
             if edge_dirty is not None:
@@ -973,6 +1006,9 @@ class RenderMesh:
             flags = self._highlight_flags()
             self.store.update("highlight_flags", 0, flags, len(flags) * FLOAT_BYTES)
         self.content_revision += 1
+        if self._hidden or self._hidden_faces:
+            # A face added or removed beside hidden ones can change whether an edge or corner is hidden.
+            self._apply_hidden()
         return True
 
     def _upload_vec3(self, name: str, slot_values: dict[int, tuple]) -> None:

@@ -43,6 +43,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from core import EdgeId, FaceId, SelectionMode, VertexId
+from viewport.hidden_rule import resolve_indexed
 
 from ..interaction import commands
 from ..interaction.input import GLOBAL_CONTEXT, SUBD_CONTEXT, TOPOLOGY_CONTEXT, BindingSet, Input
@@ -125,10 +126,13 @@ class SubdSurfaceProvider:
         #: surface is shown, so the viewport leaves out its wire layer (no second, full-strength cage)
         self.replaces_wire = True
 
-        #: Hide / Isolate (`mirai.hidden`): hidden control vertices. A control face with one of them is
-        #: hidden, and with it every derived face born from it (`hidden_surface_faces`).
+        #: Hide / Isolate (`mirai.hidden`): hidden control vertices and faces. A control face with a hidden corner
+        #: or in the face set is hidden, and with it every derived face born from it (`hidden_surface_faces`); a
+        #: cage edge goes with a hidden endpoint or when all its faces are hidden (`viewport.hidden_rule`).
         self._hidden_control: frozenset = frozenset()
+        self._hidden_control_faces: frozenset = frozenset()
         self._hidden_version = 0
+        self._hidden_resolved: tuple | None = None  # (key, hidden face indices, hidden edge indices)
 
         self._mesh = None
         self._watch = None
@@ -205,9 +209,23 @@ class SubdSurfaceProvider:
 
     # -- H7 -------------------------------------------------------------------------------------
 
-    def set_hidden(self, vertex_ids) -> None:
+    def set_hidden(self, vertex_ids, face_ids=()) -> None:
         self._hidden_control = frozenset(vertex_ids)
+        self._hidden_control_faces = frozenset(face_ids)
         self._hidden_version += 1
+
+    def _hidden_indices(self) -> tuple[frozenset, frozenset]:
+        """The hidden control faces and cage edges as indices into the control topology (cached per `hidden_key`)."""
+        if (not self._hidden_control and not self._hidden_control_faces) or self._surface is None:
+            return frozenset(), frozenset()
+        key = self.hidden_key
+        if self._hidden_resolved is None or self._hidden_resolved[0] != key:
+            topology = self._surface.topology
+            vertex_ids, face_ids = topology.vertex_ids, topology.face_ids
+            vertices = {i for i, v in enumerate(vertex_ids) if v in self._hidden_control}
+            faces = {i for i, f in enumerate(face_ids) if f in self._hidden_control_faces}
+            self._hidden_resolved = (key, *resolve_indexed(topology.faces, topology.edges, vertices, faces))
+        return self._hidden_resolved[1], self._hidden_resolved[2]
 
     @property
     def hidden_key(self) -> tuple:
@@ -228,26 +246,16 @@ class SubdSurfaceProvider:
         return out
 
     def hidden_control_edges(self) -> frozenset:
-        """Indices (into `control_edges()`) of the cage edges with a hidden endpoint."""
-        if not self._hidden_control or self._surface is None:
-            return frozenset()
-        topology = self._surface.topology
-        hidden = self._hidden_control
-        vertex_ids = topology.vertex_ids
-        return frozenset(
-            i for i, (a, b) in enumerate(topology.edges) if vertex_ids[a] in hidden or vertex_ids[b] in hidden
-        )
+        """Indices (into `control_edges()`) of the hidden cage edges: a hidden endpoint, or all faces hidden."""
+        return self._hidden_indices()[1]
 
     def hidden_surface_faces(self) -> frozenset:
         """The shown surface's faces that lie in a hidden control face (by provenance, `face_parent`)."""
-        if not self._hidden_control or self._surface is None or self._derived is None:
+        if self._derived is None:
             return frozenset()
-        topology = self._surface.topology
-        hidden = self._hidden_control
-        vertex_ids = topology.vertex_ids
-        hidden_parents = {
-            i for i, face in enumerate(topology.faces) if any(vertex_ids[v] in hidden for v in face)
-        }
+        hidden_parents = self._hidden_indices()[0]
+        if not hidden_parents:
+            return frozenset()
         return frozenset(
             self._derived_face_ids[i] for i, parent in enumerate(self._derived.face_parent)
             if parent in hidden_parents

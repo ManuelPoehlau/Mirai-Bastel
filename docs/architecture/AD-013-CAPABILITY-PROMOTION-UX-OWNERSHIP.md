@@ -1579,6 +1579,12 @@ and Region Colours too.
   the hidden set and the colours; no provider holds a copy beyond SubD's existing one.
 - **Code:** `src/viewport/viewport.py` (`_sync_surface_display_state`). **Tests:** `tests/test_surface_display_state.py`
   (Application -> chain -> viewport -> RenderMesh), `tests/test_gl_region_tint.py`, `tests/test_gl_morph_picking.py`.
+- **Addition (2026-11-04, slice 3, polygon-exact Hide; Manu I1 "Hide exactly the selected Polygons"):** the hidden set
+  is a pair (vertices, faces). `Viewport.set_hidden(vertices, faces)`, the provider hook `p.set_hidden(vertices, faces)`
+  (every stage of a `ChainedSurface`) and an ID-identical surface take both; SubD maps the hidden control faces through
+  provenance as before (`hidden_surface_faces`, `hidden_control_edges`). One rule for all of them:
+  `src/viewport/hidden_rule.py` (an edge / vertex is hidden when all its faces are hidden and one of them explicitly).
+  A provider's `set_hidden` must accept the face set; Production's two (SubD, the chain) do, the Morph Lab has none.
 
 ## Addendum (2026-10-28, the active BindingSet is the single input truth, Manu's keymap in the repo)
 

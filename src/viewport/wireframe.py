@@ -13,12 +13,15 @@ from core import Mesh
 Point = tuple[float, float, float]
 
 
-def edge_segments(mesh: Mesh, hidden=frozenset()) -> list[tuple[Point, Point]]:
+def edge_segments(mesh: Mesh, hidden=frozenset(), hidden_edges=frozenset()) -> list[tuple[Point, Point]]:
     """Ein `(a, b)`-Paar pro Edge — die Weltpositionen ihrer beiden Vertices. Edges mit einem
-    Endpunkt in `hidden` (Hide / Isolate, `mirai.hidden`) fehlen."""
+    Endpunkt in `hidden` oder in `hidden_edges` (Hide / Isolate, `mirai.hidden`; die aufgelösten Kanten aus
+    `hidden_rule`, auch die zwischen lauter versteckten Faces) fehlen."""
     position = mesh.vertex_position
     segments = []
     for edge_id in mesh.all_edge_ids():
+        if hidden_edges and edge_id in hidden_edges:
+            continue
         va, vb = mesh.edge_vertices(edge_id)
         if hidden and (va in hidden or vb in hidden):
             continue

@@ -118,7 +118,7 @@ Optional (2026-10-27, AD-025 Phase 5): `p.entry_topology_changed` (Menge von Ein
 Anzeige-Zustand auf der Ersatzfläche (2026-11-04, Audit Hide/Show + Region Colours; AD-013 H7-Notiz): jede Fläche, die für
 das Edit-Mesh gezeichnet wird, zeigt dessen Hide / Isolate (`set_hidden`) und Regionsfarben (`set_face_tints`), gleich welcher
 Provider sie liefert. Eine ID-identische Fläche (`p.wire_follows_surface` True: die Morph-Mischung, die Pose) bekommt die
-Mengen des Edit-Mesh unverändert; eine abgeleitete (SubD) über `p.set_hidden(vertices)` / `p.hidden_key` /
+Mengen des Edit-Mesh unverändert; eine abgeleitete (SubD) über `p.set_hidden(vertices, faces)` / `p.hidden_key` /
 `p.hidden_surface_faces()` / `p.surface_face_tints(tints)` (Provenienz). Ein neu gesetzter Provider erfährt die aktuelle
 versteckte Menge sofort (`set_surface_provider`), und jeder neue Flächen-RenderMesh bekommt beides neu - auch für dasselbe
 Flächen-Mesh. Picking folgt derselben Menge (`gpu_pick_mesh`).
@@ -237,6 +237,7 @@ class Viewport:
         self.edge_segments: list = []
         #: Hide / Isolate (`set_hidden`); `_surface_hidden_key` / `_surface_tint_key` = what the surface RenderMesh last got
         self.hidden_vertices: frozenset = frozenset()
+        self.hidden_faces: frozenset = frozenset()
         self._surface_hidden_key = None
         #: Saved regions' colours (`mirai.regions.region_tints`, pushed by the host) and whether they are drawn
         self.region_tint: bool = True
@@ -417,6 +418,7 @@ class Viewport:
         self.mesh = mesh
         self.geometry_revision += 1
         self.hidden_vertices = frozenset()  # the caller pushes the new edit mesh's own set
+        self.hidden_faces = frozenset()
         self._surface_hidden_key = None
         self._face_tints = {}  # ... and its region colours
         self._surface_tint_key = None
@@ -532,7 +534,7 @@ class Viewport:
                 self._release_cage_render_mesh()
                 rm = self._cage_render_mesh = RenderMesh(cage, overlay=None, store_type=self._store_type)
                 self._cage_rm_watch = cage.watch()
-                rm.set_hidden(self.hidden_vertices)
+                rm.set_hidden(self.hidden_vertices, self.hidden_faces)
             else:
                 change = self._cage_rm_watch.take()
                 if change.edges or change.faces or any(
@@ -541,8 +543,8 @@ class Viewport:
                     rm.mark_topology_dirty()
                 elif change.vertices:
                     rm.mark_vertices_dirty(set(change.vertices))
-                if rm.hidden_vertices != self.hidden_vertices:
-                    rm.set_hidden(self.hidden_vertices)
+                if rm.hidden_vertices != self.hidden_vertices or rm.hidden_faces != self.hidden_faces:
+                    rm.set_hidden(self.hidden_vertices, self.hidden_faces)
             camera = self.render_mesh.camera
             if camera is not None and (rm.camera is not camera or self.render_mesh.dirty.camera):
                 rm.bind_camera(camera)
@@ -563,7 +565,7 @@ class Viewport:
         if provider is not None and hasattr(provider, "set_hidden"):
             # A provider installed after a Hide / Show All learns the current set (it only hears `set_hidden` while it
             # sits in the slot): otherwise SubD drew what is hidden, or hid what is shown (audit 2026-11-04, F3).
-            provider.set_hidden(self.hidden_vertices)
+            provider.set_hidden(self.hidden_vertices, self.hidden_faces)
         if provider is None:
             self._release_surface()
 
@@ -669,10 +671,10 @@ class Viewport:
         if rm is None or provider is None:
             return
         if getattr(provider, "wire_follows_surface", False):
-            key = (id(rm), self.hidden_vertices)
+            key = (id(rm), self.hidden_vertices, self.hidden_faces)
             if key != self._surface_hidden_key:
                 self._surface_hidden_key = key
-                rm.set_hidden(self.hidden_vertices)
+                rm.set_hidden(self.hidden_vertices, self.hidden_faces)
             key = (id(rm), self._tint_version)
             if key != self._surface_tint_key:
                 self._surface_tint_key = key
@@ -886,17 +888,19 @@ class Viewport:
                 self.face_overlay.set_triangles(layer, triangles)
         self._selection_overlays_dirty = False
 
-    def set_hidden(self, vertex_ids) -> None:
-        """Hide / Isolate (`mirai.hidden`): `vertex_ids` (ersetzt die bisherige Menge) und alles, was sie
-        als Ecke oder Endpunkt hat, wird nicht gezeichnet und nicht gepickt; leer zeigt alles. Der
-        Aufrufer sorgt dafür, dass die Auswahl nichts Verstecktes enthält. Die Ersatzfläche folgt beim nächsten
-        `sync()` (Modul-Docstring, Anzeige-Zustand): eine SubD-Fläche (H7-Provider mit `set_hidden`) versteckt die
-        Teilflächen der versteckten Käfig-Faces, eine ID-identische dieselben Vertices."""
+    def set_hidden(self, vertex_ids, face_ids=(), resolved=None) -> None:
+        """Hide / Isolate (`mirai.hidden`): die versteckten Vertices und Faces (ersetzen die bisherigen Mengen; Regel:
+        `hidden_rule` - eine Face mit versteckter Ecke ist versteckt, eine Kante / ein Vertex, wenn alle ihre Faces es
+        sind) werden nicht gezeichnet und nicht gepickt; leer zeigt alles. Der Aufrufer sorgt dafür, dass die Auswahl
+        nichts Verstecktes enthält. Die Ersatzfläche folgt beim nächsten `sync()` (Modul-Docstring, Anzeige-Zustand):
+        eine SubD-Fläche (H7-Provider mit `set_hidden`) versteckt die Teilflächen der versteckten Käfig-Faces, eine
+        ID-identische dieselben Elemente. `resolved`: die Mengen für das Edit-Mesh schon aufgelöst (`hidden_rule`)."""
         self.hidden_vertices = frozenset(vertex_ids)
-        self.render_mesh.set_hidden(self.hidden_vertices)
+        self.hidden_faces = frozenset(face_ids)
+        self.render_mesh.set_hidden(self.hidden_vertices, self.hidden_faces, resolved)
         provider = self.surface_provider
         if provider is not None and hasattr(provider, "set_hidden"):
-            provider.set_hidden(self.hidden_vertices)
+            provider.set_hidden(self.hidden_vertices, self.hidden_faces)
         self._surface_hidden_key = None
         self._edges_dirty = True
         self._selection_overlays_dirty = True
@@ -914,7 +918,10 @@ class Viewport:
 
     def _sync_edges(self) -> None:
         # E39: voller Neuaufbau pro dirty Frame (für B5a akzeptiert).
-        self.edge_segments = edge_segments(self._wire_mesh(), self.hidden_vertices)
+        # The wire mesh has the edit mesh's IDs and edges (cage / ID-identical surface): its resolved edges hold.
+        self.edge_segments = edge_segments(
+            self._wire_mesh(), self.hidden_vertices, self.render_mesh.resolved_hidden.edges
+        )
         if self.line_overlay is not None:
             self.line_overlay.set_segments(self.edge_segments)
         self.render_mesh.stats.count("line_overlay_rebuilds")
@@ -1020,3 +1027,4 @@ class Viewport:
 
     def resource_ids(self) -> dict[str, int]:
         return self.render_mesh.resource_ids()
+

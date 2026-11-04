@@ -178,7 +178,10 @@ def pick_nearest_edge(
     # distance below decides.
     reach = max_pixel_distance + 1e-6
     in_range = []
+    hidden_edges = cache.hidden_edges if cache is not None else ()
     for eid in mesh.all_edge_ids():
+        if eid in hidden_edges:
+            continue  # Hide / Isolate: also an edge between hidden faces whose corners stay visible
         va, vb = mesh.edge_vertices(eid)
         a = get(va)
         b = get(vb)

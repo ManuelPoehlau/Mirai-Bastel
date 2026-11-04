@@ -265,10 +265,12 @@ def test_isolate_and_mask_act_on_the_whole_group_even_partly_hidden(app):
     assert app.key_press(MASK)
     assert app._mask.full() == frozenset(verts)
     assert app.key_press(ISOLATE)
-    assert app._hidden.vertices() == frozenset(mesh.all_vertex_ids()) - verts
+    # Polygon-exact (Manu 2026-11-04, I1): exactly the group's faces stay, the rest is hidden as faces.
+    assert app._hidden.faces() == frozenset(mesh.all_face_ids()) - frozenset(faces)
+    assert not app._hidden.vertices()
 
 
-def test_isolate_and_mask_by_region_use_its_vertices_and_write_no_history(app):
+def test_isolate_and_mask_by_region_use_its_faces_and_write_no_history(app):
     mesh = app.scene.mesh
     faces = _select_faces(app)
     app.key_press(NEW)
@@ -278,7 +280,9 @@ def test_isolate_and_mask_by_region_use_its_vertices_and_write_no_history(app):
     assert app.key_press(MASK)
     assert app._mask.full() == frozenset(verts)
     assert app.key_press(ISOLATE)
-    assert app._hidden.vertices() == frozenset(mesh.all_vertex_ids()) - verts
+    # Polygon-exact (Manu 2026-11-04, I1): exactly the group's faces stay, the rest is hidden as faces.
+    assert app._hidden.faces() == frozenset(mesh.all_face_ids()) - frozenset(faces)
+    assert not app._hidden.vertices()
     if depth is not None:
         assert len(app.history.undo_stack) == depth
     assert app.key_press(SHOW_ALL)

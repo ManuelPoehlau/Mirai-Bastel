@@ -234,9 +234,10 @@ class AppServices:
         return self._app._mask_values(seeds)
 
     def hidden_vertices(self) -> set:
-        """The edit object's hidden vertices (`mirai.hidden`). Reason for the member (AD-027 M6): Vertex Slide ends at
-        hidden geometry; Hide stays in `Application` (§3.4)."""
-        return self._app._hidden.vertices()
+        """The edit object's hidden vertices (`mirai.hidden`; also a corner whose faces are all hidden). Reason for the
+        member (AD-027 M6): Vertex Slide ends at hidden geometry; Hide stays in `Application` (§3.4)."""
+        app = self._app
+        return set(app._hidden.resolve(app.scene.mesh).vertices)
 
     def loop_seed_edges(self, label: str):
         """The selected edges, else the hovered edge; None (status posted) outside edge mode or without either
