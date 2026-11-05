@@ -393,6 +393,20 @@ Not needed from Manu: any Maxon download (§4), any decision on technical approa
 
 ---
 
+## 10a. Interim observations (reference PC, 2026-11-05, captures on `main` `00423e2`)
+
+| # | Observation | Source |
+|---|---|---|
+| T0 | Root `C:\Users\Public\Pixologic`; no Maxon folder; existing GoZ apps Cinema4D, Max, Maya, Photoshop. Python 3.14.2 (Windows). | `captures/inventory.txt` |
+| T1/T2.2 | `MiraiProbe` appears in the **R** list only after a ZBrush restart. ZBrush runs `Locate.bat` with cwd = the app folder and `Init.bat` with cwd = `C:\WINDOWS\system32` (elevated, as the SDK says), both without arguments. | Manu; `captures/commands_log.txt` |
+| T2.3 | ZBrush runs `Edit.bat` **without arguments**, cwd = the app folder. The identifier is the Tool name (`…\GoZProjects\Default\A`, forward slashes), the mesh name `GoZMesh_A` (ZBrush writes the `GoZMesh_` prefix). Header text `" 1.0 ZBrush GoZ Binary......"`. Blocks: MESH, FLAGS (0), POINT_LIST, FACE4 format 1, MRGB, MASK16, GROUPS, CREASE, END (size field 0). | `captures/2026…_receive/dump.txt` |
+| T2.3 | **Complete at start:** every file was written 359–423 ms before `Edit.bat` started, parsed completely, opened exclusively and was unchanged after 1 s (6 of 6 transfers). It supports the SDK statement (save first, then call); 6 small files are not a proof for large ones. | receive logs |
+| T2.3 | **Orientation, OBJ path:** `x_goz = x`, `y_goz = −y + 0.95`, `z_goz = −z + 0.55` (A's `ymin + ymax`, `zmin + zmax`): a 180° rotation about X through the bounding-box centre, residual 1.9e-8 (float32). Vertex order and face corner lists identical, winding kept (det +1). Whether the offset depends on the object (bounding-box centre) or on ZBrush's stored position is open → T5.2. | T2 dump of A |
+| T3 | Every GoZ press started `Edit.bat`; the running listener got a ticket each time 1.06–1.25 s after the receiver started (1 s of it is the settle time); no second listener. ("hashes NOT ok" was a probe bug, fixed in `3475d25`.) | Manu |
+| T4 | `--resend` of ZBrush's own file: the file was already byte-identical; `GoZBrushFromApp -tmap` exited 0 after 0.25 s. | `send_resend/send_log.json` |
+| T5.1 | `GoZMakeObjectPath` returned `…\Default\E1_A` in 54 ms (exit 0); `GoZBrushFromApp -tmap` exited 0 after 0.6 s. ZBrush made a **new Tool** (GoZ preference *Import as SubTool* off). | `send_A/send_log.json`, Manu |
+| T5.2 (1st try) | The GoZ that followed sent an 8-point cube named `GoZMesh_d54dgsd5gs52gsdg21456sd4g` (±1, no Mirai geometry): another Tool was active, not `E1_A`. To repeat with `E1_A` selected. | receive dump 12:53 |
+
 ## 11. After E1
 
 - Record the result here (one table: question → observed answer). Turn the captured files into fixtures for the
