@@ -1,0 +1,7 @@
+# Windows command files: CRLF on every checkout (cmd.exe), whatever core.autocrlf says.
+*.cmd text eol=crlf
+*.bat.in text eol=crlf
+gozapp/MiraiProbe/GoZ_Info.txt text eol=crlf
+# Captured GoZ files are binary fixtures.
+*.GoZ binary
+*.goz binary

@@ -1,0 +1,6 @@
+@echo off
+rem E1 probe - Install utility (GoZ SDK IV.3): installs nothing; an empty GoZ_InstallLog.txt means success.
+rem Template: install_probe_app.py fills in the @...@ values.
+echo %DATE% %TIME% INIT args=[%*] cwd=[%CD%]>> "@PROBE@\captures\commands_log.txt"
+type nul > "@APPDIR@\GoZ_InstallLog.txt"
+exit /b 0

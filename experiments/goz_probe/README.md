@@ -1,7 +1,8 @@
 # E1 — GoZ handshake probe (ZBrush 2022.0.8 ↔ Python)
 
-**Status:** PREPARED (2026-11-05), not run. Approved by Manu (audit D10, commit `882b208`). The probe tools of §5
-are **specified, not yet written**. They are written in the next step once this procedure is accepted.
+**Status:** READY TO RUN (2026-11-05), not run on the reference PC. Approved by Manu (audit D10, commit `882b208`);
+procedure confirmed by Manu 2026-11-05. The probe tools of §5 are written and tested headlessly in the container (§5.1).
+Their Windows-only parts are reviewed but untested until the run.
 **Type:** isolated experiment for one material uncertainty (AGENTS.md §7a): does GoZ in ZBrush 2022.0.8 behave as the
 official SDK describes, and can Mirai be a GoZ target application?
 **Parent:** [ZBrush bridge audit](../../docs/future_ideas/ZBRUSH_BRIDGE_AUDIT.md) (Phase 0, accepted at `73683d8`),
@@ -150,23 +151,50 @@ reserves all rights).
 
 ---
 
-## 5. Probe files (to be written next; specification)
+## 5. Probe files
 
-All Python is stdlib-only, Python 3.9+, run with `-I`, Windows paths via `pathlib`. Format code is written from §2.1.
-Nothing is copied from GoB or the SDK.
+All Python is stdlib-only, Python 3.9+, and every script runs as `python -I experiments/goz_probe/<script>.py` (in
+isolated mode it puts `experiments/` on `sys.path` itself). Windows paths go through `pathlib`. The format code is
+written from §2.1; nothing is copied from GoB or the SDK. Each script has `--help`.
 
 | File | Does |
 |---|---|
-| `goz_probe_format.py` | Strict reader/writer for the blocks of §2.1 that E1 needs (MESH, FLAGS, SUBDIV, POINT_LIST, FACE4 format 1/2, FACE3, END). Any other block: recorded as `(tag, size, count, modifier)` and skipped. Fails closed: bad magic, a block exceeding the file, a size not matching its count, a missing END, or bytes after END. `dump(path)` → human-readable block list, counts, flags decoded, bounding box, first/last 5 vertices and faces. |
-| `make_meshes.py` | Writes A, B, C as `meshes/<id>.obj` (OBJ via `mirai.obj_export.mesh_to_obj` for B and C, the same writer for A) plus `meshes/<id>.sent.json` (positions as written, face corner lists, for B the index ↔ VertexId map). Deterministic. Reads `src/` only. |
-| `gozapp/MiraiProbe/` | Template of the GoZ app folder: `GoZ_Info.txt` (`NAME = "Mirai Probe (E1)"`, `EXTENSION = ".GoZ"`, `TAMPLATE = "GoZ Complete Binary.GoZ"`, `GOZ_VERSION = 1`, `LOCATE_COMMAND`, `INIT_COMMAND`, `EDIT_COMMAND`, **no** flip options, so ZBrush's raw convention is observed), `Locate.bat` (writes one line: the full path of `probe_app.cmd` in this repo), `Init.bat` (writes an empty `GoZ_InstallLog.txt` and logs its own start, nothing else), `Edit.bat` (calls `<python> -I <repo>\experiments\goz_probe\probe_receiver.py %*`). |
-| `probe_app.cmd` | The "application path" that the Locate step offers and ZBrush stores as `PATH` in `GoZApps\MiraiProbe\GoZ_Config.txt`. It only prints that it is the E1 stand-in. E1 records whether ZBrush accepts a non-`.exe` path there. |
-| `install_probe_app.py` | Detects the GoZ root (`C:\Users\Public\Pixologic`, else a Maxon path, else asks for `--root`), prints what it finds, copies the template to `GoZApps\MiraiProbe\` with the absolute python and repo paths filled in. Refuses if the folder exists (`--replace` to overwrite **only** `MiraiProbe`). Never touches other app folders or `GoZBrush\`. `--uninstall` removes `GoZApps\MiraiProbe\` only. |
-| `probe_receiver.py` | What ZBrush launches. Records within the first milliseconds: start time (`time.time_ns`), `sys.argv`, cwd, selected environment variables, parent process id. Then reads `GoZ_ObjectList.txt`, `GoZ_Application.txt` and `GoZ_ProjectPath.txt`. For each listed object it records size, `st_mtime_ns` and sha256 at start, tries an exclusive open (Windows share mode 0 via `ctypes`), copies the file into `captures/<timestamp>/`, and re-checks size, mtime and sha256 after 1.0 s. It dumps the copy and compares it with `meshes/*.sent.json` when the name or counts match (axis mapping, scale, translation, order, changed-vertex count). If a listener lock is alive it writes a ticket into the inbox, atomically (tmp + `os.replace`). It never starts anything, never deletes or edits ZBrush's files, and exits within ~2 s. |
-| `probe_listener.py` | Stand-in for a running Mirai: holds `inbox/listener.lock` (PID + start time), polls `inbox/` every 250 ms, prints and logs each ticket, verifies the ticket's hashes against the capture. Ctrl+C exits and removes the lock. |
-| `probe_send.py` | Python → ZBrush. `--mesh A|B|C`: writes `GoZ_ObjectPath.txt` with a short name (`E1_A` …), runs `GoZMakeObjectPath.exe`, waits up to 10 s for the file to change, writes `<identifier>.GoZ` (FLAGS 0) and `GoZ_ObjectList.txt`, runs `GoZBrushFromApp.exe`, logs every step with timestamps. `--resend <capture>`: sends a captured ZBrush file back byte-identical under its own identifier. |
+| `goz_probe_format.py` | Strict reader (`parse_goz`, `read_goz`) and minimal writer (`encode_goz`: MESH, FLAGS, float32 POINT_LIST, FACE4 format 1, END with size field 0 as the SDK writer stores it). Decodes MESH, MATERIAL, map paths, FLAGS, SUBDIV, POINT_LIST, FACE4 format 1/2 and FACE3. Any other block is recorded as an anomaly and skipped by its size. **Fails closed** on bad magic, a truncated block header, a block running past the end of the file, a block smaller than its count needs, a face index outside the points, a missing END or bytes after it. A block *larger* than its count needs, or an END size field other than 0/16, is read and recorded as an anomaly (the SDK reader allows it). The writer refuses n-gons. `dump()` gives a readable block list, decoded flags, counts, bounding box, and the first/last points and faces. |
+| `probe_common.py` | GoZ root detection (`--root`, `MIRAI_GOZ_ROOT`, `%PUBLIC%\Pixologic`, then Maxon locations) and folder paths. Readers for PFF and GoZ text files (UTF-8 → ANSI → latin-1). Writers: atomic files (tmp + `os.replace`) and GoZ list files (ANSI, CRLF). Process and exclusive-open checks (typed `kernel32` via `ctypes`). The privacy redaction (below). The sent-vs-received comparison: axis mapping by regression, or by bounding box when the points do not correspond; signed-permutation test; exact per-point float32 comparison; face identity, rotation and reversed winding. |
+| `make_meshes.py` | Writes A, B, C (§3) through Mirai's Core `Mesh` and Mirai's own `mirai.obj_export.mesh_to_obj` as `meshes/<id>.obj`, plus `meshes/<id>.sent.json` (float64 positions, faces as dense indices, index ↔ VertexId / FaceId maps). Deterministic. Reads `src/` and `examples/` only. |
+| `gozapp/MiraiProbe/` | Template of the GoZ app folder. `GoZ_Info.txt`: `NAME = "Mirai Probe (E1)"`, `EXTENSION = ".GoZ"`, `TAMPLATE = "GoZ Complete Binary.GoZ"`, `GOZ_VERSION = 1`, the three commands, **no** flip options, so ZBrush's raw convention is observed. `Locate.bat.in` writes one line, the full path of `probe_app.cmd`. `Init.bat.in` writes an empty `GoZ_InstallLog.txt`, nothing else. `Edit.bat.in` runs `<python> -I …\probe_receiver.py --root <root> --launched-by edit_command -- %*`. Each `.bat` first appends one line (date, time, arguments, cwd) to `captures\commands_log.txt`. |
+| `probe_app.cmd` | The "application path" the Locate step offers and ZBrush stores as `PATH` in `GoZApps\MiraiProbe\GoZ_Config.txt`. It only logs and prints that it is the E1 stand-in. E1 records whether ZBrush accepts a non-`.exe` path and whether it ever runs it. |
+| `install_probe_app.py` | `--inventory` (read-only, writes `captures/inventory.txt`). Default: install `GoZApps\MiraiProbe\`, filling in the absolute paths of this python, this repository and the GoZ root; `.bat` files are written in the console (OEM) code page with CRLF. Refuses an existing folder (`--replace` only for our own, recognised by the marker file `.mirai_goz_probe`). `--uninstall` removes only our folder. Never touches `GoZBrush\` or another app. |
+| `probe_receiver.py` | What `Edit.bat` runs. Records first: start time, `argv` incl. what ZBrush passed, cwd, the parent-process chain (Windows toolhelp snapshot), selected environment variables. Then the GoZBrush text files. Per listed object: stat and sha256 at start, ms since its last write, exclusive open, a copy into `captures/<time>_receive/`. After the settle time (`--settle`, default 1.0 s wall clock) it stats and hashes again. Then a strict parse of the copy, the dump, and the comparison with the sent mesh (matched by an earlier `probe_send` identifier, else by counts, else by name). A ticket goes into `inbox/` only if `inbox/listener.lock` names a live process. Writes `receiver_log.json` and `dump.txt`. Starts nothing, edits or deletes no ZBrush file. On an internal error it writes `captures/receiver_error_<time>.txt`. |
+| `probe_listener.py` | Stand-in for a running Mirai: takes `inbox/listener.lock` (refuses while another live listener holds it, replaces a stale one), polls `inbox/` every 250 ms, verifies each ticket's copies by sha256, prints the latency, moves the ticket to `inbox/done/`, logs to `inbox/listener_log.txt`. Ctrl+C removes the lock. |
+| `probe_send.py` | Python → ZBrush. `--mesh A|B|C`: the identifier via `GoZMakeObjectPath.exe`, or reused from an earlier send of the same mesh so the linked SubTool is updated (`--new-identifier` forces a new one). Then the `.GoZ` (checked by the strict reader before writing), `GoZ_ObjectList.txt`, `GoZ_Application.txt` = `MiraiProbe` (before/after logged; `--keep-application`), and `GoZBrushFromApp.exe -tmap` as in the official demo (`--no-tmap` without it). `--resend last|<capture>`: ZBrush's captured bytes back, refused if ZBrush has written a newer file (`--force`). `--name-style gozmesh` writes the name as `GoZMesh_E1_A` (as GoB does). `--dry-run` runs no program. Log: `captures/<time>_send_<what>/send_log.json`. |
 | `captures/` | Output, committed by Manu after the run (small files; no gollum capture). |
-| `tests/` (container) | Format round trip on synthetic files, fail-closed cases, mesh generators deterministic. The captured files become fixtures after E1. |
+| `tests/` | Headless tests (§5.1). The captured files become fixtures after E1. |
+
+**Privacy.** Everything the probe writes to `captures/` and `inbox/` replaces the Windows user profile path
+(`%USERPROFILE%`) and the user name as a path component (`%USERNAME%`), because the captures are committed to a public
+repository. Computer name and user name are not recorded.
+
+### 5.1 Verified in the container (Linux, Python 3.13, 2026-11-05)
+
+`python -m pytest experiments/goz_probe/tests -q` → **39 passed** (not part of the default run, AGENTS.md §8a):
+
+- format round trip, layout (4-byte alignment, NUL-padded name, triangle = −1), all fail-closed cases, unknown and
+  oversized blocks, FACE4 format 2, FACE3 and SUBDIV decoding, n-gons refused;
+- meshes deterministic; A has distinct extents (1.0 / 0.75 / 0.45), an offset from the origin and outward winding;
+  B is 481 v / 508 f with 64 triangles and ID gaps; C matches its OBJ;
+- comparison: identity is bit-identical; a 180° rotation about X is found exactly; an axis swap with scale is found
+  from bounding boxes when the points are reordered; one moved vertex and reversed windings are counted;
+- workflow on a fake GoZ root: install / replace / uninstall, a foreign app folder never touched, inventory writes
+  nothing into the root; dry-run send → receive round trip; truncated and missing files reported, not parsed; ticket
+  to a live listener, stale lock replaced, second listener refused; identifier reuse; resend refuses a newer ZBrush
+  file; redaction keeps keys and words; every script runs with `-I --help` without importing pyglet.
+- By hand: listener and receiver as **separate processes**: the ticket was picked up 0.5 s after the receiver started
+  (settle 0.3 s + one poll).
+
+**Not verifiable here:** anything ZBrush does; the `.bat` files under `cmd.exe`; the Windows-only `ctypes` paths
+(process check, exclusive open, process chain, OEM code page). Those were reviewed only (explicit argument and return
+types, x64 `PROCESSENTRY32W` layout). The receiver records an error value instead of failing if one of them breaks.
 
 ---
 
@@ -202,10 +230,12 @@ zusätzlich die Punkte aus §8.
 3. **GoZ** drücken.
    - **Erwartung:** kurz ein Konsolenfenster, ZBrush reagiert weiter. In `captures\<Zeit>\` liegen `receiver_log.json`,
      Kopien von `GoZ_ObjectList.txt` und der `.GoZ`-Datei sowie `dump.txt`. `dump.txt` zeigt die Blöcke 1 (Name),
-     5001 (Flags), 10001 (24 Punkte), 20001 (18 Flächen), 0 (Ende) und eine Zeile **„Achsen: GoZ = OBJ · …“**,
-     **„Maßstab: …“**, **„Reihenfolge: gleich / anders“**.
+     5001 (Flags), 10001 (24 Punkte), 20001 (18 Flächen), 0 (Ende) und die Zeilen **„Achsen (…): x_goz = …·x_sent …“**,
+     **„Maßstab: …“**, **„Reihenfolge: same / …“**.
    - **Notieren:** die drei Zeilen; ob die Datei beim Start des Empfängers schon fertig war (`complete_at_start: true/false`,
-     `exclusive_open: ok/blocked`, `changed_after_1s: false/true`); Name der Datei im Projektordner.
+     `exclusive_open: ok/blocked`, `changed_after_1s: False/True`, „geschrieben … ms vor dem Start“); Name der Datei im
+     Projektordner. Kommt **kein** neuer `captures\<Zeit>_receive\`-Ordner: `captures\commands_log.txt` ansehen (hat ZBrush
+     `Edit.bat` überhaupt aufgerufen?) und nach `captures\receiver_error_*.txt` schauen.
 4. Dasselbe mit `B.obj` und `C.obj` (je Import, R ist schon gesetzt, GoZ).
 
 ### T3 — Ein laufendes Programm benachrichtigen (5 min)
@@ -230,6 +260,8 @@ zusätzlich die Punkte aus §8.
    - **Erwartung:** eine neue SubTool `E1_A…`. In ZBrush liegt sie **genau auf** dem per OBJ importierten A aus T2
      (SubTool-Transparenz an, beide sichtbar): längster Arm nach rechts (+X), mittlerer nach oben (+Y), kürzester nach vorn.
    - **Notieren:** deckungsgleich / gespiegelt / gedreht / anders groß (Screenshot Front- und Seitenansicht).
+   - **Wenn ZBrush nichts lädt oder meldet:** zuerst `--mesh A --no-tmap`, dann `--mesh A --name-style gozmesh
+     --new-identifier` versuchen und notieren, welche Variante ging (`send_log.json` jedes Versuchs liegt in `captures\`).
 2. Ohne etwas zu ändern **GoZ** (Ziel ist noch „Mirai Probe (E1)“).
    - **Erwartung:** `dump.txt` meldet „Rundreise unverändert: Punkte bitgleich, Flächen gleich“.
 3. Dasselbe mit `--mesh B` und `--mesh C`.
@@ -342,7 +374,7 @@ Then stop at that step. The rest depends on it.
 |---|---|---|
 | M1 | Run §6 on the reference PC (~40 min) and return `captures/` + table §9 | ZBrush 2022.0.8 exists only there; every [PC] fact |
 | M2 | Accept that E1 writes `C:\Users\Public\Pixologic\GoZApps\MiraiProbe\` (removed with `--uninstall`) and that the install step may ask for admin rights | it is outside the repository |
-| M3 | Confirm this procedure, so the probe files of §5 can be written (next agent step, container-tested headlessly before you run anything) | the tools do not exist yet |
+| M3 | ~~Confirm this procedure~~ — confirmed 2026-11-05; tools written and container-tested (§5.1) | done |
 | D11 | When ZBrush sends to Mirai while Mirai is **not** running: start Mirai, or leave the ticket until Mirai is started? (Proposal: leave the ticket in v1; the SDK expects a start) | workflow decision |
 | D12 | Final GoZ app id/name for P1 (proposal: folder `Mirai`, `NAME = "Mirai"`) | shows in ZBrush's GoZ list |
 

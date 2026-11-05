@@ -1,0 +1,7 @@
+NAME		= "Mirai Probe (E1)"
+GOZ_VERSION	= 1
+EXTENSION	= ".GoZ"
+TAMPLATE	= "GoZ Complete Binary.GoZ"
+LOCATE_COMMAND	= "Locate.bat"
+INIT_COMMAND	= "Init.bat"
+EDIT_COMMAND	= "Edit.bat"

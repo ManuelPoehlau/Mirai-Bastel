@@ -200,7 +200,7 @@ Test runner: **pytest** (tests bootstrap `src/` onto the path themselves). Bare 
 | `tests/` | Production: `src/core`, `src/mirai`, `src/viewport`, `src/main.py` | default |
 | `experiments/morph_lab/tests/` | the Morph Lab (started by the app through `src/morph_bridge.py`), on the `Application` path through H7 | default |
 | `experiments/knife_oracle/tests/` | frozen Knife Face Lab engines + golden / differential / `split_face` equivalence tests for the Production Knife | trigger list below |
-| `experiments/mehlsack_lab/`, `experiments/drag_cost/` | the lab itself / the GL cost probe | only when that folder changed |
+| `experiments/mehlsack_lab/`, `experiments/drag_cost/`, `experiments/goz_probe/` | the lab itself / the GL cost probe / the GoZ handshake probe (E1) | only when that folder changed |
 
 Nothing in `src/` or `tests/` imports from `experiments/` (verified 2026-10-24; check with `grep -rn "experiments" --include=*.py src tests` before relying on it). Morph and Mehlsack Lab pin with their own import-boundary tests that they load only `src/`.
 

@@ -1,0 +1,6 @@
+@echo off
+rem E1 probe - Locate utility (GoZ SDK IV.2): writes one line, the full path of the stand-in application.
+rem Template: install_probe_app.py fills in the @...@ values.
+echo %DATE% %TIME% LOCATE args=[%*] cwd=[%CD%]>> "@PROBE@\captures\commands_log.txt"
+> "@APPDIR@\GoZ_AppPathList.txt" echo @APP_PATH@
+exit /b 0

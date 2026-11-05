@@ -1,0 +1,7 @@
+@echo off
+rem E1 probe - Editing utility (GoZ SDK IV.4): ZBrush calls it after a GoZ to this application.
+rem It runs the probe receiver, which records the launch, copies the transfer and notifies a running listener.
+rem Template: install_probe_app.py fills in the @...@ values.
+echo %DATE% %TIME% EDIT args=[%*] cwd=[%CD%]>> "@PROBE@\captures\commands_log.txt"
+"@PYTHON@" -I "@PROBE@\probe_receiver.py" --root "@ROOT@" --launched-by edit_command -- %*
+exit /b %ERRORLEVEL%
