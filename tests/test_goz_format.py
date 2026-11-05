@@ -14,10 +14,11 @@ import pytest
 import tests._bootstrap  # noqa: F401
 from tests._bootstrap import _REPO_ROOT
 
-from core import Mesh, ObjectId, Scene, SceneObject
+from core import FaceRegion, FaceRegions, Mesh, ObjectId, Scene, SceneObject
 from interop.goz import helper
 from interop.goz import install as goz_install
 from interop.goz.bridge import (
+    REST_GROUP,
     ReturnKind,
     SendRefused,
     build_send,
@@ -44,7 +45,7 @@ def fixture(name: str) -> bytes:
 def flipped(data: bytes) -> bytes:
     """A raw-frame E1 capture as ZBrush returns it for a bridge send: points (x, -y, -z), exact in float32."""
     goz = parse_goz(data)
-    return encode_goz(goz.name, [to_goz(p) for p in goz.points], goz.faces)
+    return encode_goz(goz.name, [to_goz(p) for p in goz.points], goz.faces, goz.groups)
 
 
 def head_mesh() -> Mesh:
@@ -78,11 +79,37 @@ def one_object_scene(mesh: Mesh) -> tuple[Scene, SceneObject]:
     return Scene.from_objects([obj], edit_object_id=obj.id, object_id_counter=1), obj
 
 
-def plan_for(scene, obj, returned: bytes, *, session="s1"):
-    _data, manifest = build_send(scene, obj, identifier="P/Kopf", transfer_id="t", session_id="s1", scene_path=None,
-                                 to_world=identity)
+def plan_for(scene, obj, returned: bytes, *, session="s1", manifest=None, edit=None):
+    if manifest is None:
+        _data, manifest = build_send(scene, obj, identifier="P/Kopf", transfer_id="t", session_id="s1",
+                                     scene_path=None, to_world=identity)
+    if edit is not None:
+        edit()
+    from mirai.regions import new_group_name
+
     return plan_return(parse_goz(returned), manifest, scene, identifier="P/Kopf", session_id=session, scene_path=None,
-                       to_world=identity, to_object=identity)
+                       to_world=identity, to_object=identity, new_group_name=new_group_name)
+
+
+#: E2 (2026-11-05): the probe sent the head in four bands by height, ids 101-104; here the regions Mirai sends as 1-4
+BANDS = ("Stirn", "Augen", "Mund", "Hals")
+E2_UNCHANGED = "zb2022_E2_head_groups_unchanged.GoZ"
+E2_REGROUPED = "zb2022_E2_head_groups_regrouped.GoZ"
+
+
+def e2(name: str, *, points=None) -> bytes:
+    """An E2 capture as ZBrush returns it for a bridge send of `band_regions`: ids 101-104 -> 1-4 (ZBrush keeps the
+    ids it was sent), its own new id 3225 as is. `points` replaces the points (a sculpt on top of the regroup)."""
+    goz = parse_goz(fixture(name))
+    groups = [g - 100 if 101 <= g <= 104 else g for g in goz.groups]
+    return encode_goz(goz.name, goz.points if points is None else points, goz.faces, groups)
+
+
+def band_regions(mesh: Mesh, bands=BANDS) -> FaceRegions:
+    ids = parse_goz(fixture(E2_UNCHANGED)).groups
+    fids = mesh.all_face_ids()
+    return FaceRegions(tuple(FaceRegion(name, frozenset(f for f, g in zip(fids, ids) if g == 101 + BANDS.index(name)))
+                             for name in bands))
 
 
 # -- format ------------------------------------------------------------------------------------------------------------
@@ -128,6 +155,20 @@ def test_malformed_files_fail_closed():
         encode_goz("x", [(0, 0, 0)] * 5, [(0, 1, 2, 3, 4)])
 
 
+def test_groups_block_round_trip_and_fail_closed():
+    points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
+    data = encode_goz("g", points, [(0, 1, 2), (0, 2, 3)], [7, REST_GROUP])
+    assert parse_goz(data).groups == (7, REST_GROUP)
+    assert parse_goz(encode_goz("g", points, [(0, 1, 2)])).groups is None
+    short = data.replace(struct.pack("<IIIf", 40001, 20, 2, 0.0), struct.pack("<IIIf", 40001, 20, 1, 0.0))
+    with pytest.raises(GozFormatError, match="1 ids for 2 faces"):
+        parse_goz(short)
+    with pytest.raises(ValueError, match="16-bit"):
+        encode_goz("g", points, [(0, 1, 2)], [70000])
+    unchanged = parse_goz(fixture(E2_UNCHANGED))  # ZBrush 2022.0.8 wrote it: 324 ids, no padding
+    assert sorted(set(unchanged.groups)) == [101, 102, 103, 104] and len(unchanged.groups) == 324
+
+
 # -- send / plan (pure) -------------------------------------------------------------------------------------------------
 
 
@@ -153,7 +194,7 @@ def test_plan_unchanged_moved_and_untouched_points_keep_float64():
     scene, obj = one_object_scene(head_mesh())
     assert plan_for(scene, obj, flipped(fixture("zb2022_C_unchanged.GoZ"))).kind is ReturnKind.UNCHANGED
     plan = plan_for(scene, obj, flipped(fixture("zb2022_C_move_brush.GoZ")))
-    assert plan.kind is ReturnKind.POSITIONS and len(plan.positions) == 101
+    assert plan.kind is ReturnKind.IN_PLACE and len(plan.positions) == 101
     raw = parse_goz(fixture("zb2022_C_move_brush.GoZ")).points
     vids = obj.mesh.all_vertex_ids()
     for i, vid in enumerate(vids):
@@ -168,7 +209,7 @@ def test_plan_on_mesh_b_maps_indices_to_ids_with_gaps():
     vids = obj.mesh.all_vertex_ids()
     assert [int(v) for v in vids] != list(range(len(vids)))  # IDs have gaps
     plan = plan_for(scene, obj, flipped(fixture("zb2022_B_move_brush.GoZ")))
-    assert plan.kind is ReturnKind.POSITIONS and len(plan.positions) == 12
+    assert plan.kind is ReturnKind.IN_PLACE and len(plan.positions) == 12
     raw = parse_goz(fixture("zb2022_B_move_brush.GoZ")).points
     for vid, p in plan.positions.items():
         assert raw[vids.index(vid)] == p
@@ -190,7 +231,7 @@ def test_divide_without_smt_is_unchanged_and_cage_is_appliable_with_a_warning():
     scene, obj = one_object_scene(head_mesh())
     assert plan_for(scene, obj, flipped(fixture("zb2022_C_divided_no_smt.GoZ"))).kind is ReturnKind.UNCHANGED
     cage = plan_for(scene, obj, flipped(fixture("zb2022_C_cage.GoZ")))
-    assert cage.kind is ReturnKind.POSITIONS and cage.cage_like and len(cage.positions) == 326
+    assert cage.kind is ReturnKind.IN_PLACE and cage.cage_like and len(cage.positions) == 326
     assert "Cage reconstruction" in cage.summary()
     moved = plan_for(scene, obj, flipped(fixture("zb2022_C_move_brush.GoZ")))
     assert not moved.cage_like and "Cage" not in moved.summary()
@@ -331,3 +372,94 @@ def test_interop_imports_only_core_and_the_standard_library():
             for name in names:
                 top = name.split(".")[0]
                 assert top in stdlib or top in ("core", "interop", "__future__"), f"{path.name}: imports {name}"
+
+
+# -- polygroups (P2a) --------------------------------------------------------------------------------------------------
+
+
+def head_with_bands(bands=BANDS):
+    scene, obj = one_object_scene(head_mesh())
+    obj.mesh.face_regions = band_regions(obj.mesh, bands)
+    return scene, obj
+
+
+def test_send_carries_region_ids_a_rest_id_and_records_overlaps():
+    scene, obj = head_with_bands(BANDS[:3])  # Hals not a region: its 50 faces are the rest
+    mesh = obj.mesh
+    first = next(iter(sorted(mesh.face_regions.get("Stirn").faces, key=int)))
+    mesh.face_regions = FaceRegions((*mesh.face_regions.regions, FaceRegion("Extra", frozenset({first}))))
+    data, manifest = build_send(scene, obj, identifier="P/Kopf", transfer_id="t", session_id="s", scene_path=None,
+                                to_world=identity)
+    groups = parse_goz(data).groups
+    expected = [g - 100 if g != 104 else REST_GROUP for g in parse_goz(fixture(E2_UNCHANGED)).groups]
+    assert list(groups) == expected == manifest.sent_groups
+    assert manifest.group_names == {"1": "Stirn", "2": "Augen", "3": "Mund", "4": "Extra"}
+    assert manifest.rest_group == REST_GROUP
+    assert manifest.group_overlaps == [[mesh.all_face_ids().index(first), ["Extra"]]]
+
+
+def test_e2_unchanged_groups_change_nothing_and_a_regroup_becomes_a_new_group():
+    scene, obj = head_with_bands()
+    plan = plan_for(scene, obj, e2(E2_UNCHANGED))
+    assert plan.kind is ReturnKind.UNCHANGED and "no group changed" in plan.reason and not plan.regions_changed
+    plan = plan_for(scene, obj, e2(E2_REGROUPED))
+    assert plan.kind is ReturnKind.IN_PLACE and plan.positions == {} and plan.regions_changed
+    assert plan.reason == "no point moved, groups changed"
+    assert "groups: 1 changed, 1 new (12 faces regrouped)" in plan.summary()
+    regions = plan.regions
+    assert [r.name for r in regions.regions] == [*BANDS, "Group 1"]
+    regrouped = parse_goz(fixture(E2_REGROUPED)).groups
+    fids = obj.mesh.all_face_ids()
+    assert regions.get("Group 1").faces == {f for f, g in zip(fids, regrouped) if g == 3225}
+    assert len(regions.get("Hals").faces) == 38 and regions.get("Stirn") == obj.mesh.face_regions.get("Stirn")
+    assert plan.group_names[3225] == "Group 1" and plan.zbrush_groups == tuple(parse_goz(e2(E2_REGROUPED)).groups)
+
+
+def test_known_ids_rest_id_and_overlaps():
+    scene, obj = head_with_bands(BANDS[:3])
+    mesh = obj.mesh
+    fids = mesh.all_face_ids()
+    stirn = sorted(mesh.face_regions.get("Stirn").faces, key=int)
+    keep, moved = stirn[0], stirn[1]
+    mesh.face_regions = FaceRegions((*mesh.face_regions.regions, FaceRegion("Extra", frozenset({keep, moved}))))
+    _data, manifest = build_send(scene, obj, identifier="P/Kopf", transfer_id="t", session_id="s1", scene_path=None,
+                                 to_world=identity)
+    goz = parse_goz(e2(E2_UNCHANGED))
+    groups = list(manifest.sent_groups)
+    rest_faces = [i for i, g in enumerate(groups) if g == REST_GROUP][:5]
+    for i in rest_faces:
+        groups[i] = 2  # rest painted with a known group -> Augen
+    groups[fids.index(moved)] = REST_GROUP  # a Stirn face (also in Extra) -> no group at all
+    plan = plan_for(scene, obj, encode_goz(goz.name, goz.points, goz.faces, groups), manifest=manifest)
+    regions = plan.regions
+    assert {fids[i] for i in rest_faces} <= regions.get("Augen").faces
+    assert moved not in regions.get("Stirn").faces and regions.get("Extra").faces == {keep}  # overlap of a changed face
+    assert keep in regions.get("Stirn").faces  # an unchanged face keeps both memberships
+    assert "groups: 3 changed, 0 new (6 faces regrouped)" in plan.summary()
+
+
+def test_one_unknown_id_for_every_face_leaves_the_groups_alone():
+    scene, obj = head_with_bands()
+    plan = plan_for(scene, obj, flipped(fixture("zb2022_C_move_brush.GoZ")))  # ZBrush's single id 63238
+    assert plan.kind is ReturnKind.IN_PLACE and not plan.regions_changed and plan.zbrush_groups is None
+    assert "one group Mirai never sent (63238)" in plan.summary()
+
+
+def test_a_mirai_region_edit_since_the_send_is_a_conflict():
+    scene, obj = head_with_bands()
+    mesh = obj.mesh
+    plan = plan_for(scene, obj, e2(E2_REGROUPED),
+                    edit=lambda: setattr(mesh, "face_regions", band_regions(mesh, BANDS[:3])))
+    assert plan.kind is ReturnKind.CONFLICT and "(groups)" in plan.reason
+
+
+def test_new_group_names_follow_mirai_numbering_and_two_new_ids_get_two_groups():
+    scene, obj = head_with_bands()
+    mesh = obj.mesh
+    mesh.face_regions = FaceRegions(tuple(FaceRegion("Group 7" if r.name == "Mund" else r.name, r.faces)
+                                          for r in mesh.face_regions.regions))
+    goz = parse_goz(e2(E2_UNCHANGED))
+    groups = list(goz.groups)
+    groups[0], groups[1] = 500, 501
+    plan = plan_for(scene, obj, encode_goz(goz.name, goz.points, goz.faces, groups))
+    assert plan.group_names[500] == "Group 8" and plan.group_names[501] == "Group 9"

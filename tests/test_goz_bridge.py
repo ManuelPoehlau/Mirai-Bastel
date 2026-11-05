@@ -13,7 +13,7 @@ import pytest
 
 import tests._bootstrap  # noqa: F401
 from tests._bootstrap import _REPO_ROOT
-from tests.test_goz_format import fixture, flipped
+from tests.test_goz_format import BANDS, E2_REGROUPED, E2_UNCHANGED, band_regions, e2, fixture, flipped
 
 from core import PointLayerInfo, SelectionMode
 from core.serialization import scene_to_dict
@@ -490,3 +490,80 @@ def test_after_adding_a_return_as_new_object_the_status_says_what_send_sends(env
     goz_back(env, identifier, flipped(fixture("zb2022_C_move_brush.GoZ")))
     assert env["bridge"].activate(row(env, NEW_OBJECT_PREFIX))
     assert "it is selected now" in app.status_message and "leave mode 4" in app.status_message
+
+
+# -- polygroups (P2a) --------------------------------------------------------------------------------------------------
+
+
+def _bands(env):
+    mesh = env["app"].scene.edit_object.mesh
+    mesh.face_regions = band_regions(mesh)
+    return mesh
+
+
+def test_regroup_and_sculpt_come_back_as_one_undo_step(env):
+    """P2a (Manu 2026-11-05, "Mit übernehmen"): ZBrush's regroup (E2 capture) and a sculpt in the same return: one
+    confirm, one History entry; Ctrl+Z restores regions and points together, Ctrl+Y both again."""
+    app = env["app"]
+    mesh = _bands(env)
+    identifier = send(env)
+    before, regions_before = positions(mesh), mesh.face_regions
+    history = len(app.history)
+    sculpt = parse_goz(flipped(fixture("zb2022_C_move_brush.GoZ"))).points
+    goz_back(env, identifier, e2(E2_REGROUPED, points=sculpt))
+    assert "101 of 326 points moved" in app.status_message and "groups: 1 changed, 1 new" in app.status_message
+    assert mesh.face_regions is regions_before  # D1: nothing before the confirm
+    assert env["bridge"].activate(row(env, APPLY_PREFIX)), app.status_message
+    after, regions_after = positions(mesh), mesh.face_regions
+    assert len(app.history) == history + 1 and after != before
+    assert [r.name for r in regions_after.regions] == [*BANDS, "Group 1"]
+    assert len(regions_after.get("Group 1").faces) == 12 and len(regions_after.get("Hals").faces) == 38
+    app._undo_redo(commands.UNDO)
+    assert positions(mesh) == before and mesh.face_regions == regions_before
+    app._undo_redo(commands.REDO)
+    assert positions(mesh) == after and mesh.face_regions == regions_after
+    goz_back(env, identifier, e2(E2_REGROUPED, points=sculpt))  # the same ZBrush state again
+    assert "no point moved, no group changed" in app.status_message, app.status_message
+
+
+def test_a_groups_only_return_is_appliable_and_its_new_group_keeps_its_name(env):
+    app = env["app"]
+    mesh = _bands(env)
+    identifier = send(env)
+    before = positions(mesh)
+    goz_back(env, identifier, e2(E2_REGROUPED))
+    assert "no point moved, groups changed" in app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX)), app.status_message
+    assert positions(mesh) == before and mesh.face_regions.get("Group 1") is not None
+    goz = parse_goz(e2(E2_REGROUPED))
+    groups = list(goz.groups)
+    hals = [i for i, g in enumerate(groups) if g == 4][:3]
+    for i in hals:
+        groups[i] = 3225  # more faces painted with ZBrush's new group, no resend
+    goz_back(env, identifier, encode_goz(goz.name, goz.points, goz.faces, groups))
+    assert "groups: 2 changed, 0 new (3 faces regrouped)" in app.status_message, app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    assert len(mesh.face_regions.get("Group 1").faces) == 15 and len(mesh.face_regions.regions) == 5
+
+
+def test_a_mirai_group_edit_since_the_send_makes_the_return_a_new_object(env):
+    app = env["app"]
+    mesh = _bands(env)
+    identifier = send(env)
+    app.apply_mesh_change("regroup", lambda: setattr(mesh, "face_regions", band_regions(mesh, BANDS[:3])) or set())
+    edited = mesh.face_regions
+    goz_back(env, identifier, e2(E2_REGROUPED))
+    assert "changed in Mirai since the send (groups)" in app.status_message, app.status_message
+    assert row(env, NEW_OBJECT_PREFIX) and mesh.face_regions == edited
+
+
+def test_undo_of_a_group_apply_links_the_next_return_without_a_resend(env):
+    app = env["app"]
+    mesh = _bands(env)
+    identifier = send(env)
+    goz_back(env, identifier, e2(E2_REGROUPED))
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    app._undo_redo(commands.UNDO)
+    goz_back(env, identifier, e2(E2_REGROUPED))
+    assert "groups: 1 changed, 1 new" in app.status_message, app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX)) and mesh.face_regions.get("Group 1") is not None

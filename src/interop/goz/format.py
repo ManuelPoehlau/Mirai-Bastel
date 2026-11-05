@@ -7,11 +7,14 @@ copied. Stdlib only, so ZBrush's helper process can use it.
   `uint32 tag, uint32 size (incl. header), uint32 count, float32 modifier`, little-endian.
 - The reader **fails closed** (`GozFormatError`): bad magic, a block header or block running past the end of the file,
   a block smaller than its count requires, a face index outside the points, a degenerate face, a non-finite point, a
-  missing point or face block, a missing END block or bytes after it. Unknown tags and attribute blocks P1 does not use
-  (MRGB, MASK16, GROUPS, CREASE, UVs, map paths) are skipped by their size.
-- The writer writes MESH, FLAGS (0), POINT_LIST (float32), FACE4_LIST_FORMAT_1 (triangle = 4th index -1), END with size
-  field 0 (as the SDK writer stores it). ZBrush 2022.0.8 accepts this minimal file (E1 T5.2, `--style sdk`). N-gons
-  are refused: GoZ carries triangles and quads only ("not yet supported" in the SDK).
+  missing point or face block, a missing END block or bytes after it, a GROUPS block whose count is not the face
+  count. Unknown tags and attribute blocks the bridge does not use (MRGB, MASK16, CREASE, UVs, map paths) are skipped by
+  their size.
+- GROUPS (tag 40001, P2a): one `uint16` polygroup id per face, no padding (ZBrush 2022.0.8: size 16 + 2 x faces).
+- The writer writes MESH, FLAGS (0), POINT_LIST (float32), FACE4_LIST_FORMAT_1 (triangle = 4th index -1), optionally
+  GROUPS, END with size field 0 (as the SDK writer stores it). ZBrush 2022.0.8 accepts this minimal file (E1 T5.2,
+  `--style sdk`) and keeps the sent group ids per face (E2, 2026-11-05). N-gons are refused: GoZ carries triangles and
+  quads only ("not yet supported" in the SDK).
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from __future__ import annotations
 import math
 import struct
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Optional, Sequence
 
 MAGIC = b"GoZb"
 FILE_HEADER_SIZE = 32
@@ -34,9 +37,10 @@ TAG_POINT_LIST = 10001
 TAG_FACE4_FORMAT_1 = 20001
 TAG_FACE4_FORMAT_2 = 20002
 TAG_FACE3_LIST = 20003
+TAG_GROUPS_LIST = 40001
 
 _ITEM_SIZES = {TAG_FLAGS: 4, TAG_SUBDIV: 16, TAG_POINT_LIST: 12, TAG_FACE4_FORMAT_1: 16, TAG_FACE4_FORMAT_2: 16,
-               TAG_FACE3_LIST: 12}
+               TAG_FACE3_LIST: 12, TAG_GROUPS_LIST: 2}
 _FACE_TAGS = (TAG_FACE4_FORMAT_1, TAG_FACE4_FORMAT_2, TAG_FACE3_LIST)
 
 Point = tuple[float, float, float]
@@ -56,6 +60,8 @@ class GozMesh:
     faces: tuple[Face, ...]
     flags: int = 0
     has_subdiv_block: bool = False
+    #: one polygroup id per face (GROUPS block), None = the file has none
+    groups: Optional[tuple[int, ...]] = None
 
 
 def _string(payload: bytes) -> str:
@@ -84,7 +90,7 @@ def parse_goz(data: bytes) -> GozMesh:
         raise GozFormatError(f"{len(data)} bytes, shorter than the 32-byte header")
     if data[:4].lower() != MAGIC.lower():
         raise GozFormatError(f"bad magic {data[:4]!r}")
-    name, flags, points, faces, subdiv = "", 0, None, None, False
+    name, flags, points, faces, subdiv, groups = "", 0, None, None, False, None
     offset, ended = FILE_HEADER_SIZE, False
     while offset < len(data):
         if offset + BLOCK_HEADER.size > len(data):
@@ -117,6 +123,10 @@ def parse_goz(data: bytes) -> GozMesh:
             if faces is not None:
                 raise GozFormatError("two face blocks")
             faces = _faces(tag, count, payload)
+        elif tag == TAG_GROUPS_LIST:
+            if groups is not None:
+                raise GozFormatError("two groups blocks")
+            groups = struct.unpack_from(f"<{count}H", payload)
         offset += size
     if not ended:
         raise GozFormatError("no END_OF_FILE block")
@@ -134,15 +144,20 @@ def parse_goz(data: bytes) -> GozMesh:
         for v in face:
             if not 0 <= v < n:
                 raise GozFormatError(f"face {i} index {v} outside the {n} points")
-    return GozMesh(name, tuple(points), tuple(faces), flags, subdiv)
+    if groups is not None and len(groups) != len(faces):
+        raise GozFormatError(f"groups block holds {len(groups)} ids for {len(faces)} faces")
+    return GozMesh(name, tuple(points), tuple(faces), flags, subdiv, groups)
 
 
 def as_float32(value: float) -> float:
     return struct.unpack("<f", struct.pack("<f", value))[0]
 
 
-def encode_goz(name: str, points: Sequence[Sequence[float]], faces: Sequence[Sequence[int]]) -> bytes:
+def encode_goz(name: str, points: Sequence[Sequence[float]], faces: Sequence[Sequence[int]],
+               groups: Optional[Sequence[int]] = None) -> bytes:
     n = len(points)
+    if groups is not None and (len(groups) != len(faces) or not all(0 <= int(g) <= 0xFFFF for g in groups)):
+        raise ValueError("groups: one 16-bit id per face")
     face_values: list[int] = []
     for i, face in enumerate(faces):
         if len(face) not in (3, 4):
@@ -165,5 +180,6 @@ def encode_goz(name: str, points: Sequence[Sequence[float]], faces: Sequence[Seq
         block(TAG_FLAGS, 1, struct.pack("<I", 0)),
         block(TAG_POINT_LIST, n, struct.pack(f"<{3 * n}f", *(float(c) for p in points for c in p))),
         block(TAG_FACE4_FORMAT_1, len(faces), struct.pack(f"<{len(face_values)}i", *face_values)),
+        b"" if groups is None else block(TAG_GROUPS_LIST, len(faces), struct.pack(f"<{len(faces)}H", *map(int, groups))),
         BLOCK_HEADER.pack(TAG_END_OF_FILE, 0, 0, 0.0),
     ))

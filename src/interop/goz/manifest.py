@@ -67,6 +67,14 @@ def layers_fingerprint(mesh: Mesh) -> dict:
     return {"layers": out}
 
 
+def regions_hash(mesh: Mesh) -> Optional[str]:
+    """The stored face regions as saved (names in order, face IDs incl. dead ones); None without regions."""
+    regions = mesh.face_regions
+    if regions is None:
+        return None
+    return _digest([json.dumps([[r.name, sorted(int(f) for f in r.faces)] for r in regions.regions]).encode()])
+
+
 def placement(obj: SceneObject) -> dict:
     t = obj.transform
     return {"translation": list(t.translation), "rotation": [list(r) for r in t.rotation], "scale": t.scale,
@@ -87,16 +95,20 @@ def fingerprint(scene: Scene, obj: SceneObject) -> dict:
         "placement": placement(obj),
         "layers": layers_fingerprint(mesh),
         "rig": rig_hash(scene),
+        "regions": regions_hash(mesh),
     }
 
 
 def fingerprint_differences(sent: dict, now: dict) -> list[str]:
-    """Readable names of the parts that differ (empty = the object is as it was sent)."""
+    """Readable names of the parts that differ (empty = the object is as it was sent). `regions` is compared only when
+    the sent fingerprint has it (a P1 manifest on disk predates it)."""
     names = {"topology": "topology", "vertex_count": "topology", "face_count": "topology",
              "positions": "point positions", "placement": "object placement", "layers": "morph targets / weights",
-             "rig": "rig"}
+             "rig": "rig", "regions": "groups"}
     out: list[str] = []
     for key, label in names.items():
+        if key == "regions" and key not in sent:
+            continue
         if sent.get(key) != now.get(key) and label not in out:
             out.append(label)
     return out
@@ -121,6 +133,15 @@ class Manifest:
     version: int = MANIFEST_VERSION
     #: ZBrush's points of the last applied return (GoZ frame, float32), None = as sent (bridge.rebase_manifest).
     zbrush_points: Optional[list] = None
+    #: P2a polygroups (None = sent without GROUPS, a P1 manifest): the id of every sent face, id -> region name (ids
+    #: ZBrush returned for new groups join it after an apply), the id of the faces in no region, and the faces that were
+    #: in more than one region (`[face index, [other region names]]`; the id names the first in region order)
+    sent_groups: Optional[list[int]] = None
+    group_names: dict[str, str] = field(default_factory=dict)
+    rest_group: Optional[int] = None
+    group_overlaps: list = field(default_factory=list)
+    #: ZBrush's group ids of the last applied return, None = as sent (like `zbrush_points`)
+    zbrush_groups: Optional[list[int]] = None
     extra: dict = field(default_factory=dict)
 
     def to_json(self) -> str:

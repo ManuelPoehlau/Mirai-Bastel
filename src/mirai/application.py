@@ -3141,8 +3141,9 @@ class Application:
         """Apply a ZBrush return (AD-029 §6; `interop.goz.bridge.ReturnPlan`, planned right before this call by
         `src/zbrush_bridge.py`). The artist's confirm (D1) is the caller's.
 
-        `POSITIONS`: the moved points into the edit object inside `_mesh_transaction` - one Undo step, exact rollback,
-        topology, IDs, UVs, regions and point layers untouched. Refused (status, False, nothing changed) during an
+        `IN_PLACE`: the moved points and, when ZBrush changed polygroups (P2a), the new face regions into the edit object
+        inside one `_mesh_transaction` - one Undo step restores both, exact rollback, topology, IDs, UVs and point layers
+        untouched. Refused (status, False, nothing changed) during an
         interaction, while the mesh is posed and bound (AD-028 §7.1), while a morph target's editing view is open, and
         when the object is not the edit object (PROVISIONAL, audit Q8: no silent edit-object switch).
         `CONFLICT` / `TOPOLOGY_CHANGED` / `UNKNOWN_OBJECT`: a new object beside the original (fresh IDs, identity
@@ -3183,6 +3184,8 @@ class Application:
         def mutate(mesh: Mesh) -> set[VertexId]:
             for vertex_id, position in positions.items():
                 mesh.set_vertex_position(vertex_id, position)
+            if plan.regions_changed:
+                mesh.face_regions = plan.regions
             return set(positions)
 
         changed = self._mesh_transaction(f"ZBrush return {obj.name}", mutate, moved_of=lambda moved: moved).changed

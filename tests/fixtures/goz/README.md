@@ -16,3 +16,8 @@ what ZBrush returns for a flipped send (E1 T5.2: ZBrush's GoZ round trip is the 
 | `zb2022_P1_head_move_symx.GoZ` | `ticket_01793909441692885900_16724` (P1, bridge frame) | head sent by P1, Move brush with ZBrush X symmetry: all 145 mirror pairs bit-exact |
 | `zb2022_P1_head_smooth_symx.GoZ` | `ticket_01793909578397887700_19924` (P1, bridge frame) | then Smooth brush with X symmetry: 76 of 145 pairs off by up to 0.0102, 13 of 36 seam points off the plane |
 | `zb2022_A_obj_import.GoZ` | E1 T2 (`experiments/goz_probe/tests/fixtures`) | ZBrush's own file of an OBJ-imported tripod: MRGB / MASK16 / GROUPS / CREASE blocks |
+| `zb2022_E2_head_groups_unchanged.GoZ` | `20261105-223403_371_receive` (E2, bridge frame) | head sent with a GROUPS block (four bands by height, ids 101–104) and returned unchanged: ZBrush keeps every face's id |
+| `zb2022_E2_head_groups_regrouped.GoZ` | `20261105-223614_741_receive` (E2, bridge frame) | then 12 faces of band 104 regrouped in ZBrush (mask, Ctrl+W): they come back as a new id 3225, every other face keeps its id; points bit-identical |
+
+The E2 files carry the probe's ids 101–104; the bridge sends region `k` as id `k`, so the tests map 101–104 to 1–4
+(ZBrush returns whatever ids it was sent, E2) and keep 3225 as ZBrush's new group.

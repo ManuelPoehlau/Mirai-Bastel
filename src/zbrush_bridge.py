@@ -8,8 +8,9 @@ Rows (no key: a key only after Manu's "Taste passt", AD-013 addendum):
                                          Refused (nothing written) until ZBrush knows Mirai: registered, ZBrush
                                          restarted, Mirai picked with R (`install.known_to_zbrush`) - naming an
                                          unknown GoZ app crashed ZBrush 2022.0.8 (Manu, 2026-11-05)
-    ZBrush übernehmen: <name> · <id>     a waiting same-topology return: its moved points into the object, one Undo
-                                         step (D1, Manu 2026-11-05: only after this confirm)
+    ZBrush übernehmen: <name> · <id>     a waiting same-topology return: its moved points and changed polygroups
+                                         (P2a) into the object, one Undo step (D1, Manu 2026-11-05: only after this
+                                         confirm)
     ZBrush als neues Objekt: <name> · …  a return that cannot go in place (topology changed, Mirai edited since the
                                          send, unknown object): a new object beside the original
     ZBrush verwerfen: <name> · <id>      forget a waiting return
@@ -292,6 +293,8 @@ class ZBrushBridge:
         return first or (self.plan(identifier, goz, None), None)
 
     def plan(self, identifier: str, goz: GozMesh, manifest: Optional[Manifest]) -> ReturnPlan:
+        from mirai.regions import new_group_name
+
         to_world, to_object = _placement()
         scene_path = self._scene_path()
         obj = None if manifest is None else self.app.scene.objects.get(ObjectId(manifest.object_id))
@@ -299,6 +302,7 @@ class ZBrushBridge:
             goz, manifest, self.app.scene, identifier=identifier, session_id=self.session_id,
             scene_path=None if scene_path is None else str(Path(scene_path).resolve()),
             to_world=to_world, to_object=to_object, symmetry=None if obj is None else symmetry_info(obj.mesh),
+            new_group_name=new_group_name,
         )
 
     def _arrive(self, identifier: str, goz: GozMesh) -> None:
@@ -325,18 +329,18 @@ class ZBrushBridge:
         if done:
             self._forget(w)
             if plan.in_place and manifest is not None:
-                self._rebase(manifest, plan.object_id, plan.goz.points)
+                self._rebase(manifest, plan)
             if plan.new_object:
                 self.app.set_status(f"{self.app.status_message} - it is selected now: {SEND_LABEL!r} sends it "
                                     "(leave mode 4 to send the edit object)")
         return done
 
-    def _rebase(self, manifest: Manifest, object_id, zbrush_points) -> None:
-        obj = self.app.scene.objects.get(object_id)
+    def _rebase(self, manifest: Manifest, plan: ReturnPlan) -> None:
+        obj = self.app.scene.objects.get(plan.object_id)
         if obj is None:
             return
         to_world, _ = _placement()
-        rebased = rebase_manifest(manifest, self.app.scene, obj, to_world, zbrush_points)
+        rebased = rebase_manifest(manifest, self.app.scene, obj, to_world, plan.goz.points, plan)
         versions = self._manifests.setdefault(_key(manifest.identifier), [])
         versions.append(rebased)
         del versions[:-32]

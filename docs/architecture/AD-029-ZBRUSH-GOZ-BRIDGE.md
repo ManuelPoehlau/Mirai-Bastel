@@ -22,6 +22,8 @@ shows upright (§8); the way back (§9 steps 3–6) is still to be tested.
 - **Unterteilt (D13):** Divide mit SMT ohne Cage wird zurückgehalten, mit Hinweis: unterste Stufe → Cage, oder SMT aus.
   Divide ohne SMT kommt bitgleich zurück. Nach Cage ist alles minimal verschoben: übernehmbar, mit Warnung.
 - **Läuft Mirai nicht:** Die Rückgabe wartet, bis Mirai startet (D11).
+- **Polygruppen (P2a, 2026-11-05):** Mirais Gruppen gehen als ZBrush-Polygruppen mit. In ZBrush umgefärbte Flächen
+  kommen mit den Punkten zurück, gleiche Bestätigung, **ein** Undo-Schritt; eine in ZBrush neue Gruppe heißt „Group N“.
 
 ## 1. Scope
 
@@ -29,7 +31,9 @@ In: one object per transfer; positions with the exact sent topology, in place; e
 GoZ registration; the ZBrush → Mirai notification. Out (later, own steps): UVs back, polygroups ↔ regions (P2),
 polypaint, masks, morph targets sent as `b + d`, n-gon split-and-recombine (D4), several SubTools in one Undo step.
 
-**Next:** P2 (polygroups, then n-gons) is planned in [`docs/WP_GOZ_P2_PLAN.md`](../WP_GOZ_P2_PLAN.md) with Manu's decisions (2026-11-05).
+**P2a (polygroups ↔ regions) is implemented** (2026-11-05, [`docs/WP_GOZ_P2_PLAN.md`](../WP_GOZ_P2_PLAN.md) §3, E2 result §2):
+every send carries the regions as GoZ polygroups; a same-topology return brings group changes with the points, one
+Undo step. **Next:** P2b (n-gons).
 
 ## 2. Packages and boundary
 
@@ -61,7 +65,8 @@ on that pick). Reason (Manu, 2026-11-05, reference PC): the first P1 send withou
 showed it because `MiraiProbe` was always installed. Points: `to_goz(object_space.to_world(p))` with `to_goz(x, y, z) = (x, −y, −z)` (E1-Q6), float32, vertex-ID
 order; faces as dense indices in face-ID order. Identifier: `GoZMakeObjectPath` for the first send of an object in a
 session, reused afterwards (ZBrush updates the same Tool). Files (atomic): `<id>.GoZ` (the only file Mirai writes into
-ZBrush's project folder), `GoZ_ObjectList.txt`, `GoZ_Application.txt = Mirai`; then `GoZBrushFromApp.exe` **without
+ZBrush's project folder; it carries a GROUPS block, P2a: region `k` → id `k`, faces in no region → `0xFFFE`),
+`GoZ_ObjectList.txt`, `GoZ_Application.txt = Mirai`; then `GoZBrushFromApp.exe` **without
 `-tmap`** (E1 T5.2), started as E1 started it (plain `Popen`). No
 History entry. ZBrush's own preferences (*Import as SubTool*) are never changed.
 
@@ -78,7 +83,9 @@ copy's sha256, parses it strictly and plans it; a newer return of the same ident
 The manifest (in memory and in Mirai's own `goz/manifests/`, keyed by the identifier) holds `transfer_id`, `session_id`, the scene file path, `ObjectId`, name,
 GoZ identifier, the index ↔ `VertexId`/`FaceId` maps, the sent faces, the hash of the sent float32 points and the
 fingerprint (E1 §8.1): topology hash (IDs + boundaries incl. rotation), float64 positions hash, placement (transform,
-pivot, state), every point layer's meta and values hash (morph targets and weights), the rig hash. The link holds when
+pivot, state), every point layer's meta and values hash (morph targets and weights), the rig hash, the face regions
+hash (P2a; a Mirai group edit since the send is a conflict). P2a adds the sent group id per face, id → region name, the
+rest id and the overlaps. The link holds when
 the session is the same, or the current scene file is the one sent from (D11: a later Mirai start) and the object
 exists. After an applied return the manifest takes the new fingerprint, so further sculpting without a resend plans
 against the applied state. The session keeps every manifest version of an identifier (the send, then one per
@@ -91,8 +98,8 @@ Mirai started has only the newest version (on disk).
 
 | Kind | When | Row / action |
 |---|---|---|
-| `POSITIONS` | linked, topology identical, fingerprint identical, some point differs | „ZBrush übernehmen“: moved points only, `_mesh_transaction`, one Undo step. `cage_like` (≥ 95 % moved, each by ≤ 2e-4 × extent; T7c: 7.8e-5): a warning in the status line (D13), still appliable |
-| `UNCHANGED` | as above, no point differs | status only |
+| `IN_PLACE` | linked, topology identical, fingerprint identical, some point or group id differs | „ZBrush übernehmen“: moved points and changed regions (P2a), `_mesh_transaction`, one Undo step. `cage_like` (≥ 95 % moved, each by ≤ 2e-4 × extent; T7c: 7.8e-5): a warning in the status line (D13), still appliable |
+| `UNCHANGED` | as above, no point and no group id differs | status only |
 | `SUBDIVIDED` | every interior point = the one-step Catmull-Clark vertex point of the sent cage (tolerance 1e-5 × extent), some moved | status only, held, the hint names Cage and SMT off (D13); border points are not judged (ZBrush's border rule unmeasured) |
 | `CONFLICT` | linked, topology identical, the Mirai object changed since the send | „ZBrush als neues Objekt“ (D3 proposal: no overwrite) |
 | `TOPOLOGY_CHANGED` | counts or any corner list differ | „ZBrush als neues Objekt“ (D2 proposal) |
@@ -109,6 +116,11 @@ come from `mirai.symmetry` through the glue). Larger deviations stay and are rep
 return is taken exactly as ZBrush sends it. Mirai's own Re-Symmetrize is unchanged (exact, no tolerance).
 After an applied return the manifest keeps ZBrush's points (`zbrush_points`), so a point ZBrush did not move since
 then keeps Mirai's value — including a mirrored mean — instead of reading as moved again.
+
+**Polygroups (P2a):** ZBrush keeps the sent ids per face and gives a group made there a new id (E2). A face whose id
+differs from the last known one leaves every region and joins the one its id names; a new id becomes `Group N`
+(`mirai.regions.new_group_name`), the rest id no region. Unchanged faces keep all memberships (overlaps). If every face
+carries one id Mirai never sent, the groups stay untouched. The status line says „groups: N changed, M new“.
 
 Untouched-point rule (audit §7.3): a returned point equal to the sent float32 bits keeps its float64; a moved one is
 `to_object(from_goz(p))`. The plan is computed again at the confirm; if its kind changed since the arrival, nothing is
@@ -132,6 +144,7 @@ the name `<name> ZBrush`, and the usual Add-object Undo step.
 | D11 | Mirai not running | **Manu 2026-11-05: the ticket waits** |
 | D12 | app name | **Manu 2026-11-05: `GoZApps\Mirai`, `NAME = "Mirai"`** |
 | Sym | ZBrush returns with small mirror deviations | **Manu 2026-11-05:** made exact automatically, threshold 1 % of the size, only while Mirai's symmetry is on |
+| P2a | polygroups ↔ regions | **Manu 2026-11-05:** with the points, same confirm, one Undo step; unchanged groups keep their names, new ones are „Group N“ (WP_GOZ_P2_PLAN §3) |
 | D13 | a return from a divided SubTool | **Manu 2026-11-05 (after T7b/T7c):** smoothed (SMT, no Cage) → held with a hint; Cage → appliable with a warning; without SMT → bit-identical, nothing special |
 
 ## 8. Verification
@@ -139,8 +152,10 @@ the name `<name> ZBrush`, and the usual Add-object Undo step.
 Test-verified (container, Linux, 2026-11-05): `tests/test_goz_format.py` (format fail-closed, flip, n-gon refusal,
 plans on the ZBrush 2022.0.8 captures of the head and of mesh B with ID gaps, the subdivision signature on the T7
 capture, T7b bit-identical, the T7c Cage warning, the completeness rule incl. a file changing in the quiet period, helper as `python -I` without pyglet or
-`core`, inbox claimed once, registration refusing a foreign folder) and `tests/test_goz_bridge.py` (A1–A8 on the app
-path with fake ZBrush utilities). Captures used: `tests/fixtures/goz/README.md`.
+`core`, inbox claimed once, registration refusing a foreign folder; P2a: GROUPS block, send ids / rest / overlaps, the
+E2 captures unchanged and regrouped, known / rest / new ids, a region edit as conflict) and `tests/test_goz_bridge.py`
+(A1–A8 on the app path with fake ZBrush utilities; P2a: regroup + sculpt as one Undo step, groups-only, conflict,
+Undo of a group apply). Captures used: `tests/fixtures/goz/README.md`.
 Measured (container, A9): gollum_20k (21 875 points): send 0.15 s, helper 0.19 s + 1 s settle, arrival + plan
 0.48 s (one frame blocked), confirm (re-plan + apply) 0.41 s. Reference PC: not measured.
 Reference PC (Manu, 2026-11-05, ZBrush 2022.0.8): after registering, restarting ZBrush and picking Mirai with **R**,
@@ -156,3 +171,6 @@ the send works and the head shows **upright** — the `(x, −y, −z)` map is c
 4. Weiter sculpten, **GoZ** ohne neues Senden: wieder „übernehmen“ (kein Konflikt).
 5. In Mirai etwas ändern, dann **GoZ**: nur „als neues Objekt“.
 6. Fühlt sich das wie ein Arbeitsablauf an (A10)?
+7. (P2a) Kopf mit ein paar Gruppen senden: zeigt ZBrush sie als Polygruppen (*Polyframe*, `Shift+F`)? Ein paar Flächen
+   umgruppieren (maskieren, `Strg+W`) und sculpten, **GoZ**: Statuszeile „groups: … changed, 1 new“, übernehmen; die
+   neue Gruppe heißt „Group N“, `Strg+Z` nimmt Gruppen und Punkte gemeinsam zurück.

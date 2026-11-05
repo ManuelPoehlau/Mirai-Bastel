@@ -23,6 +23,13 @@ Rules (E1 README §11, audit §7):
   cage after a Divide with SMT on and the file says nothing about it. A Divide without SMT returns the cage bit-identical
   (T7b). After a Divide with SMT, the lowest level and **Cage**, every point comes back moved by a tiny amount (T7c: max
   4.1e-4 at extent 5.2): such a return stays appliable, with a warning in the status line (`cage_like`).
+- **Polygroups (P2a, docs/WP_GOZ_P2_PLAN.md §3):** every send carries a GROUPS block: region `k` (region order) is id
+  `k + 1`, a face in several regions takes the first (the others are recorded), faces in no region take `REST_GROUP`.
+  ZBrush keeps these ids per face and gives a group made in ZBrush a new id (E2, 2026-11-05: 101-104 back unchanged, a
+  regrouped patch came back as 3225). A same-topology return compares ZBrush's ids with the last known ones; changed
+  faces leave every region and join the one their id names (a new id -> a new `Group N`, `REST_GROUP` -> none). The
+  new `FaceRegions` goes into the same Undo step as the points. A return whose faces all carry one id Mirai never sent
+  keeps the groups untouched (positions only).
 """
 
 from __future__ import annotations
@@ -34,8 +41,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Sequence
 
-from core.ids import ObjectId, VertexId
-from core.mesh import LayerKind, Mesh
+from core.ids import FaceId, ObjectId, VertexId
+from core.mesh import FaceRegion, FaceRegions, LayerKind, Mesh
 from core.scene import Scene, SceneObject
 
 from .format import GozMesh, as_float32, encode_goz
@@ -52,6 +59,8 @@ SYMMETRY_TOLERANCE = 0.01
 CAGE_TOLERANCE = 2e-4
 #: Share of points that must have moved for the Cage warning (T7c: all 326).
 CAGE_MOVED_SHARE = 0.95
+#: P2a (`PROVISIONAL`): the group id of the faces in no region; ids avoid 0 (an OBJ import's single group, E1 T2).
+REST_GROUP = 0xFFFE
 
 
 def to_goz(p: Sequence[float]) -> Position:
@@ -69,6 +78,9 @@ class SymmetryInfo:
     pairs: tuple[tuple[VertexId, VertexId], ...]
     seam: tuple[VertexId, ...]
     mirror: Callable[[Position], Position]
+
+
+GroupNamer = Callable[[Optional[FaceRegions]], str]
 
 
 class SendRefused(ValueError):
@@ -108,14 +120,32 @@ def build_send(
         raise SendRefused(f"{obj.name!r} has {ngons} faces with more than 4 corners - GoZ carries triangles and "
                           "quads only (split them first, e.g. Knife / Connect)")
     points = sent_points(obj, to_world)
-    data = encode_goz(short_name(obj.name), points, faces)
+    groups, names, overlaps = send_groups(mesh, face_ids)
+    data = encode_goz(short_name(obj.name), points, faces, groups)
     manifest = Manifest(
         transfer_id=transfer_id, session_id=session_id, identifier=identifier, object_id=int(obj.id),
         object_name=obj.name, scene_path=scene_path, vertex_ids=[int(v) for v in vertex_ids],
         face_ids=[int(f) for f in face_ids], faces=faces, sent_float32=float32_hash(points),
-        fingerprint=fingerprint(scene, obj), sent_at=clock(),
+        fingerprint=fingerprint(scene, obj), sent_at=clock(), sent_groups=groups,
+        group_names={str(k): v for k, v in names.items()}, rest_group=REST_GROUP, group_overlaps=overlaps,
     )
     return data, manifest
+
+
+def send_groups(mesh: Mesh, face_ids: Sequence[FaceId]) -> tuple[list[int], dict[int, str], list]:
+    """Per sent face its group id, the id -> region name map and the overlaps (see module)."""
+    regions = mesh.face_regions.regions if mesh.face_regions is not None else ()
+    if len(regions) >= REST_GROUP:
+        raise SendRefused(f"{len(regions)} groups - GoZ carries at most {REST_GROUP - 1}")
+    ids = {r.name: k + 1 for k, r in enumerate(regions)}
+    groups: list[int] = []
+    overlaps: list = []
+    for index, f in enumerate(face_ids):
+        member = [r.name for r in regions if f in r.faces]
+        groups.append(ids[member[0]] if member else REST_GROUP)
+        if len(member) > 1:
+            overlaps.append([index, member[1:]])
+    return groups, {k: name for name, k in ids.items()}, overlaps
 
 
 # -- subdivision signature ----------------------------------------------------------------------------------------------
@@ -182,8 +212,8 @@ def looks_subdivided(sent: Sequence[Position], returned: Sequence[Position], fac
 
 
 class ReturnKind(enum.Enum):
-    POSITIONS = "positions"  # in place, one Undo step
-    UNCHANGED = "unchanged"  # nothing moved
+    IN_PLACE = "in_place"  # points and / or groups into the object, one Undo step
+    UNCHANGED = "unchanged"  # nothing moved, no group changed
     CONFLICT = "conflict"  # the Mirai object changed since the send -> new object only (D3 proposal)
     TOPOLOGY_CHANGED = "topology_changed"  # -> new object only
     UNKNOWN_OBJECT = "unknown_object"  # no manifest / other session / object gone -> new object only
@@ -206,10 +236,16 @@ class ReturnPlan:
     positions: dict[VertexId, Position] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     cage_like: bool = False
+    #: P2a: the new regions value to write (`regions_changed`; None is "no regions"), ZBrush's ids of this return
+    #: when the plan read them (the manifest's next baseline) and the id -> name map incl. new groups
+    regions_changed: bool = False
+    regions: Optional[FaceRegions] = None
+    zbrush_groups: Optional[tuple[int, ...]] = None
+    group_names: dict[int, str] = field(default_factory=dict)
 
     @property
     def in_place(self) -> bool:
-        return self.kind is ReturnKind.POSITIONS
+        return self.kind is ReturnKind.IN_PLACE
 
     @property
     def new_object(self) -> bool:
@@ -235,6 +271,7 @@ def plan_return(
     to_world: Placement,
     to_object: Placement,
     symmetry: Optional[SymmetryInfo] = None,
+    new_group_name: Optional[GroupNamer] = None,
 ) -> ReturnPlan:
     subtool = goz.name[len("GoZMesh_"):] if goz.name.startswith("GoZMesh_") else goz.name
     if manifest is None:
@@ -273,22 +310,85 @@ def plan_return(
         if r != s:
             positions[manifest.vertex_id(i)] = to_object(obj, from_goz(r))
             largest = max(largest, max(abs(a - b) for a, b in zip(r, s)))
-    if not positions:
-        return plan(ReturnKind.UNCHANGED, "no point moved", object_id=obj.id)
-    notes = []
+    mesh = obj.mesh
+    groups = plan_groups(goz.groups, manifest, mesh, new_group_name)
+    notes = list(groups.notes)
+    group_kw = dict(zbrush_groups=groups.read, group_names=groups.names, regions_changed=groups.changed,
+                    regions=groups.regions)
+    if not positions and not groups.changed:
+        return plan(ReturnKind.UNCHANGED, "no point moved" + (", no group changed" if groups.read else ""),
+                    object_id=obj.id, notes=notes, **group_kw)
     moved_by_zbrush = len(positions)
     cage_like = len(positions) >= CAGE_MOVED_SHARE * len(sent) and largest <= CAGE_TOLERANCE * _extent(sent)
     if cage_like:
         notes.append(f"looks like ZBrush's Cage reconstruction, not a sculpt: every point moved by at most {largest:.2g}"
                      " - exact symmetry pairs may break (Re-Symmetrize)")
-    mesh = obj.mesh
-    if symmetry is not None:
+    if symmetry is not None and positions:
         notes.extend(symmetrize_positions(positions, mesh, symmetry))
     targets = sum(1 for lid in mesh.point_layer_ids() if mesh.point_layer_info(lid).kind is LayerKind.VECTOR)
     if targets:
         notes.append(f"{targets} morph target{'s' if targets != 1 else ''} follow the new base")
-    return plan(ReturnKind.POSITIONS, f"{moved_by_zbrush} of {len(sent)} points moved", object_id=obj.id,
-                positions=positions, notes=notes, cage_like=cage_like)
+    reason = f"{moved_by_zbrush} of {len(sent)} points moved" if positions else "no point moved, groups changed"
+    return plan(ReturnKind.IN_PLACE, reason, object_id=obj.id, positions=positions, notes=notes, cage_like=cage_like,
+                **group_kw)
+
+
+# -- polygroups (P2a) ---------------------------------------------------------------------------------------------------
+
+
+@dataclass
+class GroupPlan:
+    read: Optional[tuple[int, ...]] = None  # ZBrush's ids, when they were taken into account
+    names: dict[int, str] = field(default_factory=dict)
+    changed: bool = False
+    regions: Optional[FaceRegions] = None
+    notes: list[str] = field(default_factory=list)
+
+
+def plan_groups(returned: Optional[Sequence[int]], manifest: Manifest, mesh: Mesh,
+                new_group_name: Optional[GroupNamer] = None) -> GroupPlan:
+    """The regions after ZBrush's group ids `returned` (see module). Needs the sent topology (checked by the caller)."""
+    names = {int(k): v for k, v in manifest.group_names.items()}
+    if returned is None or manifest.sent_groups is None:
+        return GroupPlan(names=names)
+    returned = tuple(int(g) for g in returned)
+    baseline = manifest.zbrush_groups if manifest.zbrush_groups is not None else manifest.sent_groups
+    rest = manifest.rest_group
+    if len(set(returned)) == 1 and returned[0] not in set(names) | {rest} | set(baseline):
+        return GroupPlan(names=names, notes=[f"ZBrush gave every face one group Mirai never sent ({returned[0]}) - "
+                                             "groups left as they are"])
+    changed_at = [i for i, (r, b) in enumerate(zip(returned, baseline)) if r != b]
+    if not changed_at:
+        return GroupPlan(read=returned, names=names)
+    regions = mesh.face_regions
+    before = {r.name: r.faces for r in regions.regions} if regions is not None else {}
+    order = list(before)
+    for i in changed_at:
+        gid = returned[i]
+        if gid == rest or gid in names:
+            continue
+        taken = FaceRegions(tuple(FaceRegion(n, frozenset()) for n in dict.fromkeys([*order, *names.values()])))
+        names[gid] = new_group_name(taken) if new_group_name is not None else f"ZBrush {gid}"
+    moved = {manifest.face_id(i) for i in changed_at}
+    sets = {name: set(faces) - moved for name, faces in before.items()}
+    for i in changed_at:
+        gid = returned[i]
+        if gid == rest:
+            continue
+        name = names[gid]
+        if name not in sets:
+            sets[name] = set()
+            order.append(name)
+        sets[name].add(manifest.face_id(i))
+    kept = tuple(FaceRegion(n, frozenset(sets[n])) for n in order if sets[n])
+    value = FaceRegions(kept) if kept else None
+    if value == regions:
+        return GroupPlan(read=returned, names=names)
+    after = {r.name: r.faces for r in kept}
+    changed = sum(1 for n, faces in before.items() if after.get(n) != faces)
+    new = sum(1 for n in after if n not in before)
+    note = f"groups: {changed} changed, {new} new ({len(changed_at)} faces regrouped)"
+    return GroupPlan(read=returned, names=names, changed=True, regions=value, notes=[note])
 
 
 def _mid(a: Position, b: Position) -> Position:
@@ -357,11 +457,15 @@ def mesh_from_goz(goz: GozMesh) -> Mesh:
 
 
 def rebase_manifest(manifest: Manifest, scene: Scene, obj: SceneObject, to_world: Placement,
-                    zbrush_points: Optional[Sequence[Position]] = None) -> Manifest:
+                    zbrush_points: Optional[Sequence[Position]] = None, plan: Optional[ReturnPlan] = None) -> Manifest:
     """After an applied return Mirai and ZBrush hold the same shape: the manifest takes the object's new fingerprint,
     so the next GoZ of the same SubTool (more sculpting, no resend) plans against it instead of reading as a conflict.
     An Undo of the apply makes Mirai differ again - that next return is then a conflict (fail-closed)."""
     from dataclasses import replace
 
+    groups = {}
+    if plan is not None and plan.zbrush_groups is not None:  # ZBrush's ids become the baseline, new ids keep their name
+        groups = dict(zbrush_groups=list(plan.zbrush_groups),
+                      group_names={str(k): v for k, v in plan.group_names.items()})
     return replace(manifest, fingerprint=fingerprint(scene, obj), sent_float32=float32_hash(sent_points(obj, to_world)),
-                   zbrush_points=None if zbrush_points is None else [list(p) for p in zbrush_points])
+                   zbrush_points=None if zbrush_points is None else [list(p) for p in zbrush_points], **groups)
