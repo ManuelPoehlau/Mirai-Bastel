@@ -44,8 +44,9 @@ Python process is notified through a helper and a ticket; Python → ZBrush work
 vertex order, face corner lists and unchanged points bit-identical. Triangles and open borders survive (mesh B).
 **Subdivision:** after a Divide in ZBrush, GoZ returns the base topology with every point replaced by its one-step
 Catmull-Clark vertex point and no subdivision record, so an unsculpted subdivided SubTool looks like an edit of every
-point (a shrunk cage) - P1 needs a guard for it (§7.2, README §11). Open for the start of P1: which orientation ZBrush
-shows upright (GoZ path is rotated 180° about X relative to its OBJ import). D8 (register as a GoZ app) is technically
+point (a shrunk cage) - P1 needs a guard for it (§7.2, README §11). Orientation: a mesh sent in Mirai's frame shows in
+ZBrush upside down and from behind, so the bridge sends `(x, −y, −z)` and reads back with the same map (self-inverse,
+det +1); P1 confirms the flipped send once. D8 (register as a GoZ app) is technically
 answered: yes.
 
 ---
