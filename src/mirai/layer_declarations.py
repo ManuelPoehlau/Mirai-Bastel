@@ -220,6 +220,8 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "init_scene": "new mesh",
         "load_scene": "new mesh",
         "apply_mesh_change": "host",
+        # AD-029: a ZBrush return - positions only (same topology, layers keyed by VertexId stay valid) or a new object
+        "apply_goz_return": "host",
         "pair_selected": "non-mesh",
         "break_mirror_pairs": "non-mesh",
         "resync_mirror_pairs": "non-mesh",
@@ -292,7 +294,7 @@ def _has_weights_layer(mesh) -> bool:
 #: (the stage-7 policy reads them through `edits_positions_or_topology`). Apply transform keeps the world shape of
 #: the pose (§3.2) and stays allowed.
 _EDITING_CLASSES = frozenset({POSITION_ONLY, DECLARED, RESOLVED, LOCKED})
-_EDITING_METHODS = frozenset({"apply_mesh_change"})
+_EDITING_METHODS = frozenset({"apply_mesh_change", "apply_goz_return"})
 
 
 def edits_positions_or_topology(key: Any) -> bool:

@@ -3174,9 +3174,9 @@ class Application:
         if obj is not scene.edit_object:
             self._set_status(f"{label}: make it the edit object first (mode 4: select it, then 1/2/3)")
             return False
-        posed = self._skeleton.posed_text("apply_mesh_change")
+        posed = self._skeleton.posed_text("apply_goz_return")
         if posed is not None:
-            self._set_status(posed.replace("apply_mesh_change", label, 1))
+            self._set_status(f"{label}: {posed.split(': ', 1)[-1]}")
             return False
         positions = dict(plan.positions)
 
