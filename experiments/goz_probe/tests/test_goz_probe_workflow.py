@@ -183,3 +183,39 @@ def test_scripts_run_isolated_without_pyglet(script):
     ) % (script, str(EXPERIMENT_DIR / script))
     result = subprocess.run([sys.executable, "-I", "-c", probe], capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
+
+
+def test_ticket_paths_survive_a_user_profile(env, tmp_path, monkeypatch):
+    """E1 run 2026-11-05: with the repository under the user profile, the redacted ticket pointed at
+    `%USERPROFILE%\\...` and the listener reported "hashes NOT ok". Tickets are machine data and stay unredacted."""
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("USERNAME", tmp_path.name)
+    lock = probe_listener.acquire_lock(env["inbox"])
+    try:
+        _send(env, "--mesh", "A", "--dry-run")
+        cap = probe_receiver.receive(env["paths"], captures=env["captures"], inbox=env["inbox"], meshes=env["meshes"],
+                                     settle=0)
+        ticket = json.loads(next(env["inbox"].glob("ticket_*.json")).read_text())
+        assert ticket["objects"][0]["copy"].startswith(str(cap))
+        assert "%USERPROFILE%" in (cap / "receiver_log.json").read_text()  # the committed log stays redacted
+        with open(env["inbox"] / "log.txt", "w", encoding="utf-8") as log:
+            assert probe_listener.poll_once(env["inbox"], log)[0]["all_ok"]
+    finally:
+        probe_listener.release_lock(lock)
+
+
+def test_check_copy_names_the_problem(tmp_path):
+    copy = tmp_path / "x.GoZ"
+    copy.write_bytes(b"abc")
+    from goz_probe.probe_common import sha256
+
+    assert probe_listener.check_copy(str(copy), sha256(b"abc")) == "ok"
+    assert probe_listener.check_copy(str(copy), sha256(b"abd")) == "hash mismatch"
+    assert probe_listener.check_copy(str(tmp_path / "gone.GoZ"), "00").startswith("copy not found")
+    assert probe_listener.check_copy(None, "00") == "no copy"
+
+
+def test_recheck_done(env, capsys):
+    (env["inbox"] / "done").mkdir(parents=True)
+    assert probe_listener.recheck_done(env["inbox"]) == 0
+    assert "no tickets" in capsys.readouterr().out
