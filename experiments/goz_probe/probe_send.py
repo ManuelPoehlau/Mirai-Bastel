@@ -12,6 +12,9 @@ MASK16 / GROUPS / CREASE blocks; reproduces a ZBrush 2022.0.8 file byte for byte
 `GoZ_Application.txt` (= `MiraiProbe`, before/after logged; `--keep-application` leaves it) and
 `GoZBrushFromApp.exe` (mesh import; `--tmap` adds the `-tmap` flag from the SDK's texture-map demo, which
 makes ZBrush export the active SubTool instead of importing the listed file - do not use for a plain mesh send).
+`--axis bridge` (P1 orientation check, README §11 item 1): writes every point as `(x, -y, -z)`, the conversion the
+P1 bridge uses (Mirai's Y-up frame shows in ZBrush upside down and from behind without it); short name `E1_<id>_P1`,
+so it never updates a SubTool sent unflipped. `--axis raw` (default) writes the Mirai coordinates as they are.
 `--resend`: refuses when ZBrush's file changed since the capture (`--force` overrides).
 `--dry-run`: writes the files, runs no program (identifier = project folder / short name).
 Every step goes into `captures/<time>_send_<what>/send_log.json`.
@@ -86,9 +89,14 @@ def make_object_path(paths: GozPaths, short: str, steps: Steps, *, dry_run: bool
     raise ProbeError(f"GoZMakeObjectPath did not write an identifier within {timeout:g} s (returncode {proc.poll()})")
 
 
-def previous_identifier(captures: Path, mesh_id: str) -> str | None:
+#: `--axis`: how a Mirai point (x, y, z) is written. "bridge" is the P1 map (self-inverse, det +1).
+AXIS_MAPS = {"raw": (1.0, 1.0, 1.0), "bridge": (1.0, -1.0, -1.0)}
+
+
+def previous_identifier(captures: Path, mesh_id: str, axis: str = "raw") -> str | None:
     for log in reversed(send_logs(captures)):
-        if log.get("mesh") == mesh_id and log.get("identifier") and not log.get("dry_run"):
+        if (log.get("mesh") == mesh_id and log.get("identifier") and not log.get("dry_run")
+                and log.get("axis", "raw") == axis):
             return log["identifier"]
     return None
 
@@ -98,20 +106,23 @@ def prepare_mesh(args, paths: GozPaths, steps: Steps) -> tuple[list[str], dict]:
     if not sent_path.is_file():
         raise ProbeError(f"{sent_path} missing: run make_meshes.py first")
     sent = json.loads(sent_path.read_text(encoding="utf-8"))
-    short = f"E1_{args.mesh}"
-    identifier = None if args.new_identifier else previous_identifier(args.captures, args.mesh)
+    short = f"E1_{args.mesh}" + ("" if args.axis == "raw" else "_P1")
+    identifier = None if args.new_identifier else previous_identifier(args.captures, args.mesh, args.axis)
     if identifier:
         steps.add("reusing the identifier of an earlier send", identifier=identifier)
     else:
         identifier = make_object_path(paths, short, steps, dry_run=args.dry_run, timeout=args.wait_objectpath)
-    points = [[as_float32(c) for c in p] for p in sent["positions"]]
+    signs = AXIS_MAPS[args.axis]
+    points = [[as_float32(s * c) for s, c in zip(signs, p)] for p in sent["positions"]]
     data = encode_goz(short, points, sent["faces"], style=args.style)
     name = parse_goz(data).name
     parse_goz(data)  # our own file must pass our strict reader
     target = Path(identifier + ".GoZ")
     write_bytes_atomic(target, data)
     steps.add("wrote .GoZ", file=str(target), bytes=len(data), sha256=sha256(data), mesh_name=name)
-    return [identifier], {"mesh": args.mesh, "identifier": identifier, "file": str(target), "sha256": sha256(data)}
+    steps.add("axis map", axis=args.axis, signs=signs)
+    return [identifier], {"mesh": args.mesh, "identifier": identifier, "file": str(target), "sha256": sha256(data),
+                          "axis": args.axis}
 
 
 def _capture_dir(captures: Path, which: str) -> Path:
@@ -190,6 +201,8 @@ def main(argv=None) -> int:
     parser.add_argument("--captures", type=Path, default=DEFAULT_CAPTURES)
     parser.add_argument("--style", choices=STYLES, default="sdk",
                         help="sdk: the SDK's minimal file; gozmesh: + name prefix GoZMesh_; zbrush: ZBrush's own layout")
+    parser.add_argument("--axis", choices=tuple(AXIS_MAPS), default="raw",
+                        help="raw: Mirai coordinates as they are; bridge: (x, -y, -z), the P1 conversion (README §11)")
     parser.add_argument("--new-identifier", action="store_true")
     parser.add_argument("--keep-application", action="store_true")
     parser.add_argument("--tmap", action="store_true",

@@ -219,3 +219,23 @@ def test_recheck_done(env, capsys):
     (env["inbox"] / "done").mkdir(parents=True)
     assert probe_listener.recheck_done(env["inbox"]) == 0
     assert "no tickets" in capsys.readouterr().out
+
+
+def test_axis_bridge_send_flips_y_and_z_under_its_own_identifier(env):
+    """README §11 item 1: `--axis bridge` writes (x, -y, -z) and never reuses the identifier of an unflipped send."""
+    run = env["captures"] / "20260101-000000_000_send_A"
+    run.mkdir(parents=True)
+    (run / "send_log.json").write_text(json.dumps(
+        {"mesh": "A", "identifier": str(env["paths"].project_dir() / "E1_A3"), "dry_run": False}))
+    assert _send(env, "--mesh", "A", "--axis", "bridge", "--dry-run") == 0
+    paths = env["paths"]
+    identifier = str(paths.project_dir() / "E1_A_P1")
+    assert read_object_list(paths.object_list) == [identifier]
+    from goz_probe.goz_probe_format import as_float32, read_goz
+
+    sent = json.loads((env["meshes"] / "A.sent.json").read_text())
+    got = read_goz(identifier + ".GoZ").points
+    assert got == [tuple(as_float32(s * c) for s, c in zip((1, -1, -1), p)) for p in sent["positions"]]
+    cap = probe_receiver.receive(paths, captures=env["captures"], inbox=env["inbox"], meshes=env["meshes"], settle=0.05)
+    dump_text = (cap / "dump.txt").read_text()
+    assert "matched sent mesh A" in dump_text

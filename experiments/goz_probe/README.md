@@ -439,6 +439,10 @@ Not needed from Manu: any Maxon download (§4), any decision on technical approa
 
 **Carried into P1** (do first, small, on the reference PC):
 1. Orientation: confirm once that a send with `(x, −y, −z)` shows the head upright and from the front (E1 showed the unflipped send upside down and from behind). Flip in the file, not via `GoZ_Info.txt` options (their effect is untested, and the file flip is exact and testable).
+   Run (2026-11-05): `python -I experiments/goz_probe/probe_send.py --mesh C --axis bridge` writes C as `(x, −y, −z)` under
+   its own identifier `E1_C_P1` (never updates the unflipped `E1_C…`); in ZBrush look at the front view, then press **GoZ**
+   once (MiraiProbe still the target): the receiver must report `y' = −y`, `z' = −z` against the unflipped `C.sent.json`,
+   bit-identical otherwise — i.e. reading back with the same map is the identity.
 2. Subdivision guard (from T7): a return whose every point equals the one-step Catmull-Clark vertex point of the sent cage is a *subdivided* SubTool, not an edit. P1 must detect it (compare with the vertex points of the manifest's sent cage) and refuse the in-place update with a status line, instead of silently shrinking the cage; the file carries no subdivision record. Mixed cases (Divide + sculpt) cannot be separated from a real edit by this test — a decision for Manu (D13).
 
 **Rules for P1 that E1 established:** never call `GoZBrushFromApp` with `-tmap` for a mesh send; never rewrite the artist's ZBrush GoZ preferences (*Import as SubTool*); identity through `GoZMakeObjectPath` identifiers plus the manifest fingerprint (§8.1), because ZBrush can return a different object under a known name (the `-tmap` phase did exactly that); write `--style sdk` or `gozmesh` (both accepted; `zbrush` is byte-identical to ZBrush's own files if ever needed); keep the §7 completeness rule.
