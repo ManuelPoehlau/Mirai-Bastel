@@ -1,0 +1,359 @@
+# E1 — GoZ handshake probe (ZBrush 2022.0.8 ↔ Python)
+
+**Status:** PREPARED (2026-11-05), not run. Approved by Manu (audit D10, commit `882b208`). The probe tools of §5
+are **specified, not yet written**. They are written in the next step once this procedure is accepted.
+**Type:** isolated experiment for one material uncertainty (AGENTS.md §7a): does GoZ in ZBrush 2022.0.8 behave as the
+official SDK describes, and can Mirai be a GoZ target application?
+**Parent:** [ZBrush bridge audit](../../docs/future_ideas/ZBRUSH_BRIDGE_AUDIT.md) (Phase 0, accepted at `73683d8`),
+§8.1 (E1), §9.3 (Q1–Q6), §10.3 (D8).
+**Not in scope:** any `src/` change, the Production bridge (P1), every optional attribute (polypaint, mask, groups,
+UVs, maps), n-gons, multiple SubTools in one transfer.
+
+> Boundary: probe code lives only in this folder. It may **read** `src/` (`core`, `mirai.scene_factory`,
+> `mirai.obj_export`) to build the Mirai-like test mesh. Nothing in `src/` imports it. No GoB code (GPL) and no SDK
+> source (Pixologic, all rights reserved) is copied. The format code is written from the facts in §2.
+
+---
+
+## Kurzfassung für Manu (Deutsch)
+
+- **Worum es geht:** ein kleiner Handshake-Test auf deinem Windows-PC, ca. 40 Minuten. Er klärt, ob Mirai sich als
+  GoZ-Ziel bei ZBrush 2022.0.8 eintragen kann, wie ZBrush das Ziel startet, und ob Dateien, Achsen, Maßstab und die
+  Reihenfolge der Punkte und Flächen so ankommen, wie das offizielle SDK es beschreibt.
+- **Von Maxon brauchst du nichts herunterzuladen.** Alles, was der Test aufruft, liefert ZBrush 2022.0.8 selbst mit. Das
+  offizielle GoZ SDK 2022.0 habe ich gelesen (§2). Es kommt wegen seiner Lizenz nicht ins Repository.
+- **Mirai selbst wird nicht angefasst.** Der Test benutzt eigene kleine Python-Skripte in diesem Ordner und einen
+  Probe-Eintrag „Mirai Probe (E1)“ in ZBrushs GoZ-Liste, den du danach wieder löschen kannst.
+- **Ablauf:** §6. Bestandsaufnahme → Probe-App eintragen → ZBrush → Python → laufendes Programm benachrichtigen →
+  Python → ZBrush → kleine Änderung in ZBrush zurück. Am Ende schickst du den Ordner `captures/` (Commit) und die
+  ausgefüllte Tabelle §9.
+- **Deine Beteiligung:** §10.
+
+---
+
+## 1. Questions E1 answers
+
+| # | Question | Decides |
+|---|---|---|
+| E1-Q1 | Can a folder `GoZApps/<App>/` with `.bat` commands register a Python program as a GoZ target in 2022.0.8? | D8, P1 architecture |
+| E1-Q2 | How does ZBrush launch `EDIT_COMMAND` (arguments, working directory, environment, does it wait for it to exit)? | the helper's design |
+| E1-Q3 | Can the launched helper notify an **already running** Python process safely, without a second instance? | the return notification |
+| E1-Q4 | When the helper starts, are all `.GoZ` files and `GoZ_ObjectList.txt` complete? | the file-stability rule (§7) |
+| E1-Q5 | GoZ root and project folder on Manu's PC (`C:\Users\Public\Pixologic\…` vs a Maxon path) | paths |
+| E1-Q6 | Coordinate orientation and scale of GoZ files relative to OBJ / Mirai, and the `GoZ_TAG_FLAGS` ZBrush writes | axis conversion |
+| E1-Q7 | Are vertex order and face corner lists preserved, in both directions, unchanged and after a Move-brush edit? | in-place update safety |
+| E1-Q8 | Does Python → ZBrush work with `GoZMakeObjectPath` + `GoZBrushFromApp`, and does a resend update the linked SubTool? | identity, send path |
+| E1-Q9 (optional) | Which geometry does GoZ send from a subdivided SubTool, and what does `GoZ_TAG_SUBDIV` contain? | P1 guard |
+
+---
+
+## 2. What is known, and from where
+
+Source labels: **[SDK]** = read first-hand on 2026-11-05 in Maxon's official *GoZBrush SDK* PDF
+(`developers.maxon.net/docs/zbrush/goz_sdk.pdf`, 32 pages) and the official download **"ZBrush GoZ SDK 2022.0"**
+(`developers.maxon.net/downloads/goz_sdk.zip`, sha256
+`50ceb446c2170e7226eaf261cbd6db2e96132f6c08476331281723ea483fc770`: `Sources/GoZ_Binary.h` dated 2023-10-27,
+`GoZ_Mesh.*`, `GoZ_Utils.*`, Windows/Mac demo apps) · **[GoB]** = only from the reverse-engineered GPL Blender client
+GoB (read, not copied) · **[PC]** = can only be confirmed on the reference PC with ZBrush 2022.0.8. The SDK's header
+says © Pixologic 2010/2011. That it describes 2022.0.8 **exactly** is itself [PC].
+
+### 2.1 File format
+
+| Fact | Source |
+|---|---|
+| 32-byte file header: `GoZb` + 28 bytes of text; blocks start at offset 32. | [SDK] `GoZ_Binary.h` |
+| Block header, 16 bytes: `uint32 tag`, `uint32 size` (incl. header), `uint32 iCount`, `float32 modifier` (0 if unused). Unknown blocks are skipped by `size`. | [SDK] (the audit's "uint64 count" came from GoB and is **wrong**) |
+| Last block `GoZ_TAG_END_OF_FILE = 0`, 16 bytes. | [SDK] |
+| Tags: `1` MESH (name, NUL-terminated, padded to 4 bytes) · `2` MATERIAL · `5001` FLAGS (`uint32`) · `5002` SUBDIV (`GoZ_SubDiv`: levels, current level, dynamic sharp/smooth) · `10001` POINT_LIST (3 × `float32`) · `10002` DPOINT_LIST (double, "not yet supported") · `20001` FACE4_LIST_FORMAT_1 (4 × int, triangle = 4th index −1, **preferred**) · `20002` FACE4 format 2 · `20003` FACE3_LIST · `25001` UV4_LIST (4 (u, v) per face) · `25002` UV3 · `30001` MASK8 · `30002` MASK16 (`0xFFFF` = unmasked, `0` = fully masked) · `35001` MRGB (material, r, g, b, 8 bit each, per vertex) · `40001` GROUPS (16-bit id per polygon) · `40002` CREASE · `45001`/`50001`/`55001` texture/normal/displacement map path. | [SDK] |
+| **N-gons are "not yet supported"** (`GoZ_TAG_FACEN_LIST` commented out). | [SDK] |
+| Typical order: header, MESH, FLAGS, POINT_LIST, FACE4, (UV4), MATERIAL, map paths, END. Point and face blocks start on 4-byte boundaries. | [SDK] |
+| `GoZ_FLAGS`: `VERTEX_FLIP_X=1, _Y=2, _Z=4, SWITCH_YZ=8, POLY_FLIP_NORMALS=256, UV_FLIP_U=512, UV_FLIP_V=1024, IMAGE_FLIP_V=2048` — "used by ZBrush to control the content of GoZ file to fit the target application". | [SDK] |
+| Change hints (`GoZ_HINT_*`, e.g. `TOPOLOGY_CHANGED`, `MESH_REPLACED`) exist only as an enum; the hints tag is "not yet supported". | [SDK] |
+| Little-endian on Windows (native `fread` of structs on x86/x64). | [SDK] (inferred from the reader) |
+| The audit's tag `89 13` "object name" is in fact `0x1389 = 5001` FLAGS; `8A 13` = `5002` SUBDIV; the name is tag `1`. GoB writes the name with a `GoZMesh_` prefix. Whether ZBrush 2022.0.8 needs or writes that prefix is unknown. | [SDK] correction · prefix [GoB] → [PC] |
+| Axis convention: GoZ ≈ OBJ rotated 180° about X. | [GoB] only → [PC] (E1-Q6) |
+| The SDK reader reads MASK16 but not MASK8 or SUBDIV; it skips unknown blocks. | [SDK] |
+
+### 2.2 Folders and the exchange protocol
+
+| Fact | Source |
+|---|---|
+| `[PIXOLOGIC_PUBLIC]` = `C:\Users\Public\Pixologic` on Windows; `GoZBrush\` (common files and utilities), `GoZApps\<App>\` (one per target app, max 32), `GoZProjects\Default\` (exchanged files). The SDK utilities hard-code `C:\Users\Public\Pixologic`. Newer ZBrush versions use a Maxon path. | [SDK]; which root 2022.0.8 uses → [PC] |
+| `GoZBrush\GoZ_Config.txt` (PFF: `PATH` = ZBrush.exe, `IMPORT_AS_SUBTOOL`, `SHOW_HELP_WINDOW`). `PATH` is updated each time ZBrush starts, so ZBrush must have been launched once after installation. | [SDK] |
+| `GoZ_ProjectPath.txt` (project folder, default `GoZProjects\Default`; changing it is "not tested at all"). | [SDK] |
+| `GoZ_ObjectList.txt`: one line per object = full path of its file **without extension** (the "Unique object identifier"); an empty list is one empty line. | [SDK] |
+| `GoZ_Application.txt`: the active target app. Changed in ZBrush with the **R** button next to the GoZ buttons, or by an app's own GoZ command. | [SDK] |
+| **Identity:** `GoZMakeObjectPath.exe` turns a short name written to `GoZBrush\GoZ_ObjectPath.txt` into a unique identifier (it appends a number if needed) and writes it back into the same file. The app must keep the link object ↔ identifier itself. ZBrush keeps identifier ↔ SubTool, and a resend under the same identifier updates that SubTool. | [SDK] (corrects the audit's "identity only by name") |
+| App → ZBrush: write `<identifier>.GoZ`, write `GoZ_ObjectList.txt`, run `GoZBrush\GoZBrushFromApp.exe` (it starts ZBrush only if not running and opens the listed objects). The demos pass `-tmap` ("transfer texture maps"). | [SDK] |
+| ZBrush → App: the artist presses GoZ / All / Visible; ZBrush "saves all the SubTools required … to GoZ files, **then** it calls" the app's editing utility. | [SDK] — the ordering in 2022.0.8 → [PC] (E1-Q4) |
+| `GoZLocateApp.exe <AppFolderName> "<pattern>"` writes `GoZ_AppPathList.txt` (searches the default program folders). | [SDK] |
+
+### 2.3 Registration of a target application
+
+| Fact | Source |
+|---|---|
+| The folder name is the app id: **no spaces, no tabs**. | [SDK] |
+| `GoZ_Info.txt` (PFF): required `NAME`, `EXTENSION` (`".GoZ"`), `TAMPLATE` (sic; `"GoZ Complete Binary.GoZ"` from `<ZBrush>\ZStartup\ExportTamplates\`), `EDIT_COMMAND`; optional `GOZ_VERSION` (1), `LOCATE_COMMAND`, `INIT_COMMAND`, and import/export options `IMPORT_/EXPORT_FLIP_X/Y/Z`, `IMPORT_/EXPORT_SWITCH_YZ`, `…_FLIP_NORMALS`, `IMPORT_POLYGROUPS`, `GROUP_NSIDED_POLYS`, normal-map flips. | [SDK] |
+| **`EDIT_COMMAND`, `LOCATE_COMMAND`, `INIT_COMMAND` may be `.exe` or `.bat`.** The official Windows demo uses three `.bat` files. | [SDK] |
+| Locate utility: writes `GoZ_AppPathList.txt` in the app folder (one full path per line, or one empty line). Called on the first GoZ to a new app and when the user changes the version in Preferences. ZBrush then lets the user pick a path or Browse. | [SDK] |
+| Install utility (`INIT_COMMAND`): installs files, must write `GoZ_InstallLog.txt` (empty = success, else an error text shown to the user). "Consider that it is called with administrator privileges, as ZBrush takes care to ask the user to login as a user with administrator privileges." | [SDK] → UAC behaviour [PC] |
+| ZBrush writes `PATH` (the chosen application path) into `GoZApps\<App>\GoZ_Config.txt`. | [SDK] |
+| Editing utility (`EDIT_COMMAND`): must use the active version, **must not launch a second instance but reuse the running one**, reads `GoZ_ObjectList.txt`. | [SDK] |
+| Official Windows demo: the editing utility finds the app by its process, starts it with `ShellExecute` if it is not running, then sends it a window message (`WM_APP + 0x100`). The demo `.bat` simply runs the demo `.exe`. | [SDK] |
+| Arguments and working directory ZBrush passes to the commands; whether ZBrush waits for them to exit; whether a `.bat` gets a console window; whether the Locate list may contain a non-`.exe` path. | [PC] (E1-Q2). The SDK's Locate example uses `..\..\GoZBrush\GoZLocateApp.exe`, which suggests the working directory is the app folder. |
+
+### 2.4 Conclusion for registration (to be confirmed by E1)
+
+- Mirai **can very likely be registered**: `EDIT_COMMAND` may be a `.bat`, and nothing requires a compiled program
+  [SDK].
+- **A small helper is necessary.** ZBrush launches a new process per GoZ; Mirai is a long-running `python src/main.py`
+  window; the SDK requires reuse of the running instance. Planned design (`PROVISIONAL`): `EDIT_COMMAND` = `.bat` →
+  runs a stdlib-only Python helper → the helper snapshots the transfer and drops an atomic **ticket file** into a
+  Mirai-owned inbox → the running Mirai picks the ticket up in its existing main-loop tick. No ports, no sockets, no
+  window messages. The helper never touches a Mirai scene. If Mirai is not running, the ticket waits.
+- Whether the helper should **start** Mirai when it is not running (the SDK's expectation) is a decision: D11 in §10.
+- E1 tests this with a stand-in listener (`probe_listener.py`) instead of Mirai.
+
+---
+
+## 3. Test meshes
+
+All three are quads/triangles only (no n-gons, [SDK]: unsupported). Each is written by the probe both as OBJ (for
+ZBrush's own import as a reference) and as GoZ (Python → ZBrush), with a sidecar JSON of the exact values sent.
+
+| Id | Mesh | Size | Why |
+|---|---|---|---|
+| **A** | **Axis tripod**: three separate boxes, cross-section 0.1 × 0.1, from a common corner region offset from the origin: arm X `[0.20, 1.20] × [0.10, 0.20] × [0.05, 0.15]`, arm Y `[0.20, 0.30] × [0.25, 0.85] × [0.05, 0.15]`, arm Z `[0.20, 0.30] × [0.10, 0.20] × [0.20, 0.50]`. 8 vertices and 6 quads per box, deterministic order (box X, Y, Z; corners in binary order of (x, y, z) min/max), outward winding. | 24 v / 18 quads | No mirror symmetry and distinct arm lengths (1.0 / 0.6 / 0.3) plus a positive offset: every axis swap, sign flip, scale or translation change and every winding flip shows in the bounding box, the arm lengths and the face normals. Visually unambiguous: the longest arm is +X, the middle +Y, the shortest +Z. |
+| **B** | **Mirai-like**: Mirai's own `sphere` primitive (`mirai.scene_factory.PRIMITIVES["sphere"]`, 482 v, 448 quads + 64 triangles) with 4 faces at one pole deleted through the Core (`Mesh.delete_faces`), so vertex and face IDs are no longer contiguous. Written in Mirai's vertex-ID order (as `mirai.obj_export.mesh_to_obj` does), with the index ↔ `VertexId` map in the sidecar. | ≈ 480 v | Triangles (4th index −1), an open border, Mirai's ID → dense-index mapping. |
+| **C** | **Organic**: `examples/meshes/head_basemesh.obj` (326 v / 324 quads, has UVs; the rigging head). UVs are **not** sent in E1. | 326 v | Representative character topology, small enough for the capture to be committed. |
+
+Optional, only if time allows: `examples/meshes/gollum_20k.obj` (21 875 v, itself exported by ZBrush 2022) for a timing
+note. No n-gon mesh in E1.
+
+---
+
+## 4. Prerequisites (reference PC)
+
+| Item | Detail |
+|---|---|
+| Windows 10 64-bit, user with administrator rights (the install step may ask for them) | REFERENCE_HARDWARE.md |
+| **ZBrush 2022.0.8** installed, **started at least once** after installation ([SDK]: this sets `GoZBrush\GoZ_Config.txt` `PATH`) | Help → About shows 2022.0.8 |
+| GoZ installed: `C:\Users\Public\Pixologic\GoZBrush\` contains `GoZBrushFromApp.exe`, `GoZMakeObjectPath.exe`, `GoZLocateApp.exe`, `GoZ_Config.txt` (if missing: ZBrush *Preferences → GoZ → Force Reinstall*) | step T0 checks it |
+| `<ZBrush install>\ZStartup\ExportTamplates\GoZ Complete Binary.GoZ` exists | step T0 |
+| Python 3.9+ (the one Mirai runs with); note its full path (`where python`) | the helper is called from ZBrush with an absolute path, not via `PATH` |
+| This repository, up to date (`git pull`), containing the probe files of §5 | — |
+| ~40 minutes; no other GoZ app transfer running; save open ZBrush work first | — |
+
+**Files required from Maxon:** none beyond the ZBrush 2022.0.8 installation. The GoZ SDK 2022.0 is a reference
+document. The agent has read it. It is not needed on the PC, and it is not put into the repository (its licence
+reserves all rights).
+
+---
+
+## 5. Probe files (to be written next; specification)
+
+All Python is stdlib-only, Python 3.9+, run with `-I`, Windows paths via `pathlib`. Format code is written from §2.1.
+Nothing is copied from GoB or the SDK.
+
+| File | Does |
+|---|---|
+| `goz_probe_format.py` | Strict reader/writer for the blocks of §2.1 that E1 needs (MESH, FLAGS, SUBDIV, POINT_LIST, FACE4 format 1/2, FACE3, END). Any other block: recorded as `(tag, size, count, modifier)` and skipped. Fails closed: bad magic, a block exceeding the file, a size not matching its count, a missing END, or bytes after END. `dump(path)` → human-readable block list, counts, flags decoded, bounding box, first/last 5 vertices and faces. |
+| `make_meshes.py` | Writes A, B, C as `meshes/<id>.obj` (OBJ via `mirai.obj_export.mesh_to_obj` for B and C, the same writer for A) plus `meshes/<id>.sent.json` (positions as written, face corner lists, for B the index ↔ VertexId map). Deterministic. Reads `src/` only. |
+| `gozapp/MiraiProbe/` | Template of the GoZ app folder: `GoZ_Info.txt` (`NAME = "Mirai Probe (E1)"`, `EXTENSION = ".GoZ"`, `TAMPLATE = "GoZ Complete Binary.GoZ"`, `GOZ_VERSION = 1`, `LOCATE_COMMAND`, `INIT_COMMAND`, `EDIT_COMMAND`, **no** flip options, so ZBrush's raw convention is observed), `Locate.bat` (writes one line: the full path of `probe_app.cmd` in this repo), `Init.bat` (writes an empty `GoZ_InstallLog.txt` and logs its own start, nothing else), `Edit.bat` (calls `<python> -I <repo>\experiments\goz_probe\probe_receiver.py %*`). |
+| `probe_app.cmd` | The "application path" that the Locate step offers and ZBrush stores as `PATH` in `GoZApps\MiraiProbe\GoZ_Config.txt`. It only prints that it is the E1 stand-in. E1 records whether ZBrush accepts a non-`.exe` path there. |
+| `install_probe_app.py` | Detects the GoZ root (`C:\Users\Public\Pixologic`, else a Maxon path, else asks for `--root`), prints what it finds, copies the template to `GoZApps\MiraiProbe\` with the absolute python and repo paths filled in. Refuses if the folder exists (`--replace` to overwrite **only** `MiraiProbe`). Never touches other app folders or `GoZBrush\`. `--uninstall` removes `GoZApps\MiraiProbe\` only. |
+| `probe_receiver.py` | What ZBrush launches. Records within the first milliseconds: start time (`time.time_ns`), `sys.argv`, cwd, selected environment variables, parent process id. Then reads `GoZ_ObjectList.txt`, `GoZ_Application.txt` and `GoZ_ProjectPath.txt`. For each listed object it records size, `st_mtime_ns` and sha256 at start, tries an exclusive open (Windows share mode 0 via `ctypes`), copies the file into `captures/<timestamp>/`, and re-checks size, mtime and sha256 after 1.0 s. It dumps the copy and compares it with `meshes/*.sent.json` when the name or counts match (axis mapping, scale, translation, order, changed-vertex count). If a listener lock is alive it writes a ticket into the inbox, atomically (tmp + `os.replace`). It never starts anything, never deletes or edits ZBrush's files, and exits within ~2 s. |
+| `probe_listener.py` | Stand-in for a running Mirai: holds `inbox/listener.lock` (PID + start time), polls `inbox/` every 250 ms, prints and logs each ticket, verifies the ticket's hashes against the capture. Ctrl+C exits and removes the lock. |
+| `probe_send.py` | Python → ZBrush. `--mesh A|B|C`: writes `GoZ_ObjectPath.txt` with a short name (`E1_A` …), runs `GoZMakeObjectPath.exe`, waits up to 10 s for the file to change, writes `<identifier>.GoZ` (FLAGS 0) and `GoZ_ObjectList.txt`, runs `GoZBrushFromApp.exe`, logs every step with timestamps. `--resend <capture>`: sends a captured ZBrush file back byte-identical under its own identifier. |
+| `captures/` | Output, committed by Manu after the run (small files; no gollum capture). |
+| `tests/` (container) | Format round trip on synthetic files, fail-closed cases, mesh generators deterministic. The captured files become fixtures after E1. |
+
+---
+
+## 6. Windows-Testablauf für Manu (Deutsch)
+
+Vorher: ZBrush-Arbeit speichern. Eine Eingabeaufforderung im Repository öffnen (`cd …\Mirai-Bastel`). Bei jedem
+Schritt gilt: **Erwartung** = was passieren sollte; **Notieren** = was in die Tabelle §9 gehört; schlägt etwas fehl,
+zusätzlich die Punkte aus §8.
+
+### T0 — Bestandsaufnahme (nur lesen, 5 min)
+
+1. ZBrush starten, *Help → About*: Version notieren. ZBrush wieder schließen.
+2. `python -I experiments/goz_probe/install_probe_app.py --inventory` (nur lesen, schreibt nichts außer
+   `captures/inventory.txt`): listet den GoZ-Ordner mit allen Unterordnern, den Inhalt der Textdateien in `GoZBrush\`, die
+   vorhandenen `GoZApps\*\GoZ_Info.txt` und prüft die Vorlage in `ZStartup\ExportTamplates\`.
+   - **Erwartung:** Wurzel `C:\Users\Public\Pixologic`, `GoZBrush\` mit den drei `.exe`, `GoZ Complete Binary.GoZ` gefunden.
+   - **Notieren:** Wurzelpfad, ob ein `Maxon`-Ordner existiert, welche GoZ-Apps es schon gibt.
+
+### T1 — Probe-App eintragen (3 min)
+
+1. `python -I experiments/goz_probe/make_meshes.py` → `meshes/A.obj`, `B.obj`, `C.obj` (+ `.sent.json`).
+2. `python -I experiments/goz_probe/install_probe_app.py` → legt `GoZApps\MiraiProbe\` an.
+   - **Erwartung:** Meldung „installed“, keine Rechteabfrage (der Public-Ordner ist für Benutzer beschreibbar).
+   - **Notieren:** ob Windows nach Administratorrechten gefragt hat.
+
+### T2 — ZBrush → Python (das Wichtigste, 10 min)
+
+1. ZBrush starten. `Tool → Import` → `experiments\goz_probe\meshes\A.obj`, auf die Fläche ziehen, `T` (Edit).
+2. Im Tool-Menü neben den GoZ-Knöpfen **R** drücken → „Mirai Probe (E1)“ wählen.
+   - **Erwartung:** ZBrush ruft die Locate-Datei auf und zeigt eine Pfadliste mit einem Eintrag (`…\probe_app.cmd`) → wählen.
+     Danach läuft die Install-Datei; vielleicht fragt Windows nach Administratorrechten (**zulassen**).
+   - **Notieren:** genaue Dialogtexte (Screenshot), ob eine Rechteabfrage kam, ob ein Konsolenfenster aufging.
+3. **GoZ** drücken.
+   - **Erwartung:** kurz ein Konsolenfenster, ZBrush reagiert weiter. In `captures\<Zeit>\` liegen `receiver_log.json`,
+     Kopien von `GoZ_ObjectList.txt` und der `.GoZ`-Datei sowie `dump.txt`. `dump.txt` zeigt die Blöcke 1 (Name),
+     5001 (Flags), 10001 (24 Punkte), 20001 (18 Flächen), 0 (Ende) und eine Zeile **„Achsen: GoZ = OBJ · …“**,
+     **„Maßstab: …“**, **„Reihenfolge: gleich / anders“**.
+   - **Notieren:** die drei Zeilen; ob die Datei beim Start des Empfängers schon fertig war (`complete_at_start: true/false`,
+     `exclusive_open: ok/blocked`, `changed_after_1s: false/true`); Name der Datei im Projektordner.
+4. Dasselbe mit `B.obj` und `C.obj` (je Import, R ist schon gesetzt, GoZ).
+
+### T3 — Ein laufendes Programm benachrichtigen (5 min)
+
+1. Zweites Konsolenfenster: `python -I experiments/goz_probe/probe_listener.py` (läuft weiter).
+2. In ZBrush auf A wieder **GoZ**.
+   - **Erwartung:** Der Listener schreibt sofort „ticket …: 1 object, hashes ok“; kein zweiter Listener startet.
+3. **GoZ** zweimal schnell hintereinander.
+   - **Erwartung:** zwei Tickets, jedes mit eigener, vollständiger Kopie.
+   - **Notieren:** Zeit zwischen Klick und Ticket (der Listener zeigt sie), ob ZBrush während des Empfängers hängt.
+4. Listener mit `Strg+C` beenden.
+
+### T4 — Python → ZBrush, unverändert zurück (3 min)
+
+1. `python -I experiments/goz_probe/probe_send.py --resend last`
+   - **Erwartung:** ZBrush kommt nach vorn, **dieselbe** SubTool wird aktualisiert (keine neue, kein Dialog).
+   - **Notieren:** neue SubTool oder Update? Dialog? Sichtbare Änderung (sollte keine sein)?
+
+### T5 — Python → ZBrush, von Python geschrieben (7 min)
+
+1. `python -I experiments/goz_probe/probe_send.py --mesh A`
+   - **Erwartung:** eine neue SubTool `E1_A…`. In ZBrush liegt sie **genau auf** dem per OBJ importierten A aus T2
+     (SubTool-Transparenz an, beide sichtbar): längster Arm nach rechts (+X), mittlerer nach oben (+Y), kürzester nach vorn.
+   - **Notieren:** deckungsgleich / gespiegelt / gedreht / anders groß (Screenshot Front- und Seitenansicht).
+2. Ohne etwas zu ändern **GoZ** (Ziel ist noch „Mirai Probe (E1)“).
+   - **Erwartung:** `dump.txt` meldet „Rundreise unverändert: Punkte bitgleich, Flächen gleich“.
+3. Dasselbe mit `--mesh B` und `--mesh C`.
+
+### T6 — Kleine Änderung in ZBrush zurück (5 min)
+
+1. Auf der SubTool `E1_C…`: Move-Pinsel, zwei, drei Striche an der Nase. **Kein** Divide, kein Remesh, keine
+   Topologie-Werkzeuge. **GoZ**.
+   - **Erwartung:** gleiche Punkt- und Flächenzahl, gleiche Flächenlisten, „N Punkte geändert“ (eine plausible Zahl),
+     alle anderen Punkte bitgleich.
+2. Dasselbe auf `E1_B…` (mit Dreiecken und Loch).
+   - **Notieren:** Zahlen aus `dump.txt`; ob ZBrush beim Import von B etwas „repariert“ hat (andere Zahlen schon in T5).
+
+### T7 — nur wenn Zeit ist: Subdivision (5 min)
+
+1. Auf `E1_C…`: `Strg+D` (eine Stufe), **GoZ** → `dump.txt`: Block 5002 und Punktzahl notieren.
+2. Auf die unterste Stufe gehen (`Shift+D`), **GoZ** → wieder notieren.
+
+### Aufräumen
+
+`python -I experiments/goz_probe/install_probe_app.py --uninstall` entfernt nur `GoZApps\MiraiProbe\`. In ZBrush mit **R**
+wieder die gewohnte GoZ-App wählen. `captures\` committen (oder als Zip schicken) und die Tabelle §9 ausfüllen.
+
+---
+
+## 7. File-stability review: when is a transfer complete?
+
+The audit's §7.6 rule ("stable mtime and size across two polls") is **not sufficient** and is replaced by this rule:
+
+- **Why two 60 Hz polls fail:** two polls are ≈ 33 ms apart. ZBrush writes several files in sequence (each `.GoZ`,
+  then or before the list). A large file can stall for longer than that (disk cache flush, antivirus scan holding the
+  handle). On Windows, `LastWriteTime` can lag behind the data, and a file can have its final size before its
+  content is written (pre-allocation). Unchanged mtime and size therefore prove nothing about the content.
+- **Rule for P1 (`PROVISIONAL`, E1-Q4 confirms or refutes its first premise):**
+  1. **Trigger = explicit signal, not a timer.** With registration: the launch of `EDIT_COMMAND`. [SDK]: ZBrush saves
+     the SubTools *then* calls the editing utility. Without registration (watch-only fallback): a change of
+     `GoZ_ObjectList.txt`, which only *starts* the checks below.
+  2. **Snapshot:** read `GoZ_ObjectList.txt`; for every listed file record size, `mtime_ns` and sha256, and copy it into a
+     Mirai-owned staging folder. Every further step works on the copy.
+  3. **Structural completeness** of the copy (the strict reader of §5): magic, every block inside the file, sizes
+     consistent with counts, END block last and exactly at EOF, required blocks present, counts plausible against the
+     manifest.
+  4. **Quiet period on the wall clock** (≥ 1.0 s, `time.monotonic`, not frames), then re-hash the original. The hash
+     must equal the snapshot.
+  5. **Windows exclusive-open check** (share mode 0) succeeds, i.e. no process still holds the file. Diagnostic only
+     until E1 shows it is reliable (antivirus may also hold it briefly).
+  6. Any failure → retry with back-off up to ~10 s, then "transfer incomplete" in the status line. Nothing is planned
+     or applied. A newer GoZ (new list content) supersedes an unfinished one.
+- E1 measures what the rule needs: helper start time vs. every file's `mtime_ns`, `complete_at_start`,
+  `changed_after_1s`, `exclusive_open`.
+
+---
+
+## 8. Additional safeguards carried into P1
+
+### 8.1 Return-conflict fingerprint (manifest, recorded at send, compared at return)
+
+| Part | Content |
+|---|---|
+| Object identity | `transfer_id`, `session_id`, scene file path, `ObjectId`, object name at send, GoZ identifier (from `GoZMakeObjectPath`) |
+| **Topology** | hash over the ascending `VertexId` list and the ascending `FaceId` list with each boundary as stored (rotation included); face count, vertex count; the dense index ↔ ID maps sent |
+| **Positions** | hash of the float64 rest positions in ID order; separately the hash of the float32 values written to the file (for the untouched-vertex rule, audit §7.3) |
+| **Placement** | `ObjectTransform` (translation, rotation rows, scale), pivot, object state; the axis/flip convention and `GoZ_Info` flags used for the send |
+| **Morph representation and layer identity** | `representation` = `base` or `target:<LayerId>`; the mesh's whole point-layer meta (`LayerId`, name, kind, new-point rule, order); for a target send also the hash of that layer's offsets; for a base send also each target layer's offsets hash, because a base edit moves every relative target (J-3) and a target edited since the send is a conflict too |
+| Rig binding (guard) | weights layer present (and its values hash), `Scene.rig` bone ids / rest frames hash |
+| Opt-in attributes | UV hash and region hash only when the return may apply them |
+
+Comparison at return: any difference between the current object and the manifest → `CONFLICT` (audit §6.4). A
+different placement is a conflict, not something to silently compensate.
+
+### 8.2 Other
+
+- The receiver/helper copies before it reads (§7.2). A Mirai-side reader never parses ZBrush's live file.
+- The helper never starts, edits or deletes anything outside its own inbox and capture folders.
+
+---
+
+## 9. Ergebnis-Tabelle (Manu füllt aus)
+
+| # | Schritt | Ergebnis | Notiz |
+|---|---|---|---|
+| T0 | Version, GoZ-Wurzel, Vorlage gefunden | | |
+| T1 | Installation ohne Rechteabfrage | | |
+| T2.2 | Locate-Liste, Install-Schritt, Rechteabfrage, Konsolenfenster | | |
+| T2.3 | Empfänger gestartet; Achsen / Maßstab / Reihenfolge; Datei fertig beim Start? | | |
+| T2.4 | B und C ebenso | | |
+| T3 | Ticket an laufenden Listener; Doppelklick; ZBrush hängt? | | |
+| T4 | Resend aktualisiert dieselbe SubTool? | | |
+| T5 | Python-Datei deckungsgleich mit OBJ-Import; Rundreise bitgleich (A, B, C) | | |
+| T6 | Move-Pinsel: nur Positionen geändert (C, B) | | |
+| T7 | (optional) Subdivision: welche Stufe kommt an | | |
+
+### When a step fails, record
+
+- a screenshot of every ZBrush dialog or note (exact text), and whether a console window appeared or stayed open;
+- the newest `captures\<Zeit>\` folder (it contains `receiver_log.json`) or, if none was written, that fact;
+- the content of `C:\Users\Public\Pixologic\GoZBrush\GoZ_ObjectList.txt`, `GoZ_Application.txt`, `GoZ_ProjectPath.txt`,
+  `GoZApps\MiraiProbe\GoZ_Config.txt`, `GoZ_AppPathList.txt`, `GoZ_InstallLog.txt`;
+- `dir /T:W /O:D C:\Users\Public\Pixologic\GoZProjects\Default` (file times);
+- the ZBrush version, whether you are an administrator, whether antivirus reported anything;
+- what you did just before (which button, which SubTool was active).
+
+Then stop at that step. The rest depends on it.
+
+---
+
+## 10. What needs Manu
+
+| # | Needs | Why |
+|---|---|---|
+| M1 | Run §6 on the reference PC (~40 min) and return `captures/` + table §9 | ZBrush 2022.0.8 exists only there; every [PC] fact |
+| M2 | Accept that E1 writes `C:\Users\Public\Pixologic\GoZApps\MiraiProbe\` (removed with `--uninstall`) and that the install step may ask for admin rights | it is outside the repository |
+| M3 | Confirm this procedure, so the probe files of §5 can be written (next agent step, container-tested headlessly before you run anything) | the tools do not exist yet |
+| D11 | When ZBrush sends to Mirai while Mirai is **not** running: start Mirai, or leave the ticket until Mirai is started? (Proposal: leave the ticket in v1; the SDK expects a start) | workflow decision |
+| D12 | Final GoZ app id/name for P1 (proposal: folder `Mirai`, `NAME = "Mirai"`) | shows in ZBrush's GoZ list |
+
+Not needed from Manu: any Maxon download (§4), any decision on technical approaches inside E1.
+
+---
+
+## 11. After E1
+
+- Record the result here (one table: question → observed answer). Turn the captured files into fixtures for the
+  headless tests of P1. Update the audit's [PARTIALLY VERIFIED] GoZ rows that E1 settles.
+- Then P1 (audit §8.2) in `src/interop/goz/`, with the rule of §7 and the fingerprint of §8.1.
+- This folder stays as the GoZ regression reference until P1 has its own fixtures, then it is archived like the other
+  finished experiments (`experiments/README.md`).

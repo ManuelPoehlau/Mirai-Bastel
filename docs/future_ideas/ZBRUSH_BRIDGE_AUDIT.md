@@ -24,6 +24,18 @@ Blender add-on **GoB** (`github.com/JoseConseco/GoB`, GPL-2.0-or-later), a long-
 client. GoB was read **as a format reference only**; nothing of it may be copied into Mirai (GPL, AGENTS.md §7a).
 No ZBrush was available. Hence no GoZ fact below is [VERIFIED] against ZBrush 2022.0.8.
 
+**Addendum 2026-11-05 (Phase 0b, E1 preparation).** The official SDK PDF and the download "ZBrush GoZ SDK 2022.0"
+(`goz_sdk.zip`) were read first-hand. The source-labelled facts now live in
+[`experiments/goz_probe/README.md`](../../experiments/goz_probe/README.md) §2, which takes precedence over §3 here. Corrections:
+(1) a block header is `uint32 tag, uint32 size, uint32 count, float32 modifier` (not a `uint64` count); tag `0x1389` is
+`GoZ_TAG_FLAGS` and `0x138A` is `GoZ_TAG_SUBDIV`, the mesh name is tag `1` (§3.3); n-gons are officially "not yet
+supported"; mask16 `0xFFFF` = unmasked. (2) Identity: the SDK's "Unique object identifier" (`GoZMakeObjectPath.exe`, the
+`GoZ_ObjectList.txt` line) links an app object to a SubTool, so identity is not by name only (§3.4, §7.1). (3) Registration:
+`EDIT_COMMAND` / `LOCATE_COMMAND` / `INIT_COMMAND` may be `.bat`; the editing utility must reuse a running instance, so
+Mirai needs a small helper (§4). (4) The two-poll file-stability rule of §7.6 is replaced by the E1 README §7 rule.
+(5) The return-conflict fingerprint of §7.1 is extended there (§8.1: placement, morph representation, layer identity).
+§3.1's "SDK not found" is superseded: the 2022.0 SDK exists. No ZBrush 2022.0.8 behaviour is verified yet; that is E1.
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
