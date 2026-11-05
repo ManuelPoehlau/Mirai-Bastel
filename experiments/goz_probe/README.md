@@ -99,6 +99,7 @@ says © Pixologic 2010/2011. That it describes 2022.0.8 **exactly** is itself [P
 | Locate utility: writes `GoZ_AppPathList.txt` in the app folder (one full path per line, or one empty line). Called on the first GoZ to a new app and when the user changes the version in Preferences. ZBrush then lets the user pick a path or Browse. | [SDK] |
 | Install utility (`INIT_COMMAND`): installs files, must write `GoZ_InstallLog.txt` (empty = success, else an error text shown to the user). "Consider that it is called with administrator privileges, as ZBrush takes care to ask the user to login as a user with administrator privileges." | [SDK] → UAC behaviour [PC] |
 | ZBrush writes `PATH` (the chosen application path) into `GoZApps\<App>\GoZ_Config.txt`. | [SDK] |
+| An object arriving through `GoZBrushFromApp` becomes a **new Tool**, not a SubTool of the active Tool, while the GoZ preference *Import as SubTool* (`IMPORT_AS_SUBTOOL` in `GoZBrush\GoZ_Config.txt`) is off. It is the artist's ZBrush preference; the probe does not change it, and the bridge must not either (GoB rewrites it). | [SDK] preference; behaviour [PC] observed 2026-11-05 (Manu, T5.1) |
 | **ZBrush lists a newly added `GoZApps\<App>\` folder only after a restart** (it was missing from the **R** list until ZBrush was restarted). | [PC] observed 2026-11-05 (Manu, T2.2) |
 | Editing utility (`EDIT_COMMAND`): must use the active version, **must not launch a second instance but reuse the running one**, reads `GoZ_ObjectList.txt`. | [SDK] |
 | Official Windows demo: the editing utility finds the app by its process, starts it with `ShellExecute` if it is not running, then sends it a window message (`WM_APP + 0x100`). The demo `.bat` simply runs the demo `.exe`. | [SDK] |
@@ -264,8 +265,11 @@ zusätzlich die Punkte aus §8.
 ### T5 — Python → ZBrush, von Python geschrieben (7 min)
 
 1. `python -I experiments/goz_probe/probe_send.py --mesh A`
-   - **Erwartung:** eine neue SubTool `E1_A…`. In ZBrush liegt sie **genau auf** dem per OBJ importierten A aus T2
-     (SubTool-Transparenz an, beide sichtbar): längster Arm nach rechts (+X), mittlerer nach oben (+Y), kürzester nach vorn.
+   - **Erwartung:** ein **neues Tool** `E1_A…` (beobachtet 2026-11-05; eine SubTool wird es nur, wenn in den GoZ-Einstellungen
+     „Import as SubTool“ an ist, die Probe ändert das nicht). Zum Vergleich Tool A aus T2 aktiv lassen und `E1_A` über
+     *Tool → SubTool → Append* dazuholen: Es liegt **genau auf** A (SubTool-Transparenz an): längster Arm nach rechts (+X),
+     mittlerer nach oben (+Y), kürzester nach vorn. Rechnerisch entscheidet T5.2 zusammen mit T2: Zeigen beide die
+     Identität, liegen OBJ- und GoZ-Weg in ZBrush deckungsgleich; der Blick ist nur die Bestätigung.
    - **Notieren:** deckungsgleich / gespiegelt / gedreht / anders groß (Screenshot Front- und Seitenansicht).
    - **Wenn ZBrush nichts lädt oder meldet:** zuerst `--mesh A --no-tmap`, dann `--mesh A --name-style gozmesh
      --new-identifier` versuchen und notieren, welche Variante ging (`send_log.json` jedes Versuchs liegt in `captures\`).
