@@ -1,0 +1,34 @@
+E1 receive 20261105-185830_405  launched_by=edit_command  objects=1
+
+=== C:/Users/Public/Pixologic/GoZProjects/Default/E1_C1
+header text: b' 1.0 ZBrush GoZ Binary......'
+blocks:
+  @      32  tag      1 MESH                   size        32  count       1  modifier 0.0
+  @      64  tag   5001 FLAGS                  size        20  count       1  modifier 0.0
+  @      84  tag  10001 POINT_LIST             size      3928  count     326  modifier 0.0
+  @    4012  tag  20001 FACE4_LIST_FORMAT_1    size      5200  count     324  modifier 0.0
+  @    9212  tag  35001 MRGB_LIST              size      1320  count     326  modifier 0.0
+  @   10532  tag  30002 MASK16_LIST            size       668  count     326  modifier 0.0
+  @   11200  tag  40001 GROUPS_LIST            size       664  count     324  modifier 0.0
+  @   11864  tag  40002 CREASE_LIST            size       340  count     324  modifier 0.0
+  @   12204  tag      0 END_OF_FILE            size         0  count       0  modifier 0.0
+mesh name: 'GoZMesh_E1_C1'
+flags: 0 []
+points: 326  faces: 324 (FACE4_LIST_FORMAT_1) {'tri': 0, 'quad': 324}
+bbox min (-2.6052021980285645, -1.8440186977386475e-05, -1.6476691961288452) max (2.6052021980285645, 4.778102397918701, 1.6476061344146729) extent (5.210404396057129, 4.778120838105679, 3.295275330543518)
+first points: [(-1.5931590795516968, 1.2034833431243896, -1.37973952293396), (-1.4726285934448242, 1.2055590152740479, 0.15149712562561035), (-1.6392359733581543, 0.17575210332870483, -1.6044872999191284), (-1.785768985748291, 1.515345573425293, -0.6481078267097473), (-2.381734609603882, 0.9023711085319519, 0.15671004354953766)]
+last points: [(2.4085533618927, 0.6801519989967346, -1.2939223051071167), (2.3427891731262207, 0.8261576294898987, 0.07441706955432892), (0.12997595965862274, 3.3316195011138916, 1.3144155740737915), (0.12480182945728302, 3.124011993408203, 1.3572183847427368), (0.18625770509243011, 2.950652837753296, 1.4094449281692505)]
+first faces: [(117, 11, 16, 159), (2, 0, 11, 13), (118, 12, 128, 165), (108, 112, 37, 38), (3, 9, 8, 0)]
+last faces: [(324, 279, 287, 325), (325, 287, 284, 293), (293, 284, 285, 292), (323, 308, 306, 282), (306, 307, 281, 282)]
+anomalies: none
+matched sent mesh C by identifier of the send log %USERPROFILE%\Mirai_Bastel\experiments\goz_probe\captures\20261105-174437_828_send_C
+Vergleich mit gesendetem Mesh C: Punkte/Flächen gesendet [326, 324], empfangen [326, 324]
+Achsen (regression): x_goz = +1.000009·x_sent +0.000000 (corr +1.000000);  y_goz = +0.999998·y_sent +0.000007 (corr +1.000000);  z_goz = +1.000003·z_sent -0.000003 (corr +1.000000)
+Maßstab: [0.999998, 1.000003, 1.000009]  (signed permutation, scale 1, offset 0: True)
+Rest nach dieser Abbildung: max 0.000387 (float32-Rundung ≈ 1e-7)
+Flächen: {'identical': 324, 'same_corners_rotated': 0, 'reversed_winding': 0, 'other': 0}
+Reihenfolge: same
+326 Punkte geändert, 0 bitgleich; max. Abweichung 0.000408649; erste geänderte Indizes [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+Datei fertig beim Start: complete_at_start=True, exclusive_open=ok, changed_after_1s=False, geschrieben 428.5 ms vor dem Start
+
+no listener running: no ticket (nothing is started)
