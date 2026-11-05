@@ -61,7 +61,7 @@ def layers_fingerprint(mesh: Mesh) -> dict:
         if info.kind is LayerKind.VECTOR:
             values = _digest(struct.pack("<q3d", int(v), *value) for v, value in items)
         else:
-            values = _digest(json.dumps([[int(v), [[int(b), w] for b, w in value]] for v, value in items]).encode())
+            values = _digest([json.dumps([[int(v), [[int(b), w] for b, w in value]] for v, value in items]).encode()])
         out.append({"id": int(lid), "name": info.name, "kind": info.kind.value, "new_point": info.new_point,
                     "values": values})
     return {"layers": out}

@@ -602,3 +602,30 @@ def test_ngons_travel_split_and_stay_ngons_in_mirai(env):
     assert {f: mesh.face_vertices(f) for f in mesh.all_face_ids()} == boundaries
     app._undo_redo(commands.UNDO)
     assert positions(mesh) == before
+
+
+def test_an_object_with_skin_weights_is_sent_and_a_weight_edit_is_a_conflict(env):
+    """Manu 2026-11-05: `SubD_Cube` (a Skin weights layer) did not send and showed nothing - the weights fingerprint
+    raised a TypeError that no status line caught. Now it sends; a weights edit since the send is a conflict."""
+    from core import LayerKind
+
+    app = env["app"]
+    mesh = app.scene.edit_object.mesh
+    lid = mesh.add_point_layer(PointLayerInfo("Skin", LayerKind.WEIGHTS))
+    vids = mesh.all_vertex_ids()
+    mesh.set_layer_value(lid, vids[0], [(1, 0.75), (2, 0.25)])
+    identifier = send(env)
+    assert "sent (326 points)" in app.status_message
+    app.apply_mesh_change("reweight", lambda: mesh.set_layer_value(lid, vids[0], [(1, 1.0)]) or set())
+    goz_back(env, identifier, flipped(fixture("zb2022_C_move_brush.GoZ")))
+    assert "changed in Mirai since the send (morph targets / weights)" in app.status_message, app.status_message
+
+
+def test_an_unexpected_send_failure_is_a_status_line(env, monkeypatch):
+    import zbrush_bridge
+
+    app = env["app"]
+    zbrush_knows_mirai(env)
+    monkeypatch.setattr(zbrush_bridge, "build_send", lambda *a, **k: 1 / 0)
+    assert not env["bridge"].activate(SEND_LABEL)
+    assert "nothing sent - failed: ZeroDivisionError" in app.status_message

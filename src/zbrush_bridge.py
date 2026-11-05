@@ -238,6 +238,9 @@ class ZBrushBridge:
         except (SendRefused, GozSetupError, OSError) as exc:
             app.set_status(f"ZBrush: {exc}")
             return False
+        except Exception as exc:  # a bug must show in the status line, never as a silent menu row (2026-11-05)
+            app.set_status(f"ZBrush: nothing sent - failed: {type(exc).__name__}: {exc}")
+            return False
         self._identifiers[obj.id] = identifier
         self._manifests[_key(identifier)] = [manifest]  # a send starts the history anew
         app.set_status(f"ZBrush: {obj.name!r} sent ({len(manifest.vertex_ids)} points)")
