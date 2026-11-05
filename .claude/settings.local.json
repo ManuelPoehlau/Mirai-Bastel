@@ -26,7 +26,9 @@
       "Bash(python3 *)",
       "Bash(find *)",
       "Bash(PYTHONPATH=src python -c \"from core.mesh import Mesh; import inspect; src = inspect.getsource\\(Mesh.split_edge\\); print\\(src[:300]\\)\")",
-      "Bash(PYTHONPATH=\"src;.;experiments/rigging-skinning-morphing\" python -c \"from core import Scene; from playground.app import PlaygroundApp; app = PlaygroundApp\\(\\); print\\(dir\\(app.scene.history\\)\\)\")"
+      "Bash(PYTHONPATH=\"src;.;experiments/rigging-skinning-morphing\" python -c \"from core import Scene; from playground.app import PlaygroundApp; app = PlaygroundApp\\(\\); print\\(dir\\(app.scene.history\\)\\)\")",
+      "Read(//c/Users/Manuel/Mirai_Bastel/**)",
+      "Read(//c/Users/Public/Pixologic/GoZProjects/Default/**)"
     ]
   }
 }
