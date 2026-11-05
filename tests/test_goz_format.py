@@ -26,8 +26,11 @@ from interop.goz.bridge import (
     from_goz,
     looks_subdivided,
     plan_return,
+    SymmetryInfo,
     polygon_area,
     split_ngon,
+    split_ngons,
+    valid_split,
     to_goz,
 )
 from interop.goz.files import GozPaths, GozSetupError, snapshot_object, write_goz_list
@@ -581,3 +584,139 @@ def test_an_ngon_split_across_groups_takes_the_largest_area():
         holder = plan.regions.get(region) if plan.regions_changed else obj.mesh.face_regions.get(region)
         assert ngon in holder.faces, (region, plan.summary())
     assert tri in mesh.all_face_ids() and len(mesh.face_vertices(ngon)) == 6
+
+
+# -- mirror-symmetric n-gon split (Manu 2026-11-05) ---------------------------------------------------------------------
+
+
+def _mirror_x(p):
+    return (-p[0], p[1], p[2])
+
+
+def _sym_polygon(points):
+    """One n-gon in the plane z = 0, mirror plane x = 0: corners with x = 0 are seam, the rest paired by position."""
+    mesh = Mesh()
+    ids = [mesh.add_vertex((float(x), float(y), 0.0)) for x, y in points]
+    face = mesh.add_face(ids)
+    at = {mesh.vertex_position(v): v for v in ids}
+    seam = tuple(v for v in ids if mesh.vertex_position(v)[0] == 0.0)
+    pairs = tuple((v, at[_mirror_x(mesh.vertex_position(v))]) for v in ids if mesh.vertex_position(v)[0] > 0)
+    return mesh, face, SymmetryInfo(pairs, seam, _mirror_x)
+
+
+def _is_own_mirror(pieces, symmetry):
+    partner = {v: v for v in symmetry.seam}
+    for a, b in symmetry.pairs:
+        partner[a], partner[b] = b, a
+    return {frozenset(partner[v] for v in p) for p in pieces} == {frozenset(p) for p in pieces}
+
+
+@pytest.mark.parametrize("points, quads, tris", [
+    ([(0, 0), (2, 1), (2, 3), (0, 4), (-2, 3), (-2, 1)], 2, 0),  # two corners on the plane: cut along it
+    ([(0, 3), (2, 2), (1, 0), (-1, 0), (-2, 2)], 1, 1),  # apex on the plane: ladder, triangle + quad
+    ([(1, 0), (2, 1), (1, 2), (-1, 2), (-2, 1), (-1, 0)], 2, 0),  # the plane crosses two edges: ladder of quads
+    ([(0, 0), (2, 1), (3, 2), (2, 3), (0, 4), (-2, 3), (-3, 2), (-2, 1)], 2, 2),  # 8-gon
+    ([(0, 0), (3, 1), (3, 3), (0, 1.5), (-3, 3), (-3, 1)], 2, 0),  # concave (a notch at the top)
+])
+def test_an_ngon_on_the_mirror_plane_is_split_into_its_own_mirror_image(points, quads, tris):
+    mesh, face, sym = _sym_polygon(points)
+    splits, stats = split_ngons(mesh, [face], triangulate_face, sym)
+    pieces = splits[face]
+    assert stats == {"split": 1, "mirrored": 1, "asymmetric": 0}
+    assert _is_own_mirror(pieces, sym) and valid_split(mesh.face_vertices(face), pieces, mesh.vertex_position)
+    assert (sum(len(p) == 4 for p in pieces), sum(len(p) == 3 for p in pieces)) == (quads, tris), pieces
+
+
+def test_without_symmetry_the_split_is_the_plain_one():
+    mesh, face, _sym = _sym_polygon([(0, 0), (2, 1), (2, 3), (0, 4), (-2, 3), (-2, 1)])
+    splits, stats = split_ngons(mesh, [face], triangulate_face)
+    boundary = mesh.face_vertices(face)
+    assert stats == {"split": 1}
+    assert splits[face] == [[boundary[k] for k in p] for p in split_ngon(boundary, mesh.vertex_position,
+                                                                           triangulate_face)]
+
+
+def head_with_mirrored_ngons(pairs=8):
+    """The head, X symmetry on, with `pairs` interior edges dissolved on the +X side and their mirror edges too: mirrored
+    6-gon pairs (before the fix: 0 of 8 pairs split alike, Manu 2026-11-05)."""
+    from mirai.symmetry import CorrespondenceState, vertex_correspondence
+    from mirai.symmetry_axis import set_symmetry_axis
+    from zbrush_bridge import symmetry_info
+
+    mesh = head_mesh()
+    set_symmetry_axis(mesh, "X")
+    corr = vertex_correspondence(mesh)
+    partner = {v: (c.partner if c.state is CorrespondenceState.PAIRED else v) for v, c in corr.items()}
+    edge_of = {frozenset(mesh.edge_vertices(e)): e for e in mesh.all_edge_ids()}
+    done, touched = 0, set()
+    for e in list(mesh.all_edge_ids()):
+        if done == pairs:
+            break
+        a, b = mesh.edge_vertices(e)
+        if min(mesh.vertex_position(a)[0], mesh.vertex_position(b)[0]) < 0.3:
+            continue
+        me = edge_of.get(frozenset((partner[a], partner[b])))
+        fs = set(mesh.edge_faces(e)) | set(mesh.edge_faces(me)) if me is not None else set()
+        if len(fs) != 4 or fs & touched or any(len(mesh.face_vertices(f)) != 4 for f in fs):
+            continue
+        touched |= fs
+        mesh.dissolve_edges([e], cleanup=False)
+        mesh.dissolve_edges([me], cleanup=False)
+        done += 1
+    assert done == pairs
+    return mesh, symmetry_info(mesh)
+
+
+def test_mirrored_ngon_pairs_are_split_alike():
+    mesh, sym = head_with_mirrored_ngons()
+    ngons = [f for f in mesh.all_face_ids() if len(mesh.face_vertices(f)) > 4]
+    splits, stats = split_ngons(mesh, ngons, triangulate_face, sym)
+    assert stats == {"split": 16, "mirrored": 16, "asymmetric": 0}
+    every = [p for f in ngons for p in splits[f]]
+    assert _is_own_mirror(every, sym)  # the pieces of the whole mesh map onto themselves
+    from interop.goz.bridge import newell
+
+    for f in ngons:  # each piece in its face's winding, together the face (Newell vectors add up exactly)
+        boundary = mesh.face_vertices(f)
+        assert {v for p in splits[f] for v in p} == set(boundary)
+        for p in splits[f]:
+            assert list(p) == sorted(p, key=boundary.index)
+        whole = newell([mesh.vertex_position(v) for v in boundary])
+        total = [sum(newell([mesh.vertex_position(v) for v in p])[c] for p in splits[f]) for c in range(3)]
+        assert total == pytest.approx(list(whole), abs=1e-9)
+
+
+def test_an_ngon_with_an_unpaired_corner_keeps_the_plain_split():
+    mesh, face, sym = _sym_polygon([(0, 0), (2, 1), (2, 3), (0, 4), (-2, 3), (-2, 1)])
+    lonely = SymmetryInfo(sym.pairs[1:], sym.seam, sym.mirror)
+    _splits, stats = split_ngons(mesh, [face], triangulate_face, lonely)
+    assert stats == {"split": 1, "mirrored": 0, "asymmetric": 1}
+
+
+def test_ngons_across_the_plane_whose_seam_edge_was_dissolved_split_symmetrically():
+    """Dissolving a seam edge merges two mirrored quads into a 6-gon whose corners on the plane are no longer declared
+    seam (`mirai.symmetry`: UNPAIRED); they lie exactly on the plane, so the split still treats them as their own
+    image: all 36 such 6-gons of the head become two mirrored quads (cut along the plane)."""
+    from mirai.symmetry_axis import set_symmetry_axis
+    from zbrush_bridge import symmetry_info
+
+    mesh = head_mesh()
+    set_symmetry_axis(mesh, "X")
+    seam = set(symmetry_info(mesh).seam)
+    touched = set()
+    for e in list(mesh.all_edge_ids()):
+        if not mesh.is_valid_edge(e):
+            continue
+        a, b = mesh.edge_vertices(e)
+        faces = set(mesh.edge_faces(e))
+        if {a, b} <= seam and len(faces) == 2 and not faces & touched:
+            touched |= faces
+            mesh.dissolve_edges([e], cleanup=False)
+    sym = symmetry_info(mesh)
+    ngons = [f for f in mesh.all_face_ids() if len(mesh.face_vertices(f)) > 4]
+    splits, stats = split_ngons(mesh, ngons, triangulate_face, sym)
+    assert stats == {"split": 36, "mirrored": 36, "asymmetric": 0}
+    on_plane = SymmetryInfo(sym.pairs, tuple({v for f in ngons for v in mesh.face_vertices(f)
+                                              if mesh.vertex_position(v)[0] == 0.0} | set(sym.seam)), sym.mirror)
+    for f in ngons:
+        assert sorted(len(p) for p in splits[f]) == [4, 4] and _is_own_mirror(splits[f], on_plane)

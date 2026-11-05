@@ -25,7 +25,8 @@ shows upright (§8); the way back (§9 steps 3–6) is still to be tested.
 - **Polygruppen (P2a, 2026-11-05):** Mirais Gruppen gehen als ZBrush-Polygruppen mit. In ZBrush umgefärbte Flächen
   kommen mit den Punkten zurück, gleiche Bestätigung, **ein** Undo-Schritt; eine in ZBrush neue Gruppe heißt „Group N“.
 - **N-Gons (P2b, 2026-11-05):** werden nur in der gesendeten Datei zerlegt, möglichst in Vierecke. In Mirai bleiben
-  sie N-Gons; zurück kommen die Punkte (und Gruppen).
+  sie N-Gons; zurück kommen die Punkte (und Gruppen). Bei eingeschalteter Symmetrie werden beide Hälften gleich
+  (gespiegelt) zerlegt, N-Gons über der Mitte in sich symmetrisch.
 
 ## 1. Scope
 
@@ -62,7 +63,8 @@ the reference until archived.
 
 Object: mode `4` → the one selected object, else the edit object; the base while a morph target's view is open
 (never the mix, never the editing view). N-gons are split in the file only (P2b, `bridge.split_ngon`: ear clipping,
-then quads where two triangles form one without a reflex corner). Refused: an interaction running, no GoZ
+then quads where two triangles form one without a reflex corner; with Mirai's symmetry on, mirrored n-gons are split
+alike and n-gons on the plane symmetrically, `bridge.split_ngons`, plan §4). Refused: an interaction running, no GoZ
 folder, and — **before anything is written** — while ZBrush does not know Mirai yet: not registered, or registered but
 not yet picked with **R** after a ZBrush restart (`install.known_to_zbrush`: ZBrush writes `GoZApps\Mirai\GoZ_Config.txt`
 on that pick). Reason (Manu, 2026-11-05, reference PC): the first P1 send without registration wrote

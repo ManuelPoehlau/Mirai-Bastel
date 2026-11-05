@@ -95,6 +95,19 @@ topology is `TOPOLOGY_CHANGED`. Tests: `tests/test_goz_format.py` / `tests/test_
 round trip uses ZBrush's real Move-brush points of the head on the sent pieces (no ZBrush capture of a split n-gon
 exists yet; the practical test supplies one).
 
+**Mirror-symmetric split (Manu 2026-11-05, after comparing ZBrush's OBJ import options „Quads to Triangles“ and
+„Symmetrical Triangles only“: „Kann man beides kombinieren?“ → „Ja, bau die Kombination“).** Measured first: on the
+head with 8 mirrored 6-gon pairs the plain split gave **0 of 8** pairs the same edges — ZBrush's Smooth (edge
+neighbours) and Poseable Symmetry would then see different halves. While Mirai's symmetry is on (`split_ngons`, the
+pairs from the glue's `SymmetryInfo`): of a mirrored n-gon pair the lower `FaceId` is split as above and the partner
+gets the mirror image (no check needed: Mirai pairs only exact mirror positions); an n-gon mapped onto itself gets a
+split that is its own mirror image — cut along the plane between its two corners on it and split one half, or a ladder
+of symmetric quads (a triangle at a corner on the plane), the valid one with fewer triangles; none valid → the plain
+split. A corner exactly on the plane counts as its own image even when no seam edge declares it (after dissolving a
+seam edge `mirai.symmetry` calls it UNPAIRED). Result: 8 of 8 pairs alike, 36 of 36 dissolved-seam 6-gons as two
+mirrored quads. The send's status line says „N n-gons split in the file, M mirror-symmetric“. Quads stay preferred:
+triangles only would fix the symmetry, but Divide (Catmull-Clark) and Smooth behave worse on triangles.
+
 **Send:** every face with > 4 corners is split **in the file only**, preferring quads (Manu: "Möglichst Vierecke"):
 a deterministic split into quads plus at most one triangle, without new points (so the point list and the index ↔
 `VertexId` map stay as in P1). Proposal: walk the boundary from a fixed start corner and cut off quads along

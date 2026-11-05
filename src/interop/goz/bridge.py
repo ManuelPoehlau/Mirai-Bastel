@@ -25,6 +25,16 @@ Rules (E1 README §11, audit §7):
   the sent pieces, `face_ids` repeat the n-gon's `FaceId` per piece, `ngons` lists them. A return with exactly the sent
   pieces maps back by point index as in P1 (Mirai's n-gons stay n-gons); any other topology is a new object. An
   n-gon whose pieces come back with different group ids takes the id with the largest area share.
+- **Mirror-symmetric split (Manu 2026-11-05):** while the object's Mirai symmetry is on (`SymmetryInfo`, from the glue),
+  of two mirrored n-gons only the one with the lower `FaceId` is split as above and the other gets the mirror image
+  of that split; an n-gon the mirror maps onto itself gets a split that is its own mirror image: cut along the plane
+  between its two corners on it and split one half (mirrored onto the other), or a ladder of symmetric quads between
+  mirrored corners (a triangle where it meets a corner on the plane) - whichever valid one has fewer triangles (valid:
+  every piece keeps the face's winding without a reflex corner and the pieces cover the face exactly once); if none is
+  valid, and for n-gons with an unpaired corner, the plain split. A mirrored pair needs no check: Mirai pairs points
+  only at exactly mirrored positions, so the image is the same split. Measured before (head, 8 mirrored
+  6-gon pairs): 0 of 8 pairs split alike. ZBrush's Smooth and Poseable Symmetry use the edges, so both halves should
+  carry the same ones.
 - **Subdivided SubTool** (D13, Manu 2026-11-05; E1 T7/T7b/T7c): a return whose every interior point equals the
   one-step Catmull-Clark vertex point of the sent cage is held (`SUBDIVIDED`), not applied: ZBrush returns a smoothed
   cage after a Divide with SMT on and the file says nothing about it. A Divide without SMT returns the cage bit-identical
@@ -116,6 +126,7 @@ def build_send(
     scene_path: Optional[str],
     to_world: Placement,
     triangulate: Optional[Triangulate] = None,
+    symmetry: Optional[SymmetryInfo] = None,
     clock: Callable[[], float] = time.time,
 ) -> tuple[bytes, Manifest]:
     mesh = obj.mesh
@@ -127,15 +138,16 @@ def build_send(
     faces: list[list[int]] = []
     face_ids: list[FaceId] = []
     ngons: list = []
+    big = [f for f in mesh_faces if len(mesh.face_vertices(f)) > 4]
+    if big and triangulate is None:
+        raise SendRefused(f"{obj.name!r} has faces with more than 4 corners and no triangulation was given")
+    splits, stats = split_ngons(mesh, big, triangulate, symmetry) if big else ({}, {})
     for f in mesh_faces:
-        boundary = mesh.face_vertices(f)
-        if len(boundary) <= 4:
-            pieces = [boundary]
-        elif triangulate is None:
-            raise SendRefused(f"{obj.name!r} has faces with more than 4 corners and no triangulation was given")
-        else:
-            pieces = [[boundary[k] for k in piece] for piece in split_ngon(boundary, mesh.vertex_position, triangulate)]
+        if f in splits:
+            pieces = splits[f]
             ngons.append([int(f), list(range(len(faces), len(faces) + len(pieces)))])
+        else:
+            pieces = [mesh.face_vertices(f)]
         for piece in pieces:
             faces.append([index[v] for v in piece])
             face_ids.append(f)
@@ -148,7 +160,7 @@ def build_send(
         face_ids=[int(f) for f in face_ids], faces=faces, sent_float32=float32_hash(points),
         fingerprint=fingerprint(scene, obj), sent_at=clock(), sent_groups=groups,
         group_names={str(k): v for k, v in names.items()}, rest_group=REST_GROUP, group_overlaps=overlaps,
-        ngons=ngons,
+        ngons=ngons, extra={"ngon_split": stats} if stats else {},
     )
     return data, manifest
 
@@ -422,6 +434,131 @@ def plan_return(
     reason = f"{moved_by_zbrush} of {len(sent)} points moved" if positions else "no point moved, groups changed"
     return plan(ReturnKind.IN_PLACE, reason, object_id=obj.id, positions=positions, notes=notes, cage_like=cage_like,
                 **group_kw)
+
+
+def _piece_ok(piece: Sequence[Position], unit: Position, tol: float) -> bool:
+    if len(piece) == 4:
+        return _quad_ok(piece, unit, tol)
+    return _dot(newell(piece), unit) > tol
+
+
+def valid_split(boundary: Sequence[VertexId], pieces: Sequence[Sequence[VertexId]],
+                position: Callable[[VertexId], Position]) -> bool:
+    """Every piece a triangle or quad in the face's winding without a reflex corner, and together the face exactly once
+    (Newell vectors add up over a decomposition; overlaps or gaps change the sum)."""
+    pts = [position(v) for v in boundary]
+    normal = newell(pts)
+    length = math.sqrt(_dot(normal, normal))
+    if length == 0.0:
+        return False
+    unit = tuple(c / length for c in normal)
+    size = max(max(p[c] for p in pts) - min(p[c] for p in pts) for c in range(3)) or 1.0
+    tol = 1e-9 * size * size
+    total = 0.0
+    for piece in pieces:
+        corners = [position(v) for v in piece]
+        if len(piece) not in (3, 4) or len(set(piece)) != len(piece) or not _piece_ok(corners, unit, tol):
+            return False
+        total += _dot(newell(corners), unit)
+    return abs(total - length) <= 1e-6 * length + tol
+
+
+def _in_order(boundary: Sequence[VertexId], vertices) -> list[VertexId]:
+    at = {v: k for k, v in enumerate(boundary)}
+    return sorted(vertices, key=at.__getitem__)
+
+
+def _self_mirror_splits(boundary: Sequence[VertexId], partner: dict, position, triangulate) -> list[list[list[VertexId]]]:
+    """The candidate splits of an n-gon the mirror maps onto itself, each its own mirror image (see module); [] when
+    the mirror is not a reflection of the corner cycle."""
+    n = len(boundary)
+    at = {v: k for k, v in enumerate(boundary)}
+    c = at.get(partner.get(boundary[0]))
+    if c is None or any(partner.get(boundary[i]) != boundary[(c - i) % n] for i in range(n)):
+        return []
+    seam = [i for i in range(n) if (2 * i - c) % n == 0]
+    out: list[list[list[VertexId]]] = []
+    if len(seam) == 2 and (seam[1] - seam[0]) % n not in (1, n - 1):  # cut along the plane, split one half
+        a, b = seam
+        half = [boundary[i % n] for i in range(a, b + 1)]
+        pieces = [[half[k] for k in piece] for piece in split_ngon(half, position, triangulate)]
+        mirrored = [_in_order(boundary, (partner[v] for v in piece)) for piece in pieces]
+        out.append([_in_order(boundary, p) for p in pieces] + mirrored)
+    # the ladder: symmetric quads between mirrored corners, a triangle at a corner on the plane
+    if seam:
+        l = r = seam[0]
+    else:
+        j = next(j for j in range(n) if (c - j) % n == (j + 1) % n)  # the edge the plane crosses
+        l, r = j, (j + 1) % n
+    ladder: list[list[VertexId]] = []
+    while True:
+        gap = (l - r) % n or n
+        if gap == 1:
+            break
+        if gap == 2:
+            ladder.append(_in_order(boundary, {boundary[r], boundary[(r + 1) % n], boundary[l]}))
+            break
+        ladder.append(_in_order(boundary, {boundary[(l - 1) % n], boundary[l], boundary[r], boundary[(r + 1) % n]}))
+        l, r = (l - 1) % n, (r + 1) % n
+    out.append(ladder)
+    return out
+
+
+def split_ngons(mesh: Mesh, faces: Sequence[FaceId], triangulate: Triangulate,
+                symmetry: Optional[SymmetryInfo] = None) -> tuple[dict[FaceId, list[list[VertexId]]], dict]:
+    """The pieces of every n-gon in `faces` (vertex IDs, each in its face's winding) and the counts for the status:
+    `split`, and with symmetry `mirrored` (pairs split alike + self-mirror n-gons split symmetrically) and
+    `asymmetric` (left to the plain split)."""
+    position = mesh.vertex_position
+
+    def plain(f: FaceId) -> list[list[VertexId]]:
+        boundary = mesh.face_vertices(f)
+        return [[boundary[k] for k in piece] for piece in split_ngon(boundary, position, triangulate)]
+
+    out: dict[FaceId, list[list[VertexId]]] = {}
+    stats = {"split": len(faces)}
+    if symmetry is None:
+        return {f: plain(f) for f in faces}, stats
+    partner: dict[VertexId, VertexId] = {v: v for v in symmetry.seam}
+    for a, b in symmetry.pairs:
+        partner[a], partner[b] = b, a
+    for f in faces:  # a corner exactly on the plane is its own image even when no seam edge declares it (a dissolved
+        for v in mesh.face_vertices(f):  # or knifed seam edge leaves such corners undeclared)
+            if v not in partner and symmetry.mirror(position(v)) == position(v):
+                partner[v] = v
+    by_corners = {frozenset(mesh.face_vertices(f)): f for f in faces}
+    mirrored = asymmetric = 0
+    for f in sorted(faces, key=int):
+        if f in out:
+            continue
+        boundary = mesh.face_vertices(f)
+        if not all(v in partner for v in boundary):
+            out[f] = plain(f)
+            asymmetric += 1
+            continue
+        g = by_corners.get(frozenset(partner[v] for v in boundary))
+        if g is None:
+            out[f] = plain(f)
+            asymmetric += 1
+        elif g == f:
+            candidates = [p for p in _self_mirror_splits(boundary, partner, position, triangulate)
+                          if valid_split(boundary, p, position)]
+            if candidates:
+                out[f] = min(candidates, key=lambda p: (sum(len(x) == 3 for x in p), len(p)))
+                mirrored += 1
+            else:
+                out[f] = plain(f)
+                asymmetric += 1
+        else:
+            # the partners are exact mirror images (Mirai's pairing rule), so the image is the same split of `g`;
+            # its corners in `g`'s boundary order keep `g`'s winding
+            pieces = plain(f)
+            other = mesh.face_vertices(g)
+            out[f] = pieces
+            out[g] = [_in_order(other, (partner[v] for v in piece)) for piece in pieces]
+            mirrored += 2
+    stats.update(mirrored=mirrored, asymmetric=asymmetric)
+    return out, stats
 
 
 # -- polygroups (P2a) ---------------------------------------------------------------------------------------------------

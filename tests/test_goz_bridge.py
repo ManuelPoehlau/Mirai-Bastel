@@ -629,3 +629,15 @@ def test_an_unexpected_send_failure_is_a_status_line(env, monkeypatch):
     monkeypatch.setattr(zbrush_bridge, "build_send", lambda *a, **k: 1 / 0)
     assert not env["bridge"].activate(SEND_LABEL)
     assert "nothing sent - failed: ZeroDivisionError" in app.status_message
+
+
+def test_the_send_status_names_the_mirror_symmetric_ngon_split(env):
+    """Manu 2026-11-05: with Mirai's symmetry on, mirrored n-gons are split alike (quads where possible)."""
+    from tests.test_goz_format import head_with_mirrored_ngons
+
+    app = env["app"]
+    mesh, _sym = head_with_mirrored_ngons(2)
+    app.scene.edit_object.mesh.load_state(mesh.export_state())
+    identifier = send(env)
+    assert "4 n-gons split in the file, 4 mirror-symmetric" in app.status_message, app.status_message
+    assert len(parse_goz(Path(identifier + ".GoZ").read_bytes()).faces) > len(mesh.all_face_ids())

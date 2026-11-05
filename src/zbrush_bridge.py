@@ -230,7 +230,7 @@ class ZBrushBridge:
             data, manifest = build_send(
                 app.scene, obj, identifier=identifier, transfer_id=uuid.uuid4().hex, session_id=self.session_id,
                 scene_path=None if scene_path is None else str(Path(scene_path).resolve()), to_world=to_world,
-                triangulate=_triangulate(),
+                triangulate=_triangulate(), symmetry=symmetry_info(obj.mesh),
             )
             write_manifest(self.manifest_dir, identifier, manifest.to_json())
             write_send(paths, identifier, data)
@@ -243,7 +243,7 @@ class ZBrushBridge:
             return False
         self._identifiers[obj.id] = identifier
         self._manifests[_key(identifier)] = [manifest]  # a send starts the history anew
-        app.set_status(f"ZBrush: {obj.name!r} sent ({len(manifest.vertex_ids)} points)")
+        app.set_status(f"ZBrush: {obj.name!r} sent ({len(manifest.vertex_ids)} points{_ngon_text(manifest)})")
         return True
 
     def install(self) -> bool:
@@ -361,6 +361,18 @@ class ZBrushBridge:
 
     def _forget(self, w: Waiting) -> None:
         self.waiting = [x for x in self.waiting if x is not w]
+
+
+def _ngon_text(manifest: Manifest) -> str:
+    stats = manifest.extra.get("ngon_split")
+    if not stats:
+        return ""
+    text = f"; {stats['split']} n-gons split in the file"
+    if "mirrored" in stats:
+        text += f", {stats['mirrored']} mirror-symmetric"
+        if stats["asymmetric"]:
+            text += f", {stats['asymmetric']} not (no mirror partner or no valid symmetric split)"
+    return text
 
 
 def _key(identifier: str) -> str:
