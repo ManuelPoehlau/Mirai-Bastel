@@ -1,0 +1,124 @@
+E1 inventory 2026-11-05 12:15:57
+python: {'executable': 'C:\\Users\\%USERNAME%\\AppData\\Local\\Programs\\Python\\Python314\\python.exe', 'version': '3.14.2 (tags/v3.14.2:df79316, Dec  5 2025, 17:18:21) [MSC v.1944 64 bit (AMD64)]', 'platform': 'win32'}
+
+GoZ root candidates:
+  C:\Users\Public\Pixologic: exists, has GoZBrush
+  C:\Users\Public\Documents\Maxon: missing
+  C:\Users\Public\Maxon: missing
+
+root used: C:\Users\Public\Pixologic
+
+tree (3 levels):
+  GoZApps/
+    Cinema4D/
+      GoZ_Info.txt  271 B  2022-08-11 19:54:51
+      GoZBrushToCinema4D.bat  187 B  2022-08-24 10:23:53
+      GoZLocateCinema4D.bat  58 B  2022-08-11 18:37:33
+      import_goz.py  93 B  2022-08-16 15:24:20
+    Max/
+      2016/
+      2017/
+      2018/
+      2019/
+      2020/
+      2021/
+      2022/
+      2023/
+      comZ2M.dat  0 B  2018-05-26 07:51:36
+      GoZ_Config.bak  0 B  2018-06-11 23:57:00
+      GoZ_Info.txt  413 B  2018-05-26 01:38:22
+      GoZ_InstallList.txt  0 B  2018-06-14 15:20:56
+      GoZ_InstallLog.txt  0 B  2018-05-26 07:46:32
+      GoZBrushFromMax.exe  31424 B  2018-06-12 01:30:56
+      GoZBrushToMax.exe  39104 B  2018-06-12 01:30:58
+      GoZInitMax.exe  37376 B  2022-08-22 16:52:02
+      GoZLocateMax.bat  50 B  2015-12-31 18:37:14
+      Macro_GoZ.ms  19731 B  2018-05-19 08:59:38
+      MAL.txt  0 B  2018-05-23 04:12:46
+      SendEventToMax.dll  7680 B  2018-05-26 07:44:08
+      SendEventToMax64.dll  8704 B  2018-05-23 05:14:58
+      SendEventToMax64.dll.metagen  1062 B  2018-05-02 05:04:00
+      tiff.dll  315392 B  2018-05-12 08:45:16
+    Maya/
+      Maya2015/
+      Maya2016/
+      Maya2016.5/
+      Maya2017/
+      Maya2018/
+      Maya2019/
+      Maya2020/
+      Maya2022/
+      Maya2023/
+      GoZ_Config.bak  57 B  2017-08-01 19:05:54
+      GoZ_Info.txt  333 B  2019-04-04 01:10:28
+      GoZ_InstallList.txt  1 B  2017-08-04 22:12:22
+      GoZ_InstallLog.txt  0 B  2017-08-01 19:06:12
+      GoZBrush.xpm  4816 B  2011-10-09 23:09:48
+      GoZBrushFromMaya.mel  20575 B  2016-09-18 13:11:56
+      GoZBrushToMaya.exe  22528 B  2019-04-04 01:10:28
+      GoZBrushToMaya.mel  6432 B  2019-04-04 01:15:54
+      GoZInitMaya.exe  45568 B  2022-08-22 16:50:50
+      GoZLocateMaya.bat  49 B  2011-10-09 23:09:48
+      GoZScript.mel  1065 B  2016-09-22 02:55:26
+      Instructions.txt  0 B  2011-10-09 23:09:48
+      shelf_GoZBrush.mel  768 B  2011-10-09 23:09:48
+      userSetup.mel  74 B  2011-10-09 23:09:48
+    Photoshop/
+      GoZ_Info.txt  226 B  2015-12-31 18:37:12
+      GoZ_LoadTextures.zsc  81712 B  2017-06-17 00:02:36
+      GoZ_MissingUVOrTexNote.zsc  38140 B  2017-06-17 00:02:42
+      GoZ_NotA3DLayer.zsc  38132 B  2017-06-17 00:02:48
+      GoZBrushToPhotoshop.exe  59392 B  2019-04-25 19:47:08
+      GoZInitPhotoshop.exe  33984 B  2018-03-24 00:18:44
+      GoZLocatePhotoshop.bat  59 B  2015-12-31 18:37:12
+      GoZPlugIn.8li  202240 B  2017-06-16 23:50:08
+      GoZPlugIn64.8li  685568 B  2017-06-16 23:46:50
+  GoZBrush/
+    Scripts/
+      GoZ_ExportAllFromZBrush.zsc  38128 B  2017-06-16 23:57:58
+      GoZ_ExportFromZBrush.zsc  38136 B  2017-06-16 23:58:38
+      GoZ_ExportVisFromZBrush.zsc  38348 B  2018-06-14 21:08:36
+      GoZ_LoadTextureMaps.zsc  44096 B  2014-11-19 19:50:38
+      GoZ_ResetTargetApp.zsc  38128 B  2017-06-16 23:58:56
+      GoZBrushFromAppScript.zsc  38064 B  2017-06-16 23:59:04
+    GoZ_Config.bak  52 B  2015-12-31 18:37:18
+    GoZ_Config.txt  111 B  2026-11-04 12:45:40
+    GoZ_Help.txt  897 B  2015-12-31 18:37:14
+    GoZ_ProjectPath.txt  46 B  2015-12-31 18:37:18
+    GoZ_Version.txt  35 B  2015-12-31 18:37:18
+    GoZBrushFromApp.exe  33328 B  2022-10-27 21:02:21
+    GoZLocateApp.exe  149040 B  2022-10-27 21:02:25
+    GoZMakeObjectPath.exe  30256 B  2022-10-27 21:02:28
+  GoZProjects/
+    Default/
+
+GoZBrush text files:
+--- GoZ_Config.txt (111 chars)
+PATH = "C:\PROGRAM FILES\PIXOLOGIC\ZBRUSH 2022/ZBrush.exe"
+IMPORT_AS_SUBTOOL	=	FALSE
+SHOW_HELP_WINDOW	=	TRUE
+--- GoZ_Help.txt: {'exists': True, 'size': 897, 'mtime_ns': 1451583434000000000} (help text, not shown)
+--- GoZ_ProjectPath.txt (46 chars)
+C:\Users\Public\Pixologic\GoZProjects\Default\
+--- GoZ_Version.txt (35 chars)
+GoZ version 1.01 - April, 11th 2011
+
+GoZBrush utilities:
+  C:\Users\Public\Pixologic\GoZBrush\GoZBrushFromApp.exe: {'exists': True, 'size': 33328, 'mtime_ns': 1666897341000000000}
+  C:\Users\Public\Pixologic\GoZBrush\GoZMakeObjectPath.exe: {'exists': True, 'size': 30256, 'mtime_ns': 1666897348000000000}
+  C:\Users\Public\Pixologic\GoZBrush\GoZLocateApp.exe: {'exists': True, 'size': 149040, 'mtime_ns': 1666897345000000000}
+
+GoZApps:
+--- Cinema4D/  files: ['GoZBrushToCinema4D.bat', 'GoZLocateCinema4D.bat', 'GoZ_Info.txt', 'import_goz.py']
+    GoZ_Info.txt: {'NAME': 'Cinema 4D', 'GOZ_VERSION': '1', 'EXTENSION': '.GoZ', 'TAMPLATE': 'GoZ Complete Binary.GoZ', 'LOCATE_COMMAND': 'GoZLocateCinema4D.bat', 'EDIT_COMMAND': 'GoZBrushToCinema4D.bat', 'EXPORT_FLIP_X': 'TRUE', 'EXPORT_FLIP_Y': 'TRUE', 'IMPORT_FLIP_X': 'TRUE', 'IMPORT_FLIP_Y': 'TRUE'}
+--- Max/  files: ['2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023', 'GoZBrushFromMax.exe', 'GoZBrushToMax.exe', 'GoZInitMax.exe', 'GoZLocateMax.bat', 'GoZ_Config.bak', 'GoZ_Info.txt', 'GoZ_InstallList.txt', 'GoZ_InstallLog.txt', 'MAL.txt', 'Macro_GoZ.ms', 'SendEventToMax.dll', 'SendEventToMax64.dll', 'SendEventToMax64.dll.metagen', 'comZ2M.dat', 'tiff.dll']
+    GoZ_Info.txt: {'NAME': '3D Studio Max', 'GOZ_VERSION': '1', 'EXTENSION': '.GoZ', 'TAMPLATE': 'GoZ Complete Binary.GoZ', 'LOCATE_COMMAND': 'GoZLocateMax.bat', 'INIT_COMMAND': 'GoZInitMax.exe', 'EDIT_COMMAND': 'GoZBrushToMax.exe', 'NORMAL_MAP_FLIP_VERT': 'TRUE', 'TEXTURE_MAP_FLIP_VERT': 'TRUE', 'DISPLACEMENT_MAP_FLIP_VERT': 'TRUE', 'EXPORT_FLIP_Y': 'TRUE', 'EXPORT_FLIP_Z': 'TRUE', 'IMPORT_FLIP_Y': 'TRUE', 'IMPORT_FLIP_Z': 'TRUE'}
+--- Maya/  files: ['GoZBrush.xpm', 'GoZBrushFromMaya.mel', 'GoZBrushToMaya.exe', 'GoZBrushToMaya.mel', 'GoZInitMaya.exe', 'GoZLocateMaya.bat', 'GoZScript.mel', 'GoZ_Config.bak', 'GoZ_Info.txt', 'GoZ_InstallList.txt', 'GoZ_InstallLog.txt', 'Instructions.txt', 'Maya2015', 'Maya2016', 'Maya2016.5', 'Maya2017', 'Maya2018', 'Maya2019', 'Maya2020', 'Maya2022', 'Maya2023', 'shelf_GoZBrush.mel', 'userSetup.mel']
+    GoZ_Info.txt: {'NAME': 'Maya', 'GOZ_VERSION': '1', 'EXTENSION': '.GoZ', 'TAMPLATE': 'GoZ Complete Binary.GoZ', 'LOCATE_COMMAND': 'GoZLocateMaya.bat', 'INIT_COMMAND': 'GoZInitMaya.exe', 'EDIT_COMMAND': 'GoZBrushToMaya.exe', 'EXPORT_FLIP_Y': 'TRUE', 'EXPORT_FLIP_Z': 'TRUE', 'IMPORT_FLIP_Y': 'TRUE', 'IMPORT_FLIP_Z': 'TRUE', 'NORMAL_MAP_FLIP_VERT': 'TRUE'}
+--- Photoshop/  files: ['GoZBrushToPhotoshop.exe', 'GoZInitPhotoshop.exe', 'GoZLocatePhotoshop.bat', 'GoZPlugIn.8li', 'GoZPlugIn64.8li', 'GoZ_Info.txt', 'GoZ_LoadTextures.zsc', 'GoZ_MissingUVOrTexNote.zsc', 'GoZ_NotA3DLayer.zsc']
+    GoZ_Info.txt: {'NAME': 'Photoshop', 'GOZ_VERSION': '1', 'EXTENSION': '.GoZ', 'TAMPLATE': 'GoZ Complete Binary.GoZ', 'LOCATE_COMMAND': 'GoZLocatePhotoshop.bat', 'INIT_COMMAND': 'GoZInitPhotoshop.exe', 'EDIT_COMMAND': 'GoZBrushToPhotoshop.exe'}
+
+ZBrush PATH (GoZBrush/GoZ_Config.txt): C:\PROGRAM FILES\PIXOLOGIC\ZBRUSH 2022/ZBrush.exe
+export templates folder: C:\PROGRAM FILES\PIXOLOGIC\ZBRUSH 2022\ZStartup\ExportTamplates (exists)
+  ['GoZ Binary For Cinema4D.GoZ', 'GoZ Binary NoFlags.GoZ', 'GoZ Binary.GoZ', 'GoZ Complete Binary.GoZ', 'GoZ With Matcaps.GoZ', 'Maya.ma', 'OBJ Format.obj', 'Web3D Standard.x3d']
+  'GoZ Complete Binary.GoZ': FOUND
