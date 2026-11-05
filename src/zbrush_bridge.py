@@ -101,6 +101,12 @@ def symmetry_info(mesh) -> Optional[SymmetryInfo]:
     return SymmetryInfo(tuple(pairs), tuple(seam), lambda p: mirror_position(p, point, normal))
 
 
+def _triangulate():
+    from viewport.derived import triangulate_face  # core-only ear clipping, the one Mirai renders and picks with
+
+    return triangulate_face
+
+
 def _placement():
     from mirai import object_space
 
@@ -224,6 +230,7 @@ class ZBrushBridge:
             data, manifest = build_send(
                 app.scene, obj, identifier=identifier, transfer_id=uuid.uuid4().hex, session_id=self.session_id,
                 scene_path=None if scene_path is None else str(Path(scene_path).resolve()), to_world=to_world,
+                triangulate=_triangulate(),
             )
             write_manifest(self.manifest_dir, identifier, manifest.to_json())
             write_send(paths, identifier, data)

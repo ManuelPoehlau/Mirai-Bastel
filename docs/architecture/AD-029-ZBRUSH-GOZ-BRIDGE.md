@@ -24,16 +24,20 @@ shows upright (§8); the way back (§9 steps 3–6) is still to be tested.
 - **Läuft Mirai nicht:** Die Rückgabe wartet, bis Mirai startet (D11).
 - **Polygruppen (P2a, 2026-11-05):** Mirais Gruppen gehen als ZBrush-Polygruppen mit. In ZBrush umgefärbte Flächen
   kommen mit den Punkten zurück, gleiche Bestätigung, **ein** Undo-Schritt; eine in ZBrush neue Gruppe heißt „Group N“.
+- **N-Gons (P2b, 2026-11-05):** werden nur in der gesendeten Datei zerlegt, möglichst in Vierecke. In Mirai bleiben
+  sie N-Gons; zurück kommen die Punkte (und Gruppen).
 
 ## 1. Scope
 
 In: one object per transfer; positions with the exact sent topology, in place; everything else as a new object; the
 GoZ registration; the ZBrush → Mirai notification. Out (later, own steps): UVs back, polygroups ↔ regions (P2),
-polypaint, masks, morph targets sent as `b + d`, n-gon split-and-recombine (D4), several SubTools in one Undo step.
+polypaint, masks, morph targets sent as `b + d`, several SubTools in one Undo step. (N-gons: P2b, below.)
 
 **P2a (polygroups ↔ regions) is implemented** (2026-11-05, [`docs/WP_GOZ_P2_PLAN.md`](../WP_GOZ_P2_PLAN.md) §3, E2 result §2):
 every send carries the regions as GoZ polygroups; a same-topology return brings group changes with the points, one
-Undo step. **Next:** P2b (n-gons).
+Undo step. **P2b (n-gons) is implemented** (2026-11-05, plan §4): a face with more than 4 corners is split **in the
+file only**, preferring quads, without new points; the return maps back by point index and Mirai's n-gons stay
+n-gons.
 
 ## 2. Packages and boundary
 
@@ -57,7 +61,8 @@ the reference until archived.
 ## 3. Send
 
 Object: mode `4` → the one selected object, else the edit object; the base while a morph target's view is open
-(never the mix, never the editing view). Refused: an interaction running, n-gons (status names the count), no GoZ
+(never the mix, never the editing view). N-gons are split in the file only (P2b, `bridge.split_ngon`: ear clipping,
+then quads where two triangles form one without a reflex corner). Refused: an interaction running, no GoZ
 folder, and — **before anything is written** — while ZBrush does not know Mirai yet: not registered, or registered but
 not yet picked with **R** after a ZBrush restart (`install.known_to_zbrush`: ZBrush writes `GoZApps\Mirai\GoZ_Config.txt`
 on that pick). Reason (Manu, 2026-11-05, reference PC): the first P1 send without registration wrote
@@ -136,7 +141,7 @@ the name `<name> ZBrush`, and the usual Add-object Undo step.
 | D1 | confirm before applying | **Manu 2026-11-05: confirm** (SPACE row) |
 | D2 | changed topology | audit proposal: new object only |
 | D3 | conflict | audit proposal: no overwrite, new object |
-| D4 | n-gons | audit proposal for P1: refuse the send |
+| D4 | n-gons | P1: refused at the send. **P2b (Manu 2026-11-05):** split in the file only, „möglichst Vierecke“; an n-gon split across groups in ZBrush takes the group with the largest area share |
 | D5 | several SubTools | one plan and one Undo step per object (each its own row) |
 | D6 | automatic backup before the first in-place apply | **not built**; Undo covers the session (open) |
 | D8 | register as a GoZ app | yes (E1-Q1), only on the artist's row |
@@ -149,13 +154,13 @@ the name `<name> ZBrush`, and the usual Add-object Undo step.
 
 ## 8. Verification
 
-Test-verified (container, Linux, 2026-11-05): `tests/test_goz_format.py` (format fail-closed, flip, n-gon refusal,
+Test-verified (container, Linux, 2026-11-05): `tests/test_goz_format.py` (format fail-closed, flip, n-gon split (convex, Knife point, concave L / notch),
 plans on the ZBrush 2022.0.8 captures of the head and of mesh B with ID gaps, the subdivision signature on the T7
 capture, T7b bit-identical, the T7c Cage warning, the completeness rule incl. a file changing in the quiet period, helper as `python -I` without pyglet or
 `core`, inbox claimed once, registration refusing a foreign folder; P2a: GROUPS block, send ids / rest / overlaps, the
 E2 captures unchanged and regrouped, known / rest / new ids, a region edit as conflict) and `tests/test_goz_bridge.py`
 (A1–A8 on the app path with fake ZBrush utilities; P2a: regroup + sculpt as one Undo step, groups-only, conflict,
-Undo of a group apply). Captures used: `tests/fixtures/goz/README.md`.
+Undo of a group apply; P2b: n-gons sent split, sculpt back, still n-gons, one Undo step). Captures used: `tests/fixtures/goz/README.md`.
 Measured (container, A9): gollum_20k (21 875 points): send 0.15 s, helper 0.19 s + 1 s settle, arrival + plan
 0.48 s (one frame blocked), confirm (re-plan + apply) 0.41 s. Reference PC: not measured.
 Reference PC (Manu, 2026-11-05, ZBrush 2022.0.8): after registering, restarting ZBrush and picking Mirai with **R**,
@@ -174,3 +179,6 @@ the send works and the head shows **upright** — the `(x, −y, −z)` map is c
 7. (P2a) Kopf mit ein paar Gruppen senden: zeigt ZBrush sie als Polygruppen (*Polyframe*, `Shift+F`)? Ein paar Flächen
    umgruppieren (maskieren, `Strg+W`) und sculpten, **GoZ**: Statuszeile „groups: … changed, 1 new“, übernehmen; die
    neue Gruppe heißt „Group N“, `Strg+Z` nimmt Gruppen und Punkte gemeinsam zurück.
+8. (P2b) Eine Datei mit N-Gons (Knife / Dissolve, auch ein konkaves) senden: Sieht die Fläche in ZBrush sauber aus
+   (Vierecke, keine Löcher, keine umgedrehten Teile)? Sculpten, ein N-Gon teilweise umfärben, **GoZ**, übernehmen: die
+   N-Gons sind in Mirai noch N-Gons, `Strg+Z` nimmt alles zurück.

@@ -142,6 +142,9 @@ class Manifest:
     group_overlaps: list = field(default_factory=list)
     #: ZBrush's group ids of the last applied return, None = as sent (like `zbrush_points`)
     zbrush_groups: Optional[list[int]] = None
+    #: P2b: every n-gon split in the file, `[face id, [indices of its pieces in faces]]` (`faces` / `face_ids` hold
+    #: one entry per sent piece; a piece repeats its n-gon's face id)
+    ngons: list = field(default_factory=list)
     extra: dict = field(default_factory=dict)
 
     def to_json(self) -> str:

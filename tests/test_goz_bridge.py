@@ -567,3 +567,38 @@ def test_undo_of_a_group_apply_links_the_next_return_without_a_resend(env):
     goz_back(env, identifier, e2(E2_REGROUPED))
     assert "groups: 1 changed, 1 new" in app.status_message, app.status_message
     assert env["bridge"].activate(row(env, APPLY_PREFIX)) and mesh.face_regions.get("Group 1") is not None
+
+
+# -- n-gons (P2b) ------------------------------------------------------------------------------------------------------
+
+
+def test_ngons_travel_split_and_stay_ngons_in_mirai(env):
+    """P2b (Manu 2026-11-05): the send splits n-gons in the file only (quads); ZBrush's sculpt on the pieces comes back
+    by point index, one Undo step, and Mirai's n-gons are still n-gons."""
+    app = env["app"]
+    mesh = app.scene.edit_object.mesh
+    edges = []
+    touched = set()
+    for e in mesh.all_edge_ids():
+        faces = set(mesh.edge_faces(e))
+        if len(faces) == 2 and not faces & touched:
+            edges.append(e)
+            touched |= faces
+            if len(edges) == 2:
+                break
+    app.apply_mesh_change("dissolve", lambda: [mesh.dissolve_edges([e], cleanup=False) for e in edges] and None)
+    boundaries = {f: mesh.face_vertices(f) for f in mesh.all_face_ids()}
+    assert sum(len(b) == 6 for b in boundaries.values()) == 2
+    identifier = send(env)
+    sent = parse_goz(Path(identifier + ".GoZ").read_bytes())
+    assert len(sent.faces) == 324 and all(len(f) == 4 for f in sent.faces)
+    before = positions(mesh)
+    history = len(app.history)
+    sculpt = parse_goz(flipped(fixture("zb2022_C_move_brush.GoZ"))).points
+    goz_back(env, identifier, encode_goz(sent.name, sculpt, sent.faces, sent.groups))
+    assert "101 of 326 points moved" in app.status_message, app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX)), app.status_message
+    assert len(app.history) == history + 1 and positions(mesh) != before
+    assert {f: mesh.face_vertices(f) for f in mesh.all_face_ids()} == boundaries
+    app._undo_redo(commands.UNDO)
+    assert positions(mesh) == before

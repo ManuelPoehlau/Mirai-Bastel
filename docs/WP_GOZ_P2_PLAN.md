@@ -1,6 +1,7 @@
 # WP GoZ P2 — polygroups ↔ regions, then n-gons (plan, 2026-11-05)
 
-**Status:** P2a IMPLEMENTED (2026-11-05, container-tested; E2 done on the reference PC, §2), P2b open. Builds on [AD-029](architecture/AD-029-ZBRUSH-GOZ-BRIDGE.md) (P1,
+**Status:** P2a and P2b IMPLEMENTED (2026-11-05, container-tested; E2 done on the reference PC, §2); the
+reference-PC practical test (§6) is open. Builds on [AD-029](architecture/AD-029-ZBRUSH-GOZ-BRIDGE.md) (P1,
 implemented and tested on the reference PC: send, return, confirm, Ctrl+Z, symmetry fix). Decisions below are Manu's
 (2026-11-05) unless marked `PROVISIONAL`. Order (Manu): **P2a polygroups first, then P2b n-gons.**
 
@@ -12,9 +13,8 @@ implemented and tested on the reference PC: send, return, confirm, Ctrl+Z, symme
   sind sie in Mirai wieder ohne Gruppe.
 - **PC-Test E2 erledigt (2026-11-05):** ZBrush übernimmt die gesendeten Gruppen und gibt ihre Nummern unverändert
   zurück; eine in ZBrush neu gebildete Gruppe kommt mit einer neuen Nummer. P2a ist danach gebaut (§3).
-- **Offen für dich:** Hast du in E2 Schritt 4 (`--import-polygroups`) ausgeführt? Aus den Captures geht es nicht
-  hervor. Wenn nein, braucht Mirais Eintragung keine Zusatzoption; wenn ja, sollte der Praxistest zeigen, ob die Gruppen
-  auch ohne sie in ZBrush erscheinen.
+- **Ohne Zusatzoption (Manu, 2026-11-05):** Die Gruppen waren in ZBrush direkt sichtbar, Schritt 4
+  (`--import-polygroups`) war nicht nötig. Mirais Eintragung bleibt ohne `IMPORT_POLYGROUPS`.
 - **P2b N-Gons:** Mirai zerlegt N-Gons **nur in der gesendeten Datei**, möglichst in Vierecke. Dein Mirai-Mesh
   behält seine N-Gons; zurück kommen nur die Punkte (und die Gruppen). Werden die Teile eines N-Gons in ZBrush
   unterschiedlich gefärbt, bekommt das N-Gon die Gruppe mit dem größten Flächenanteil.
@@ -41,9 +41,8 @@ Outcomes and what P2a does:
 **Result (Manu, reference PC, 2026-11-05; captures `20261105-2231…` to `…2236…`):** row 1. Both sends (`E1_C_P1_G`,
 `E1_C_P1_G1`) came back with every face's id unchanged (101: 56, 102: 50, 103: 168, 104: 50; per face equal to the
 send log). After a regroup in ZBrush 12 faces of 104 came back as **3225** (a new id ZBrush chose), every other face
-unchanged, points bit-identical. → ids are the link. Not recorded: whether step 4 (`IMPORT_POLYGROUPS = TRUE`) was
-run before the second send (the first send's return already carried 101–104); Mirai's `install.py` writes no such
-option — the practical test (§6) shows whether the groups appear in ZBrush without it.
+unchanged, points bit-identical. → ids are the link. The groups were visible in ZBrush right away, **without**
+`IMPORT_POLYGROUPS` (Manu, 2026-11-05: step 4 not run); Mirai's `install.py` writes no such option.
 
 | E2 result | P2a |
 |---|---|
@@ -83,7 +82,18 @@ id → region name, rest id, the sent per-face ids, overlaps.
 **Tests:** fixtures from E2 (ZBrush's returns with changed groups); unchanged, recolour, new group, rest group
 painted, groups-only return, Undo restores regions and positions together, conflict on a Mirai region edit.
 
-## 4. P2b — n-gons (decided)
+## 4. P2b — n-gons (decided; IMPLEMENTED 2026-11-05)
+
+Built in `interop/goz/bridge.py` (`split_ngon`, `face_groups`; the ear clipping `viewport.derived.triangulate_face` is
+handed in by `zbrush_bridge.py`) and `manifest.py` (`ngons`; `faces` / `face_ids` per sent piece). The split: the
+ear-clipping triangles (corners in boundary order, so each piece keeps the winding), sorted, then greedily each
+triangle merged with the first later neighbour whose union is a quad without a reflex corner (a straight corner — a
+Knife point on an edge — is allowed, so no zero-area triangle is sent). A convex n-gon gives `n/2 − 1` quads (+ one
+triangle for odd n); concave ones fall back to triangles where no quad fits (tested: an L 6-gon → 2 quads, a notched
+7-gon → 2 quads + 1 triangle). Positions map back by point index unchanged; a return with the old quads or any other
+topology is `TOPOLOGY_CHANGED`. Tests: `tests/test_goz_format.py` / `tests/test_goz_bridge.py` (§ n-gons) — the
+round trip uses ZBrush's real Move-brush points of the head on the sent pieces (no ZBrush capture of a split n-gon
+exists yet; the practical test supplies one).
 
 **Send:** every face with > 4 corners is split **in the file only**, preferring quads (Manu: "Möglichst Vierecke"):
 a deterministic split into quads plus at most one triangle, without new points (so the point list and the index ↔

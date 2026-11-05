@@ -26,11 +26,15 @@ from interop.goz.bridge import (
     from_goz,
     looks_subdivided,
     plan_return,
+    polygon_area,
+    split_ngon,
     to_goz,
 )
 from interop.goz.files import GozPaths, GozSetupError, snapshot_object, write_goz_list
 from interop.goz.format import GozFormatError, as_float32, encode_goz, parse_goz
 from interop.goz.transfer import Inbox
+
+from viewport.derived import triangulate_face  # noqa: E402  (the glue's triangulation, core-only)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "goz"
 EXAMPLES = _REPO_ROOT / "examples"
@@ -82,7 +86,7 @@ def one_object_scene(mesh: Mesh) -> tuple[Scene, SceneObject]:
 def plan_for(scene, obj, returned: bytes, *, session="s1", manifest=None, edit=None):
     if manifest is None:
         _data, manifest = build_send(scene, obj, identifier="P/Kopf", transfer_id="t", session_id="s1",
-                                     scene_path=None, to_world=identity)
+                                     scene_path=None, to_world=identity, triangulate=triangulate_face)
     if edit is not None:
         edit()
     from mirai.regions import new_group_name
@@ -172,7 +176,7 @@ def test_groups_block_round_trip_and_fail_closed():
 # -- send / plan (pure) -------------------------------------------------------------------------------------------------
 
 
-def test_send_flips_y_and_z_and_refuses_ngons():
+def test_send_flips_y_and_z_and_needs_a_triangulation_for_ngons():
     scene, obj = one_object_scene(head_mesh())
     data, manifest = build_send(scene, obj, identifier="P/Kopf", transfer_id="t", session_id="s", scene_path=None,
                                 to_world=identity)
@@ -185,7 +189,7 @@ def test_send_flips_y_and_z_and_refuses_ngons():
     mesh = Mesh()
     ids = [mesh.add_vertex(p) for p in ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0.5, 1.5, 0), (0, 1, 0))]
     mesh.add_face(ids)
-    with pytest.raises(SendRefused, match="more than 4 corners"):
+    with pytest.raises(SendRefused, match="no triangulation was given"):
         build_send(*one_object_scene(mesh), identifier="i", transfer_id="t", session_id="s", scene_path=None,
                    to_world=identity)
 
@@ -463,3 +467,117 @@ def test_new_group_names_follow_mirai_numbering_and_two_new_ids_get_two_groups()
     groups[0], groups[1] = 500, 501
     plan = plan_for(scene, obj, encode_goz(goz.name, goz.points, goz.faces, groups))
     assert plan.group_names[500] == "Group 8" and plan.group_names[501] == "Group 9"
+
+
+# -- n-gons (P2b) ------------------------------------------------------------------------------------------------------
+
+
+def _polygon(points):
+    mesh = Mesh()
+    ids = [mesh.add_vertex((x, y, 0.0)) for x, y in points]
+    return ids, {v: mesh.vertex_position(v) for v in ids}
+
+
+def _split(points):
+    ids, pos = _polygon(points)
+    return split_ngon(ids, pos.__getitem__, triangulate_face), [pos[v] for v in ids]
+
+
+def _check_cover(pieces, pts):
+    """Every piece in the boundary's winding with a real area, no reflex quad, together exactly the polygon."""
+    whole = polygon_area(pts)
+    total = 0.0
+    for piece in pieces:
+        corners = [pts[k] for k in piece]
+        assert list(piece) == sorted(piece) and len(piece) in (3, 4)
+        from interop.goz.bridge import newell
+
+        assert newell(corners)[2] > 0  # counter-clockwise like the boundary
+        total += polygon_area(corners)
+    assert total == pytest.approx(whole)
+
+
+@pytest.mark.parametrize("points, quads, tris", [
+    ([(0, 0), (2, 0), (3, 1), (2, 2), (0, 2), (-1, 1)], 2, 0),  # convex 6-gon
+    ([(0, 0), (2, 0), (3, 1), (1, 2), (-1, 1)], 1, 1),  # convex 5-gon: one quad, one triangle
+    ([(0, 0), (1, 0), (2, 0), (2, 2), (0, 2)], 1, 1),  # Knife point on an edge: no zero-area triangle
+    ([(0, 0), (4, 0), (4, 1), (1, 1), (1, 4), (0, 4)], 2, 0),  # concave L 6-gon
+    ([(0, 0), (4, 0), (4, 4), (3, 4), (2, 1), (1, 4), (0, 4)], 2, 1),  # concave 7-gon (a notch)
+])
+def test_split_ngon_prefers_quads_covers_the_polygon_and_is_deterministic(points, quads, tris):
+    pieces, pts = _split(points)
+    assert (sum(len(p) == 4 for p in pieces), sum(len(p) == 3 for p in pieces)) == (quads, tris), pieces
+    _check_cover(pieces, pts)
+    for piece in pieces:
+        assert polygon_area([pts[k] for k in piece]) > 0
+    assert _split(points)[0] == pieces
+
+
+def head_with_ngons(count=3):
+    """The head with `count` interior edges dissolved (each merges two quads into a 6-gon, no point removed)."""
+    scene, obj = one_object_scene(head_mesh())
+    mesh = obj.mesh
+    chosen, touched = [], set()
+    for e in mesh.all_edge_ids():
+        faces = set(mesh.edge_faces(e))
+        if len(faces) == 2 and not faces & touched and all(len(mesh.face_vertices(f)) == 4 for f in faces):
+            chosen.append(e)
+            touched |= faces
+            if len(chosen) == count:
+                break
+    for e in chosen:
+        mesh.dissolve_edges([e], cleanup=False)
+    assert sum(len(mesh.face_vertices(f)) == 6 for f in mesh.all_face_ids()) == count
+    return scene, obj
+
+
+def test_send_splits_ngons_in_the_file_only():
+    scene, obj = head_with_ngons()
+    mesh = obj.mesh
+    data, manifest = build_send(scene, obj, identifier="P/Kopf", transfer_id="t", session_id="s", scene_path=None,
+                                to_world=identity, triangulate=triangulate_face)
+    goz = parse_goz(data)
+    assert len(goz.points) == 326 and len(goz.faces) == 324  # 321 faces, three 6-gons as two quads each
+    assert all(len(f) == 4 for f in goz.faces) and len(manifest.ngons) == 3
+    for fid, pieces in manifest.ngons:
+        assert all(manifest.face_ids[i] == fid for i in pieces) and len(pieces) == 2
+        corners = {manifest.vertex_ids[k] for i in pieces for k in goz.faces[i]}
+        assert corners == {int(v) for v in mesh.face_vertices(type(mesh.all_face_ids()[0])(fid))}
+    assert len(mesh.all_face_ids()) == 321  # Mirai's mesh is unchanged
+
+
+def test_ngon_round_trip_maps_points_back_and_other_topology_is_a_new_object():
+    scene, obj = head_with_ngons()
+    data, manifest = build_send(scene, obj, identifier="P/Kopf", transfer_id="t", session_id="s1", scene_path=None,
+                                to_world=identity, triangulate=triangulate_face)
+    sent = parse_goz(data)
+    sculpt = parse_goz(flipped(fixture("zb2022_C_move_brush.GoZ"))).points  # ZBrush's Move brush on the same points
+    plan = plan_for(scene, obj, encode_goz(sent.name, sculpt, sent.faces, sent.groups), manifest=manifest)
+    assert plan.kind is ReturnKind.IN_PLACE and len(plan.positions) == 101
+    plan = plan_for(scene, obj, flipped(fixture("zb2022_C_move_brush.GoZ")), manifest=manifest)  # the old quads
+    assert plan.kind is ReturnKind.TOPOLOGY_CHANGED
+
+
+def test_an_ngon_split_across_groups_takes_the_largest_area():
+    mesh = Mesh()
+    ids = [mesh.add_vertex((x, y, 0.0)) for x, y in [(0, 0), (6, 0), (8, 1), (6, 2), (0, 2), (-1, 1)]]
+    extra = mesh.add_vertex((8, 3, 0.0))
+    ngon = mesh.add_face(ids)
+    tri = mesh.add_face([ids[3], ids[2], extra])
+    mesh.face_regions = FaceRegions((FaceRegion("Kappe", frozenset({ngon})),))
+    scene, obj = one_object_scene(mesh)
+    data, manifest = build_send(scene, obj, identifier="P/Kopf", transfer_id="t", session_id="s1", scene_path=None,
+                                to_world=identity, triangulate=triangulate_face)
+    sent = parse_goz(data)
+    (_fid, pieces), = manifest.ngons
+    areas = [polygon_area([sent.points[k] for k in sent.faces[i]]) for i in pieces]
+    assert areas[0] != areas[1]  # 8 and 7
+    big, small = (pieces[0], pieces[1]) if areas[0] > areas[1] else (pieces[1], pieces[0])
+    for winner, loser, region in ((big, small, "Group 1"), (small, big, "Kappe")):
+        groups = list(sent.groups)
+        groups[winner], groups[loser] = 777, 1  # ZBrush painted part of the n-gon with a new group
+        plan = plan_for(scene, obj, encode_goz(sent.name, sent.points, sent.faces, groups), manifest=manifest)
+        assert "1 n-gon split across groups in ZBrush took the group with the largest area" in plan.summary()
+        holder = plan.regions.get(region) if plan.regions_changed else obj.mesh.face_regions.get(region)
+        assert ngon in holder.faces, (region, plan.summary())
+    assert tri in mesh.all_face_ids() and len(mesh.face_vertices(ngon)) == 6

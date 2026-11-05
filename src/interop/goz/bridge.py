@@ -17,7 +17,14 @@ Rules (E1 README §11, audit §7):
 - **Last ZBrush state:** after an applied return the manifest keeps ZBrush's points, so a point ZBrush did not move
   since then keeps Mirai's value (incl. a mirrored mean) instead of reading as moved again.
 - **Topology** must be exactly the sent one (counts, every face's corner list incl. rotation); otherwise the return can
-  only become a new object. N-gons are refused at the send (D4 proposal: GoZ carries triangles and quads only).
+  only become a new object.
+- **N-gons (P2b, docs/WP_GOZ_P2_PLAN.md §4; Manu 2026-11-05: "Möglichst Vierecke"):** GoZ carries triangles and quads
+  only, so a face with more than 4 corners is split **in the file only** (`split_ngon`): the ear-clipping triangulation
+  (handed in by the glue, `viewport.derived`), then adjacent triangles merged into quads wherever their union is a
+  non-reflex quad, without new points. Deterministic (boundary + positions at send time). The manifest's `faces` are
+  the sent pieces, `face_ids` repeat the n-gon's `FaceId` per piece, `ngons` lists them. A return with exactly the sent
+  pieces maps back by point index as in P1 (Mirai's n-gons stay n-gons); any other topology is a new object. An
+  n-gon whose pieces come back with different group ids takes the id with the largest area share.
 - **Subdivided SubTool** (D13, Manu 2026-11-05; E1 T7/T7b/T7c): a return whose every interior point equals the
   one-step Catmull-Clark vertex point of the sent cage is held (`SUBDIVIDED`), not applied: ZBrush returns a smoothed
   cage after a Divide with SMT on and the file says nothing about it. A Divide without SMT returns the cage bit-identical
@@ -81,6 +88,8 @@ class SymmetryInfo:
 
 
 GroupNamer = Callable[[Optional[FaceRegions]], str]
+#: the glue's ear clipping (`viewport.derived.triangulate_face`): boundary + positions -> triangles of boundary vertices
+Triangulate = Callable[[Sequence[VertexId], dict], list]
 
 
 class SendRefused(ValueError):
@@ -106,19 +115,30 @@ def build_send(
     session_id: str,
     scene_path: Optional[str],
     to_world: Placement,
+    triangulate: Optional[Triangulate] = None,
     clock: Callable[[], float] = time.time,
 ) -> tuple[bytes, Manifest]:
     mesh = obj.mesh
     vertex_ids = mesh.all_vertex_ids()
-    face_ids = mesh.all_face_ids()
-    if not face_ids:
+    mesh_faces = mesh.all_face_ids()
+    if not mesh_faces:
         raise SendRefused(f"{obj.name!r} has no faces")
     index = {v: i for i, v in enumerate(vertex_ids)}
-    faces = [[index[v] for v in mesh.face_vertices(f)] for f in face_ids]
-    ngons = sum(1 for f in faces if len(f) > 4)
-    if ngons:
-        raise SendRefused(f"{obj.name!r} has {ngons} faces with more than 4 corners - GoZ carries triangles and "
-                          "quads only (split them first, e.g. Knife / Connect)")
+    faces: list[list[int]] = []
+    face_ids: list[FaceId] = []
+    ngons: list = []
+    for f in mesh_faces:
+        boundary = mesh.face_vertices(f)
+        if len(boundary) <= 4:
+            pieces = [boundary]
+        elif triangulate is None:
+            raise SendRefused(f"{obj.name!r} has faces with more than 4 corners and no triangulation was given")
+        else:
+            pieces = [[boundary[k] for k in piece] for piece in split_ngon(boundary, mesh.vertex_position, triangulate)]
+            ngons.append([int(f), list(range(len(faces), len(faces) + len(pieces)))])
+        for piece in pieces:
+            faces.append([index[v] for v in piece])
+            face_ids.append(f)
     points = sent_points(obj, to_world)
     groups, names, overlaps = send_groups(mesh, face_ids)
     data = encode_goz(short_name(obj.name), points, faces, groups)
@@ -128,8 +148,79 @@ def build_send(
         face_ids=[int(f) for f in face_ids], faces=faces, sent_float32=float32_hash(points),
         fingerprint=fingerprint(scene, obj), sent_at=clock(), sent_groups=groups,
         group_names={str(k): v for k, v in names.items()}, rest_group=REST_GROUP, group_overlaps=overlaps,
+        ngons=ngons,
     )
     return data, manifest
+
+
+# -- n-gons (P2b) -------------------------------------------------------------------------------------------------------
+
+
+def _sub(a: Sequence[float], b: Sequence[float]) -> Position:
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _cross(a: Sequence[float], b: Sequence[float]) -> Position:
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _dot(a: Sequence[float], b: Sequence[float]) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def newell(points: Sequence[Sequence[float]]) -> Position:
+    """The Newell normal of a polygon (length = twice its area; exact for planar polygons)."""
+    n = len(points)
+    return tuple(math.fsum((points[i][(c + 1) % 3] - points[(i + 1) % n][(c + 1) % 3])
+                           * (points[i][(c + 2) % 3] + points[(i + 1) % n][(c + 2) % 3]) for i in range(n))
+                 for c in range(3))
+
+
+def polygon_area(points: Sequence[Sequence[float]]) -> float:
+    return 0.5 * math.sqrt(_dot(*(newell(points),) * 2))
+
+
+def _quad_ok(quad: Sequence[Position], normal: Position, tol: float) -> bool:
+    """No reflex corner (a straight one, e.g. a Knife point on an edge, is fine) and a real area."""
+    for k in range(4):
+        a, b, c = quad[k - 1], quad[k], quad[(k + 1) % 4]
+        if _dot(_cross(_sub(b, a), _sub(c, b)), normal) < -tol:
+            return False
+    return _dot(newell(quad), normal) > tol
+
+
+def split_ngon(boundary: Sequence[VertexId], position: Callable[[VertexId], Position],
+               triangulate: Triangulate) -> list[tuple[int, ...]]:
+    """The pieces of an n-gon as corner positions in `boundary` (see module): quads where two adjacent triangles of
+    the triangulation form a non-reflex quad, triangles elsewhere; every piece in the boundary's winding, the pieces
+    ordered by their corners. A convex n-gon (fan) gives n/2 - 1 quads and, for odd n, one triangle."""
+    at = {v: k for k, v in enumerate(boundary)}
+    pts = [position(v) for v in boundary]
+    normal = newell(pts)
+    size = max(max(p[c] for p in pts) - min(p[c] for p in pts) for c in range(3)) or 1.0
+    length = math.sqrt(_dot(normal, normal)) or 1.0
+    unit = tuple(c / length for c in normal)
+    tol = 1e-9 * size * size
+    # a sub-polygon of a simple polygon keeps the polygon's winding when its corners follow the boundary order
+    tris = sorted(tuple(sorted(at[v] for v in tri)) for tri in triangulate(list(boundary), dict(zip(boundary, pts))))
+    used = [False] * len(tris)
+    pieces: list[tuple[int, ...]] = []
+    for i, t in enumerate(tris):
+        if used[i]:
+            continue
+        used[i] = True
+        for j in range(i + 1, len(tris)):
+            u = tris[j]
+            if used[j] or len(set(t) & set(u)) != 2:
+                continue
+            quad = tuple(sorted(set(t) | set(u)))
+            if _quad_ok([pts[k] for k in quad], unit, tol):
+                used[j] = True
+                pieces.append(quad)
+                break
+        else:
+            pieces.append(t)
+    return sorted(pieces)
 
 
 def send_groups(mesh: Mesh, face_ids: Sequence[FaceId]) -> tuple[list[int], dict[int, str], list]:
@@ -311,7 +402,7 @@ def plan_return(
             positions[manifest.vertex_id(i)] = to_object(obj, from_goz(r))
             largest = max(largest, max(abs(a - b) for a, b in zip(r, s)))
     mesh = obj.mesh
-    groups = plan_groups(goz.groups, manifest, mesh, new_group_name)
+    groups = plan_groups(goz.groups, manifest, mesh, new_group_name, returned)
     notes = list(groups.notes)
     group_kw = dict(zbrush_groups=groups.read, group_names=groups.names, regions_changed=groups.changed,
                     regions=groups.regions)
@@ -345,9 +436,33 @@ class GroupPlan:
     notes: list[str] = field(default_factory=list)
 
 
+def face_groups(groups: Sequence[int], manifest: Manifest,
+                points: Optional[Sequence[Position]]) -> tuple[dict[FaceId, int], int]:
+    """Per Mirai face its group id: a sent piece's id, or for an n-gon whose pieces differ the id with the largest area
+    share of its pieces (Manu 2026-11-05; areas from `points`, ties -> the earlier piece). Also how many n-gons had
+    differing pieces."""
+    out: dict[FaceId, int] = {}
+    for i, g in enumerate(groups):
+        out.setdefault(manifest.face_id(i), g)
+    mixed = 0
+    for fid, pieces in manifest.ngons:
+        ids = [groups[i] for i in pieces]
+        if len(set(ids)) == 1:
+            continue
+        mixed += 1
+        share: dict[int, float] = {}
+        for i, g in zip(pieces, ids):
+            area = polygon_area([points[k] for k in manifest.faces[i]]) if points is not None else 1.0
+            share[g] = share.get(g, 0.0) + area
+        out[FaceId(fid)] = max(share, key=lambda g: (share[g], -ids.index(g)))
+    return out, mixed
+
+
 def plan_groups(returned: Optional[Sequence[int]], manifest: Manifest, mesh: Mesh,
-                new_group_name: Optional[GroupNamer] = None) -> GroupPlan:
-    """The regions after ZBrush's group ids `returned` (see module). Needs the sent topology (checked by the caller)."""
+                new_group_name: Optional[GroupNamer] = None,
+                points: Optional[Sequence[Position]] = None) -> GroupPlan:
+    """The regions after ZBrush's group ids `returned` (see module). Needs the sent topology (checked by the caller);
+    `points` are the returned points (an n-gon's area shares)."""
     names = {int(k): v for k, v in manifest.group_names.items()}
     if returned is None or manifest.sent_groups is None:
         return GroupPlan(names=names)
@@ -357,38 +472,44 @@ def plan_groups(returned: Optional[Sequence[int]], manifest: Manifest, mesh: Mes
     if len(set(returned)) == 1 and returned[0] not in set(names) | {rest} | set(baseline):
         return GroupPlan(names=names, notes=[f"ZBrush gave every face one group Mirai never sent ({returned[0]}) - "
                                              "groups left as they are"])
-    changed_at = [i for i, (r, b) in enumerate(zip(returned, baseline)) if r != b]
-    if not changed_at:
+    if returned == tuple(baseline):
         return GroupPlan(read=returned, names=names)
+    now, mixed = face_groups(returned, manifest, points)
+    was, _ = face_groups(baseline, manifest, points)
+    changed_at = [f for f in now if now[f] != was[f]]
+    mixed_note = ([f"{mixed} n-gon{'s' if mixed != 1 else ''} split across groups in ZBrush took the group with the "
+                   "largest area"] if mixed else [])
+    if not changed_at:
+        return GroupPlan(read=returned, names=names, notes=mixed_note)
     regions = mesh.face_regions
     before = {r.name: r.faces for r in regions.regions} if regions is not None else {}
     order = list(before)
-    for i in changed_at:
-        gid = returned[i]
+    for f in changed_at:
+        gid = now[f]
         if gid == rest or gid in names:
             continue
         taken = FaceRegions(tuple(FaceRegion(n, frozenset()) for n in dict.fromkeys([*order, *names.values()])))
         names[gid] = new_group_name(taken) if new_group_name is not None else f"ZBrush {gid}"
-    moved = {manifest.face_id(i) for i in changed_at}
+    moved = set(changed_at)
     sets = {name: set(faces) - moved for name, faces in before.items()}
-    for i in changed_at:
-        gid = returned[i]
+    for f in changed_at:
+        gid = now[f]
         if gid == rest:
             continue
         name = names[gid]
         if name not in sets:
             sets[name] = set()
             order.append(name)
-        sets[name].add(manifest.face_id(i))
+        sets[name].add(f)
     kept = tuple(FaceRegion(n, frozenset(sets[n])) for n in order if sets[n])
     value = FaceRegions(kept) if kept else None
     if value == regions:
-        return GroupPlan(read=returned, names=names)
+        return GroupPlan(read=returned, names=names, notes=mixed_note)
     after = {r.name: r.faces for r in kept}
     changed = sum(1 for n, faces in before.items() if after.get(n) != faces)
     new = sum(1 for n in after if n not in before)
     note = f"groups: {changed} changed, {new} new ({len(changed_at)} faces regrouped)"
-    return GroupPlan(read=returned, names=names, changed=True, regions=value, notes=[note])
+    return GroupPlan(read=returned, names=names, changed=True, regions=value, notes=[note, *mixed_note])
 
 
 def _mid(a: Position, b: Position) -> Position:
