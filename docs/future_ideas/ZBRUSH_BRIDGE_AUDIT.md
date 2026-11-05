@@ -546,18 +546,18 @@ ZBrush 2022.0.8 with GoZ installed (Manu's PC); the GoZ SDK download/PDF (Manu o
 
 ### 10.3 Decisions for Manu
 
-| # | Decision | Agent's proposal |
-|---|---|---|
+| # | Decision | Agent's proposal                                          |
+|---|---|-----------------------------------------------------------|
 | D1 | Apply a returned mesh automatically, or only after a confirm command? | confirm (status shows the plan, one key/menu row applies) |
-| D2 | Changed topology from ZBrush: import as new object, or also offer "replace" (losing morphs/weights)? | new object only in v1 |
-| D3 | Conflict (Mirai edited since send): offer an explicit overwrite at all? | no overwrite in v1; new object |
-| D4 | N-gons: refuse the send, or split and recombine? | refuse in P1, split-and-recombine in a later step |
-| D5 | Several SubTools returned: one Undo step per object or one for all? | one per object |
-| D6 | Automatic scene backup before the first in-place apply per session? | yes |
-| D7 | Polypaint: should Mirai get vertex colours at all (Core extension)? | later, own AD |
-| D8 | Register Mirai as a GoZ app in ZBrush (writes into `C:\Users\Public\Pixologic\GoZApps`) or only watch files? | decide after E1 |
-| D9 | Menu row first, key later — any key only after "Taste passt" (keymap rule) | menu row |
-| D10 | Approve E1 and provide the GoZ SDK (or allow `developers.maxon.net`) | — |
+| D2 | Changed topology from ZBrush: import as new object, or also offer "replace" (losing morphs/weights)? | new object only in v1                                     |
+| D3 | Conflict (Mirai edited since send): offer an explicit overwrite at all? | no overwrite in v1; new object                            |
+| D4 | N-gons: refuse the send, or split and recombine? | refuse in P1, split-and-recombine in a later step         |
+| D5 | Several SubTools returned: one Undo step per object or one for all? | one per object                                            |
+| D6 | Automatic scene backup before the first in-place apply per session? | yes                                                       |
+| D7 | Polypaint: should Mirai get vertex colours at all (Core extension)? | later, own AD                                             |
+| D8 | Register Mirai as a GoZ app in ZBrush (writes into `C:\Users\Public\Pixologic\GoZApps`) or only watch files? | decide after E1                                           |
+| D9 | Menu row first, key later — any key only after "Taste passt" (keymap rule) | menu row                                                  |
+| D10 | Approve E1 and provide the GoZ SDK (or allow `developers.maxon.net`) | Approved                                                     |
 
 ---
 
