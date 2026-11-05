@@ -41,9 +41,12 @@ Mirai needs a small helper (§4). (4) The two-poll file-stability rule of §7.6 
 ZBrush starts the editing command after every GoZ, without arguments, with all files already complete; a running
 Python process is notified through a helper and a ticket; Python → ZBrush works with `GoZMakeObjectPath` +
 `GoZBrushFromApp` **without** `-tmap` (with it ZBrush returned whatever Tool was active); the GoZ round trip keeps
-vertex order, face corner lists and unchanged points bit-identical. Open for the start of P1: which orientation ZBrush
-shows upright (GoZ path is rotated 180° about X relative to its OBJ import), one triangle-mesh round trip,
-subdivision. D8 (register as a GoZ app) is technically answered: yes.
+vertex order, face corner lists and unchanged points bit-identical. Triangles and open borders survive (mesh B).
+**Subdivision:** after a Divide in ZBrush, GoZ returns the base topology with every point replaced by its one-step
+Catmull-Clark vertex point and no subdivision record, so an unsculpted subdivided SubTool looks like an edit of every
+point (a shrunk cage) - P1 needs a guard for it (§7.2, README §11). Open for the start of P1: which orientation ZBrush
+shows upright (GoZ path is rotated 180° about X relative to its OBJ import). D8 (register as a GoZ app) is technically
+answered: yes.
 
 ---
 
