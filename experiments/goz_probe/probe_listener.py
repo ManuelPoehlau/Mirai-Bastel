@@ -56,20 +56,31 @@ def release_lock(lock: Path) -> None:
         pass
 
 
+def check_copy(copy, expected) -> str:
+    """"ok", "no hash", "copy not found: <path>" or "hash mismatch". `%USERPROFILE%` in a path (tickets written before
+    the 2026-11-05 fix were redacted) is expanded, so those tickets can still be checked (`--recheck-done`)."""
+    if not expected:
+        return "no hash"
+    if not copy:
+        return "no copy"
+    path = Path(os.path.expandvars(copy))
+    if not path.is_file():
+        return f"copy not found: {copy}"
+    return "ok" if sha256(path.read_bytes()) == expected else "hash mismatch"
+
+
 def process_ticket(ticket: Path, now_ns: int | None = None) -> dict:
     data = json.loads(ticket.read_text(encoding="utf-8"))
     now_ns = time.time_ns() if now_ns is None else now_ns
     results = []
     for obj in data.get("objects", []):
-        copy = obj.get("copy")
-        ok = False
-        if copy and Path(copy).is_file() and obj.get("sha256"):
-            ok = sha256(Path(copy).read_bytes()) == obj["sha256"]
-        results.append({"identifier": obj.get("identifier"), "hash_ok": ok})
+        status = check_copy(obj.get("copy"), obj.get("sha256"))
+        results.append({"identifier": obj.get("identifier"), "status": status, "hash_ok": status == "ok"})
     return {
         "ticket": ticket.name,
         "objects": len(results),
         "all_ok": bool(results) and all(r["hash_ok"] for r in results),
+        "problems": sorted({r["status"] for r in results if r["status"] != "ok"}),
         "latency_ms": (now_ns - int(data["t0_ns"])) / 1e6,
         "results": results,
     }
@@ -86,7 +97,7 @@ def poll_once(inbox: Path, log) -> list[dict]:
         line = (
             f"{timestamp()} ticket {result['ticket']}: "
             + (f"ERROR {result['error']}" if "error" in result else
-               f"{result['objects']} object(s), hashes {'ok' if result['all_ok'] else 'NOT ok'}, "
+               f"{result['objects']} object(s), hashes {'ok' if result['all_ok'] else 'NOT ok ' + str(result['problems'])}, "
                f"{result['latency_ms']:.0f} ms after the receiver started")
         )
         print(line, flush=True)
@@ -96,6 +107,18 @@ def poll_once(inbox: Path, log) -> list[dict]:
         os.replace(ticket, done / ticket.name)
         handled.append(result)
     return handled
+
+
+def recheck_done(inbox: Path) -> int:
+    """Checks the tickets in inbox/done/ again (hashes only; the latency stays the one printed at pick-up)."""
+    tickets = sorted((inbox / "done").glob("ticket_*.json"))
+    for ticket in tickets:
+        result = process_ticket(ticket)
+        state = "ok" if result["all_ok"] else f"NOT ok {result['problems']}"
+        print(f"{ticket.name}: {result['objects']} object(s), hashes {state}")
+    if not tickets:
+        print(f"no tickets in {inbox / 'done'}")
+    return 0
 
 
 def run(inbox: Path, poll: float, max_seconds: float | None = None) -> int:
@@ -120,7 +143,10 @@ def main(argv=None) -> int:
     parser.add_argument("--inbox", type=Path, default=DEFAULT_INBOX)
     parser.add_argument("--poll", type=float, default=0.25)
     parser.add_argument("--max-seconds", type=float, default=None, help="stop after this long (tests)")
+    parser.add_argument("--recheck-done", action="store_true", help="check the tickets in inbox/done/ again and exit")
     args = parser.parse_args(argv)
+    if args.recheck_done:
+        return recheck_done(args.inbox)
     try:
         return run(args.inbox, args.poll, args.max_seconds)
     except ProbeError as exc:

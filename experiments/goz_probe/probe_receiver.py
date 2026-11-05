@@ -235,10 +235,12 @@ def receive(
     pid = _listener_pid(inbox)
     if pid is not None and process_alive(pid):
         ticket = inbox / f"ticket_{t0}_{os.getpid()}.json"
-        write_json_atomic(ticket, redact({
+        # Not redacted: a ticket is machine data the listener must resolve (inbox/ is never committed). Redacting it made
+        # every copy path unfindable on Windows (E1 run 2026-11-05: "hashes NOT ok").
+        write_json_atomic(ticket, {
             "t0_ns": t0, "capture": str(cap),
             "objects": [{"identifier": r["identifier"], "copy": r.get("copy"), "sha256": r.get("sha256_at_start")} for r in objects],
-        }))
+        })
         log["listener"] = {"pid": pid, "alive": True, "ticket": str(ticket)}
         report.append(f"listener pid {pid} alive: ticket {ticket.name} written")
     else:

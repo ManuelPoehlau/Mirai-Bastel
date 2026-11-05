@@ -99,6 +99,7 @@ says © Pixologic 2010/2011. That it describes 2022.0.8 **exactly** is itself [P
 | Locate utility: writes `GoZ_AppPathList.txt` in the app folder (one full path per line, or one empty line). Called on the first GoZ to a new app and when the user changes the version in Preferences. ZBrush then lets the user pick a path or Browse. | [SDK] |
 | Install utility (`INIT_COMMAND`): installs files, must write `GoZ_InstallLog.txt` (empty = success, else an error text shown to the user). "Consider that it is called with administrator privileges, as ZBrush takes care to ask the user to login as a user with administrator privileges." | [SDK] → UAC behaviour [PC] |
 | ZBrush writes `PATH` (the chosen application path) into `GoZApps\<App>\GoZ_Config.txt`. | [SDK] |
+| **ZBrush lists a newly added `GoZApps\<App>\` folder only after a restart** (it was missing from the **R** list until ZBrush was restarted). | [PC] observed 2026-11-05 (Manu, T2.2) |
 | Editing utility (`EDIT_COMMAND`): must use the active version, **must not launch a second instance but reuse the running one**, reads `GoZ_ObjectList.txt`. | [SDK] |
 | Official Windows demo: the editing utility finds the app by its process, starts it with `ShellExecute` if it is not running, then sends it a window message (`WM_APP + 0x100`). The demo `.bat` simply runs the demo `.exe`. | [SDK] |
 | Arguments and working directory ZBrush passes to the commands; whether ZBrush waits for them to exit; whether a `.bat` gets a console window; whether the Locate list may contain a non-`.exe` path. | [PC] (E1-Q2). The SDK's Locate example uses `..\..\GoZBrush\GoZLocateApp.exe`, which suggests the working directory is the app folder. |
@@ -219,6 +220,8 @@ zusätzlich die Punkte aus §8.
 2. `python -I experiments/goz_probe/install_probe_app.py` → legt `GoZApps\MiraiProbe\` an.
    - **Erwartung:** Meldung „installed“, keine Rechteabfrage (der Public-Ordner ist für Benutzer beschreibbar).
    - **Notieren:** ob Windows nach Administratorrechten gefragt hat.
+   - **Wichtig:** Läuft ZBrush schon, **ZBrush danach neu starten**. ZBrush liest die GoZ-Apps nur beim Start ein
+     (beobachtet 2026-11-05).
 
 ### T2 — ZBrush → Python (das Wichtigste, 10 min)
 
@@ -243,6 +246,10 @@ zusätzlich die Punkte aus §8.
 1. Zweites Konsolenfenster: `python -I experiments/goz_probe/probe_listener.py` (läuft weiter).
 2. In ZBrush auf A wieder **GoZ**.
    - **Erwartung:** Der Listener schreibt sofort „ticket …: 1 object, hashes ok“; kein zweiter Listener startet.
+   - Bis zum Fix vom 2026-11-05 (Commit nach `9c4cec9`) stand hier fälschlich „hashes NOT ok“: Der Empfänger hatte den
+     Pfad im Ticket durch den Datenschutz-Filter geschickt (`%USERPROFILE%\…`), der Listener fand die Kopie nicht.
+     Ältere Tickets lassen sich nach `git pull` nachprüfen:
+     `python -I experiments/goz_probe/probe_listener.py --recheck-done`.
 3. **GoZ** zweimal schnell hintereinander.
    - **Erwartung:** zwei Tickets, jedes mit eigener, vollständiger Kopie.
    - **Notieren:** Zeit zwischen Klick und Ticket (der Listener zeigt sie), ob ZBrush während des Empfängers hängt.
