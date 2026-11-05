@@ -305,7 +305,7 @@ Beide auf einem **frisch gesendeten** Kopf, damit der Vergleich gegen `meshes/C`
   **Cage**, **GoZ**. Frage: bringt Cage die gesendeten Punkte bitgleich zurück, nur auf float32 genau, oder nur ungefähr?
 
 Notieren: welche Knöpfe in welcher Reihenfolge; die Uhrzeit jedes GoZ (die `captures\<Zeit>_receive\`-Ordner werden
-danach von mir ausgewertet).
+danach von mir ausgewertet). Manu: T7b und T7c in genau der beschriebenen Reihenfolge ausgeführt (die letzten beiden sends und receives)
 
 ### Aufräumen
 
