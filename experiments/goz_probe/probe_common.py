@@ -161,10 +161,8 @@ def write_json_atomic(path: Path, value) -> None:
 
 
 def write_goz_text(path: Path, lines: Sequence[str]) -> None:
-    """A GoZ list file as Windows programs write it: ANSI, CRLF, one line per entry, one empty line for none.
-    Backslashes are normalized to forward slashes (ZBrush's GoZ parser expects them)."""
-    normalized = [line.replace("\\", "/") for line in lines]
-    text = "\r\n".join(normalized) + "\r\n" if normalized else "\r\n"
+    """A GoZ list file as Windows programs write it: ANSI, CRLF, one line per entry, one empty line for none."""
+    text = "\r\n".join(lines) + "\r\n" if lines else "\r\n"
     write_text_atomic(path, text, encoding=ansi_encoding(), newline="")
 
 
