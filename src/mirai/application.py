@@ -3137,6 +3137,58 @@ class Application:
             description, lambda _mesh: mutate(), moved_of=lambda moved: moved
         ).changed
 
+    def apply_goz_return(self, plan) -> bool:
+        """Apply a ZBrush return (AD-029 §6; `interop.goz.bridge.ReturnPlan`, planned right before this call by
+        `src/zbrush_bridge.py`). The artist's confirm (D1) is the caller's.
+
+        `POSITIONS`: the moved points into the edit object inside `_mesh_transaction` - one Undo step, exact rollback,
+        topology, IDs, UVs, regions and point layers untouched. Refused (status, False, nothing changed) during an
+        interaction, while the mesh is posed and bound (AD-028 §7.1), while a morph target's editing view is open, and
+        when the object is not the edit object (PROVISIONAL, audit Q8: no silent edit-object switch).
+        `CONFLICT` / `TOPOLOGY_CHANGED` / `UNKNOWN_OBJECT`: a new object beside the original (fresh IDs, identity
+        placement, one Undo step); the original is never touched. Any other kind: status only."""
+        from interop.goz.bridge import mesh_from_goz
+
+        if plan.new_object:
+            name = unique_object_name(self.scene, f"{plan.label} ZBrush")
+            obj = self._objects.add_mesh_object(lambda: mesh_from_goz(plan.goz), name, "ZBrush return")
+            if obj is not None:
+                self._set_status(f"ZBrush: added {obj.name!r} as a new object - {plan.reason}")
+            return obj is not None
+        if not plan.in_place:
+            self._set_status(plan.summary())
+            return False
+        label = f"ZBrush {plan.label!r}"
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"{label}: not while the {owner} interaction runs")
+            return False
+        scene = self.scene
+        obj = scene.objects.get(plan.object_id)
+        if obj is None:
+            self._set_status(f"{label}: the object is gone")
+            return False
+        if self.morph_document_object is not scene.edit_object:
+            self._set_status(f"{label}: close the morph target's editing view first")
+            return False
+        if obj is not scene.edit_object:
+            self._set_status(f"{label}: make it the edit object first (mode 4: select it, then 1/2/3)")
+            return False
+        posed = self._skeleton.posed_text("apply_mesh_change")
+        if posed is not None:
+            self._set_status(posed.replace("apply_mesh_change", label, 1))
+            return False
+        positions = dict(plan.positions)
+
+        def mutate(mesh: Mesh) -> set[VertexId]:
+            for vertex_id, position in positions.items():
+                mesh.set_vertex_position(vertex_id, position)
+            return set(positions)
+
+        changed = self._mesh_transaction(f"ZBrush return {obj.name}", mutate, moved_of=lambda moved: moved).changed
+        self._set_status(plan.summary() + (" - applied (Ctrl+Z undoes it)" if changed else " - nothing to apply"))
+        return changed
+
     def _mesh_transaction(
         self,
         description: str,

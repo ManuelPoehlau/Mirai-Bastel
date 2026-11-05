@@ -174,6 +174,10 @@ Scope (binding, see the handoffs):
   new editable object. AD-026: UVs come and go with the file, an OBJ's texture (MTL `map_Kd` or a
   same-named image) becomes the object's texture and shows in the viewport; "Textur anzeigen: an/aus"
   switches all textures (the row exists while an object has one).
+- ZBrush bridge (`PROVISIONAL`, AD-029 P1, `src/zbrush_bridge.py`): SPACE rows "An ZBrush senden" (the object as
+  `.GoZ` to ZBrush), "ZBrush übernehmen: ..." / "ZBrush als neues Objekt: ..." / "ZBrush verwerfen: ..." for a return
+  that arrived after GoZ in ZBrush (D1: applied only on that row, one Undo step), and once "ZBrush: Mirai bei GoZ
+  eintragen". No key. The bridge polls its inbox 4 times per second (`ZBrushBridge.tick`).
 - Scene files (`PROVISIONAL`, Manu 2026-10-15, `src/scene_files.py`): the
   SPACE menu starts with "Szene speichern (Strg+S)", "Als neue Szene
   speichern" and the saved scenes in `scenes/` ("Datei: <name>", newest
@@ -335,6 +339,7 @@ from hud import BoneTag, Hud, OrientationTriad  # noqa: E402
 from morph_bridge import send_to_morph_lab  # noqa: E402
 from obj_files import ObjFiles  # noqa: E402
 from scene_files import SceneFiles, is_scene_file  # noqa: E402
+from zbrush_bridge import POLL_SECONDS, ZBrushBridge  # noqa: E402
 from scene_menu import (  # noqa: E402
     SceneMenu,
     add_mesh_entries,
@@ -806,6 +811,7 @@ def main() -> None:
     app.gizmo_enabled = True  # this window draws the gizmo (`draw_gizmo`); Labs on Application do not
     files = SceneFiles(app, gl_types=GL_TYPES)
     obj_files = ObjFiles(app)
+    zbrush = ZBrushBridge(app, scene_path=lambda: files.current)
 
     entries = scene_entries()
     arg = sys.argv[1] if len(sys.argv) > 1 else None
@@ -837,6 +843,8 @@ def main() -> None:
     # Temporary scene loader (PROVISIONAL): SPACE opens it at the cursor; the
     # scene-file rows come first and are re-read on every open.
     def load(name: str) -> bool:
+        if zbrush.handles(name):
+            return zbrush.activate(name)
         if obj_files.handles(name):
             return obj_files.activate(name)
         if files.handles(name):
@@ -847,6 +855,8 @@ def main() -> None:
         return loaded
 
     def add(name: str) -> bool:
+        if zbrush.handles(name):
+            return zbrush.refuse_add(name)
         if obj_files.handles(name):
             return obj_files.refuse_add(name)
         if files.handles(name):
@@ -854,10 +864,10 @@ def main() -> None:
         return add_named_reference(app, name)
 
     menu = SceneMenu(
-        files.entries() + obj_files.entries() + entries,
+        files.entries() + obj_files.entries() + zbrush.entries() + entries,
         load=load,
         add=add,
-        refresh=lambda: files.entries() + obj_files.entries() + scene_entries(),
+        refresh=lambda: files.entries() + obj_files.entries() + zbrush.entries() + scene_entries(),
     )
     add_menu = SceneMenu(
         add_mesh_entries(),
@@ -881,6 +891,7 @@ def main() -> None:
         triad=OrientationTriad(),
         bone_tag=BoneTag(),
     )
+    pyglet.clock.schedule_interval(lambda dt: zbrush.tick(), POLL_SECONDS)
     run(window, app)
 
 

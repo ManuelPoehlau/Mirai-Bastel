@@ -26,6 +26,7 @@ Der Produktionscode liegt unter:
 ```text
 src/
 ├── core/
+├── interop/
 ├── mirai/
 └── viewport/
 ```
@@ -34,6 +35,10 @@ src/
 `src/mirai` enthält die window-freie Application-, Interaction- und
 Kamera-/Picking-Schicht. `src/viewport` enthält die unabhängige V0.2-
 Renderdaten- und Viewport-Schicht.
+
+`src/interop` (seit 2026-11-05, [AD-029](AD-029-ZBRUSH-GOZ-BRIDGE.md)) tauscht Daten mit anderen Programmen
+(heute: ZBrush über GoZ). Es importiert nur `core` und die Standardbibliothek, kein pyglet, keine `Application`;
+die Fenster-Anbindung ist `src/zbrush_bridge.py`, der einzige verändernde Schritt `Application.apply_goz_return`.
 
 Diese drei Verzeichnisse sind die heute implementierten
 Produktionsverantwortlichkeiten. Sie legen weder ein Production-Fenster,

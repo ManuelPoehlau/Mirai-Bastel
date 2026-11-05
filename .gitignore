@@ -54,3 +54,6 @@ playground/.session_state.json.tmp
 
 # OBJ import/export folder (SPACE menu)
 obj/
+
+# ZBrush bridge inbox (AD-029): tickets and staged copies written by src/interop/goz/helper.py
+/goz/

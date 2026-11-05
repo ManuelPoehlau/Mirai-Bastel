@@ -9,6 +9,7 @@ Die aktuell implementierte Produktionsstruktur ist:
 ```text
 src/
 ├── core/      3D-Domain: Scene, Mesh, Selection, Operations (Move/Rotate/Scale, Topologie), History, Serialization
+├── interop/   Austausch mit anderen Programmen: `goz/` = ZBrush-Brücke (AD-029; nur core + stdlib)
 ├── mirai/     Application-Orchestrierung, Interaction/Tools, Kamera, Picking (inkl. Pick-Cache),
 │              Display-State, Topologie-Capabilities (Split/Connect/Knife/Extrude/Delete/Dissolve), Soft Selection, Symmetry V1, Scene-Factory,
 │              Objekt-Ebene (AD-021 M1: Referenz-Objekte, Modus `4`, `scene_objects.py`)

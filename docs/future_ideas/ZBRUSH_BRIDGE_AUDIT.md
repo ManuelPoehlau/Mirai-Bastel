@@ -56,6 +56,13 @@ ZBrush's Divide without *SMT* (no smoothing) and the **Cage** button at the lowe
 are measured first (README §6 T7b/T7c). Until then P1 holds a return that has the T7 signature (every point = the
 one-step Catmull-Clark vertex point of the sent cage): nothing applied, the status line names the reason.
 
+**Addendum 2026-11-05 (P1 built; D13 decided).** T7b: Divide without SMT returns the cage bit-identical. T7c: after a
+Divide with SMT, the lowest level and Cage, every point comes back moved by at most 4.1e-4 (head extent 5.2). Manu:
+the T7 case is held with a hint (Cage, or SMT off), a Cage return is appliable with a warning. P1 is
+[AD-029](../architecture/AD-029-ZBRUSH-GOZ-BRIDGE.md) (`src/interop/goz/`, `src/zbrush_bridge.py`,
+`Application.apply_goz_return`). Still open on the reference PC: the flipped-send orientation check and the practical
+test (AD-029 §9).
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
