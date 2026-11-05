@@ -1,0 +1,237 @@
+{
+  "t0_ns": 1793878419707468100,
+  "t0_local": "20261105-123339_707",
+  "launched_by": "edit_command",
+  "argv": [
+    "%USERPROFILE%\\Mirai_Bastel\\experiments\\goz_probe\\probe_receiver.py",
+    "--root",
+    "C:\\Users\\Public\\Pixologic",
+    "--launched-by",
+    "edit_command",
+    "--"
+  ],
+  "zbrush_args": [],
+  "cwd": "C:\\Users\\Public\\Pixologic\\GoZApps\\MiraiProbe",
+  "pid": 12460,
+  "process_chain": [
+    {
+      "pid": 12460,
+      "exe": "python.exe"
+    },
+    {
+      "pid": 18220,
+      "exe": "cmd.exe"
+    },
+    {
+      "pid": 18304,
+      "exe": "ZBrush.exe"
+    },
+    {
+      "pid": 6828,
+      "exe": "explorer.exe"
+    },
+    {
+      "pid": 13592,
+      "exe": "(exited or unknown)"
+    }
+  ],
+  "env": {
+    "OS": "Windows_NT",
+    "PROCESSOR_ARCHITECTURE": "AMD64",
+    "PUBLIC": "C:\\Users\\Public",
+    "SystemRoot": "C:\\WINDOWS"
+  },
+  "env_names_goz": [],
+  "python": {
+    "executable": "%USERPROFILE%\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+    "version": "3.14.2 (tags/v3.14.2:df79316, Dec  5 2025, 17:18:21) [MSC v.1944 64 bit (AMD64)]",
+    "platform": "win32"
+  },
+  "root": "C:\\Users\\Public\\Pixologic",
+  "settle_s": 1.0,
+  "gozbrush_texts": {
+    "GoZ_ObjectList.txt": {
+      "stat": {
+        "exists": true,
+        "size": 48,
+        "mtime_ns": 1793878419348826500
+      },
+      "text": "C:/Users/Public/Pixologic/GoZProjects/Default/A\n"
+    },
+    "GoZ_Application.txt": {
+      "stat": {
+        "exists": true,
+        "size": 10,
+        "mtime_ns": 1793878419500827400
+      },
+      "text": "MiraiProbe"
+    },
+    "GoZ_ProjectPath.txt": {
+      "stat": {
+        "exists": true,
+        "size": 46,
+        "mtime_ns": 1451583438000000000
+      },
+      "text": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\"
+    },
+    "GoZ_ObjectPath.txt": {
+      "stat": {
+        "exists": false
+      },
+      "text": null
+    }
+  },
+  "app_config": {
+    "PATH": "C:/Users/%USERNAME%/Mirai_Bastel/experiments/goz_probe/probe_app.cmd"
+  },
+  "objects": [
+    {
+      "identifier": "C:/Users/Public/Pixologic/GoZProjects/Default/A",
+      "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\A.GoZ",
+      "stat_at_start": {
+        "exists": true,
+        "size": 966,
+        "mtime_ns": 1793878419348826500
+      },
+      "ms_since_write_at_start": 358.6416,
+      "exclusive_open": "ok",
+      "sha256_at_start": "4a1019ec7763d99b05622965787f38aee9121aa921e7feffaef6276885d8945d",
+      "copy": "%USERPROFILE%\\Mirai_Bastel\\experiments\\goz_probe\\captures\\20261105-123339_707_receive\\00_A.GoZ",
+      "stat_after_settle": {
+        "exists": true,
+        "size": 966,
+        "mtime_ns": 1793878419348826500
+      },
+      "sha256_after_settle": "4a1019ec7763d99b05622965787f38aee9121aa921e7feffaef6276885d8945d",
+      "changed_after_settle": false,
+      "complete_at_start": true,
+      "summary": {
+        "name": "GoZMesh_A",
+        "flags": 0,
+        "flag_names": [],
+        "subdiv": [],
+        "points": 24,
+        "faces": 18,
+        "face_types": {
+          "tri": 0,
+          "quad": 18
+        },
+        "header_text": " 1.0 ZBrush GoZ Binary......",
+        "blocks": [
+          [
+            1,
+            "MESH",
+            28,
+            1
+          ],
+          [
+            5001,
+            "FLAGS",
+            20,
+            1
+          ],
+          [
+            10001,
+            "POINT_LIST",
+            304,
+            24
+          ],
+          [
+            20001,
+            "FACE4_LIST_FORMAT_1",
+            304,
+            18
+          ],
+          [
+            35001,
+            "MRGB_LIST",
+            112,
+            24
+          ],
+          [
+            30002,
+            "MASK16_LIST",
+            64,
+            24
+          ],
+          [
+            40001,
+            "GROUPS_LIST",
+            52,
+            18
+          ],
+          [
+            40002,
+            "CREASE_LIST",
+            34,
+            18
+          ],
+          [
+            0,
+            "END_OF_FILE",
+            0,
+            0
+          ]
+        ],
+        "anomalies": []
+      },
+      "matched_sent": {
+        "id": "A",
+        "by": "vertex and face counts"
+      },
+      "analysis": {
+        "sent_id": "A",
+        "counts": {
+          "sent": [
+            24,
+            18
+          ],
+          "received": [
+            24,
+            18
+          ]
+        },
+        "faces": {
+          "identical": 18,
+          "same_corners_rotated": 0,
+          "reversed_winding": 0,
+          "other": 0
+        },
+        "order": "same",
+        "axes": [
+          {
+            "axis": "x",
+            "from": "x",
+            "factor": 1.0000000114624314,
+            "offset": -1.2035553331735116e-08,
+            "corr": 0.9999999999999999,
+            "method": "regression"
+          },
+          {
+            "axis": "y",
+            "from": "y",
+            "factor": -0.99999998583774,
+            "offset": 0.9500000411875485,
+            "corr": -0.9999999999999983,
+            "method": "regression"
+          },
+          {
+            "axis": "z",
+            "from": "z",
+            "factor": -0.9999999766608313,
+            "offset": 0.5500000064003179,
+            "corr": -0.9999999999999986,
+            "method": "regression"
+          }
+        ],
+        "mapping_is_signed_permutation": false
+      }
+    }
+  ],
+  "listener": {
+    "pid": 16912,
+    "alive": true,
+    "ticket": "%USERPROFILE%\\Mirai_Bastel\\experiments\\goz_probe\\inbox\\ticket_1793878419707468100_12460.json"
+  },
+  "duration_ms": 1010.2912000147626
+}
