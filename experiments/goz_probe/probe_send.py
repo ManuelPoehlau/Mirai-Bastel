@@ -157,7 +157,9 @@ def send(args) -> Path:
     else:
         identifiers, info = prepare_resend(args, steps)
     write_goz_text(paths.object_list, identifiers)
-    steps.add("wrote GoZ_ObjectList.txt", lines=identifiers, read_back=read_object_list(paths.object_list))
+    raw = paths.object_list.read_bytes()
+    steps.add("wrote GoZ_ObjectList.txt", lines=identifiers, read_back=read_object_list(paths.object_list),
+              file_text=raw.decode(ansi_encoding(), errors="replace"), file_bytes_repr=repr(raw))
     application_before = read_text(paths.application_file)
     if not args.keep_application:
         write_text_atomic(paths.application_file, APP_FOLDER_NAME, encoding=ansi_encoding(), newline="")

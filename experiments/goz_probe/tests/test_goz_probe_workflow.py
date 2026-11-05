@@ -84,7 +84,7 @@ def test_dry_run_send_then_receive_round_trip(env):
     assert _send(env, "--mesh", "A", "--dry-run") == 0
     paths = env["paths"]
     identifier = str(paths.project_dir() / "E1_A")
-    assert read_object_list(paths.object_list) == [identifier]
+    assert read_object_list(paths.object_list) == [identifier.replace("\\", "/")]
     assert paths.object_list.read_bytes().endswith(b"\r\n")
     assert paths.application_file.read_text() == "MiraiProbe"
     cap = probe_receiver.receive(paths, captures=env["captures"], inbox=env["inbox"], meshes=env["meshes"], settle=0.05)
@@ -142,7 +142,7 @@ def test_identifier_is_reused_for_the_same_mesh(env):
     identifier = str(env["paths"].project_dir() / "E1_A3")
     (run / "send_log.json").write_text(json.dumps({"mesh": "A", "identifier": identifier, "dry_run": False}))
     assert _send(env, "--mesh", "A", "--dry-run") == 0
-    assert read_object_list(env["paths"].object_list) == [identifier]
+    assert read_object_list(env["paths"].object_list) == [identifier.replace("\\", "/")]
     assert (env["paths"].project_dir() / "E1_A3.GoZ").is_file()
 
 
@@ -219,3 +219,47 @@ def test_recheck_done(env, capsys):
     (env["inbox"] / "done").mkdir(parents=True)
     assert probe_listener.recheck_done(env["inbox"]) == 0
     assert "no tickets" in capsys.readouterr().out
+
+
+# -- GoZ_ObjectList.txt serialization (E1 path normalization) ----------------------------------------------------------
+
+
+def test_object_list_normalizes_windows_paths(tmp_path):
+    """write_goz_text must convert backslashes to forward slashes in every entry."""
+    from goz_probe.probe_common import write_goz_text
+
+    out = tmp_path / "GoZ_ObjectList.txt"
+    write_goz_text(out, [r"C:\Users\Public\Pixologic\GoZProjects\Default\E1_A"])
+    raw = out.read_bytes()
+    assert b"C:/Users/Public/Pixologic/GoZProjects/Default/E1_A\r\n" == raw
+
+
+def test_object_list_multiple_entries_each_normalized(tmp_path):
+    """Every entry must be normalized independently and appear on its own line."""
+    from goz_probe.probe_common import write_goz_text
+
+    out = tmp_path / "GoZ_ObjectList.txt"
+    entries = [r"C:\GoZ\Default\E1_A", r"C:\GoZ\Default\E1_B"]
+    write_goz_text(out, entries)
+    raw = out.read_bytes()
+    assert raw == b"C:/GoZ/Default/E1_A\r\nC:/GoZ/Default/E1_B\r\n"
+
+
+def test_object_list_crlf_and_ansi_encoding(tmp_path):
+    """Serialized file must use CRLF line endings and be valid ANSI (ASCII for these paths)."""
+    from goz_probe.probe_common import write_goz_text
+
+    out = tmp_path / "GoZ_ObjectList.txt"
+    write_goz_text(out, [r"C:\GoZ\Default\E1_A"])
+    raw = out.read_bytes()
+    assert b"\r\n" in raw and b"\n\n" not in raw
+    raw.decode("ascii")  # ASCII-safe means valid for any ANSI code page
+
+
+def test_object_list_empty_list_produces_single_crlf(tmp_path):
+    """An empty list must produce exactly one CRLF line (existing behavior must be preserved)."""
+    from goz_probe.probe_common import write_goz_text
+
+    out = tmp_path / "GoZ_ObjectList.txt"
+    write_goz_text(out, [])
+    assert out.read_bytes() == b"\r\n"
