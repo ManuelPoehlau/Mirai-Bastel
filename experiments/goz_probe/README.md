@@ -271,8 +271,11 @@ zusätzlich die Punkte aus §8.
      mittlerer nach oben (+Y), kürzester nach vorn. Rechnerisch entscheidet T5.2 zusammen mit T2: Zeigen beide die
      Identität, liegen OBJ- und GoZ-Weg in ZBrush deckungsgleich; der Blick ist nur die Bestätigung.
    - **Notieren:** deckungsgleich / gespiegelt / gedreht / anders groß (Screenshot Front- und Seitenansicht).
-   - **Wenn ZBrush nichts lädt oder meldet:** zuerst `--mesh A --no-tmap`, dann `--mesh A --name-style gozmesh
-     --new-identifier` versuchen und notieren, welche Variante ging (`send_log.json` jedes Versuchs liegt in `captures\`).
+   - **Wenn das neue Tool nicht das Dreibein ist** (z. B. ein Würfel mit seltsamem Namen, beobachtet 2026-11-05 mit
+     `--style sdk`): nacheinander `--mesh A --style gozmesh --new-identifier` und `--mesh A --style zbrush --new-identifier`
+     senden. Nach jedem Versuch in der Tool-Palette nachsehen, welches Tool neu ist und wie es aussieht, und es per **GoZ**
+     zurückschicken. `--style zbrush` schreibt ZBrushs eigenes Byte-Layout (Test: reproduziert ZBrushs Datei aus T2
+     bytegenau). Notieren, welche Stufe das Dreibein bringt. Erst danach weiter mit T5.2.
 2. Ohne etwas zu ändern **GoZ** (Ziel ist noch „Mirai Probe (E1)“).
    - **Erwartung:** `dump.txt` meldet „Rundreise unverändert: Punkte bitgleich, Flächen gleich“.
 3. Dasselbe mit `--mesh B` und `--mesh C`.
@@ -405,7 +408,8 @@ Not needed from Manu: any Maxon download (§4), any decision on technical approa
 | T3 | Every GoZ press started `Edit.bat`; the running listener got a ticket each time 1.06–1.25 s after the receiver started (1 s of it is the settle time); no second listener. ("hashes NOT ok" was a probe bug, fixed in `3475d25`.) | Manu |
 | T4 | `--resend` of ZBrush's own file: the file was already byte-identical; `GoZBrushFromApp -tmap` exited 0 after 0.25 s. | `send_resend/send_log.json` |
 | T5.1 | `GoZMakeObjectPath` returned `…\Default\E1_A` in 54 ms (exit 0); `GoZBrushFromApp -tmap` exited 0 after 0.6 s. ZBrush made a **new Tool** (GoZ preference *Import as SubTool* off). | `send_A/send_log.json`, Manu |
-| T5.2 (1st try) | The GoZ that followed sent an 8-point cube named `GoZMesh_d54dgsd5gs52gsdg21456sd4g` (±1, no Mirai geometry): another Tool was active, not `E1_A`. To repeat with `E1_A` selected. | receive dump 12:53 |
+| T5.2 (1st try) | The GoZ that followed sent an 8-point cube named `GoZMesh_d54dgsd5gs52gsdg21456sd4g` (±1, no Mirai geometry); a second try at 12:59 sent Tool `A` from T2 again. **Hypothesis:** the "new Tool" of T5.1 is that cube, i.e. ZBrush made a placeholder Tool but did not take the `--style sdk` file (name without `GoZMesh_`, own header text, no MRGB/MASK16/GROUPS/CREASE). Test: `--style gozmesh`, then `--style zbrush` (§6 T5.1). | receive dumps 12:53, 12:59 |
+| — | ZBrush's own untouched-mesh blocks: MRGB `ff ff ff 01` per vertex, MASK16 `ffff`, GROUPS 0, CREASE 0 (CREASE block size 16 + faces, not padded to 4). `encode_goz(style="zbrush")` reproduces the T2 file byte for byte (fixture `tests/fixtures/zbrush2022_0_8_obj_import_A.GoZ`). | T2 capture |
 
 ## 11. After E1
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import struct
+from pathlib import Path
 
 import pytest
 
@@ -127,3 +128,20 @@ def test_flag_names_and_dump():
     assert goz.flag_names() == ["VERTEX_FLIP_Y", "VERTEX_FLIP_Z", "UV_FLIP_V"]
     text = fmt.dump(goz)
     assert "FACE4_LIST_FORMAT_1" in text and "anomalies: none" in text
+
+
+FIXTURE = Path(__file__).parent / "fixtures" / "zbrush2022_0_8_obj_import_A.GoZ"
+
+
+def test_zbrush_style_reproduces_a_zbrush_file_byte_for_byte():
+    """The fixture is ZBrush 2022.0.8's own GoZ of mesh A (E1 T2, reference PC, 2026-11-05)."""
+    data = FIXTURE.read_bytes()
+    goz = fmt.parse_goz(data)
+    assert goz.name == "GoZMesh_A" and goz.header_text == fmt.ZBRUSH_HEADER[4:]
+    assert [b.tag for b in goz.blocks] == [1, 5001, 10001, 20001, 35001, 30002, 40001, 40002, 0]
+    assert fmt.encode_goz("A", goz.points, goz.faces, style="zbrush") == data
+    assert fmt.encode_goz("GoZMesh_A", goz.points, goz.faces, style="zbrush") == data  # prefix not doubled
+    assert fmt.parse_goz(fmt.encode_goz("A", goz.points, goz.faces, style="gozmesh")).name == "GoZMesh_A"
+    assert fmt.parse_goz(fmt.encode_goz("A", goz.points, goz.faces)).name == "A"
+    with pytest.raises(ValueError, match="unknown style"):
+        fmt.encode_goz("A", goz.points, goz.faces, style="x")
