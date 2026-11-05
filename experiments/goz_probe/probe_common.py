@@ -413,6 +413,14 @@ def analyse(goz: GozFile, sent: dict) -> dict:
             abs(abs(m["factor"]) - 1.0) < 1e-3 and abs(m["offset"]) < 1e-3 * size for m in mapping
         ) and len({m["from"] for m in mapping}) == 3
         out["mapping_is_signed_permutation"] = candidate
+        if same_order and mapping[0]["method"] == "regression":
+            # how well the fitted per-axis map (factor and offset as measured) explains every point - small means a pure
+            # axis flip / swap plus a translation, e.g. ZBrush's OBJ -> GoZ result of T2
+            residual = 0.0
+            for p, q in zip(sent_points, goz.points):
+                for j, m in enumerate(mapping):
+                    residual = max(residual, abs(m["factor"] * p[AXES.index(m["from"])] + m["offset"] - q[j]))
+            out["max_residual_after_mapping"] = residual
         if same_order and candidate:
             sign = {m["axis"]: (AXES.index(m["from"]), 1.0 if m["factor"] > 0 else -1.0) for m in mapping}
             changed, max_diff = [], 0.0
@@ -446,6 +454,8 @@ def analysis_lines(result: dict) -> list[str]:
         lines.append(f"Achsen ({method}): " + ";  ".join(terms))
         scales = sorted({round(abs(m["factor"]), 6) for m in result["axes"]})
         lines.append(f"Maßstab: {scales}  (signed permutation, scale 1, offset 0: {result['mapping_is_signed_permutation']})")
+        if "max_residual_after_mapping" in result:
+            lines.append(f"Rest nach dieser Abbildung: max {result['max_residual_after_mapping']:.3g} (float32-Rundung ≈ 1e-7)")
     if "faces" in result:
         lines.append(f"Flächen: {result['faces']}")
     lines.append(f"Reihenfolge: {result['order']}")
