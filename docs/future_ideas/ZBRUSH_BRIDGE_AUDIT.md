@@ -60,8 +60,8 @@ one-step Catmull-Clark vertex point of the sent cage): nothing applied, the stat
 Divide with SMT, the lowest level and Cage, every point comes back moved by at most 4.1e-4 (head extent 5.2). Manu:
 the T7 case is held with a hint (Cage, or SMT off), a Cage return is appliable with a warning. P1 is
 [AD-029](../architecture/AD-029-ZBRUSH-GOZ-BRIDGE.md) (`src/interop/goz/`, `src/zbrush_bridge.py`,
-`Application.apply_goz_return`). Still open on the reference PC: the flipped-send orientation check and the practical
-test (AD-029 §9).
+`Application.apply_goz_return`). Reference PC, same day: the flipped send shows the head upright (Manu); a send before
+the registration crashed ZBrush and is now refused (AD-029 §3). Still open: the way back in practice (AD-029 §9).
 
 ---
 

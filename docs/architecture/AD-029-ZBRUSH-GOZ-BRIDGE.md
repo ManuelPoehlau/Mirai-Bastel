@@ -1,8 +1,8 @@
 # AD-029 — Mirai ↔ ZBrush bridge over GoZ (P1: positions, unchanged topology)
 
 **Status:** IMPLEMENTED (P1, 2026-11-05), `PROVISIONAL` UI (SPACE rows, no key). Decisions D1, D11, D12, D13 by Manu
-(2026-11-05); D2–D5 as the audit proposes, D6 open (see §7). Open on the reference PC: the orientation check of the
-flipped send and the practical test (§9).
+(2026-11-05); D2–D5 as the audit proposes, D6 open (see §7). Reference PC (Manu, 2026-11-05): send works and the head
+shows upright (§8); the way back (§9 steps 3–6) is still to be tested.
 **Builds on:** [ZBrush bridge audit](../future_ideas/ZBRUSH_BRIDGE_AUDIT.md) (§6–§8, decisions §10.3),
 [E1 probe](../../experiments/goz_probe/README.md) (facts §2, completeness rule §7, fingerprint §8.1, results §10a/§11),
 [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (objects), [AD-023](AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md)
@@ -125,7 +125,10 @@ capture, T7b bit-identical, the T7c Cage warning, the completeness rule incl. a 
 path with fake ZBrush utilities). Captures used: `tests/fixtures/goz/README.md`.
 Measured (container, A9): gollum_20k (21 875 points): send 0.15 s, helper 0.19 s + 1 s settle, arrival + plan
 0.48 s (one frame blocked), confirm (re-plan + apply) 0.41 s. Reference PC: not measured.
-Not verifiable here: everything ZBrush and `cmd.exe` do; the real `Edit.bat` → helper → Mirai path on Windows.
+Reference PC (Manu, 2026-11-05, ZBrush 2022.0.8): after registering, restarting ZBrush and picking Mirai with **R**,
+the send works and the head shows **upright** — the `(x, −y, −z)` map is confirmed, and so is the
+`known_to_zbrush` signal (`GoZApps\Mirai\GoZ_Config.txt`). Before that fix, a send without registration crashed ZBrush
+(§3). Not yet tested there: the real `Edit.bat` → helper → Mirai return path.
 
 ## 9. Practical test (Manu, reference PC)
 
