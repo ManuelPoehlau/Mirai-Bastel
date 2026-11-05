@@ -10,7 +10,8 @@ new one). The file (`--style`): "sdk" = MESH `E1_A` + FLAGS 0 + float32 points +
 same named `GoZMesh_E1_A`; "zbrush" = ZBrush's own byte layout (its header text, the prefix, and its default MRGB /
 MASK16 / GROUPS / CREASE blocks; reproduces a ZBrush 2022.0.8 file byte for byte). Then `GoZ_ObjectList.txt`,
 `GoZ_Application.txt` (= `MiraiProbe`, before/after logged; `--keep-application` leaves it) and
-`GoZBrushFromApp.exe -tmap` (the official demo's call; `--no-tmap` without the argument).
+`GoZBrushFromApp.exe` (mesh import; `--tmap` adds the `-tmap` flag from the SDK's texture-map demo, which
+makes ZBrush export the active SubTool instead of importing the listed file - do not use for a plain mesh send).
 `--resend`: refuses when ZBrush's file changed since the capture (`--force` overrides).
 `--dry-run`: writes the files, runs no program (identifier = project folder / short name).
 Every step goes into `captures/<time>_send_<what>/send_log.json`.
@@ -162,7 +163,7 @@ def send(args) -> Path:
     if not args.keep_application:
         write_text_atomic(paths.application_file, APP_FOLDER_NAME, encoding=ansi_encoding(), newline="")
     steps.add("GoZ_Application.txt", before=application_before, after=read_text(paths.application_file))
-    command = [str(paths.utility("GoZBrushFromApp"))] + ([] if args.no_tmap else ["-tmap"])
+    command = [str(paths.utility("GoZBrushFromApp"))] + (["-tmap"] if args.tmap else [])
     if args.dry_run:
         steps.add("dry run: not started", command=command)
     else:
@@ -191,7 +192,9 @@ def main(argv=None) -> int:
                         help="sdk: the SDK's minimal file; gozmesh: + name prefix GoZMesh_; zbrush: ZBrush's own layout")
     parser.add_argument("--new-identifier", action="store_true")
     parser.add_argument("--keep-application", action="store_true")
-    parser.add_argument("--no-tmap", action="store_true")
+    parser.add_argument("--tmap", action="store_true",
+                        help="append the SDK-demo `-tmap` flag (texture-map round-trip; makes ZBrush export the "
+                             "active SubTool instead of importing - not what a plain mesh send needs)")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--wait-objectpath", type=float, default=10.0)
