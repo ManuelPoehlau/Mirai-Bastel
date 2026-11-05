@@ -307,6 +307,22 @@ Beide auf einem **frisch gesendeten** Kopf, damit der Vergleich gegen `meshes/C`
 Notieren: welche Knöpfe in welcher Reihenfolge; die Uhrzeit jedes GoZ (die `captures\<Zeit>_receive\`-Ordner werden
 danach von mir ausgewertet). Manu: T7b und T7c in genau der beschriebenen Reihenfolge ausgeführt (die letzten beiden sends und receives)
 
+### T8 — E2: Polygruppen von Mirai nach ZBrush und zurück (für P2a, 2026-11-05, ~10 min)
+
+Vorbereitet für [`docs/WP_GOZ_P2_PLAN.md`](../../docs/WP_GOZ_P2_PLAN.md) §2. Ziel-App mit **R** ist „Mirai Probe (E1)“.
+
+1. `git pull`, dann
+   `python -I experiments/goz_probe/probe_send.py --mesh C --axis bridge --groups bands`
+   (Kopf mit vier waagerechten Gruppen-Bändern, IDs 101–104, eigenes Tool `E1_C_P1_G…`).
+   - **Notieren:** Zeigt ZBrush vier Polygruppen (*Polyframe* an, `Shift+F`)? Screenshot.
+2. Ohne etwas zu ändern **GoZ** → `dump.txt` Zeile `groups (id: faces)`: kommen 101–104 zurück?
+3. In ZBrush eine Gruppe ändern (z. B. ein paar Flächen maskieren, `Strg+W`), **GoZ** → wieder `dump.txt`.
+4. **Nur falls in 1. keine Gruppen sichtbar waren:**
+   `python -I experiments/goz_probe/install_probe_app.py --replace --import-polygroups`, ZBrush neu starten, R → „Mirai
+   Probe (E1)“, Schritte 1–3 wiederholen (mit `--new-identifier`).
+
+Danach `captures/` mit `git add experiments/goz_probe/captures` committen und pushen.
+
 ### Aufräumen
 
 `python -I experiments/goz_probe/install_probe_app.py --uninstall` entfernt nur `GoZApps\MiraiProbe\`. In ZBrush mit **R**

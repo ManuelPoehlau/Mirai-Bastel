@@ -50,6 +50,7 @@ and last commit: [experiments/README.md](../experiments/README.md)). Their docs,
 | [WP_PLAYGROUND_TOOLS_PROMOTION.md](WP_PLAYGROUND_TOOLS_PROMOTION.md) | Box/Paint Select, Tweak und Loop-Werkzeuge aus dem Playground in die App (2026-10-15); Nachtrag 2026-10-28: Achse einmalig, Tweak = Halte-Geste, Ctrl+LMB-Ziehen entfernt, kleineres Gizmo: Manus Entscheidungen, Annahmen, Praxistest |
 | [WP_TOOLBOX_GAPS_PLAN.md](WP_TOOLBOX_GAPS_PLAN.md) | Geplant 2026-10-23: Collapse V/E/F, Select Through, Transform-Raum World/Normal, Grow/Shrink, Loop-Extend, Next/Prev Loop, Relax/Smooth, Subdivide — Pakete A/B/C, Slices, Tasten, Praxistest |
 | [WP_INSET_BEVEL_SLIDE.md](WP_INSET_BEVEL_SLIDE.md) | Gebaut 2026-10-29 (`PROVISIONAL`, Grundfunktion): Inset (`I` im Face-Modus), Bevel/Chamfer für Kanten und Punkte (`Ctrl+B`), Vertex Slide (`G` im Vertex-Modus); Entscheidungen, Nicht-Scope, Praxistest B25 |
+| [WP_GOZ_P2_PLAN.md](WP_GOZ_P2_PLAN.md) | ZBrush-Brücke P2 (vorbereitet 2026-11-05): Polygruppen ↔ Regionen, dann N-Gons (nur in der Datei zerlegt, möglichst Vierecke); Manus Entscheidungen, PC-Test E2, Akzeptanz |
 | [WP_ORTHO_VIEWS_PLAN.md](WP_ORTHO_VIEWS_PLAN.md) | Gebaut 2026-10-28 (`PROVISIONAL`): Ortho/Persp (`U`), Standardansichten per Shift beim Orbit, Working Pivot rastet auf die Symmetrieebene (Manus V-1..V-3); Ergebnis und Praxistest B23 |
 
 ## For AI collaborators

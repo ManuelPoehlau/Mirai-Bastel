@@ -67,7 +67,8 @@ def render(template: str, values: dict[str, str]) -> str:
     return template
 
 
-def install(paths: GozPaths, *, replace: bool, python: str, captures: Path, require_gozbrush: bool = True) -> list[Path]:
+def install(paths: GozPaths, *, replace: bool, python: str, captures: Path, require_gozbrush: bool = True,
+            import_polygroups: bool = False) -> list[Path]:
     if require_gozbrush and not paths.gozbrush.is_dir():
         raise ProbeError(f"{paths.gozbrush} does not exist: is GoZ installed? (ZBrush: Preferences > GoZ > Force Reinstall)")
     app_dir = paths.app_dir
@@ -102,6 +103,9 @@ def install(paths: GozPaths, *, replace: bool, python: str, captures: Path, requ
         written.append(target)
     info = app_dir / "GoZ_Info.txt"
     shutil.copyfile(TEMPLATE_DIR / "GoZ_Info.txt", info)
+    if import_polygroups:  # E2 variant: the SDK's GoZ_Info option, effect unknown
+        with open(info, "ab") as handle:
+            handle.write(b"IMPORT_POLYGROUPS\t= TRUE\r\n")
     written.append(info)
     marker = app_dir / APP_MARKER
     write_text_atomic(
@@ -196,6 +200,8 @@ def main(argv=None) -> int:
     parser.add_argument("--replace", action="store_true", help="reinstall over our own earlier installation")
     parser.add_argument("--python", default=sys.executable, help="python.exe the Edit command runs (default: this one)")
     parser.add_argument("--captures", type=Path, default=DEFAULT_CAPTURES)
+    parser.add_argument("--import-polygroups", action="store_true",
+                        help="E2 variant: add IMPORT_POLYGROUPS = TRUE to GoZ_Info.txt (restart ZBrush afterwards)")
     args = parser.parse_args(argv)
     try:
         if args.inventory:
@@ -210,7 +216,8 @@ def main(argv=None) -> int:
         if args.uninstall:
             print(f"removed {paths.app_dir}" if uninstall(paths) else f"nothing to remove: {paths.app_dir}")
             return 0
-        for path in install(paths, replace=args.replace, python=args.python, captures=args.captures):
+        for path in install(paths, replace=args.replace, python=args.python, captures=args.captures,
+                            import_polygroups=args.import_polygroups):
             print(f"installed {path}")
         print(f"\n'{APP_DISPLAY_NAME}' installed. In ZBrush: R next to the GoZ buttons -> choose it (README §6 T2).")
         return 0

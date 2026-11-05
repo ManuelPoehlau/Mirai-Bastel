@@ -15,6 +15,8 @@ makes ZBrush export the active SubTool instead of importing the listed file - do
 `--axis bridge` (P1 orientation check, README §11 item 1): writes every point as `(x, -y, -z)`, the conversion the
 P1 bridge uses (Mirai's Y-up frame shows in ZBrush upside down and from behind without it); short name `E1_<id>_P1`,
 so it never updates a SubTool sent unflipped. `--axis raw` (default) writes the Mirai coordinates as they are.
+`--groups bands` (E2, polygroups for P2): adds a GROUPS block, four bands by the face centre's height, ids 101-104
+(distinct from ZBrush's random default id); short name `E1_<id>[_P1]_G`.
 `--resend`: refuses when ZBrush's file changed since the capture (`--force` overrides).
 `--dry-run`: writes the files, runs no program (identifier = project folder / short name).
 Every step goes into `captures/<time>_send_<what>/send_log.json`.
@@ -93,6 +95,13 @@ def make_object_path(paths: GozPaths, short: str, steps: Steps, *, dry_run: bool
 AXIS_MAPS = {"raw": (1.0, 1.0, 1.0), "bridge": (1.0, -1.0, -1.0)}
 
 
+def band_groups(sent: dict) -> list[int]:
+    """E2: ids 101-104 by the height of each face centre in the sent mesh (four equal bands)."""
+    ys = [sum(sent["positions"][i][1] for i in f) / len(f) for f in sent["faces"]]
+    lo, hi = min(ys), max(ys)
+    return [101 + min(3, int(4 * (y - lo) / ((hi - lo) or 1.0))) for y in ys]
+
+
 def previous_identifier(captures: Path, mesh_id: str, axis: str = "raw") -> str | None:
     for log in reversed(send_logs(captures)):
         if (log.get("mesh") == mesh_id and log.get("identifier") and not log.get("dry_run")
@@ -106,15 +115,16 @@ def prepare_mesh(args, paths: GozPaths, steps: Steps) -> tuple[list[str], dict]:
     if not sent_path.is_file():
         raise ProbeError(f"{sent_path} missing: run make_meshes.py first")
     sent = json.loads(sent_path.read_text(encoding="utf-8"))
-    short = f"E1_{args.mesh}" + ("" if args.axis == "raw" else "_P1")
-    identifier = None if args.new_identifier else previous_identifier(args.captures, args.mesh, args.axis)
+    short = f"E1_{args.mesh}" + ("" if args.axis == "raw" else "_P1") + ("_G" if args.groups else "")
+    identifier = None if (args.new_identifier or args.groups) else previous_identifier(args.captures, args.mesh, args.axis)
     if identifier:
         steps.add("reusing the identifier of an earlier send", identifier=identifier)
     else:
         identifier = make_object_path(paths, short, steps, dry_run=args.dry_run, timeout=args.wait_objectpath)
     signs = AXIS_MAPS[args.axis]
     points = [[as_float32(s * c) for s, c in zip(signs, p)] for p in sent["positions"]]
-    data = encode_goz(short, points, sent["faces"], style=args.style)
+    groups = band_groups(sent) if args.groups == "bands" else None
+    data = encode_goz(short, points, sent["faces"], style=args.style, groups=groups)
     name = parse_goz(data).name
     parse_goz(data)  # our own file must pass our strict reader
     target = Path(identifier + ".GoZ")
@@ -122,7 +132,7 @@ def prepare_mesh(args, paths: GozPaths, steps: Steps) -> tuple[list[str], dict]:
     steps.add("wrote .GoZ", file=str(target), bytes=len(data), sha256=sha256(data), mesh_name=name)
     steps.add("axis map", axis=args.axis, signs=signs)
     return [identifier], {"mesh": args.mesh, "identifier": identifier, "file": str(target), "sha256": sha256(data),
-                          "axis": args.axis}
+                          "axis": args.axis, "groups": groups}
 
 
 def _capture_dir(captures: Path, which: str) -> Path:
@@ -203,6 +213,7 @@ def main(argv=None) -> int:
                         help="sdk: the SDK's minimal file; gozmesh: + name prefix GoZMesh_; zbrush: ZBrush's own layout")
     parser.add_argument("--axis", choices=tuple(AXIS_MAPS), default="raw",
                         help="raw: Mirai coordinates as they are; bridge: (x, -y, -z), the P1 conversion (README §11)")
+    parser.add_argument("--groups", choices=("bands",), help="E2: send four polygroups (ids 101-104)")
     parser.add_argument("--new-identifier", action="store_true")
     parser.add_argument("--keep-application", action="store_true")
     parser.add_argument("--tmap", action="store_true",

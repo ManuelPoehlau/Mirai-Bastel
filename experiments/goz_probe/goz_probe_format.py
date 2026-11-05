@@ -137,6 +137,7 @@ class GozFile:
     points: list[Point] = field(default_factory=list)
     face_tag: Optional[int] = None
     faces: list[Face] = field(default_factory=list)
+    groups: list[int] = field(default_factory=list)
     strings: dict[str, str] = field(default_factory=dict)
     anomalies: list[str] = field(default_factory=list)
     end_size_field: Optional[int] = None
@@ -231,6 +232,8 @@ def parse_goz(data: bytes) -> GozFile:
                 goz.anomalies.append("second POINT_LIST block (the later one is used)")
             values = struct.unpack_from(f"<{3 * count}f", payload)
             goz.points = [tuple(values[3 * i: 3 * i + 3]) for i in range(count)]
+        elif tag == TAG_GROUPS_LIST:
+            goz.groups = list(struct.unpack_from(f"<{count}H", payload))
         elif tag in FACE_TAGS:
             if goz.faces:
                 goz.anomalies.append("second face block (the later one is used)")
@@ -287,6 +290,7 @@ def encode_goz(
     flags: int = 0,
     style: str = "sdk",
     header_text: bytes = PROBE_HEADER_TEXT,
+    groups: Optional[Sequence[int]] = None,
 ) -> bytes:
     """MESH, FLAGS, POINT_LIST (float32), FACE4_LIST_FORMAT_1, (ZBrush's default attribute blocks), END.
     `name` is used as given for "sdk"; "gozmesh" and "zbrush" add the `GoZMesh_` prefix unless it is there."""
@@ -318,6 +322,10 @@ def encode_goz(
         _block(TAG_POINT_LIST, n, point_payload),
         _block(TAG_FACE4_FORMAT_1, len(faces), struct.pack(f"<{len(face_values)}i", *face_values)),
     ]
+    if groups is not None and style != "zbrush":
+        if len(groups) != len(faces) or not all(0 <= int(g) <= 0xFFFF for g in groups):
+            raise ValueError("groups: one 16-bit id per face")
+        parts.append(_block(TAG_GROUPS_LIST, len(faces), struct.pack(f"<{len(faces)}H", *(int(g) for g in groups))))
     if style == "zbrush":
         parts += [
             _block(TAG_MRGB_LIST, n, ZBRUSH_DEFAULT_MRGB * n),
@@ -358,5 +366,9 @@ def dump(goz: GozFile, *, head: int = 5) -> str:
     if goz.faces:
         lines.append(f"first faces: {goz.faces[:head]}")
         lines.append(f"last faces: {goz.faces[-head:]}")
+    if goz.groups:
+        from collections import Counter
+
+        lines.append(f"groups (id: faces): {dict(sorted(Counter(goz.groups).items()))}")
     lines.append("anomalies: " + ("; ".join(goz.anomalies) if goz.anomalies else "none"))
     return "\n".join(lines) + "\n"

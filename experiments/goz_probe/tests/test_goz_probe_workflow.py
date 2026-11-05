@@ -239,3 +239,25 @@ def test_axis_bridge_send_flips_y_and_z_under_its_own_identifier(env):
     cap = probe_receiver.receive(paths, captures=env["captures"], inbox=env["inbox"], meshes=env["meshes"], settle=0.05)
     dump_text = (cap / "dump.txt").read_text()
     assert "matched sent mesh A" in dump_text
+
+
+
+def test_groups_bands_send_writes_a_groups_block_and_the_dump_shows_it(env):
+    """E2 (P2 polygroups): `--groups bands` sends ids 101-104 under its own identifier."""
+    make_meshes.write_meshes(env["meshes"], ids=("C",))
+    assert _send(env, "--mesh", "C", "--axis", "bridge", "--groups", "bands", "--dry-run") == 0
+    paths = env["paths"]
+    identifier = str(paths.project_dir() / "E1_C_P1_G")
+    assert read_object_list(paths.object_list) == [identifier]
+    from goz_probe.goz_probe_format import read_goz
+
+    goz = read_goz(identifier + ".GoZ")
+    assert sorted(set(goz.groups)) == [101, 102, 103, 104] and len(goz.groups) == len(goz.faces)
+    cap = probe_receiver.receive(paths, captures=env["captures"], inbox=env["inbox"], meshes=env["meshes"], settle=0.05)
+    assert "groups (id: faces): {101:" in (cap / "dump.txt").read_text()
+
+
+def test_install_import_polygroups_variant(env):
+    installer.install(env["paths"], replace=False, python=sys.executable, captures=env["captures"],
+                      import_polygroups=True)
+    assert b"IMPORT_POLYGROUPS\t= TRUE\r\n" in (env["paths"].app_dir / "GoZ_Info.txt").read_bytes()

@@ -29,6 +29,8 @@ In: one object per transfer; positions with the exact sent topology, in place; e
 GoZ registration; the ZBrush → Mirai notification. Out (later, own steps): UVs back, polygroups ↔ regions (P2),
 polypaint, masks, morph targets sent as `b + d`, n-gon split-and-recombine (D4), several SubTools in one Undo step.
 
+**Next:** P2 (polygroups, then n-gons) is planned in [`docs/WP_GOZ_P2_PLAN.md`](../WP_GOZ_P2_PLAN.md) with Manu's decisions (2026-11-05).
+
 ## 2. Packages and boundary
 
 ```text
