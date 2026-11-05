@@ -1,0 +1,27 @@
+E1 receive 20261105-135454_792  launched_by=edit_command  objects=1
+
+=== C:/Users/Public/Pixologic/GoZProjects/Default/d54dgsd5gs52gsdg21456sd4g1
+header text: b' 1.0 ZBrush GoZ Binary......'
+blocks:
+  @      32  tag      1 MESH                   size        52  count       1  modifier 0.0
+  @      84  tag   5001 FLAGS                  size        20  count       1  modifier 0.0
+  @     104  tag  10001 POINT_LIST             size       112  count       8  modifier 0.0
+  @     216  tag  20001 FACE4_LIST_FORMAT_1    size       112  count       6  modifier 0.0
+  @     328  tag  35001 MRGB_LIST              size        48  count       8  modifier 0.0
+  @     376  tag  30002 MASK16_LIST            size        32  count       8  modifier 0.0
+  @     408  tag  40001 GROUPS_LIST            size        28  count       6  modifier 0.0
+  @     436  tag  40002 CREASE_LIST            size        22  count       6  modifier 0.0
+  @     458  tag      0 END_OF_FILE            size         0  count       0  modifier 0.0
+mesh name: 'GoZMesh_d54dgsd5gs52gsdg21456sd4g1'
+flags: 0 []
+points: 8  faces: 6 (FACE4_LIST_FORMAT_1) {'tri': 0, 'quad': 6}
+bbox min (-1.0, -1.0, -1.0) max (1.0, 1.0, 1.0) extent (2.0, 2.0, 2.0)
+first points: [(-1.0, 1.0, 1.0), (1.0, 1.0, 1.0), (1.0, 1.0, -1.0), (-1.0, 1.0, -1.0), (-1.0, -1.0, 1.0)]
+last points: [(-1.0, 1.0, -1.0), (-1.0, -1.0, 1.0), (1.0, -1.0, 1.0), (1.0, -1.0, -1.0), (-1.0, -1.0, -1.0)]
+first faces: [(0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0), (0, 1, 2, 3)]
+last faces: [(1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0), (0, 1, 2, 3), (7, 6, 5, 4)]
+anomalies: none
+no sent mesh matched (run make_meshes.py first, or a new SubTool)
+Datei fertig beim Start: complete_at_start=True, exclusive_open=ok, changed_after_1s=False, geschrieben 398.6 ms vor dem Start
+
+no listener running: no ticket (nothing is started)

@@ -1,0 +1,191 @@
+{
+  "t0_ns": 1793883294792289300,
+  "t0_local": "20261105-135454_792",
+  "launched_by": "edit_command",
+  "argv": [
+    "%USERPROFILE%\\Mirai_Bastel\\experiments\\goz_probe\\probe_receiver.py",
+    "--root",
+    "C:\\Users\\Public\\Pixologic",
+    "--launched-by",
+    "edit_command",
+    "--"
+  ],
+  "zbrush_args": [],
+  "cwd": "C:\\Users\\Public\\Pixologic\\GoZApps\\MiraiProbe",
+  "pid": 13932,
+  "process_chain": [
+    {
+      "pid": 13932,
+      "exe": "python.exe"
+    },
+    {
+      "pid": 5480,
+      "exe": "cmd.exe"
+    },
+    {
+      "pid": 18304,
+      "exe": "ZBrush.exe"
+    },
+    {
+      "pid": 6828,
+      "exe": "explorer.exe"
+    },
+    {
+      "pid": 13592,
+      "exe": "(exited or unknown)"
+    }
+  ],
+  "env": {
+    "OS": "Windows_NT",
+    "PROCESSOR_ARCHITECTURE": "AMD64",
+    "PUBLIC": "C:\\Users\\Public",
+    "SystemRoot": "C:\\WINDOWS"
+  },
+  "env_names_goz": [],
+  "python": {
+    "executable": "%USERPROFILE%\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+    "version": "3.14.2 (tags/v3.14.2:df79316, Dec  5 2025, 17:18:21) [MSC v.1944 64 bit (AMD64)]",
+    "platform": "win32"
+  },
+  "root": "C:\\Users\\Public\\Pixologic",
+  "settle_s": 1.0,
+  "gozbrush_texts": {
+    "GoZ_ObjectList.txt": {
+      "stat": {
+        "exists": true,
+        "size": 73,
+        "mtime_ns": 1793883294394724600
+      },
+      "text": "C:/Users/Public/Pixologic/GoZProjects/Default/d54dgsd5gs52gsdg21456sd4g1\n"
+    },
+    "GoZ_Application.txt": {
+      "stat": {
+        "exists": true,
+        "size": 10,
+        "mtime_ns": 1793883294551724300
+      },
+      "text": "MiraiProbe"
+    },
+    "GoZ_ProjectPath.txt": {
+      "stat": {
+        "exists": true,
+        "size": 46,
+        "mtime_ns": 1451583438000000000
+      },
+      "text": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\"
+    },
+    "GoZ_ObjectPath.txt": {
+      "stat": {
+        "exists": true,
+        "size": 50,
+        "mtime_ns": 1793883272053724900
+      },
+      "text": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_B"
+    }
+  },
+  "app_config": {
+    "PATH": "C:/Users/%USERNAME%/Mirai_Bastel/experiments/goz_probe/probe_app.cmd"
+  },
+  "objects": [
+    {
+      "identifier": "C:/Users/Public/Pixologic/GoZProjects/Default/d54dgsd5gs52gsdg21456sd4g1",
+      "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\d54dgsd5gs52gsdg21456sd4g1.GoZ",
+      "stat_at_start": {
+        "exists": true,
+        "size": 474,
+        "mtime_ns": 1793883294393724400
+      },
+      "ms_since_write_at_start": 398.5649,
+      "exclusive_open": "ok",
+      "sha256_at_start": "8adac9d473a2e35cc6baf0e1c65b415eb63881380448a0470fe89d9a0e1f7e16",
+      "copy": "%USERPROFILE%\\Mirai_Bastel\\experiments\\goz_probe\\captures\\20261105-135454_792_receive\\00_d54dgsd5gs52gsdg21456sd4g1.GoZ",
+      "stat_after_settle": {
+        "exists": true,
+        "size": 474,
+        "mtime_ns": 1793883294393724400
+      },
+      "sha256_after_settle": "8adac9d473a2e35cc6baf0e1c65b415eb63881380448a0470fe89d9a0e1f7e16",
+      "changed_after_settle": false,
+      "complete_at_start": true,
+      "summary": {
+        "name": "GoZMesh_d54dgsd5gs52gsdg21456sd4g1",
+        "flags": 0,
+        "flag_names": [],
+        "subdiv": [],
+        "points": 8,
+        "faces": 6,
+        "face_types": {
+          "tri": 0,
+          "quad": 6
+        },
+        "header_text": " 1.0 ZBrush GoZ Binary......",
+        "blocks": [
+          [
+            1,
+            "MESH",
+            52,
+            1
+          ],
+          [
+            5001,
+            "FLAGS",
+            20,
+            1
+          ],
+          [
+            10001,
+            "POINT_LIST",
+            112,
+            8
+          ],
+          [
+            20001,
+            "FACE4_LIST_FORMAT_1",
+            112,
+            6
+          ],
+          [
+            35001,
+            "MRGB_LIST",
+            48,
+            8
+          ],
+          [
+            30002,
+            "MASK16_LIST",
+            32,
+            8
+          ],
+          [
+            40001,
+            "GROUPS_LIST",
+            28,
+            6
+          ],
+          [
+            40002,
+            "CREASE_LIST",
+            22,
+            6
+          ],
+          [
+            0,
+            "END_OF_FILE",
+            0,
+            0
+          ]
+        ],
+        "anomalies": []
+      },
+      "matched_sent": {
+        "id": null,
+        "by": "no match"
+      }
+    }
+  ],
+  "listener": {
+    "pid": null,
+    "alive": false
+  },
+  "duration_ms": 1009.6685000462458
+}
