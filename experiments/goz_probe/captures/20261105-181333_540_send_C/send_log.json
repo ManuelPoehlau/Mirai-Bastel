@@ -1,0 +1,55 @@
+{
+  "mesh": "C",
+  "identifier": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C1",
+  "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C1.GoZ",
+  "sha256": "87f7fcdcc4b9d19df44682f56118afc36073f43836587da093f3b33946025bb1",
+  "dry_run": false,
+  "style": "gozmesh",
+  "command": [
+    "C:\\Users\\Public\\Pixologic\\GoZBrush\\GoZBrushFromApp.exe"
+  ],
+  "steps": [
+    {
+      "t_ms": 18.8,
+      "what": "reusing the identifier of an earlier send",
+      "identifier": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C1"
+    },
+    {
+      "t_ms": 26.3,
+      "what": "wrote .GoZ",
+      "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C1.GoZ",
+      "bytes": 9228,
+      "sha256": "87f7fcdcc4b9d19df44682f56118afc36073f43836587da093f3b33946025bb1",
+      "mesh_name": "GoZMesh_E1_C"
+    },
+    {
+      "t_ms": 39.7,
+      "what": "wrote GoZ_ObjectList.txt",
+      "lines": [
+        "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C1"
+      ],
+      "read_back": [
+        "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C1"
+      ]
+    },
+    {
+      "t_ms": 45.6,
+      "what": "GoZ_Application.txt",
+      "before": "MiraiProbe",
+      "after": "MiraiProbe"
+    },
+    {
+      "t_ms": 57.7,
+      "what": "started GoZBrushFromApp",
+      "pid": 19344,
+      "command": [
+        "C:\\Users\\Public\\Pixologic\\GoZBrush\\GoZBrushFromApp.exe"
+      ]
+    },
+    {
+      "t_ms": 228.4,
+      "what": "GoZBrushFromApp exited",
+      "returncode": 0
+    }
+  ]
+}
