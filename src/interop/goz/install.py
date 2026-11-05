@@ -66,6 +66,15 @@ def is_installed(paths: GozPaths) -> bool:
     return (paths.app_dir / MARKER).is_file()
 
 
+def known_to_zbrush(paths: GozPaths) -> bool:
+    """True once ZBrush has taken Mirai as a GoZ application: after the restart that lists it and the artist's pick with
+    **R**, ZBrush writes the chosen application path into `GoZApps\\Mirai\\GoZ_Config.txt` (SDK IV; E1: ZBrush ran
+    Locate/Init on that pick). `install` never writes that file and a reinstall removes it, so it cannot be stale.
+    Until then a send must not name Mirai as the active GoZ application: ZBrush 2022.0.8 crashed when a send named
+    `Mirai` while `GoZApps\\Mirai` did not exist (Manu, 2026-11-05)."""
+    return is_installed(paths) and (paths.app_dir / "GoZ_Config.txt").is_file()
+
+
 def install(paths: GozPaths, inbox: Path, *, python: str = sys.executable) -> Path:
     if not paths.gozbrush.is_dir():
         raise GozSetupError(f"{paths.gozbrush} missing: is GoZ installed? (ZBrush: Preferences > GoZ > Force Reinstall)")

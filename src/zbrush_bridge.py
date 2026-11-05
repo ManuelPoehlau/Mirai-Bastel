@@ -5,6 +5,9 @@ Rows (no key: a key only after Manu's "Taste passt", AD-013 addendum):
     An ZBrush senden                     the object (mode 4: the one selected object, else the edit object; the base
                                          while a morph target's view is open) -> ZBrush, as `(x, -y, -z)` of its
                                          world position; a resend of the same object updates the same SubTool
+                                         Refused (nothing written) until ZBrush knows Mirai: registered, ZBrush
+                                         restarted, Mirai picked with R (`install.known_to_zbrush`) - naming an
+                                         unknown GoZ app crashed ZBrush 2022.0.8 (Manu, 2026-11-05)
     ZBrush übernehmen: <name> · <id>     a waiting same-topology return: its moved points into the object, one Undo
                                          step (D1, Manu 2026-11-05: only after this confirm)
     ZBrush als neues Objekt: <name> · …  a return that cannot go in place (topology changed, Mirai edited since the
@@ -56,6 +59,7 @@ from interop.goz.transfer import (
 
 _ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INBOX = _ROOT / "goz" / "inbox"
+DEFAULT_MANIFESTS = _ROOT / "goz" / "manifests"
 
 SEND_LABEL = "An ZBrush senden"
 APPLY_PREFIX = "ZBrush übernehmen: "
@@ -90,6 +94,7 @@ class ZBrushBridge:
         *,
         root: Optional[Path] = None,
         inbox: Path = DEFAULT_INBOX,
+        manifests: Path = DEFAULT_MANIFESTS,
         scene_path: Callable[[], Optional[Path]] = lambda: None,
         runner=default_runner,
         clock: Callable[[], float] = time.monotonic,
@@ -97,6 +102,7 @@ class ZBrushBridge:
         self.app = app
         self._root = root
         self.inbox = Inbox(inbox)
+        self.manifest_dir = Path(manifests)
         self._scene_path = scene_path
         self._runner = runner
         self._clock = clock
@@ -180,6 +186,16 @@ class ZBrushBridge:
         to_world, _ = _placement()
         try:
             paths = self.paths()
+            if not paths.gozbrush.is_dir():
+                raise GozSetupError(f"{paths.gozbrush} missing: is GoZ installed? (start ZBrush once)")
+            if not goz_install.is_installed(paths):
+                app.set_status(f"ZBrush: nothing sent - register Mirai first (SPACE > {INSTALL_LABEL!r}), restart "
+                               "ZBrush, choose 'Mirai' with R beside the GoZ button, then send")
+                return False
+            if not goz_install.known_to_zbrush(paths):
+                app.set_status("ZBrush: nothing sent - ZBrush does not know Mirai yet: restart ZBrush, choose 'Mirai' "
+                               "with R beside the GoZ button once, then send")
+                return False
             identifier = self._identifiers.get(obj.id) or make_identifier(paths, short_name(obj.name),
                                                                           runner=self._runner)
             scene_path = self._scene_path()
@@ -187,15 +203,15 @@ class ZBrushBridge:
                 app.scene, obj, identifier=identifier, transfer_id=uuid.uuid4().hex, session_id=self.session_id,
                 scene_path=None if scene_path is None else str(Path(scene_path).resolve()), to_world=to_world,
             )
-            write_send(paths, identifier, data, manifest.to_json())
+            write_manifest(self.manifest_dir, identifier, manifest.to_json())
+            write_send(paths, identifier, data)
             launch_zbrush(paths, runner=self._runner)
         except (SendRefused, GozSetupError, OSError) as exc:
             app.set_status(f"ZBrush: {exc}")
             return False
         self._identifiers[obj.id] = identifier
         self._manifests[_key(identifier)] = manifest
-        hint = "" if goz_install.is_installed(paths) else f" - for the way back: SPACE > {INSTALL_LABEL!r} once"
-        app.set_status(f"ZBrush: {obj.name!r} sent ({len(manifest.vertex_ids)} points){hint}")
+        app.set_status(f"ZBrush: {obj.name!r} sent ({len(manifest.vertex_ids)} points)")
         return True
 
     def install(self) -> bool:
@@ -234,7 +250,7 @@ class ZBrushBridge:
         known = self._manifests.get(_key(identifier))
         if known is not None:
             return known
-        text = read_manifest_text(identifier)
+        text = read_manifest_text(self.manifest_dir, identifier)
         if text is None:
             return None
         try:
@@ -287,7 +303,7 @@ class ZBrushBridge:
         rebased = rebase_manifest(manifest, self.app.scene, obj, to_world)
         self._manifests[_key(manifest.identifier)] = rebased
         try:
-            write_manifest(manifest.identifier, rebased.to_json())
+            write_manifest(self.manifest_dir, manifest.identifier, rebased.to_json())
         except OSError:
             pass  # the in-memory manifest is enough for this session
 

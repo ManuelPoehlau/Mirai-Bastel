@@ -18,6 +18,8 @@ from tests.test_goz_format import fixture, flipped
 from core import PointLayerInfo, SelectionMode
 from core.serialization import scene_to_dict
 from interop.goz import helper
+from interop.goz import install as goz_install
+from interop.goz.transfer import manifest_path
 from interop.goz.bridge import ReturnKind
 from interop.goz.files import GozPaths, write_goz_list
 from interop.goz.format import as_float32, encode_goz, parse_goz
@@ -81,12 +83,21 @@ def env(tmp_path):
     zb = FakeZBrush(paths)
     scene_file = {"path": None}
     bridge = ZBrushBridge(app, root=root, inbox=tmp_path / "inbox", runner=zb, clock=itertools.count().__next__,
-                          scene_path=lambda: scene_file["path"])
+                          scene_path=lambda: scene_file["path"], manifests=tmp_path / "manifests")
     return {"app": app, "bridge": bridge, "zb": zb, "paths": paths, "inbox": tmp_path / "inbox", "tmp": tmp_path,
             "scene_file": scene_file}
 
 
+def zbrush_knows_mirai(env) -> None:
+    """Registered, ZBrush restarted, Mirai picked with R: ZBrush wrote GoZApps\\Mirai\\GoZ_Config.txt."""
+    paths = env["paths"]
+    if not goz_install.is_installed(paths):
+        goz_install.install(paths, env["inbox"])
+    (paths.app_dir / "GoZ_Config.txt").write_text('PATH = "C:/Mirai.cmd"\r\n')
+
+
 def send(env) -> str:
+    zbrush_knows_mirai(env)
     assert env["bridge"].activate(SEND_LABEL), env["app"].status_message
     (identifier,) = env["paths"].read_object_list()
     return identifier
@@ -115,12 +126,13 @@ def test_send_writes_file_manifest_list_and_starts_zbrush_without_tmap(env):
     mesh = app.scene.edit_object.mesh
     first = mesh.vertex_position(mesh.all_vertex_ids()[0])
     assert goz.points[0] == (as_float32(first[0]), as_float32(-first[1]), as_float32(-first[2]))
-    manifest = Manifest.from_json(Path(identifier + ".mirai-goz.json").read_text())
+    manifest = Manifest.from_json(manifest_path(env["bridge"].manifest_dir, identifier).read_text())
+    assert sorted(p.name for p in paths.project_dir().iterdir()) == ["head_basemesh1.GoZ"]  # nothing else of Mirai's
     assert manifest.object_id == int(app.scene.edit_object.id) and manifest.session_id == env["bridge"].session_id
     assert paths.application_file.read_text() == "Mirai"
     assert [Path(c[0]).stem for c in env["zb"].commands] == ["GoZMakeObjectPath", "GoZBrushFromApp"]
     assert all("-tmap" not in c for c in env["zb"].commands)
-    assert len(app.history) == 0 and INSTALL_LABEL in app.status_message
+    assert len(app.history) == 0 and "sent (326 points)" in app.status_message
     assert send(env) == identifier  # a resend reuses the identifier: ZBrush updates the same Tool
     assert [Path(c[0]).stem for c in env["zb"].commands].count("GoZMakeObjectPath") == 1
 
@@ -187,7 +199,7 @@ def test_unchanged_and_divided_returns_change_nothing(env):
     assert "no point moved" in app.status_message
     goz_back(env, identifier, flipped(fixture("zb2022_C_divided_once.GoZ")))
     assert "looks divided in ZBrush" in app.status_message and "held" in app.status_message
-    assert env["bridge"].entries() == (SEND_LABEL, INSTALL_LABEL)
+    assert env["bridge"].entries() == (SEND_LABEL,)
     assert positions(mesh) == before and len(app.history) == 0
 
 
@@ -231,7 +243,7 @@ def test_corrupt_transfer_changes_nothing(env):
     helper.run(env["paths"], env["inbox"], settle=0.0, deadline=0.0)
     env["bridge"].tick()
     assert "transfer incomplete" in app.status_message
-    assert env["bridge"].entries() == (SEND_LABEL, INSTALL_LABEL)
+    assert env["bridge"].entries() == (SEND_LABEL,)
     assert positions(app.scene.edit_object.mesh) == before
 
 
@@ -290,10 +302,11 @@ def test_ticket_waits_for_a_later_mirai_and_the_scene_file_links_it(env):
     identifier = send(env)
     env["zb"].press_goz(identifier, flipped(fixture("zb2022_C_move_brush.GoZ")), env["inbox"])
     later = ZBrushBridge(app, root=env["paths"].root, inbox=env["inbox"], clock=itertools.count().__next__,
-                         scene_path=lambda: env["tmp"] / "kopf.mirai.json")
+                         scene_path=lambda: env["tmp"] / "kopf.mirai.json", manifests=env["bridge"].manifest_dir)
     assert later.tick() == 1 and any(r.startswith(APPLY_PREFIX) for r in later.entries())
     env["zb"].press_goz(identifier, flipped(fixture("zb2022_C_move_brush.GoZ")), env["inbox"])
-    stranger = ZBrushBridge(app, root=env["paths"].root, inbox=env["inbox"], clock=itertools.count().__next__)
+    stranger = ZBrushBridge(app, root=env["paths"].root, inbox=env["inbox"], clock=itertools.count().__next__,
+                            manifests=env["bridge"].manifest_dir)
     assert stranger.tick() == 1 and "another Mirai session" in app.status_message
     assert any(r.startswith(NEW_OBJECT_PREFIX) for r in stranger.entries())
 
@@ -318,7 +331,7 @@ def test_send_refusals(env, monkeypatch):
     monkeypatch.setattr(Application, "interaction_owner", property(lambda self: "knife"))
     assert not env["bridge"].activate(SEND_LABEL) and "knife" in app.status_message
     monkeypatch.undo()
-    bridge = ZBrushBridge(app, root=env["tmp"] / "nowhere", inbox=env["inbox"])
+    bridge = ZBrushBridge(app, root=env["tmp"] / "nowhere", inbox=env["inbox"], manifests=env["tmp"] / "m")
     assert not bridge.activate(SEND_LABEL) and "missing" in app.status_message
     assert bridge.entries() == (SEND_LABEL,)
 
@@ -335,3 +348,17 @@ def test_a_failing_plan_or_apply_is_a_status_line_not_a_crash(env, monkeypatch):
     goz_back(env, identifier, flipped(fixture("zb2022_C_move_brush.GoZ")))
     monkeypatch.setattr(Application, "apply_goz_return", lambda self, plan: 1 / 0)
     assert not env["bridge"].activate(row(env, APPLY_PREFIX)) and "failed: ZeroDivisionError" in app.status_message
+
+
+def test_no_send_until_zbrush_knows_mirai(env):
+    """ZBrush 2022.0.8 crashed when a send named `Mirai` as the GoZ app while GoZApps\\Mirai did not exist (Manu,
+    2026-11-05). Not registered, or registered but not yet picked in ZBrush: nothing is written, nothing started."""
+    app, paths = env["app"], env["paths"]
+    paths.application_file.write_text("MiraiProbe")
+    assert not env["bridge"].activate(SEND_LABEL) and "register Mirai first" in app.status_message
+    assert env["bridge"].activate(INSTALL_LABEL)
+    assert not env["bridge"].activate(SEND_LABEL) and "does not know Mirai yet" in app.status_message
+    assert env["zb"].commands == [] and list(paths.project_dir().iterdir()) == []
+    assert paths.application_file.read_text() == "MiraiProbe" and not paths.object_list.exists()
+    (paths.app_dir / "GoZ_Config.txt").write_text('PATH = "C:/Mirai.cmd"\r\n')  # ZBrush: restarted, R > Mirai
+    assert env["bridge"].activate(SEND_LABEL) and paths.application_file.read_text() == "Mirai"

@@ -52,10 +52,15 @@ the reference until archived.
 
 Object: mode `4` → the one selected object, else the edit object; the base while a morph target's view is open
 (never the mix, never the editing view). Refused: an interaction running, n-gons (status names the count), no GoZ
-folder. Points: `to_goz(object_space.to_world(p))` with `to_goz(x, y, z) = (x, −y, −z)` (E1-Q6), float32, vertex-ID
+folder, and — **before anything is written** — while ZBrush does not know Mirai yet: not registered, or registered but
+not yet picked with **R** after a ZBrush restart (`install.known_to_zbrush`: ZBrush writes `GoZApps\Mirai\GoZ_Config.txt`
+on that pick). Reason (Manu, 2026-11-05, reference PC): the first P1 send without registration wrote
+`GoZ_Application.txt = Mirai` while `GoZApps\Mirai` did not exist, and the running ZBrush 2022.0.8 **crashed**; E1 never
+showed it because `MiraiProbe` was always installed. Points: `to_goz(object_space.to_world(p))` with `to_goz(x, y, z) = (x, −y, −z)` (E1-Q6), float32, vertex-ID
 order; faces as dense indices in face-ID order. Identifier: `GoZMakeObjectPath` for the first send of an object in a
-session, reused afterwards (ZBrush updates the same Tool). Files (atomic): `<id>.GoZ`, `<id>.mirai-goz.json`,
-`GoZ_ObjectList.txt`, `GoZ_Application.txt = Mirai`; then `GoZBrushFromApp.exe` **without `-tmap`** (E1 T5.2). No
+session, reused afterwards (ZBrush updates the same Tool). Files (atomic): `<id>.GoZ` (the only file Mirai writes into
+ZBrush's project folder), `GoZ_ObjectList.txt`, `GoZ_Application.txt = Mirai`; then `GoZBrushFromApp.exe` **without
+`-tmap`** (E1 T5.2), started as E1 started it (plain `Popen`). No
 History entry. ZBrush's own preferences (*Import as SubTool*) are never changed.
 
 ## 4. Return
@@ -68,7 +73,7 @@ copy's sha256, parses it strictly and plans it; a newer return of the same ident
 
 ## 5. Identity and fingerprint
 
-The manifest (in memory and beside the file) holds `transfer_id`, `session_id`, the scene file path, `ObjectId`, name,
+The manifest (in memory and in Mirai's own `goz/manifests/`, keyed by the identifier) holds `transfer_id`, `session_id`, the scene file path, `ObjectId`, name,
 GoZ identifier, the index ↔ `VertexId`/`FaceId` maps, the sent faces, the hash of the sent float32 points and the
 fingerprint (E1 §8.1): topology hash (IDs + boundaries incl. rotation), float64 positions hash, placement (transform,
 pivot, state), every point layer's meta and values hash (morph targets and weights), the rig hash. The link holds when

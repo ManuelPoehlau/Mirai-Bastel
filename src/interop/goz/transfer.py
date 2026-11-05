@@ -3,8 +3,8 @@
 - Identifier (SDK III.9, E1-Q8): the short name goes into `GoZBrush\\GoZ_ObjectPath.txt`, `GoZMakeObjectPath.exe` writes
   the unique identifier back (ZBrush appends a number if needed). A resend of the same object reuses its identifier,
   so ZBrush updates the linked SubTool / Tool.
-- Send: `<identifier>.GoZ` and `<identifier>.mirai-goz.json` (atomic), `GoZ_ObjectList.txt`, `GoZ_Application.txt` =
-  `Mirai` (so ZBrush's next GoZ comes back here), then `GoZBrushFromApp.exe` **without `-tmap`** (with it ZBrush
+- Send: `<identifier>.GoZ` (atomic), `GoZ_ObjectList.txt`, `GoZ_Application.txt` = `Mirai` (so ZBrush's next GoZ
+  comes back here; only once ZBrush knows Mirai, `install.known_to_zbrush`), then `GoZBrushFromApp.exe` **without `-tmap`** (with it ZBrush
   exports its active Tool instead of importing, E1 T5.2). Not waited for.
 - Inbox: tickets written by `helper.py`; a ticket is claimed by moving it into `done/` first (atomic), so two Mirai
   windows never both take it.
@@ -38,8 +38,8 @@ Runner = Callable[[Sequence[str], Path], "subprocess.Popen"]
 
 
 def default_runner(command: Sequence[str], cwd: Path):
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    return subprocess.Popen(list(command), cwd=str(cwd), creationflags=flags)
+    """As the E1 probe started the utilities (verified on the reference PC): plain `Popen`, no creation flags."""
+    return subprocess.Popen(list(command), cwd=str(cwd))
 
 
 def make_identifier(paths: GozPaths, short: str, *, runner: Runner = default_runner, timeout: float = 5.0,
@@ -60,18 +60,20 @@ def make_identifier(paths: GozPaths, short: str, *, runner: Runner = default_run
     raise GozSetupError(f"GoZMakeObjectPath gave no identifier within {timeout:g} s")
 
 
-def manifest_path(identifier: str) -> Path:
-    return Path(identifier + MANIFEST_SUFFIX)
+def manifest_path(directory: Path, identifier: str) -> Path:
+    """Manifests live in Mirai's own folder (`goz/manifests/`), never in ZBrush's project folder: Mirai writes nothing
+    there but the `.GoZ` itself."""
+    key = os.path.normcase(identifier.replace("\\", "/"))
+    return Path(directory) / (sha256(key.encode("utf-8"))[:32] + MANIFEST_SUFFIX)
 
 
-def write_manifest(identifier: str, manifest_json: str) -> None:
-    write_text_atomic(manifest_path(identifier), manifest_json)
+def write_manifest(directory: Path, identifier: str, manifest_json: str) -> None:
+    write_text_atomic(manifest_path(directory, identifier), manifest_json)
 
 
-def write_send(paths: GozPaths, identifier: str, data: bytes, manifest_json: str) -> Path:
+def write_send(paths: GozPaths, identifier: str, data: bytes) -> Path:
     target = Path(identifier + ".GoZ")
     write_bytes_atomic(target, data)
-    write_manifest(identifier, manifest_json)
     write_goz_list(paths.object_list, [identifier])
     write_text_atomic(paths.application_file, APP_FOLDER_NAME, encoding=ansi_encoding(), newline="")
     return target
@@ -84,9 +86,9 @@ def launch_zbrush(paths: GozPaths, *, runner: Runner = default_runner):
     return runner([str(exe)], paths.gozbrush)  # never `-tmap` (E1 T5.2)
 
 
-def read_manifest_text(identifier: str) -> Optional[str]:
+def read_manifest_text(directory: Path, identifier: str) -> Optional[str]:
     try:
-        return manifest_path(identifier).read_text(encoding="utf-8")
+        return manifest_path(directory, identifier).read_text(encoding="utf-8")
     except OSError:
         return None
 
