@@ -436,3 +436,23 @@ def test_asymmetry_beyond_one_percent_stays_and_is_reported(env):
     assert env["bridge"].activate(row(env, APPLY_PREFIX))
     assert _unpaired(mesh) == 2
     assert mesh.vertex_position(vids[off_plane])[0] == as_float32(pts[off_plane][0])
+
+
+def test_more_sculpting_after_a_mirrored_apply_needs_no_resend(env):
+    """Manu 2026-11-05 asked whether a resend is needed after the symmetry fix changed Mirai's mesh: no - the next GoZ
+    of the same SubTool is planned against the applied state (no conflict) and stays symmetric."""
+    app = env["app"]
+    mesh = _sym_x(env)
+    identifier = send(env)
+    goz_back(env, identifier, fixture("zb2022_P1_head_move_symx.GoZ"))
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    goz_back(env, identifier, fixture("zb2022_P1_head_smooth_symx.GoZ"))
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    goz = parse_goz(fixture("zb2022_P1_head_smooth_symx.GoZ"))  # ZBrush still holds its own, unmirrored state
+    pts = list(goz.points)
+    for i in range(0, 40):
+        pts[i] = (pts[i][0], pts[i][1] + 0.01, pts[i][2])  # more sculpting in ZBrush (one side, then mirrored below)
+    goz_back(env, identifier, encode_goz(goz.name, pts, goz.faces))
+    assert "points moved" in app.status_message and "changed in Mirai" not in app.status_message, app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    assert _unpaired(mesh) == 0
