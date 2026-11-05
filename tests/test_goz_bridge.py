@@ -456,3 +456,37 @@ def test_more_sculpting_after_a_mirrored_apply_needs_no_resend(env):
     assert "points moved" in app.status_message and "changed in Mirai" not in app.status_message, app.status_message
     assert env["bridge"].activate(row(env, APPLY_PREFIX))
     assert _unpaired(mesh) == 0
+
+
+def test_a_return_after_undo_of_an_apply_links_without_a_resend(env):
+    """Manu 2026-11-05: after Ctrl+Z of an apply the next GoZ was a conflict. Now it links to the manifest version the
+    object is back at: ZBrush's state comes back as an ordinary return, no resend."""
+    app = env["app"]
+    mesh = app.scene.edit_object.mesh
+    identifier = send(env)
+    before = positions(mesh)
+    goz_back(env, identifier, flipped(fixture("zb2022_C_move_brush.GoZ")))
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    after = positions(mesh)
+    app._undo_redo(commands.UNDO)
+    assert positions(mesh) == before
+    goz_back(env, identifier, flipped(fixture("zb2022_C_move_brush.GoZ")))
+    assert "101 of 326 points moved" in app.status_message, app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX)) and positions(mesh) == after
+    goz_back(env, identifier, flipped(fixture("zb2022_C_move_brush.GoZ")))
+    assert "no point moved" in app.status_message
+    vid = mesh.all_vertex_ids()[0]
+    app.apply_mesh_change("nudge", lambda: mesh.set_vertex_position(vid, (9.0, 9.0, 9.0)) or {vid})
+    goz_back(env, identifier, flipped(fixture("zb2022_C_move_brush.GoZ")))
+    assert "changed in Mirai since the send" in app.status_message  # a real Mirai edit is still a conflict
+
+
+def test_after_adding_a_return_as_new_object_the_status_says_what_send_sends(env):
+    app = env["app"]
+    identifier = send(env)
+    obj = app.scene.edit_object
+    vid = obj.mesh.all_vertex_ids()[0]
+    app.apply_mesh_change("nudge", lambda: obj.mesh.set_vertex_position(vid, (9.0, 9.0, 9.0)) or {vid})
+    goz_back(env, identifier, flipped(fixture("zb2022_C_move_brush.GoZ")))
+    assert env["bridge"].activate(row(env, NEW_OBJECT_PREFIX))
+    assert "it is selected now" in app.status_message and "leave mode 4" in app.status_message

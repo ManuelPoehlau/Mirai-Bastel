@@ -128,7 +128,9 @@ class ZBrushBridge:
         self._last_poll = float("-inf")
         self.session_id = uuid.uuid4().hex
         self._identifiers: dict[ObjectId, str] = {}
-        self._manifests: dict[str, Manifest] = {}
+        #: per identifier the manifest versions of this session, oldest first: the send, then one per applied return,
+        #: so a return after an Undo of an apply links to the version the object is back at (no resend needed)
+        self._manifests: dict[str, list[Manifest]] = {}
         self.waiting: list[Waiting] = []
         self._rows: dict[str, tuple[str, Waiting]] = {}
 
@@ -229,7 +231,7 @@ class ZBrushBridge:
             app.set_status(f"ZBrush: {exc}")
             return False
         self._identifiers[obj.id] = identifier
-        self._manifests[_key(identifier)] = manifest
+        self._manifests[_key(identifier)] = [manifest]  # a send starts the history anew
         app.set_status(f"ZBrush: {obj.name!r} sent ({len(manifest.vertex_ids)} points)")
         return True
 
@@ -265,17 +267,29 @@ class ZBrushBridge:
             self.app.set_status(f"ZBrush: return failed: {type(exc).__name__}: {exc}")
         return arrived
 
-    def _manifest_for(self, identifier: str) -> Optional[Manifest]:
+    def _manifests_for(self, identifier: str) -> list[Manifest]:
         known = self._manifests.get(_key(identifier))
-        if known is not None:
+        if known:
             return known
-        text = read_manifest_text(self.manifest_dir, identifier)
+        text = read_manifest_text(self.manifest_dir, identifier)  # D11: a ticket from before this Mirai started
         if text is None:
-            return None
+            return []
         try:
-            return Manifest.from_json(text)
+            return [Manifest.from_json(text)]
         except (ValueError, TypeError):
-            return None
+            return []
+
+    def _plan_linked(self, identifier: str, goz: GozMesh) -> tuple[ReturnPlan, Optional[Manifest]]:
+        """The plan against the newest manifest version the object still matches (after an Undo of an apply: the one
+        before it); a conflict only if it matches none."""
+        versions = self._manifests_for(identifier)
+        first: Optional[tuple[ReturnPlan, Optional[Manifest]]] = None
+        for manifest in reversed(versions):
+            plan = self.plan(identifier, goz, manifest)
+            if plan.kind is not ReturnKind.CONFLICT:
+                return plan, manifest
+            first = first or (plan, manifest)
+        return first or (self.plan(identifier, goz, None), None)
 
     def plan(self, identifier: str, goz: GozMesh, manifest: Optional[Manifest]) -> ReturnPlan:
         to_world, to_object = _placement()
@@ -288,8 +302,7 @@ class ZBrushBridge:
         )
 
     def _arrive(self, identifier: str, goz: GozMesh) -> None:
-        manifest = self._manifest_for(identifier)
-        plan = self.plan(identifier, goz, manifest)
+        plan, manifest = self._plan_linked(identifier, goz)
         self.waiting = [w for w in self.waiting if not same_identifier(w.identifier, identifier)]  # newer supersedes
         if plan.in_place or plan.new_object:
             w = Waiting(identifier, goz, manifest, plan)
@@ -300,7 +313,7 @@ class ZBrushBridge:
             self.app.set_status(plan.summary())
 
     def confirm(self, w: Waiting) -> bool:
-        plan = self.plan(w.identifier, w.goz, w.manifest)
+        plan, manifest = self._plan_linked(w.identifier, w.goz)
         if plan.kind is not w.plan.kind:
             # the scene changed since the arrival: show the new verdict, apply nothing (the artist confirms again)
             w.plan = plan
@@ -311,8 +324,11 @@ class ZBrushBridge:
         done = self.app.apply_goz_return(plan)
         if done:
             self._forget(w)
-            if plan.in_place and w.manifest is not None:
-                self._rebase(w.manifest, plan.object_id, plan.goz.points)
+            if plan.in_place and manifest is not None:
+                self._rebase(manifest, plan.object_id, plan.goz.points)
+            if plan.new_object:
+                self.app.set_status(f"{self.app.status_message} - it is selected now: {SEND_LABEL!r} sends it "
+                                    "(leave mode 4 to send the edit object)")
         return done
 
     def _rebase(self, manifest: Manifest, object_id, zbrush_points) -> None:
@@ -321,7 +337,9 @@ class ZBrushBridge:
             return
         to_world, _ = _placement()
         rebased = rebase_manifest(manifest, self.app.scene, obj, to_world, zbrush_points)
-        self._manifests[_key(manifest.identifier)] = rebased
+        versions = self._manifests.setdefault(_key(manifest.identifier), [])
+        versions.append(rebased)
+        del versions[:-32]
         try:
             write_manifest(self.manifest_dir, manifest.identifier, rebased.to_json())
         except OSError:

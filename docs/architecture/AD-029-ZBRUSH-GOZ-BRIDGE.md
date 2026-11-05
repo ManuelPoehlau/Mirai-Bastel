@@ -79,7 +79,11 @@ fingerprint (E1 §8.1): topology hash (IDs + boundaries incl. rotation), float64
 pivot, state), every point layer's meta and values hash (morph targets and weights), the rig hash. The link holds when
 the session is the same, or the current scene file is the one sent from (D11: a later Mirai start) and the object
 exists. After an applied return the manifest takes the new fingerprint, so further sculpting without a resend plans
-against the applied state; after an Undo of it the next return is a conflict (fail-closed).
+against the applied state. The session keeps every manifest version of an identifier (the send, then one per
+applied return, at most 32): a return is planned against the newest version the object still matches, so after
+**Ctrl+Z of an apply** the next GoZ links to the version before it and is offered again without a resend (Manu,
+2026-11-05: it used to be a conflict). Only a real Mirai edit since then is a conflict. A ticket from before this
+Mirai started has only the newest version (on disk).
 
 ## 6. Plan kinds (`bridge.ReturnKind`) and the apply
 
