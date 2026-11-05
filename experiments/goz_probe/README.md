@@ -391,6 +391,7 @@ Then stop at that step. The rest depends on it.
 | M3 | ~~Confirm this procedure~~ — confirmed 2026-11-05; tools written and container-tested (§5.1) | done |
 | D11 | When ZBrush sends to Mirai while Mirai is **not** running: start Mirai, or leave the ticket until Mirai is started? (Proposal: leave the ticket in v1; the SDK expects a start) | workflow decision |
 | D12 | Final GoZ app id/name for P1 (proposal: folder `Mirai`, `NAME = "Mirai"`) | shows in ZBrush's GoZ list |
+| D13 | A return from a SubTool that was divided in ZBrush (T7: every point becomes its Catmull-Clark vertex point): refuse it in place with a status line (proposal), or offer it as a new object? Divide plus sculpt cannot be told apart from a real edit by geometry alone. | found by T7, 2026-11-05 |
 
 Not needed from Manu: any Maxon download (§4), any decision on technical approaches inside E1.
 
