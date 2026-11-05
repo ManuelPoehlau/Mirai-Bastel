@@ -6,7 +6,9 @@
 `--mesh`: the identifier comes from `GoZMakeObjectPath.exe` (the short name `E1_<id>` written to
 `GoZBrush\\GoZ_ObjectPath.txt`, the tool writes the unique identifier back), unless an earlier send of the same mesh
 already has one (then it is reused, so ZBrush updates the linked SubTool, as the SDK asks; `--new-identifier` forces a
-new one). The file is MESH + FLAGS 0 + float32 points + FACE4 format 1 + END. Then `GoZ_ObjectList.txt`,
+new one). The file (`--style`): "sdk" = MESH `E1_A` + FLAGS 0 + float32 points + FACE4 format 1 + END; "gozmesh" = the
+same named `GoZMesh_E1_A`; "zbrush" = ZBrush's own byte layout (its header text, the prefix, and its default MRGB /
+MASK16 / GROUPS / CREASE blocks; reproduces a ZBrush 2022.0.8 file byte for byte). Then `GoZ_ObjectList.txt`,
 `GoZ_Application.txt` (= `MiraiProbe`, before/after logged; `--keep-application` leaves it) and
 `GoZBrushFromApp.exe -tmap` (the official demo's call; `--no-tmap` without the argument).
 `--resend`: refuses when ZBrush's file changed since the capture (`--force` overrides).
@@ -29,7 +31,7 @@ import json  # noqa: E402
 import subprocess  # noqa: E402
 import time  # noqa: E402
 
-from goz_probe.goz_probe_format import as_float32, encode_goz, parse_goz  # noqa: E402
+from goz_probe.goz_probe_format import STYLES, as_float32, encode_goz, parse_goz  # noqa: E402
 from goz_probe.probe_common import (  # noqa: E402
     APP_FOLDER_NAME,
     DEFAULT_CAPTURES,
@@ -101,9 +103,9 @@ def prepare_mesh(args, paths: GozPaths, steps: Steps) -> tuple[list[str], dict]:
         steps.add("reusing the identifier of an earlier send", identifier=identifier)
     else:
         identifier = make_object_path(paths, short, steps, dry_run=args.dry_run, timeout=args.wait_objectpath)
-    name = f"GoZMesh_{short}" if args.name_style == "gozmesh" else short
     points = [[as_float32(c) for c in p] for p in sent["positions"]]
-    data = encode_goz(name, points, sent["faces"])
+    data = encode_goz(short, points, sent["faces"], style=args.style)
+    name = parse_goz(data).name
     parse_goz(data)  # our own file must pass our strict reader
     target = Path(identifier + ".GoZ")
     write_bytes_atomic(target, data)
@@ -171,7 +173,7 @@ def send(args) -> Path:
         except subprocess.TimeoutExpired:
             steps.add(f"GoZBrushFromApp still running after {args.wait_fromapp:g} s (left alone)")
     cap = new_capture_dir(args.captures, f"send_{what}")
-    write_json_atomic(cap / "send_log.json", redact({**info, "dry_run": args.dry_run, "name_style": args.name_style,
+    write_json_atomic(cap / "send_log.json", redact({**info, "dry_run": args.dry_run, "style": args.style,
                                                     "command": command, "steps": steps.items}))
     print(f"send log: {cap / 'send_log.json'}")
     return cap
@@ -185,8 +187,8 @@ def main(argv=None) -> int:
     parser.add_argument("--root")
     parser.add_argument("--meshes", type=Path, default=DEFAULT_MESHES)
     parser.add_argument("--captures", type=Path, default=DEFAULT_CAPTURES)
-    parser.add_argument("--name-style", choices=("plain", "gozmesh"), default="plain",
-                        help="mesh name in the file: E1_A, or GoZMesh_E1_A as GoB writes it")
+    parser.add_argument("--style", choices=STYLES, default="sdk",
+                        help="sdk: the SDK's minimal file; gozmesh: + name prefix GoZMesh_; zbrush: ZBrush's own layout")
     parser.add_argument("--new-identifier", action="store_true")
     parser.add_argument("--keep-application", action="store_true")
     parser.add_argument("--no-tmap", action="store_true")

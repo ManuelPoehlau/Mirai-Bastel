@@ -266,15 +266,32 @@ def _string_payload(text: str) -> bytes:
     return raw + b"\0" * (-len(raw) % 4)
 
 
+#: The 32-byte header ZBrush 2022.0.8 writes (observed in the E1 captures, 2026-11-05).
+ZBRUSH_HEADER = b"GoZb 1.0 ZBrush GoZ Binary......"
+#: What ZBrush 2022.0.8 writes for an untouched mesh (observed): white polypaint with material byte 1, nothing masked,
+#: polygroup 0, no creases.
+ZBRUSH_DEFAULT_MRGB = b"\xff\xff\xff\x01"
+ZBRUSH_DEFAULT_MASK16 = b"\xff\xff"
+
+#: Writer styles (README §6 T5): "sdk" = the SDK's minimal file; "gozmesh" = the same with the name prefixed
+#: `GoZMesh_` as ZBrush writes it; "zbrush" = byte layout of ZBrush's own files: its header text, the prefix, and the
+#: MRGB / MASK16 / GROUPS / CREASE blocks with ZBrush's default values, in ZBrush's order.
+STYLES = ("sdk", "gozmesh", "zbrush")
+
+
 def encode_goz(
     name: str,
     points: Sequence[Sequence[float]],
     faces: Sequence[Sequence[int]],
     *,
     flags: int = 0,
+    style: str = "sdk",
     header_text: bytes = PROBE_HEADER_TEXT,
 ) -> bytes:
-    """MESH, FLAGS, POINT_LIST (float32), FACE4_LIST_FORMAT_1, END - the SDK's minimal valid file."""
+    """MESH, FLAGS, POINT_LIST (float32), FACE4_LIST_FORMAT_1, (ZBrush's default attribute blocks), END.
+    `name` is used as given for "sdk"; "gozmesh" and "zbrush" add the `GoZMesh_` prefix unless it is there."""
+    if style not in STYLES:
+        raise ValueError(f"unknown style {style!r}")
     n = len(points)
     face_values: list[int] = []
     for i, face in enumerate(faces):
@@ -286,19 +303,30 @@ def encode_goz(
         face_values.extend(int(v) for v in face)
         if len(face) == 3:
             face_values.append(-1)
-    head = MAGIC + header_text[:27].ljust(28, b"\0")
-    head = head[:31] + b"\0"
+    if style != "sdk" and not name.startswith("GoZMesh_"):
+        name = "GoZMesh_" + name
+    if style == "zbrush":
+        head = ZBRUSH_HEADER
+    else:
+        head = MAGIC + header_text[:27].ljust(28, b"\0")
+        head = head[:31] + b"\0"
     point_payload = struct.pack(f"<{3 * n}f", *(float(c) for p in points for c in p))
-    return b"".join(
-        (
-            head,
-            _block(TAG_MESH, 1, _string_payload(name)),
-            _block(TAG_FLAGS, 1, struct.pack("<I", flags)),
-            _block(TAG_POINT_LIST, n, point_payload),
-            _block(TAG_FACE4_FORMAT_1, len(faces), struct.pack(f"<{len(face_values)}i", *face_values)),
-            BLOCK_HEADER.pack(TAG_END_OF_FILE, 0, 0, 0.0),
-        )
-    )
+    parts = [
+        head,
+        _block(TAG_MESH, 1, _string_payload(name)),
+        _block(TAG_FLAGS, 1, struct.pack("<I", flags)),
+        _block(TAG_POINT_LIST, n, point_payload),
+        _block(TAG_FACE4_FORMAT_1, len(faces), struct.pack(f"<{len(face_values)}i", *face_values)),
+    ]
+    if style == "zbrush":
+        parts += [
+            _block(TAG_MRGB_LIST, n, ZBRUSH_DEFAULT_MRGB * n),
+            _block(TAG_MASK16_LIST, n, ZBRUSH_DEFAULT_MASK16 * n),
+            _block(TAG_GROUPS_LIST, len(faces), b"\0\0" * len(faces)),
+            _block(TAG_CREASE_LIST, len(faces), b"\0" * len(faces)),
+        ]
+    parts.append(BLOCK_HEADER.pack(TAG_END_OF_FILE, 0, 0, 0.0))
+    return b"".join(parts)
 
 
 def as_float32(value: float) -> float:
