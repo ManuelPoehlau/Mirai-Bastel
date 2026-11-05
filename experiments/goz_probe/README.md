@@ -294,6 +294,19 @@ zusätzlich die Punkte aus §8.
 1. Auf `E1_C…`: `Strg+D` (eine Stufe), **GoZ** → `dump.txt`: Block 5002 und Punktzahl notieren.
 2. Auf die unterste Stufe gehen (`Shift+D`), **GoZ** → wieder notieren.
 
+### T7b / T7c — Divide ohne SMT und der Cage-Knopf (für D13, 2026-11-05, je 3 min)
+
+Beide auf einem **frisch gesendeten** Kopf, damit der Vergleich gegen `meshes/C` stimmt:
+`python -I experiments/goz_probe/probe_send.py --mesh C --axis bridge --new-identifier`.
+
+- **T7b:** *Tool → Geometry*: **SMT aus**, `Strg+D` (eine Stufe), **GoZ**. Dann auf die unterste Stufe (`Shift+D`),
+  **GoZ**. Erwartung (Hypothese): die Punkte kommen bitgleich zurück, weil ohne SMT nichts geglättet wird.
+- **T7c:** Neu senden (wie oben), **SMT an**, `Strg+D`, **GoZ** (= T7, zur Kontrolle). Dann unterste Stufe, *Tool → Geometry →*
+  **Cage**, **GoZ**. Frage: bringt Cage die gesendeten Punkte bitgleich zurück, nur auf float32 genau, oder nur ungefähr?
+
+Notieren: welche Knöpfe in welcher Reihenfolge; die Uhrzeit jedes GoZ (die `captures\<Zeit>_receive\`-Ordner werden
+danach von mir ausgewertet).
+
 ### Aufräumen
 
 `python -I experiments/goz_probe/install_probe_app.py --uninstall` entfernt nur `GoZApps\MiraiProbe\`. In ZBrush mit **R**
@@ -389,9 +402,9 @@ Then stop at that step. The rest depends on it.
 | M1 | Run §6 on the reference PC (~40 min) and return `captures/` + table §9 | ZBrush 2022.0.8 exists only there; every [PC] fact |
 | M2 | Accept that E1 writes `C:\Users\Public\Pixologic\GoZApps\MiraiProbe\` (removed with `--uninstall`) and that the install step may ask for admin rights | it is outside the repository |
 | M3 | ~~Confirm this procedure~~ — confirmed 2026-11-05; tools written and container-tested (§5.1) | done |
-| D11 | When ZBrush sends to Mirai while Mirai is **not** running: start Mirai, or leave the ticket until Mirai is started? (Proposal: leave the ticket in v1; the SDK expects a start) | workflow decision |
-| D12 | Final GoZ app id/name for P1 (proposal: folder `Mirai`, `NAME = "Mirai"`) | shows in ZBrush's GoZ list |
-| D13 | A return from a SubTool that was divided in ZBrush (T7: every point becomes its Catmull-Clark vertex point): refuse it in place with a status line (proposal), or offer it as a new object? Divide plus sculpt cannot be told apart from a real edit by geometry alone. | found by T7, 2026-11-05 |
+| D11 | When ZBrush sends to Mirai while Mirai is **not** running: start Mirai, or leave the ticket until Mirai is started? | **Decided (Manu, 2026-11-05): leave the ticket.** The helper never starts Mirai; the next Mirai start picks the waiting ticket up. |
+| D12 | Final GoZ app id/name for P1 | **Decided (Manu, 2026-11-05): folder `GoZApps\Mirai`, `NAME = "Mirai"`.** |
+| D13 | A return from a SubTool that was divided in ZBrush (T7: every point becomes its Catmull-Clark vertex point) | **Open (Manu, 2026-11-05): investigate first.** Manu: ZBrush's Divide has two variants, *SMT* on (smooth, what T7 measured) or off (subdivide without smoothing); and after a Divide with SMT on, going to the lowest level and pressing **Cage** reconstructs the unsmoothed base mesh — how exactly is to be measured. → T7b/T7c (§6). Until decided, P1 holds such a return (nothing applied, a status line names it), see audit §11. |
 
 Not needed from Manu: any Maxon download (§4), any decision on technical approaches inside E1.
 

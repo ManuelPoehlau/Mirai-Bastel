@@ -49,6 +49,13 @@ ZBrush upside down and from behind, so the bridge sends `(x, −y, −z)` and re
 det +1); P1 confirms the flipped send once. D8 (register as a GoZ app) is technically
 answered: yes.
 
+**Addendum 2026-11-05 (P1 start, Manu's decisions).** D1: a returned positions update is applied **only after the
+artist confirms** it (SPACE menu row). D11: when Mirai is not running, the helper **leaves the ticket**; Mirai never gets
+started by ZBrush. D12: GoZ app folder `GoZApps\Mirai`, `NAME = "Mirai"`. D13 (README §10): **open** — Manu points out
+ZBrush's Divide without *SMT* (no smoothing) and the **Cage** button at the lowest level after a smoothed Divide; both
+are measured first (README §6 T7b/T7c). Until then P1 holds a return that has the T7 signature (every point = the
+one-step Catmull-Clark vertex point of the sent cage): nothing applied, the status line names the reason.
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
