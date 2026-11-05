@@ -8,6 +8,14 @@ Rules (E1 README §11, audit §7):
   The manifest fingerprint makes sure the placement is still the one used at send time.
 - **Untouched points** (audit §7.3): a returned point whose float32 bits equal what was sent keeps its float64 value;
   only differing points are written, so the Undo delta holds just the moved points.
+- **Mirror pairs** (Manu 2026-11-05): ZBrush's Smooth with X symmetry is not exactly symmetric (measured: 76 of 145
+  head pairs off by up to 0.0102 = 0.2 % of the head, 13 of 36 seam points off the plane; Move stays bit-exact). While
+  the object's Mirai symmetry is on, every pair / seam point the return touched whose deviation is at most
+  `SYMMETRY_TOLERANCE` (1 % of the object's size) is made exact in the same Undo step: a pair gets the mean of its two
+  sides, a seam point goes onto the plane. Larger deviations stay and are reported. Mirai's own Re-Symmetrize keeps its
+  no-tolerance rule; this applies only to a ZBrush return.
+- **Last ZBrush state:** after an applied return the manifest keeps ZBrush's points, so a point ZBrush did not move
+  since then keeps Mirai's value (incl. a mirrored mean) instead of reading as moved again.
 - **Topology** must be exactly the sent one (counts, every face's corner list incl. rotation); otherwise the return can
   only become a new object. N-gons are refused at the send (D4 proposal: GoZ carries triangles and quads only).
 - **Subdivided SubTool** (D13, Manu 2026-11-05; E1 T7/T7b/T7c): a return whose every interior point equals the
@@ -38,6 +46,8 @@ Placement = Callable[[SceneObject, Position], Position]
 
 #: E1 T7: ZBrush's smoothed cage deviated from the computed vertex points by 5.4e-7 at a head of extent 5.2.
 SUBDIV_TOLERANCE = 1e-5
+#: Manu 2026-11-05: deviations up to 1 % of the object's size are made symmetric (measured ZBrush Smooth: 0.2 %).
+SYMMETRY_TOLERANCE = 0.01
 #: E1 T7c: after Cage every point differed from the sent cage by at most 4.1e-4 at extent 5.2 (7.8e-5 relative).
 CAGE_TOLERANCE = 2e-4
 #: Share of points that must have moved for the Cage warning (T7c: all 326).
@@ -49,6 +59,16 @@ def to_goz(p: Sequence[float]) -> Position:
 
 
 from_goz = to_goz  # the map is its own inverse
+
+
+@dataclass(frozen=True)
+class SymmetryInfo:
+    """The object's mirror pairs and seam points as Mirai sees them before the return (`mirai.symmetry`), and its
+    mirror map; passed in by the window glue so this module stays core-only."""
+
+    pairs: tuple[tuple[VertexId, VertexId], ...]
+    seam: tuple[VertexId, ...]
+    mirror: Callable[[Position], Position]
 
 
 class SendRefused(ValueError):
@@ -214,6 +234,7 @@ def plan_return(
     scene_path: Optional[str],
     to_world: Placement,
     to_object: Placement,
+    symmetry: Optional[SymmetryInfo] = None,
 ) -> ReturnPlan:
     subtool = goz.name[len("GoZMesh_"):] if goz.name.startswith("GoZMesh_") else goz.name
     if manifest is None:
@@ -241,29 +262,89 @@ def plan_return(
         return plan(ReturnKind.CONFLICT, f"{obj.name!r} changed in Mirai since the send ({', '.join(differences)}) - "
                     "only as a new object", object_id=obj.id)
     returned = goz.points
-    if looks_subdivided(sent, returned, manifest.faces):
+    last = [tuple(p) for p in manifest.zbrush_points] if manifest.zbrush_points is not None else sent
+    if looks_subdivided(last, returned, manifest.faces):
         return plan(ReturnKind.SUBDIVIDED, "looks divided in ZBrush with SMT on (every point smoothed by one "
                     "subdivision step) - held, nothing applied; in ZBrush: lowest level > Cage, or Divide with SMT off, "
                     "then GoZ again", object_id=obj.id)
     positions: dict[VertexId, Position] = {}
     largest = 0.0
-    for i, (r, s) in enumerate(zip(returned, sent)):
+    for i, (r, s) in enumerate(zip(returned, last)):
         if r != s:
             positions[manifest.vertex_id(i)] = to_object(obj, from_goz(r))
             largest = max(largest, max(abs(a - b) for a, b in zip(r, s)))
     if not positions:
         return plan(ReturnKind.UNCHANGED, "no point moved", object_id=obj.id)
     notes = []
+    moved_by_zbrush = len(positions)
     cage_like = len(positions) >= CAGE_MOVED_SHARE * len(sent) and largest <= CAGE_TOLERANCE * _extent(sent)
     if cage_like:
         notes.append(f"looks like ZBrush's Cage reconstruction, not a sculpt: every point moved by at most {largest:.2g}"
                      " - exact symmetry pairs may break (Re-Symmetrize)")
     mesh = obj.mesh
+    if symmetry is not None:
+        notes.extend(symmetrize_positions(positions, mesh, symmetry))
     targets = sum(1 for lid in mesh.point_layer_ids() if mesh.point_layer_info(lid).kind is LayerKind.VECTOR)
     if targets:
         notes.append(f"{targets} morph target{'s' if targets != 1 else ''} follow the new base")
-    return plan(ReturnKind.POSITIONS, f"{len(positions)} of {len(sent)} points moved", object_id=obj.id,
+    return plan(ReturnKind.POSITIONS, f"{moved_by_zbrush} of {len(sent)} points moved", object_id=obj.id,
                 positions=positions, notes=notes, cage_like=cage_like)
+
+
+def _mid(a: Position, b: Position) -> Position:
+    return tuple((x + y) * 0.5 for x, y in zip(a, b))
+
+
+def _gap(a: Position, b: Position) -> float:
+    return max(abs(x - y) for x, y in zip(a, b))
+
+
+def symmetrize_positions(positions: dict[VertexId, Position], mesh: Mesh, symmetry: SymmetryInfo) -> list[str]:
+    """Makes the pairs and seam points this return touched exact again, within `SYMMETRY_TOLERANCE` of the object's
+    size (see module). Changes `positions` in place (a partner ZBrush left alone is added); returns the status notes."""
+    current = mesh.vertex_position
+    tol = SYMMETRY_TOLERANCE * _extent([current(v) for v in mesh.all_vertex_ids()])
+    mirror = symmetry.mirror
+    fixed_pairs = fixed_seam = 0
+    largest = 0.0
+    left_pairs = left_seam = 0
+    for a, b in symmetry.pairs:
+        if a not in positions and b not in positions:
+            continue
+        pa, pb = positions.get(a, current(a)), positions.get(b, current(b))
+        target = mirror(pb)
+        gap = _gap(pa, target)
+        if gap == 0.0:
+            continue
+        if gap > tol:
+            left_pairs += 1
+            continue
+        new_a = _mid(pa, target)
+        positions[a], positions[b] = new_a, mirror(new_a)
+        fixed_pairs += 1
+        largest = max(largest, gap)
+    for v in symmetry.seam:
+        if v not in positions:
+            continue
+        p = positions[v]
+        on_plane = _mid(p, mirror(p))
+        gap = _gap(p, on_plane)
+        if gap == 0.0:
+            continue
+        if gap > tol:
+            left_seam += 1
+            continue
+        positions[v] = on_plane
+        fixed_seam += 1
+        largest = max(largest, gap)
+    notes = []
+    if fixed_pairs or fixed_seam:
+        notes.append(f"symmetry made exact: {fixed_pairs} mirror pairs, {fixed_seam} seam points "
+                     f"(ZBrush deviation up to {largest:.2g})")
+    if left_pairs or left_seam:
+        notes.append(f"{left_pairs} pairs / {left_seam} seam points stay asymmetric (more than 1 % of the size) - "
+                     "Re-Symmetrize")
+    return notes
 
 
 def mesh_from_goz(goz: GozMesh) -> Mesh:
@@ -275,10 +356,12 @@ def mesh_from_goz(goz: GozMesh) -> Mesh:
     return mesh
 
 
-def rebase_manifest(manifest: Manifest, scene: Scene, obj: SceneObject, to_world: Placement) -> Manifest:
+def rebase_manifest(manifest: Manifest, scene: Scene, obj: SceneObject, to_world: Placement,
+                    zbrush_points: Optional[Sequence[Position]] = None) -> Manifest:
     """After an applied return Mirai and ZBrush hold the same shape: the manifest takes the object's new fingerprint,
     so the next GoZ of the same SubTool (more sculpting, no resend) plans against it instead of reading as a conflict.
     An Undo of the apply makes Mirai differ again - that next return is then a conflict (fail-closed)."""
     from dataclasses import replace
 
-    return replace(manifest, fingerprint=fingerprint(scene, obj), sent_float32=float32_hash(sent_points(obj, to_world)))
+    return replace(manifest, fingerprint=fingerprint(scene, obj), sent_float32=float32_hash(sent_points(obj, to_world)),
+                   zbrush_points=None if zbrush_points is None else [list(p) for p in zbrush_points])

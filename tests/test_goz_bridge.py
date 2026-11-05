@@ -362,3 +362,77 @@ def test_no_send_until_zbrush_knows_mirai(env):
     assert paths.application_file.read_text() == "MiraiProbe" and not paths.object_list.exists()
     (paths.app_dir / "GoZ_Config.txt").write_text('PATH = "C:/Mirai.cmd"\r\n')  # ZBrush: restarted, R > Mirai
     assert env["bridge"].activate(SEND_LABEL) and paths.application_file.read_text() == "Mirai"
+
+
+def _unpaired(mesh) -> int:
+    from mirai.symmetry import CorrespondenceState, vertex_correspondence
+
+    return sum(1 for c in vertex_correspondence(mesh).values() if c.state is CorrespondenceState.UNPAIRED)
+
+
+def _sym_x(env):
+    from mirai.symmetry_axis import set_symmetry_axis
+
+    mesh = env["app"].scene.edit_object.mesh
+    set_symmetry_axis(mesh, "X")
+    assert _unpaired(mesh) == 0
+    return mesh
+
+
+def test_zbrush_smooth_asymmetry_is_made_exact_while_mirai_symmetry_is_on(env):
+    """Manu 2026-11-05: ZBrush's Smooth with X symmetry breaks 76 of 145 pairs by up to 0.0102 (0.2 %); with Mirai's
+    symmetry on the return comes back exactly symmetric, in the same Undo step."""
+    app = env["app"]
+    mesh = _sym_x(env)
+    identifier = send(env)
+    goz_back(env, identifier, fixture("zb2022_P1_head_move_symx.GoZ"))
+    assert "symmetry made exact" not in app.status_message  # Move with symmetry is bit-exact already
+    assert env["bridge"].activate(row(env, APPLY_PREFIX)) and _unpaired(mesh) == 0
+    history = len(app.history)
+    goz_back(env, identifier, fixture("zb2022_P1_head_smooth_symx.GoZ"))
+    assert "symmetry made exact: 76 mirror pairs, 13 seam points" in app.status_message, app.status_message
+    before = positions(mesh)
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    assert _unpaired(mesh) == 0 and len(app.history) == history + 1
+    smooth = parse_goz(fixture("zb2022_P1_head_smooth_symx.GoZ")).points
+    vids = mesh.all_vertex_ids()
+    worst = max(max(abs(a - b) for a, b in zip(mesh.vertex_position(v), (p[0], -p[1], -p[2])))
+                for v, p in zip(vids, smooth))
+    assert 0 < worst <= 0.0102 / 2 + 1e-9  # each side moves by half the gap at most
+    app._undo_redo(commands.UNDO)
+    assert positions(mesh) == before
+    app._undo_redo(commands.REDO)
+    goz_back(env, identifier, fixture("zb2022_P1_head_smooth_symx.GoZ"))  # the same ZBrush state again
+    assert "no point moved" in app.status_message  # the mirrored means are kept, not re-read as moves
+
+
+def test_without_mirai_symmetry_the_return_is_taken_as_zbrush_sends_it(env):
+    app = env["app"]
+    from mirai.symmetry_axis import set_symmetry_axis
+
+    mesh = _sym_x(env)
+    set_symmetry_axis(mesh, None)
+    identifier = send(env)
+    goz_back(env, identifier, fixture("zb2022_P1_head_smooth_symx.GoZ"))
+    assert "symmetry made exact" not in app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    smooth = parse_goz(fixture("zb2022_P1_head_smooth_symx.GoZ")).points
+    vids = mesh.all_vertex_ids()
+    moved = [v for v, p in zip(vids, smooth) if tuple(as_float32(c) for c in mesh.vertex_position(v)) != tuple(as_float32(c) for c in (p[0], -p[1], -p[2]))]
+    assert moved == []  # every point exactly ZBrush's value (or untouched)
+
+
+def test_asymmetry_beyond_one_percent_stays_and_is_reported(env):
+    app = env["app"]
+    mesh = _sym_x(env)
+    identifier = send(env)
+    goz = parse_goz(fixture("zb2022_P1_head_smooth_symx.GoZ"))
+    pts = list(goz.points)
+    vids = mesh.all_vertex_ids()
+    off_plane = next(i for i, v in enumerate(vids) if mesh.vertex_position(v)[0] > 1.0)
+    pts[off_plane] = (pts[off_plane][0] + 0.2, pts[off_plane][1], pts[off_plane][2])  # 0.2 > 1 % of 5.2
+    goz_back(env, identifier, encode_goz(goz.name, pts, goz.faces))
+    assert "1 pairs / 0 seam points stay asymmetric" in app.status_message, app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    assert _unpaired(mesh) == 2
+    assert mesh.vertex_position(vids[off_plane])[0] == as_float32(pts[off_plane][0])

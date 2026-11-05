@@ -119,6 +119,8 @@ class Manifest:
     representation: str = REPRESENTATION_BASE
     axis: str = AXIS_CONVENTION
     version: int = MANIFEST_VERSION
+    #: ZBrush's points of the last applied return (GoZ frame, float32), None = as sent (bridge.rebase_manifest).
+    zbrush_points: Optional[list] = None
     extra: dict = field(default_factory=dict)
 
     def to_json(self) -> str:

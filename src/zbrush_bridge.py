@@ -38,6 +38,7 @@ from interop.goz.bridge import (
     ReturnKind,
     ReturnPlan,
     SendRefused,
+    SymmetryInfo,
     build_send,
     invalid_plan,
     plan_return,
@@ -79,6 +80,24 @@ class Waiting:
     @property
     def tag(self) -> str:
         return f"{self.plan.label} · {self.identifier.replace(chr(92), '/').rsplit('/', 1)[-1]}"
+
+
+def symmetry_info(mesh) -> Optional[SymmetryInfo]:
+    """The mesh's mirror pairs and seam points by Mirai's exact rule (`mirai.symmetry.vertex_correspondence`), or None
+    while its symmetry is off (then a return comes exactly as ZBrush sends it; Manu 2026-11-05)."""
+    from mirai.symmetry import CorrespondenceState, mirror_position, vertex_correspondence
+
+    definition = mesh.symmetry_definition
+    if definition is None:
+        return None
+    pairs, seam = [], []
+    for vid, corr in vertex_correspondence(mesh).items():
+        if corr.state is CorrespondenceState.SEAM:
+            seam.append(vid)
+        elif corr.state is CorrespondenceState.PAIRED and vid < corr.partner:
+            pairs.append((vid, corr.partner))
+    point, normal = definition.plane_point, definition.plane_normal
+    return SymmetryInfo(tuple(pairs), tuple(seam), lambda p: mirror_position(p, point, normal))
 
 
 def _placement():
@@ -261,10 +280,11 @@ class ZBrushBridge:
     def plan(self, identifier: str, goz: GozMesh, manifest: Optional[Manifest]) -> ReturnPlan:
         to_world, to_object = _placement()
         scene_path = self._scene_path()
+        obj = None if manifest is None else self.app.scene.objects.get(ObjectId(manifest.object_id))
         return plan_return(
             goz, manifest, self.app.scene, identifier=identifier, session_id=self.session_id,
             scene_path=None if scene_path is None else str(Path(scene_path).resolve()),
-            to_world=to_world, to_object=to_object,
+            to_world=to_world, to_object=to_object, symmetry=None if obj is None else symmetry_info(obj.mesh),
         )
 
     def _arrive(self, identifier: str, goz: GozMesh) -> None:
@@ -292,15 +312,15 @@ class ZBrushBridge:
         if done:
             self._forget(w)
             if plan.in_place and w.manifest is not None:
-                self._rebase(w.manifest, plan.object_id)
+                self._rebase(w.manifest, plan.object_id, plan.goz.points)
         return done
 
-    def _rebase(self, manifest: Manifest, object_id) -> None:
+    def _rebase(self, manifest: Manifest, object_id, zbrush_points) -> None:
         obj = self.app.scene.objects.get(object_id)
         if obj is None:
             return
         to_world, _ = _placement()
-        rebased = rebase_manifest(manifest, self.app.scene, obj, to_world)
+        rebased = rebase_manifest(manifest, self.app.scene, obj, to_world, zbrush_points)
         self._manifests[_key(manifest.identifier)] = rebased
         try:
             write_manifest(self.manifest_dir, manifest.identifier, rebased.to_json())

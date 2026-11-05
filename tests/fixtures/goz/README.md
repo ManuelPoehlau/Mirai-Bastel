@@ -2,7 +2,7 @@
 
 Byte copies of files ZBrush wrote in the E1 run (`experiments/goz_probe/README.md` §10a); copied here so the
 Production tests do not depend on the experiment folder (AGENTS.md §8a: nothing in `tests/` reads `experiments/`).
-E1 sent the meshes in Mirai's raw frame; the tests flip them to the bridge's `(x, −y, −z)` (exact in float32), which is
+The `zb2022_P1_*` files came through P1 and are already in the bridge frame. E1 sent the other meshes in Mirai's raw frame; the tests flip them to the bridge's `(x, −y, −z)` (exact in float32), which is
 what ZBrush returns for a flipped send (E1 T5.2: ZBrush's GoZ round trip is the identity).
 
 | File | Source capture | Content |
@@ -13,4 +13,6 @@ what ZBrush returns for a flipped send (E1 T5.2: ZBrush's GoZ round trip is the 
 | `zb2022_C_divided_once.GoZ` | `20261105-181407_335_receive` | head divided once (SMT on): base topology, every point = its one-step Catmull-Clark vertex point |
 | `zb2022_C_divided_no_smt.GoZ` | `20261105-185718_469_receive` | T7b: head divided once with SMT off: bit-identical |
 | `zb2022_C_cage.GoZ` | `20261105-185830_405_receive` | T7c: divided with SMT on, lowest level, Cage: every point moved by ≤ 4.1e-4 |
+| `zb2022_P1_head_move_symx.GoZ` | `ticket_01793909441692885900_16724` (P1, bridge frame) | head sent by P1, Move brush with ZBrush X symmetry: all 145 mirror pairs bit-exact |
+| `zb2022_P1_head_smooth_symx.GoZ` | `ticket_01793909578397887700_19924` (P1, bridge frame) | then Smooth brush with X symmetry: 76 of 145 pairs off by up to 0.0102, 13 of 36 seam points off the plane |
 | `zb2022_A_obj_import.GoZ` | E1 T2 (`experiments/goz_probe/tests/fixtures`) | ZBrush's own file of an OBJ-imported tripod: MRGB / MASK16 / GROUPS / CREASE blocks |

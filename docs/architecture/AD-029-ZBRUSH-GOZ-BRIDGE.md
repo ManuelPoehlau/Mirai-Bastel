@@ -93,6 +93,17 @@ against the applied state; after an Undo of it the next return is a conflict (fa
 | `UNKNOWN_OBJECT` | no manifest, another session without the same scene file, the object gone | „ZBrush als neues Objekt“ |
 | invalid | ticket says incomplete, hash or parse fails | status only |
 
+**Mirror symmetry** (Manu, 2026-11-05): ZBrush's Smooth brush with X symmetry is not exactly symmetric — on the head
+76 of 145 mirror pairs came back off by up to 0.0102 (0.2 % of its size) and 13 of 36 seam points off the plane, while
+the Move brush stays bit-exact (captures `tests/fixtures/goz/zb2022_P1_*`). Mirai pairs points only by exact mirrored
+position, so they showed as unpaired. While the object's Mirai symmetry is on, every pair or seam point a return
+touched whose deviation is at most **1 % of the object's size** is made exact inside the same Undo step: a pair gets
+the mean of its two sides, a seam point goes onto the plane (`bridge.symmetrize_positions`; pairs and the mirror map
+come from `mirai.symmetry` through the glue). Larger deviations stay and are reported. With Mirai's symmetry off a
+return is taken exactly as ZBrush sends it. Mirai's own Re-Symmetrize is unchanged (exact, no tolerance).
+After an applied return the manifest keeps ZBrush's points (`zbrush_points`), so a point ZBrush did not move since
+then keeps Mirai's value — including a mirrored mean — instead of reading as moved again.
+
 Untouched-point rule (audit §7.3): a returned point equal to the sent float32 bits keeps its float64; a moved one is
 `to_object(from_goz(p))`. The plan is computed again at the confirm; if its kind changed since the arrival, nothing is
 applied and the new verdict is shown. `apply_goz_return` refuses (status, nothing changed, the row stays) during an
@@ -114,6 +125,7 @@ the name `<name> ZBrush`, and the usual Add-object Undo step.
 | D9 | key | none; menu rows only, a key after "Taste passt" |
 | D11 | Mirai not running | **Manu 2026-11-05: the ticket waits** |
 | D12 | app name | **Manu 2026-11-05: `GoZApps\Mirai`, `NAME = "Mirai"`** |
+| Sym | ZBrush returns with small mirror deviations | **Manu 2026-11-05:** made exact automatically, threshold 1 % of the size, only while Mirai's symmetry is on |
 | D13 | a return from a divided SubTool | **Manu 2026-11-05 (after T7b/T7c):** smoothed (SMT, no Cage) → held with a hint; Cage → appliable with a warning; without SMT → bit-identical, nothing special |
 
 ## 8. Verification
