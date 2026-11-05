@@ -1,6 +1,6 @@
 # E1 — GoZ handshake probe (ZBrush 2022.0.8 ↔ Python)
 
-**Status:** READY TO RUN (2026-11-05), not run on the reference PC. Approved by Manu (audit D10, commit `882b208`);
+**Status:** DONE (2026-11-05, run on the reference PC; result §11). Was: ready to run, Approved by Manu (audit D10, commit `882b208`);
 procedure confirmed by Manu 2026-11-05. The probe tools of §5 are written and tested headlessly in the container (§5.1).
 Their Windows-only parts are reviewed but untested until the run.
 **Type:** isolated experiment for one material uncertainty (AGENTS.md §7a): does GoZ in ZBrush 2022.0.8 behave as the
@@ -396,7 +396,7 @@ Not needed from Manu: any Maxon download (§4), any decision on technical approa
 
 ---
 
-## 10a. Interim observations (reference PC, 2026-11-05, captures on `main` `00423e2`)
+## 10a. Observations (reference PC, 2026-11-05, captures on `main` up to `e9e50bb`)
 
 | # | Observation | Source |
 |---|---|---|
@@ -408,16 +408,36 @@ Not needed from Manu: any Maxon download (§4), any decision on technical approa
 | T3 | Every GoZ press started `Edit.bat`; the running listener got a ticket each time 1.06–1.25 s after the receiver started (1 s of it is the settle time); no second listener. ("hashes NOT ok" was a probe bug, fixed in `3475d25`.) | Manu |
 | T4 | `--resend` of ZBrush's own file: the file was already byte-identical; `GoZBrushFromApp -tmap` exited 0 after 0.25 s. | `send_resend/send_log.json` |
 | T5.1 | `GoZMakeObjectPath` returned `…\Default\E1_A` in 54 ms (exit 0); `GoZBrushFromApp -tmap` exited 0 after 0.6 s. ZBrush made a **new Tool** (GoZ preference *Import as SubTool* off). | `send_A/send_log.json`, Manu |
-| T5.2 (1st try) | The GoZ that followed sent an 8-point cube named `GoZMesh_d54dgsd5gs52gsdg21456sd4g` (±1, no Mirai geometry); a second try at 12:59 sent Tool `A` from T2 again. **Root cause confirmed:** the "new Tool" of T5.1 is that placeholder cube — ZBrush did not take the `--style sdk` file (mesh name `E1_A` without `GoZMesh_` prefix). Missing MRGB/MASK16/GROUPS/CREASE were not the cause. | receive dumps 12:53, 12:59 |
-| T5.2 (`--style gozmesh`) | **`GoZMesh_` prefix was the only required change.** `--style gozmesh` (name `GoZMesh_E1_A`, same minimal block layout — no MRGB/MASK16/GROUPS/CREASE) produced the actual tripod as a new Tool. `--style zbrush` not needed. Round trip: `x_goz = x`, `y_goz = y`, `z_goz = z` (identity, residual 0, Maßstab 1). **Rundreise unverändert: Punkte bitgleich (float32), Flächen gleich.** | `send_A/send_log.json` 13:15; receive dump 13:16; Manu |
-| T5.2 | **Orientation, GoZ send path vs OBJ path:** Tool E1_A (GoZ, FLAGS=0) is rotated 180° about X relative to Tool A (OBJ import). ZBrush applies the 180°-X-through-bbox-centre transform at OBJ import time; the GoZ path passes coordinates through unchanged (FLAGS=0, no `GoZ_Info.txt` flip flags set). **For P1:** the bridge must set `EXPORT_FLIP_Y=1, EXPORT_FLIP_Z=1` in `GoZ_Info.txt` (or flip in the file) so ZBrush displays the sent mesh in the same orientation as an OBJ import. E1-Q6 answered for the send direction. | T2 and T5.2 dumps compared |
-| T2.3 open → closed | The T2.3 offset question ("does the offset depend on the object or on ZBrush's stored position?") is answered by T5.2: ZBrush's OBJ importer stores the 180°-X rotation internally; the offset is `ymin+ymax` / `zmin+zmax` of the mesh (bbox-centre reflection), not a separate stored position. With GoZ (FLAGS=0) the offset is 0. | T5.2 dump |
+| T5.2 (`-tmap` phase, 12:41–16:54) | About 30 `probe_send` runs with `GoZBrushFromApp.exe -tmap` (styles sdk, gozmesh, zbrush; meshes A, B, C) mostly brought an 8-point placeholder cube (`GoZMesh_d54dgsd5gs52gsdg21456sd4g`, later `…4g1`) or the Tool active in ZBrush back, not the sent mesh. One exception: 13:15 `--style gozmesh` → 13:16 `E1_A` returned bit-identical. | send logs, receive dumps 12:48–13:56 |
+| T5.2 (no `-tmap`, 16:57–17:47) | Every send without `-tmap` worked, with `--style sdk` **and** `--style gozmesh` (Manu: both work). **Cause: the `-tmap` argument**, which the probe had taken over as default from the SDK demo (`0b208e1` made it opt-in). Most plausible reading: with `-tmap` ZBrush acts on the *active* Tool (the demo transfers texture maps), so the result depended on which Tool was active — hence the "state" impression and the one success at 13:16. Neither the `GoZMesh_` prefix nor the extra blocks are required (an earlier entry here said the prefix was the cause; the later captures refute it). | send logs 16:57–17:47; receive dumps 17:27, 17:47 |
+| T5.2 | **Python → ZBrush → Python is the identity:** A (17:27) and C (17:47, `--style sdk`) came back with `x' = x, y' = y, z' = z`, residual 0, points bit-identical (float32), face corner lists and order identical, `FLAGS` 0. | receive dumps 17:27, 17:47 |
+| T5.2 vs T2 | Consequence: OBJ path and GoZ path do **not** place a mesh alike in ZBrush. OBJ → ZBrush → GoZ gives `y' = −y + (ymin+ymax)`, `z' = −z + (zmin+zmax)` (T2, mesh A only), GoZ → ZBrush → GoZ gives the identity, so a GoZ-sent mesh sits rotated 180° about X relative to the same mesh imported as OBJ. Which of the two ZBrush shows upright, and whether the OBJ offset is always the bounding-box centre (only A was measured), is **not settled**; the `GoZ_Info.txt` flip options (`EXPORT_/IMPORT_FLIP_Y/Z`) are the SDK's mechanism for it, their exact effect is untested. → first step of P1 (§11). | T2 and T5.2 dumps |
+| T6 | Move brush on `E1_C` (17:34): counts, face lists and order unchanged; 101 points changed, 225 bit-identical. Larger edits on `E1_A` (17:29) and `E1_C1` (17:45) also kept counts and order; there the probe's axis fit fell back to the bounding box (correlation < 0.999), so it did not count points — a probe limitation, the data are in the captures. | receive dumps 17:29, 17:34, 17:45 |
+| T6 (B), T7 | Not run: B (triangles, open border) never made a successful round trip in the `-tmap` phase and was not repeated afterwards; subdivision (T7) not run. | — |
+| T2–T6 | **Complete at start in every transfer** (17 receive captures): written 359–791 ms before `Edit.bat` started, parsed completely, exclusive open ok, unchanged after 1 s. | receive logs |
+| — | `captures/20261105-161526_255_send_A/send_log.json` is not valid JSON (a diagnostic of the reverted commit `d35a8a3` wrote into it); ignore it. | — |
 | — | ZBrush's own untouched-mesh blocks: MRGB `ff ff ff 01` per vertex, MASK16 `ffff`, GROUPS 0, CREASE 0 (CREASE block size 16 + faces, not padded to 4). `encode_goz(style="zbrush")` reproduces the T2 file byte for byte (fixture `tests/fixtures/zbrush2022_0_8_obj_import_A.GoZ`). | T2 capture |
 
-## 11. After E1
+## 11. Result of E1 (2026-11-05)
 
-- Record the result here (one table: question → observed answer). Turn the captured files into fixtures for the
-  headless tests of P1. Update the audit's [PARTIALLY VERIFIED] GoZ rows that E1 settles.
-- Then P1 (audit §8.2) in `src/interop/goz/`, with the rule of §7 and the fingerprint of §8.1.
-- This folder stays as the GoZ regression reference until P1 has its own fixtures, then it is archived like the other
-  finished experiments (`experiments/README.md`).
+**Status: DONE for the handshake; two small checks moved to the start of P1.** Evidence: §10a and `captures/`.
+
+| Question | Answer | Label |
+|---|---|---|
+| E1-Q1 register Mirai as a GoZ target | **Yes.** A `GoZApps\MiraiProbe\` folder with `GoZ_Info.txt` and three `.bat` commands works; ZBrush lists it after a restart. | [PC] verified |
+| E1-Q2 how ZBrush launches the target | `Edit.bat` after every GoZ press, **no arguments**, cwd = the app folder; `Locate.bat` once (cwd app folder); `Init.bat` elevated (cwd `system32`). | [PC] verified |
+| E1-Q3 notify a running Python process | **Yes**, via helper → atomic ticket → polling listener; 1.06–1.25 s incl. 1 s settle; never a second instance. | [PC] verified |
+| E1-Q4 files complete at the launch | **Yes in all 17 transfers** (written 0.36–0.79 s before the launch). The §7 rule (strict parse + wall-clock settle + re-hash) stays, at no cost for small meshes; large meshes unmeasured. | [PC] verified for ≤ 326 points |
+| E1-Q5 GoZ root, project folder | `C:\Users\Public\Pixologic`, `GoZProjects\Default`; identifiers in ZBrush's list use forward slashes, ours backslashes — both work. | [PC] verified |
+| E1-Q6 orientation and scale | GoZ round trip is the **identity** (scale 1, no offset, `FLAGS` 0). Relative to ZBrush's OBJ import a GoZ-sent mesh is rotated 180° about X; which orientation shows upright is open. | [PC] partly |
+| E1-Q7 vertex and face order | **Preserved** both ways (A, C: identical corner lists, unchanged points bit-identical, a Move-brush edit changes only positions). Triangles (B) not round-tripped. | [PC] verified for quads |
+| E1-Q8 Python → ZBrush | **Yes** with `GoZMakeObjectPath` + `GoZBrushFromApp` **without `-tmap`**; identifiers are made unique by ZBrush (`E1_C1`); `--style sdk` suffices. A send arrives as a new Tool while *Import as SubTool* is off. | [PC] verified |
+| E1-Q9 subdivision | Not run. | open |
+
+**Carried into P1** (do first, small, on the reference PC):
+1. Orientation: send A with `(x, −y, −z)` and without, next to the OBJ import; choose the one that shows upright and record it (or the `GoZ_Info.txt` flip option that does it).
+2. Mesh B (triangles, open border) round trip once; optionally T7 (subdivision record and which level GoZ sends).
+
+**Rules for P1 that E1 established:** never call `GoZBrushFromApp` with `-tmap` for a mesh send; never rewrite the artist's ZBrush GoZ preferences (*Import as SubTool*); identity through `GoZMakeObjectPath` identifiers plus the manifest fingerprint (§8.1), because ZBrush can return a different object under a known name (the `-tmap` phase did exactly that); write `--style sdk` or `gozmesh` (both accepted; `zbrush` is byte-identical to ZBrush's own files if ever needed); keep the §7 completeness rule.
+
+Then P1 (audit §8.2) in `src/interop/goz/`. This folder stays as the GoZ reference (captures as fixtures) until P1 has its own, then it is archived like the other finished experiments (`experiments/README.md`).

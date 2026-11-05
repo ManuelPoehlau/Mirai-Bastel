@@ -36,6 +36,15 @@ Mirai needs a small helper (§4). (4) The two-poll file-stability rule of §7.6 
 (5) The return-conflict fingerprint of §7.1 is extended there (§8.1: placement, morph representation, layer identity).
 §3.1's "SDK not found" is superseded: the 2022.0 SDK exists. No ZBrush 2022.0.8 behaviour is verified yet; that is E1.
 
+**Addendum 2026-11-05 (E1 done on the reference PC).** Result: [`experiments/goz_probe/README.md`](../../experiments/goz_probe/README.md)
+§11. Verified on ZBrush 2022.0.8: Mirai can be registered as a GoZ app (`.bat` commands, visible after a ZBrush restart);
+ZBrush starts the editing command after every GoZ, without arguments, with all files already complete; a running
+Python process is notified through a helper and a ticket; Python → ZBrush works with `GoZMakeObjectPath` +
+`GoZBrushFromApp` **without** `-tmap` (with it ZBrush returned whatever Tool was active); the GoZ round trip keeps
+vertex order, face corner lists and unchanged points bit-identical. Open for the start of P1: which orientation ZBrush
+shows upright (GoZ path is rotated 180° about X relative to its OBJ import), one triangle-mesh round trip,
+subdivision. D8 (register as a GoZ app) is technically answered: yes.
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
