@@ -394,10 +394,21 @@ Basis-Änderung, nur Target 3 zusätzlich mit seiner. Das Einspielen **mehrerer*
 macht ZBrush also anders, als die Namen sagen. E3 hat nur das erste Laden geprüft. Seit 2026-11-06 schreibt Mirai den
 Namen in der Datei wie ZBrush selbst: `GoZMesh_<Name>` (bisher ohne Präfix).
 
-1. `python -I experiments/goz_probe/probe_names.py` (zeigt u. a. `GoZ_Config.txt`, also ob *Import as SubTool* an ist).
+**Hinweis aus GoB** (Blender-Bridge, gelesen 2026-11-06, Stand `464676b`): GoB hat 2020 genau dieses „Durcheinander
+der SubTools“ gehabt. Erst löschte es vor dem Senden ZBrushs `.ZTL`-Dateien in `GoZProjects\Default` („remove ZTL
+files since they mess up Zbrush importing subtools“, `e107ec5`), dann ersetzte es ZBrushs GoZ-Import ganz durch ein
+eigenes ZScript, das SubTools im aktiven Tool **per exaktem Namen** sucht und dort importiert (`GoB_Import.txt`).
+Verdacht also: ZBrush legt beim GoZ-Export eine `.ZTL` (das ganze Tool) neben die `.GoZ` und lädt sie beim nächsten
+Senden wieder — daher das zusätzliche Tool mit altem Stand.
+
+1. Nach dem **GoZ** aus ZBrush (dein Schritt „Target ändern > GoZ“): `python -I experiments/goz_probe/probe_names.py`.
+   Notieren: die Zeile „ZBrush tool files (.ZTL/.ztn)“ und `GoZ_Config.txt` (*Import as SubTool*).
 2. **Mit Mirai** (nach `git pull`), deinen Ablauf genau wie in Lauf 2. Notieren: neues Tool ja/nein, Name und Inhalt
    jeder SubTool, welche SubTool vor dem Senden aktiv war. Ist alles richtig → fertig.
-3. **Sonst mit der Probe** (R auf „Mirai Probe (E1)“). Jede Runde beginnt mit einem frischen Senden (neues Tool):
+3. Falls Schritt 1 `.ZTL`-Dateien mit Mirais Namen zeigt: denselben Ablauf noch einmal, aber **vor** dem Senden aus
+   Mirai diese `.ZTL`-Dateien von Hand in einen anderen Ordner verschieben (nicht löschen; Mirai selbst fasst sie nicht
+   an, AD-029 §3). Wird es dann richtig, ist die `.ZTL` die Ursache.
+4. **Sonst mit der Probe** (R auf „Mirai Probe (E1)“). Jede Runde beginnt mit einem frischen Senden (neues Tool):
    `python -I experiments/goz_probe/probe_send.py --mesh C --axis bridge --target bump` → Tool mit `E1_C_P1_B…`
    und `E1_C_P1_T…`. Dann SubTool `…_T…` anklicken, ein Move-Strich, **GoZ**. Dann das erneute Senden; die Basis ist
    dabei um 3 Einheiten zur Seite verschoben, so sieht man, welche SubTool die Basis-Datei bekommt:

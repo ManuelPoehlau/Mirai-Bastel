@@ -96,6 +96,8 @@ def main(argv=None) -> int:
         extra = f"  [{i.get('header', '')}] mesh {i.get('mesh')!r} {i.get('points')}/{i.get('faces')}" \
             if "header" in i else ""
         print(f"  {i['written']}  {i['bytes']:>10}  {i['name']}{extra}{'  ' + i['error'] if 'error' in i else ''}")
+    ztools = [i["name"] for i in files if i["name"].lower().endswith((".ztl", ".ztn"))]
+    print(f"ZBrush tool files (.ZTL/.ztn): {len(ztools)} {ztools}")  # T11: GoB 2020 'mess up ZBrush importing subtools'
     print(f"Mirai names ({registry}):" if names is not None else f"Mirai names: none ({registry})")
     for e in names or []:
         print(f"  {e.get('stem')!r:30} object {e.get('object_id')} target {e.get('layer')}  former {e.get('former')}"

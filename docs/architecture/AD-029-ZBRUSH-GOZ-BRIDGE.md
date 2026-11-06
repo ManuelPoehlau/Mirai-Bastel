@@ -132,6 +132,18 @@ Now Mirai names its SubTools itself, without `GoZMakeObjectPath` (and no longer 
   edit) and named the old base like target 1. Mirai's four files were checked to be right (names, order, contents).
   E3 covered only the first load of several SubTools. T11 separates MESH-name style, list order and active SubTool
   with a visibly shifted base; until then a several-SubTool resend is `PROVISIONAL`.
+  **GoB** (Blender bridge, read 2026-11-06 at `464676b`, behaviour only, no code taken): it names its objects itself
+  (`<GoZProjects\Default>\<name>`, no `GoZMakeObjectPath`, like Mirai now) and writes `GoZMesh_<name>`. It met the same
+  „subtool mess“ in 2020: first it deleted ZBrush's `.ZTL` files in `GoZProjects\Default` before a send
+  (`e107ec5`: they „mess up ZBrush importing subtools“), then it stopped using ZBrush's GoZ import altogether and
+  starts ZBrush with its own ZScript (`GoB_Import.txt`): read `GoZ_ObjectList.txt`, find each object's SubTool in the
+  active Tool by exact name, select it, lowest subdivision level, `Tool:Import`; else insert a new SubTool (or a new
+  Tool while *Import as SubTool* is off). It also writes a `<name>.ztn` text file (the identifier) per object and can
+  clean `.goz/.ztn/.ztl` from the project folder, and it rewrites *Import as SubTool* in `GoZ_Config.txt`. Mirai does
+  none of these writes (§3). Hypothesis for T11: ZBrush's `.ZTL` beside an exported Tool is loaded again on the next
+  send (the extra Tool with the old state). If confirmed, the options are Manu's decision: (a) a Mirai ZScript import
+  by name like GoB (no ZBrush file touched, Mirai controls where each file goes), (b) moving Mirai's own names'
+  `.ZTL` away before a send (writes into ZBrush's files), (c) one object per send.
 
 ## 4. Return
 
