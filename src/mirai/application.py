@@ -660,6 +660,9 @@ class Application:
                 raise ValueError('geometry_type="file" requires scene_path')
             loaded = scene_from_json(Path(scene_path).read_text(encoding="utf-8"))
             replace_scene(self.scene, loaded)
+        # AD-029 §5: object IDs of a loaded file may repeat earlier ones; a ZBrush link of this session must not reach
+        # an object of another scene through them (the bridge's session key includes this count)
+        self.scene_generation = getattr(self, "scene_generation", 0) + 1
         self._soft_refresh_radius()  # a scene load is one of the three radius events
 
         # Gate 7: Produktionsintegration — verbindet Application.camera mit

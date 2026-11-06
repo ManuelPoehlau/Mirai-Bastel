@@ -1,8 +1,8 @@
 """The effectful GoZ steps: identifiers, writing a send, starting ZBrush, reading the inbox (AD-029 §4). Stdlib only.
 
-- Identifier (SDK III.9, E1-Q8): the short name goes into `GoZBrush\\GoZ_ObjectPath.txt`, `GoZMakeObjectPath.exe` writes
-  the unique identifier back (ZBrush appends a number if needed). A resend of the same object reuses its identifier,
-  so ZBrush updates the linked SubTool / Tool.
+- Identifier: `<GoZ project folder>\\<stem>`, the stem from Mirai's own name registry (`names.py`, AD-029 §3), not
+  from `GoZMakeObjectPath.exe` (its number followed ZBrush's last export, not the object). A resend of the same
+  object reuses its identifier, so ZBrush updates the linked SubTool / Tool.
 - Send: `<identifier>.GoZ` (atomic), `GoZ_ObjectList.txt`, `GoZ_Application.txt` = `Mirai` (so ZBrush's next GoZ
   comes back here; only once ZBrush knows Mirai, `install.known_to_zbrush`), then `GoZBrushFromApp.exe` **without `-tmap`** (with it ZBrush
   exports its active Tool instead of importing, E1 T5.2). Not waited for.
@@ -15,7 +15,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Sequence
@@ -26,7 +25,6 @@ from .files import (
     GozPaths,
     GozSetupError,
     ansi_encoding,
-    read_text,
     sha256,
     write_bytes_atomic,
     write_goz_list,
@@ -40,24 +38,6 @@ Runner = Callable[[Sequence[str], Path], "subprocess.Popen"]
 def default_runner(command: Sequence[str], cwd: Path):
     """As the E1 probe started the utilities (verified on the reference PC): plain `Popen`, no creation flags."""
     return subprocess.Popen(list(command), cwd=str(cwd))
-
-
-def make_identifier(paths: GozPaths, short: str, *, runner: Runner = default_runner, timeout: float = 5.0,
-                    sleep: Callable[[float], None] = time.sleep) -> str:
-    exe = paths.utility("GoZMakeObjectPath")
-    if not exe.is_file():
-        raise GozSetupError(f"{exe} missing: is GoZ installed? (ZBrush: Preferences > GoZ > Force Reinstall)")
-    write_text_atomic(paths.object_path_file, short, encoding=ansi_encoding(), newline="")
-    proc = runner([str(exe)], paths.gozbrush)
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        text = (read_text(paths.object_path_file) or "").strip()
-        if text and text != short:
-            return text
-        if proc.poll() is not None and proc.poll() != 0:
-            break
-        sleep(0.02)
-    raise GozSetupError(f"GoZMakeObjectPath gave no identifier within {timeout:g} s")
 
 
 def manifest_path(directory: Path, identifier: str) -> Path:

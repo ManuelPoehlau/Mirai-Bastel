@@ -13,7 +13,12 @@ mirror-symmetric split) passed the practical test on 2026-11-06 ([plan](../WP_GO
 ## Kurzfassung für Manu (Deutsch)
 
 - **SPACE-Menü:** „An ZBrush senden“ schickt das Objekt nach ZBrush, aufrecht (`(x, −y, −z)`). Ein erneutes Senden
-  desselben Objekts aktualisiert dasselbe Tool in ZBrush. Einmalig: „ZBrush: Mirai bei GoZ eintragen“, danach ZBrush
+  desselben Objekts aktualisiert dasselbe Tool in ZBrush.
+- **Namen (2026-11-06):** Mirai benennt die Tools selbst: `<Objekt>` und `<Objekt>_<Target>` (z. B.
+  `Kopf_Target_4` — die `4` gehört zum Target-Namen „Target 4“, keine Zählnummer). Gleiche Namen auch nach einem
+  Neustart von Mirai oder ZBrush, ein erneutes Senden trifft dasselbe Tool. `_2` nur, wenn ein anderes Mirai-Objekt
+  oder eine fremde Datei den Namen schon hat. Benennt ZBrush ein Tool um, folgt Mirai dem neuen Namen, auch nach
+  einem Neustart (gespeicherte Szene). Einmalig: „ZBrush: Mirai bei GoZ eintragen“, danach ZBrush
   neu starten und mit **R** neben GoZ „Mirai“ wählen.
 - **Zurück:** In ZBrush **GoZ** drücken. Nach etwa 1–2 s meldet Mirai in der Statuszeile, was angekommen ist. Übernommen
   wird erst mit „ZBrush übernehmen: …“ im SPACE-Menü (D1), als **ein** Undo-Schritt. Unberührte Punkte bleiben
@@ -55,7 +60,8 @@ src/interop/goz/        imports core + stdlib only (no pyglet, no Application, n
     files.py            GoZ folders, ANSI/CRLF list files, atomic writes, the completeness rule (stdlib)
     helper.py           run by GoZApps\Mirai\Edit.bat: snapshot + ticket into goz/inbox/ (stdlib, `python -I`)
     install.py          GoZApps\Mirai registration (stdlib)
-    transfer.py         identifiers (GoZMakeObjectPath), writing a send, GoZBrushFromApp, the inbox (stdlib)
+    names.py            Mirai's own SubTool names: registry `goz/manifests/names.json` (stdlib)
+    transfer.py         writing a send, GoZBrushFromApp, the inbox, manifests on disk (stdlib)
     manifest.py         transfer manifest + fingerprint (core)
     bridge.py           send build, return plan, subdivision signature (core; pure)
 src/zbrush_bridge.py    window glue like obj_files.py: SPACE rows, tick, confirm (no pyglet)
@@ -77,12 +83,41 @@ not yet picked with **R** after a ZBrush restart (`install.known_to_zbrush`: ZBr
 on that pick). Reason (Manu, 2026-11-05, reference PC): the first P1 send without registration wrote
 `GoZ_Application.txt = Mirai` while `GoZApps\Mirai` did not exist, and the running ZBrush 2022.0.8 **crashed**; E1 never
 showed it because `MiraiProbe` was always installed. Points: `to_goz(object_space.to_world(p))` with `to_goz(x, y, z) = (x, −y, −z)` (E1-Q6), float32, vertex-ID
-order; faces as dense indices in face-ID order. Identifier: `GoZMakeObjectPath` for the first send of an object in a
-session, reused afterwards (ZBrush updates the same Tool). Files (atomic): `<id>.GoZ` (the only file Mirai writes into
+order; faces as dense indices in face-ID order. Identifier: `<GoZ project folder>\<stem>`, the stem from Mirai's own name registry (below), the
+same for every send of the object (ZBrush updates the same Tool). Files (atomic): `<id>.GoZ` (the only file Mirai writes into
 ZBrush's project folder; it carries a GROUPS block, P2a: region `k` → id `k`, faces in no region → `0xFFFE`),
 `GoZ_ObjectList.txt`, `GoZ_Application.txt = Mirai`; then `GoZBrushFromApp.exe` **without
 `-tmap`** (E1 T5.2), started as E1 started it (plain `Popen`). No
 History entry. ZBrush's own preferences (*Import as SubTool*) are never changed.
+
+**Names (Manu, 2026-11-06; `interop/goz/names.py`).** Until then the identifier came from `GoZMakeObjectPath.exe` at
+the first send of each Mirai session. Manu (reference PC): even after a ZBrush restart, a fresh scene and an emptied
+GoZ cache Mirai sent names with a number, and returns came back as „not sent from Mirai“. Evidence, the 29 calls of
+the E1–E3 captures (`experiments/goz_probe/captures/*_send_*/send_log.json`, step „identifier received“; the other 21
+sends reused an identifier): 27 came back unchanged, 2 with a number appended without separator (`E1_C` → `E1_C1` 17:44, `E1_C_P1_G` → `E1_C_P1_G1` 22:33). The
+number is **not** „a file of that name lies in `GoZProjects\Default`“: `E1_A` came back unnumbered 15 times while
+`E1_A.GoZ` lay there, three times written by ZBrush itself (returns 13:16, 17:27, 17:29). In all 29 calls a number
+came exactly when ZBrush's latest captured GoZ export had that name; what ZBrush keeps for that is not visible in the
+captures (an open question for ZBrush, T10 step 5; it no longer matters for Mirai). Mirai-side causes: (1) the
+identifier was kept only in memory, so every Mirai start asked again and got a new name after an export — the same
+object went to a new Tool; (2) the manifest on disk was keyed by that name, so a return under a name ZBrush chose
+could only link within the session (topology link). And `…_Target_4` itself is no count: it is
+`short_name("<object>_Target 4")`, a morph target called „Target 4“.
+Now Mirai names its SubTools itself, without `GoZMakeObjectPath` (and no longer writes `GoZ_ObjectPath.txt`):
+
+- **Readable:** the stem is `short_name(<object>)` or `short_name(<object>_<target>)` (letters, digits, `_`, ≤ 40).
+- **Stable:** the registry `goz/manifests/names.json` (Mirai's folder) keys a stem by (saved scene file, `ObjectId`,
+  `LayerId` / base) or, while the scene is unsaved, by (session, `ObjectId`, `LayerId`); saving later keeps it. Every
+  send of that object, also after a Mirai or ZBrush restart, uses the same stem. An unsaved scene's stem from an
+  earlier Mirai start with the same wish name is taken over (otherwise every restart would count up); its old returns
+  stay new-object-only (D11). Renaming the object or target in Mirai keeps the stem (the Tool stays the same).
+- **Unique, never into a foreign file:** a stem clashes when another registry entry owns it, or when `<stem>.GoZ` lies
+  in the project folder without a registry entry and without a Mirai manifest for exactly that identifier (ZBrush's
+  own GoZ of a Tool of that name, another app). Then `<stem>_2`, `_3`, …; the status line says „sent as '…'“.
+- **Earlier sends:** a Mirai manifest on disk for `<project>\<stem>` (from before the registry) makes that stem Mirai's
+  for the manifest's object, so a saved scene keeps its Tool after the update.
+- **Following ZBrush:** when a return under another name links by topology (§5), the entry takes ZBrush's name; the
+  next send updates that Tool. The old name stays Mirai's (`former`).
 
 ## 4. Return
 
@@ -101,7 +136,11 @@ pivot, state), every point layer's meta and values hash (morph targets and weigh
 hash (P2a; a Mirai group edit since the send is a conflict). P2a adds the sent group id per face, id → region name, the
 rest id and the overlaps. The link holds when
 the session is the same, or the current scene file is the one sent from (D11: a later Mirai start) and the object
-exists. After an applied return the manifest takes the new fingerprint, so further sculpting without a resend plans
+exists. A **session** is the Mirai process and the scene it holds (2026-11-06): loading a scene file starts a new one,
+because the loaded object IDs may repeat the ones sent before (`Application.scene_generation`). **The manifest on disk
+is the truth** of who sent under a name last: if its `transfer_id` is not among this session's versions (another Mirai
+window sent there since), those versions are stale and the disk manifest is planned against (then another session:
+new object only). After an applied return the manifest takes the new fingerprint, so further sculpting without a resend plans
 against the applied state. The session keeps every manifest version of an identifier (the send, then one per
 applied return, at most 32): a return is planned against the newest version the object still matches, so after
 **Ctrl+Z of an apply** the next GoZ links to the version before it and is offered again without a resend (Manu,
@@ -111,8 +150,11 @@ Mirai started has only the newest version (on disk).
 appends a number on load and GoZ returns under that name, which no manifest knows. Such a return links by **exact
 topology** to a SubTool sent in this session; among several (an object's base and its targets, duplicated objects)
 to the one whose last known ZBrush shape has the most bit-identical points, only if that best one is unique; the new
-name then becomes an alias. The status line says „linked by topology: ZBrush renamed …“; the fingerprint and every
-other check apply as before. Not across a Mirai restart (the manifest on disk is keyed by the sent name).
+name then becomes an alias. The status line says „linked by topology: ZBrush renamed …, the next send goes there“;
+the fingerprint and every other check apply as before. **Across a Mirai restart** (2026-11-06): the candidates are also
+the newest manifests on disk of every registry name of the current scene file; the alias is written to disk as a
+manifest of its own (and kept current by every apply) and the registry follows it, so the next return under it links
+directly and the next send updates that Tool. An unsaved scene after a restart has no candidates (D11).
 
 ## 6. Plan kinds (`bridge.ReturnKind`) and the apply
 
@@ -175,7 +217,13 @@ capture, T7b bit-identical, the T7c Cage warning, the completeness rule incl. a 
 `core`, inbox claimed once, registration refusing a foreign folder; P2a: GROUPS block, send ids / rest / overlaps, the
 E2 captures unchanged and regrouped, known / rest / new ids, a region edit as conflict) and `tests/test_goz_bridge.py`
 (A1–A8 on the app path with fake ZBrush utilities; P2a: regroup + sculpt as one Undo step, groups-only, conflict,
-Undo of a group apply; P2b: n-gons sent split, sculpt back, still n-gons, one Undo step). Captures used: `tests/fixtures/goz/README.md`.
+Undo of a group apply; P2b: n-gons sent split, sculpt back, still n-gons, one Undo step). Names (2026-11-06): the
+registry rules in `test_goz_format.py` (readable, per object and target, case-insensitive, foreign file, other scene,
+unsaved takeover, save after send, follow, earlier manifest, unreadable registry); in `test_goz_bridge.py` no
+`GoZMakeObjectPath` call, same names after a Mirai restart (saved and unsaved), a foreign `.GoZ` never written, an
+earlier manifest keeps its name, a renamed Tool linked after a restart and the next send going there, a send of
+another Mirai window making this session's link stale, no link into a scene loaded since. ZBrush side: T10
+(`experiments/goz_probe/README.md` §6) not run yet. Captures used: `tests/fixtures/goz/README.md`.
 Measured (container, A9): gollum_20k (21 875 points): send 0.15 s, helper 0.19 s + 1 s settle, arrival + plan
 0.48 s (one frame blocked), confirm (re-plan + apply) 0.41 s. Reference PC: not measured.
 Reference PC (Manu, 2026-11-05, ZBrush 2022.0.8): after registering, restarting ZBrush and picking Mirai with **R**,

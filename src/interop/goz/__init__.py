@@ -7,6 +7,7 @@ Modules (pure before effectful, audit §6.1):
 - `helper`   what ZBrush's `Edit.bat` runs: snapshot + ticket into Mirai's inbox (stdlib only)
 - `install`  the `GoZApps\\Mirai` registration (D12), only on the artist's explicit command (stdlib only)
 - `manifest` the transfer manifest and the return-conflict fingerprint (core)
+- `names`    Mirai's own SubTool names, stable over Mirai and ZBrush restarts (stdlib only)
 - `bridge`   send (mesh -> file + manifest) and the return plan (core; no mutation)
 
 The one mutating step is `Application.apply_goz_return` (one Undo step through `_mesh_transaction`).

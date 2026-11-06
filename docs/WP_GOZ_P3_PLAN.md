@@ -135,7 +135,11 @@ Note for the retest: an object selected in mode `4` shows its selection colour i
 
 **Renamed Tools (Manu, 2026-11-06):** with base + targets sent and older Tools of the same names in the ZBrush
 project, ZBrush loaded the base under a name with a number appended; UVs + texture on it came back as „not sent from
-Mirai“. Fixed by linking by topology (AD-029 §5). Workflow for UVs + texture with targets: unwrap and paint on the
+Mirai“. Fixed by linking by topology (AD-029 §5). **Follow-up (Manu, 2026-11-06):** numbers came even after a ZBrush
+restart with an emptied GoZ folder — Mirai asked `GoZMakeObjectPath` again at every Mirai start and kept the answer
+only in memory. Mirai now names its SubTools itself (stable over restarts, registry `goz/manifests/names.json`), the
+topology link also works after a Mirai restart for a saved scene, and the next send follows a name ZBrush chose
+(AD-029 §3 „Names“, §5; PC check T10 in `experiments/goz_probe/README.md` §6). Workflow for UVs + texture with targets: unwrap and paint on the
 base SubTool and GoZ it; Mirai has one UV map per mesh, the targets share it.
 
 ## 6. Not in P3

@@ -49,7 +49,8 @@ class FakeProc:
 
 
 class FakeZBrush:
-    """Stands in for `GoZMakeObjectPath.exe` (writes the identifier back) and `GoZBrushFromApp.exe` (records)."""
+    """Stands in for `GoZBrushFromApp.exe` (records). `GoZMakeObjectPath.exe` answers like ZBrush after an export of
+    that name (a number appended) - Mirai must not ask it any more (AD-029 §3, names.py)."""
 
     def __init__(self, paths: GozPaths):
         self.paths = paths
@@ -122,20 +123,21 @@ def positions(mesh):
 def test_send_writes_file_manifest_list_and_starts_zbrush_without_tmap(env):
     app, paths = env["app"], env["paths"]
     identifier = send(env)
-    assert identifier == str(paths.project_dir() / "head_basemesh1")
+    assert identifier == str(paths.project_dir() / "head_basemesh")
     goz = parse_goz(Path(identifier + ".GoZ").read_bytes())
     mesh = app.scene.edit_object.mesh
     first = mesh.vertex_position(mesh.all_vertex_ids()[0])
     assert goz.points[0] == (as_float32(first[0]), as_float32(-first[1]), as_float32(-first[2]))
     manifest = Manifest.from_json(manifest_path(env["bridge"].manifest_dir, identifier).read_text())
-    assert sorted(p.name for p in paths.project_dir().iterdir()) == ["head_basemesh1.GoZ"]  # nothing else of Mirai's
+    assert sorted(p.name for p in paths.project_dir().iterdir()) == ["head_basemesh.GoZ"]  # nothing else of Mirai's
     assert manifest.object_id == int(app.scene.edit_object.id) and manifest.session_id == env["bridge"].session_id
     assert paths.application_file.read_text() == "Mirai"
-    assert [Path(c[0]).stem for c in env["zb"].commands] == ["GoZMakeObjectPath", "GoZBrushFromApp"]
+    assert [Path(c[0]).stem for c in env["zb"].commands] == ["GoZBrushFromApp"]  # no GoZMakeObjectPath
     assert all("-tmap" not in c for c in env["zb"].commands)
     assert len(app.history) == 0 and "sent (326 points; UVs)" in app.status_message
     assert send(env) == identifier  # a resend reuses the identifier: ZBrush updates the same Tool
-    assert [Path(c[0]).stem for c in env["zb"].commands].count("GoZMakeObjectPath") == 1
+    assert "GoZMakeObjectPath" not in [Path(c[0]).stem for c in env["zb"].commands]
+    assert not paths.object_path_file.exists()  # Mirai no longer writes GoZ_ObjectPath.txt
 
 
 def test_move_brush_return_waits_for_confirm_then_is_one_exact_undo_step(env):
@@ -735,7 +737,7 @@ def test_base_and_target_go_as_two_subtools_and_a_target_sculpt_comes_back_into_
     mesh, lid = _bump_target(app)
     base_id = send(env)
     base_list = env["paths"].read_object_list()
-    assert len(base_list) == 2 and base_list[1].endswith("head_basemesh_Bump1")
+    assert len(base_list) == 2 and base_list[1].endswith("head_basemesh_Bump")
     assert "1 morph target as own SubTools" in app.status_message
     target_id = base_list[1]
     assert parse_goz(Path(target_id + ".GoZ").read_bytes()).points == parse_goz(
@@ -791,7 +793,7 @@ def test_a_return_under_a_name_zbrush_changed_links_by_topology(env):
     target_renamed = env["paths"].read_object_list()[1] + "_2"
     renamed = base_id + "_1"
     goz_back(env, renamed, flipped(fixture("zb2022_C_move_brush.GoZ")))
-    assert "linked by topology: ZBrush renamed 'head_basemesh1' to 'head_basemesh1_1'" in app.status_message
+    assert "linked by topology: ZBrush renamed 'head_basemesh' to 'head_basemesh_1'" in app.status_message
     assert "101 of 326 points moved" in app.status_message, app.status_message
     assert env["bridge"].activate(row(env, APPLY_PREFIX))
     goz_back(env, renamed, flipped(fixture("zb2022_C_move_brush.GoZ")))
@@ -813,3 +815,106 @@ def test_no_link_when_the_topology_matches_no_sent_subtool_or_several_alike(env)
     assert "not sent from Mirai" in app.status_message  # other topology
     goz_back(env, str(env["paths"].project_dir() / "Tie"), encode_goz(goz.name, goz.points, goz.faces))
     assert "not sent from Mirai" in app.status_message and "linked by topology" not in app.status_message  # a tie
+
+
+# -- Mirai's own names (Manu 2026-11-06: stable names over Mirai and ZBrush restarts, AD-029 §3) ------------------------
+
+
+def restart_mirai(env) -> ZBrushBridge:
+    """A new Mirai start: a new session with the same folders (inbox, manifests, name registry) and ZBrush."""
+    env["bridge"] = ZBrushBridge(env["app"], root=env["paths"].root, inbox=env["inbox"], runner=env["zb"],
+                                 clock=itertools.count().__next__, scene_path=lambda: env["scene_file"]["path"],
+                                 manifests=env["tmp"] / "manifests", textures=env["tmp"] / "textures")
+    return env["bridge"]
+
+
+@pytest.mark.parametrize("saved", [True, False])
+def test_a_resend_after_a_mirai_restart_updates_the_same_tools(env, saved):
+    """The old bridge asked GoZMakeObjectPath at every Mirai start; after ZBrush had exported the name it appended a
+    number (E1: `E1_C1`), so the same object went to a new Tool. Now the name comes from Mirai's registry: same base and
+    target names after a restart, saved scene or not, and a return of the saved scene still goes in place."""
+    app = env["app"]
+    if saved:
+        env["scene_file"]["path"] = env["tmp"] / "kopf.mirai.json"
+    _bump_target(app)
+    send(env)
+    sent = env["paths"].read_object_list()
+    assert [Path(i).name for i in sent] == ["head_basemesh", "head_basemesh_Bump"]
+    restart_mirai(env)
+    assert send(env) and env["paths"].read_object_list() == sent
+    assert "GoZMakeObjectPath" not in [Path(c[0]).stem for c in env["zb"].commands]
+    restart_mirai(env)
+    goz_back(env, sent[0], flipped(fixture("zb2022_C_move_brush.GoZ")))
+    if saved:
+        assert "101 of 326 points moved" in app.status_message and row(env, APPLY_PREFIX)
+    else:  # D11: no scene file, another session - only a new object, never in place
+        assert "another Mirai session" in app.status_message and row(env, NEW_OBJECT_PREFIX)
+
+
+def test_a_foreign_file_of_the_same_name_is_never_written(env):
+    """A `.GoZ` in ZBrush's project folder that Mirai did not write (ZBrush's own GoZ of a Tool of that name, another
+    app) is never overwritten: Mirai takes the next free name and keeps it."""
+    foreign = env["paths"].project_dir() / "head_basemesh.GoZ"
+    foreign.write_bytes(b"ZBrush's own")
+    identifier = send(env)
+    assert Path(identifier).name == "head_basemesh_2" and foreign.read_bytes() == b"ZBrush's own"
+    assert "sent as 'head_basemesh_2'" in env["app"].status_message
+    restart_mirai(env)
+    env["scene_file"]["path"] = None
+    assert send(env) == identifier and foreign.read_bytes() == b"ZBrush's own"
+
+
+def test_a_send_from_before_the_name_registry_keeps_its_name(env):
+    """Manifests of an earlier Mirai (names from GoZMakeObjectPath, no registry) make their names Mirai's own: the
+    object keeps its Tool, its `.GoZ` is not taken for a foreign file."""
+    env["scene_file"]["path"] = env["tmp"] / "kopf.mirai.json"
+    identifier = send(env)
+    (env["bridge"].manifest_dir / "names.json").unlink()
+    restart_mirai(env)
+    assert send(env) == identifier
+
+
+def test_a_renamed_tool_links_after_a_mirai_restart_and_the_next_send_goes_there(env):
+    """ZBrush loaded the send under another name (a Tool of that name was open) and Mirai was restarted before the
+    return: the scene file's names on disk give the topology link, the new name is kept on disk (no second link
+    needed), and the next send updates the renamed Tool instead of making a third one."""
+    app = env["app"]
+    env["scene_file"]["path"] = env["tmp"] / "kopf.mirai.json"
+    base_id = send(env)
+    renamed = base_id + "1"
+    restart_mirai(env)
+    goz_back(env, renamed, flipped(fixture("zb2022_C_move_brush.GoZ")))
+    assert "linked by topology: ZBrush renamed 'head_basemesh' to 'head_basemesh1'" in app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX)), app.status_message
+    restart_mirai(env)
+    goz_back(env, renamed, flipped(fixture("zb2022_C_move_brush.GoZ")))
+    assert "no point moved" in app.status_message and "linked by topology" not in app.status_message
+    assert send(env) == renamed
+
+
+def test_a_send_of_another_mirai_under_the_name_makes_this_sessions_link_stale(env):
+    """Another Mirai window (unsaved scene, same object name) took the name over: ZBrush's Tool now holds its send, so
+    this session must not apply a return of it to its own object."""
+    identifier = send(env)
+    first = env["bridge"]
+    other = restart_mirai(env)
+    assert send(env) == identifier and other is env["bridge"]
+    env["zb"].press_goz(identifier, flipped(fixture("zb2022_C_move_brush.GoZ")), env["inbox"])
+    assert first.tick() == 1
+    assert "another Mirai session" in env["app"].status_message
+    assert not any(r.startswith(APPLY_PREFIX) for r in first.entries())
+
+
+def test_a_return_does_not_reach_an_object_of_a_scene_loaded_since(env, tmp_path):
+    """Loading a scene file keeps the Mirai process, and its object IDs may repeat the ones sent before: such a return
+    is never applied to the loaded object (the session key includes the scene load)."""
+    from core.serialization import scene_to_json
+
+    app = env["app"]
+    identifier = send(env)
+    scene = tmp_path / "other.mirai.json"
+    scene.write_text(scene_to_json(app.scene), encoding="utf-8")
+    app.load_scene("file", scene_path=scene, store_type=TraceStore, symmetry_overlay_type=GLSymmetryOverlay)
+    assert goz_back(env, identifier, flipped(fixture("zb2022_C_move_brush.GoZ"))) == 1
+    assert "another Mirai session or scene" in app.status_message
+    assert not any(r.startswith(APPLY_PREFIX) for r in env["bridge"].entries())

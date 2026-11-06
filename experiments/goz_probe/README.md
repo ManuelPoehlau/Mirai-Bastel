@@ -84,7 +84,7 @@ says © Pixologic 2010/2011. That it describes 2022.0.8 **exactly** is itself [P
 | `GoZ_ProjectPath.txt` (project folder, default `GoZProjects\Default`; changing it is "not tested at all"). | [SDK] |
 | `GoZ_ObjectList.txt`: one line per object = full path of its file **without extension** (the "Unique object identifier"); an empty list is one empty line. | [SDK] |
 | `GoZ_Application.txt`: the active target app. Changed in ZBrush with the **R** button next to the GoZ buttons, or by an app's own GoZ command. | [SDK] |
-| **Identity:** `GoZMakeObjectPath.exe` turns a short name written to `GoZBrush\GoZ_ObjectPath.txt` into a unique identifier (it appends a number if needed) and writes it back into the same file. The app must keep the link object ↔ identifier itself. ZBrush keeps identifier ↔ SubTool, and a resend under the same identifier updates that SubTool. | [SDK] (corrects the audit's "identity only by name") |
+| **Identity:** `GoZMakeObjectPath.exe` turns a short name written to `GoZBrush\GoZ_ObjectPath.txt` into a unique identifier (it appends a number if needed) and writes it back into the same file. The app must keep the link object ↔ identifier itself. ZBrush keeps identifier ↔ SubTool, and a resend under the same identifier updates that SubTool. **Measured (captures, 2026-11-06):** of 29 calls 2 got a number (`E1_C1`, `E1_C_P1_G1`); `E1_A` stayed unnumbered 15 times although `E1_A.GoZ` lay in the folder — the number is not "a file of that name exists". Mirai no longer uses the tool (AD-029 §3). | [SDK], [PC] (corrects the audit's "identity only by name") |
 | App → ZBrush: write `<identifier>.GoZ`, write `GoZ_ObjectList.txt`, run `GoZBrush\GoZBrushFromApp.exe` (it starts ZBrush only if not running and opens the listed objects). The demos pass `-tmap` ("transfer texture maps"). | [SDK] |
 | ZBrush → App: the artist presses GoZ / All / Visible; ZBrush "saves all the SubTools required … to GoZ files, **then** it calls" the app's editing utility. | [SDK] — the ordering in 2022.0.8 → [PC] (E1-Q4) |
 | `GoZLocateApp.exe <AppFolderName> "<pattern>"` writes `GoZ_AppPathList.txt` (searches the default program folders). | [SDK] |
@@ -170,6 +170,7 @@ written from §2.1; nothing is copied from GoB or the SDK. Each script has `--he
 | `probe_receiver.py` | What `Edit.bat` runs. Records first: start time, `argv` incl. what ZBrush passed, cwd, the parent-process chain (Windows toolhelp snapshot), selected environment variables. Then the GoZBrush text files. Per listed object: stat and sha256 at start, ms since its last write, exclusive open, a copy into `captures/<time>_receive/`. After the settle time (`--settle`, default 1.0 s wall clock) it stats and hashes again. Then a strict parse of the copy, the dump, and the comparison with the sent mesh (matched by an earlier `probe_send` identifier, else by counts, else by name). A ticket goes into `inbox/` only if `inbox/listener.lock` names a live process. Writes `receiver_log.json` and `dump.txt`. Starts nothing, edits or deletes no ZBrush file. On an internal error it writes `captures/receiver_error_<time>.txt`. E3: classifies returned UVs against the sent / OBJ UVs, fits a target weight (`target_bump`), copies every image a map-path block names. |
 | `probe_listener.py` | Stand-in for a running Mirai: takes `inbox/listener.lock` (refuses while another live listener holds it, replaces a stale one), polls `inbox/` every 250 ms, verifies each ticket's copies by sha256, prints the latency, moves the ticket to `inbox/done/`, logs to `inbox/listener_log.txt`. Ctrl+C removes the lock. |
 | `probe_send.py` | Python → ZBrush. `--mesh A|B|C`: the identifier via `GoZMakeObjectPath.exe`, or reused from an earlier send of the same mesh so the linked SubTool is updated (`--new-identifier` forces a new one). Then the `.GoZ` (checked by the strict reader before writing), `GoZ_ObjectList.txt`, `GoZ_Application.txt` = `MiraiProbe` (before/after logged; `--keep-application`), and `GoZBrushFromApp.exe -tmap` as in the official demo (`--no-tmap` without it). `--resend last|<capture>`: ZBrush's captured bytes back, refused if ZBrush has written a newer file (`--force`). `--name-style gozmesh` writes the name as `GoZMesh_E1_A` (as GoB does). `--dry-run` runs no program. Log: `captures/<time>_send_<what>/send_log.json`. E3: `--uvs as-is|flip-v` (UV4 block), `--target bump` (base + target as two objects in one transfer). |
+| `probe_names.py` | T10 (2026-11-06): lists ZBrush's GoZ project folder (size, last write, header writer, MESH name, counts of every `.GoZ`) and Mirai's name registry `goz/manifests/names.json`; reads only. `--make NAME` (optional) asks `GoZMakeObjectPath.exe` once. Log: `captures/<time>_names/names_log.json`. |
 | `captures/` | Output, committed by Manu after the run (small files; no gollum capture). |
 | `tests/` | Headless tests (§5.1). The captured files become fixtures after E1. |
 
@@ -354,6 +355,29 @@ Ordner; bitte bei jedem Schritt die Uhrzeit notieren (oder die Reihenfolge einha
    **GoZ**.
 
 Danach R wieder auf „Mirai“, `captures/` mit `git add experiments/goz_probe/captures` committen und pushen.
+
+### T10 — Namen der SubTools (AD-029 §3, 2026-11-06, ~10 min)
+
+Mit der echten Mirai-App (R steht auf „Mirai“), nicht mit der Probe. Prüft, dass Mirai seine SubTools jetzt selbst
+benennt: lesbar, ohne angehängte Zahl, und über Neustarts hinweg gleich.
+
+0. `git pull`. In ZBrush und Mirai nichts Altes offen lassen ist **nicht** nötig — gerade mit alten Dateien im Ordner
+   soll es klappen. Einmal `python -I experiments/goz_probe/probe_names.py` (listet `GoZProjects\Default`, wer welche
+   Datei geschrieben hat, und Mirais Namen).
+1. Mirai: Kopf laden und als Szene speichern, ein Morph-Target anlegen, SPACE → „An ZBrush senden“. Notieren: Namen der
+   Tools in ZBrush (erwartet `head_basemesh` und `head_basemesh_Target_1` — die `1` ist der Name des Targets
+   „Target 1“, keine Zählnummer). Statuszeile: steht dort „sent as '…_2'“, lag eine fremde Datei gleichen Namens im
+   Ordner (dann bitte Schritt 0 mitschicken).
+2. In ZBrush auf dem Basis-Tool kurz mit Move ziehen, **GoZ**: Mirai bietet „ZBrush übernehmen“ an (nicht „not sent from
+   Mirai“).
+3. Mirai **beenden und neu starten**, dieselbe Szene öffnen, wieder senden: ZBrush aktualisiert **dieselben** Tools
+   (kein neues Tool mit Zahl). Nochmal GoZ auf der Basis: „übernehmen“.
+4. ZBrush **ohne Speichern neu starten**, R → „Mirai“, aus Mirai senden: die Tools heißen wieder genauso.
+5. Nur falls in 1–4 doch eine Zahl auftaucht: `python -I experiments/goz_probe/probe_names.py --make head_basemesh`
+   und die Ausgabe notieren (zeigt, was `GoZMakeObjectPath` gerade antworten würde; Mirai fragt es nicht mehr).
+
+`captures/` (der `*_names`-Ordner) committen. Erwartung: kein „not sent from Mirai“, keine Zahl außer der eines
+Target-Namens, keine neue Kopie beim erneuten Senden.
 
 ### Aufräumen
 

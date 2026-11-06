@@ -871,3 +871,62 @@ def test_texture_copy_flips_zbrushs_bottom_up_tiff_into_a_png(tmp_path):
     odd.write_bytes(b"BM" + b"\0" * 20)
     other, note = copy_texture(odd, folder, "Kopf")
     assert other.suffix == ".bmp" and "upside down" in note
+
+
+# -- Mirai's own SubTool names (interop.goz.names, AD-029 §3; Manu 2026-11-06) -----------------------------------------
+
+
+def _registry(tmp_path):
+    from interop.goz.names import NameRegistry
+
+    return NameRegistry(tmp_path / "names.json", clock=iter(range(1000)).__next__)
+
+
+def _take(reg, title="Head", *, scene=None, session="s1", obj=1, layer=None, files=(), legacy=None):
+    return reg.allocate(title, scene=scene, session=session, object_id=obj, layer=layer,
+                        foreign_file=lambda stem: stem in files, legacy=legacy or (lambda stem: None)).stem
+
+
+def test_names_are_readable_stable_and_unique_per_object_and_target(tmp_path):
+    reg = _registry(tmp_path)
+    assert _take(reg) == "Head" and _take(reg) == "Head"  # a resend: the same name
+    assert _take(reg, "Head_Target_4", layer=7) == "Head_Target_4"  # a target: object + its own name, no count
+    assert _take(reg, obj=2) == "Head_2" and _take(reg, "HEAD", obj=3) == "HEAD_3"  # Windows: case-insensitive
+    assert _take(reg, "x" * 40, obj=4) == "x" * 40 and _take(reg, "x" * 40, obj=5) == "x" * 38 + "_2"
+    reg.save()
+    again = _registry(tmp_path)
+    assert _take(again, obj=2) == "Head_2" and _take(again, "Head_Target_4", layer=7) == "Head_Target_4"
+
+
+def test_a_name_is_never_taken_from_a_foreign_file_or_another_scene(tmp_path):
+    reg = _registry(tmp_path)
+    assert _take(reg, files={"Head"}) == "Head_2"  # a .GoZ Mirai did not write
+    assert _take(reg, "Body", scene="a.json", obj=2) == "Body"
+    assert _take(reg, "Body", scene="b.json", session="s2", obj=2) == "Body_2"  # another scene file keeps its own
+    assert _take(reg, "Body", scene="a.json", session="s3", obj=2) == "Body"  # the same file after a restart
+    assert _take(reg, "Arm", session="s1", obj=8) == "Arm"
+    assert _take(reg, "Arm", session="s1", obj=9) == "Arm_2"  # another object of the same (unsaved) session
+    assert _take(reg, "Arm", session="s4", obj=9) == "Arm"  # an unsaved scene after a restart takes its name over
+
+
+def test_a_saved_scene_keeps_its_name_from_the_unsaved_send_and_follows_a_zbrush_rename(tmp_path):
+    from interop.goz.names import NameEntry, stem_of, with_stem
+
+    reg = _registry(tmp_path)
+    assert _take(reg) == "Head"
+    assert _take(reg, scene="kopf.json") == "Head"  # saved after the send, same session
+    assert _take(reg, scene="kopf.json", session="s2") == "Head"  # ... and after a restart
+    entry = reg.find("kopf.json", "s9", 1, None)
+    reg.follow(entry, "Head1")
+    assert _take(reg, scene="kopf.json", session="s3") == "Head1" and reg.owner("head").stem == "Head1"
+    assert _take(reg, obj=2, session="s3") == "Head_2"  # the old name stays Mirai's (a return may still use it)
+    legacy = NameEntry(stem="Old", title="Old", scene="k.json", session="s0", object_id=5, layer=None)
+    assert _take(reg, "Old", scene="k.json", session="s5", obj=5, files={"Old"},
+                 legacy=lambda stem: legacy if stem == "Old" else None) == "Old"
+    assert stem_of("C:/P/Default/Head1") == "Head1" and with_stem("C:\\P\\Default\\Head", "Head1") == "C:\\P\\Default\\Head1"
+
+
+def test_an_unreadable_name_registry_starts_empty(tmp_path):
+    (tmp_path / "names.json").write_text("{not json", encoding="utf-8")
+    reg = _registry(tmp_path)
+    assert reg.entries == [] and _take(reg) == "Head"

@@ -4,7 +4,9 @@ Rows (no key: a key only after Manu's "Taste passt", AD-013 addendum):
 
     An ZBrush senden                     the object (mode 4: the one selected object, else the edit object; the base
                                          while a morph target's view is open) -> ZBrush, as `(x, -y, -z)` of its
-                                         world position; a resend of the same object updates the same SubTool
+                                         world position; a resend of the same object updates the same SubTool,
+                                         also after a Mirai or ZBrush restart: Mirai names it itself
+                                         (`interop.goz.names`, `goz/manifests/names.json`), no GoZMakeObjectPath
                                          Refused (nothing written) until ZBrush knows Mirai: registered, ZBrush
                                          restarted, Mirai picked with R (`install.known_to_zbrush`) - naming an
                                          unknown GoZ app crashed ZBrush 2022.0.8 (Manu, 2026-11-05)
@@ -49,11 +51,11 @@ from interop.goz.bridge import (
 from interop.goz.files import GozPaths, GozSetupError, find_root, same_identifier
 from interop.goz.format import GozMesh
 from interop.goz.manifest import Manifest
+from interop.goz.names import REGISTRY_FILE, NameEntry, NameRegistry, scene_key, stem_of, with_stem
 from interop.goz.transfer import (
     Inbox,
     default_runner,
     launch_zbrush,
-    make_identifier,
     read_manifest_text,
     write_manifest,
     write_send,
@@ -139,14 +141,20 @@ class ZBrushBridge:
         self._runner = runner
         self._clock = clock
         self._last_poll = float("-inf")
-        self.session_id = uuid.uuid4().hex
-        #: per (object, None = base / LayerId = target) its GoZ identifier
-        self._identifiers: dict[tuple, str] = {}
+        self._process_id = uuid.uuid4().hex
+        #: Mirai's own SubTool names (per scene file / session, object and target), kept beside the manifests
+        self.names = NameRegistry(self.manifest_dir / REGISTRY_FILE)
         #: per identifier the manifest versions of this session, oldest first: the send, then one per applied return,
         #: so a return after an Undo of an apply links to the version the object is back at (no resend needed)
         self._manifests: dict[str, list[Manifest]] = {}
         self.waiting: list[Waiting] = []
         self._rows: dict[str, tuple[str, Waiting]] = {}
+
+    @property
+    def session_id(self) -> str:
+        """This Mirai process and the scene it holds: loading another scene is another session, so object IDs that
+        repeat in the loaded file never link to a send of the scene before (AD-029 §5)."""
+        return f"{self._process_id}.{getattr(self.app, 'scene_generation', 0)}"
 
     # -- menu ---------------------------------------------------------------------------------------------------------
 
@@ -235,13 +243,17 @@ class ZBrushBridge:
 
             scene_path = self._scene_path()
             transfer_id = uuid.uuid4().hex
+            project = paths.project_dir()
+            self.names.reload()
             sends = []  # (key, identifier, data, manifest): the base first, then each morph target (P3c)
             for layer in [None, *morph_target_ids(obj.mesh)]:
                 key = (obj.id, None if layer is None else int(layer))
                 title = obj.name if layer is None else f"{obj.name}_{obj.mesh.point_layer_info(layer).name}"
-                identifier = self._identifiers.get(key) or make_identifier(paths, short_name(title),
-                                                                           runner=self._runner)
-                self._identifiers[key] = identifier
+                entry = self.names.allocate(
+                    short_name(title), scene=scene_key(scene_path), session=self.session_id, object_id=int(obj.id),
+                    layer=key[1], foreign_file=lambda stem: (project / f"{stem}.GoZ").exists(),
+                    legacy=lambda stem: self._legacy_entry(project, stem))
+                identifier = str(project / entry.stem)
                 data, manifest = build_send(
                     app.scene, obj, identifier=identifier, transfer_id=transfer_id, session_id=self.session_id,
                     scene_path=None if scene_path is None else str(Path(scene_path).resolve()), to_world=to_world,
@@ -250,6 +262,7 @@ class ZBrushBridge:
                 sends.append((key, identifier, data, manifest))
             for _key_, identifier, _data, manifest in sends:
                 write_manifest(self.manifest_dir, identifier, manifest.to_json())
+            self.names.save()
             _k, identifier, data, manifest = sends[0]
             write_send(paths, identifier, data, [(i, d) for _k2, i, d, _m in sends[1:]])
             launch_zbrush(paths, runner=self._runner)
@@ -264,9 +277,26 @@ class ZBrushBridge:
         targets = len(sends) - 1
         extra = f"; {targets} morph target{'s' if targets != 1 else ''} as own SubTools" if targets else ""
         uv_text = "; UVs" if manifest.sent_uvs is not None else ""
-        app.set_status(f"ZBrush: {obj.name!r} sent ({len(manifest.vertex_ids)} points{uv_text}{_ngon_text(manifest)}"
-                       f"{extra})")
+        tool = _short(identifier)
+        as_text = f" as {tool!r}" if tool != short_name(obj.name) else ""
+        app.set_status(f"ZBrush: {obj.name!r} sent{as_text} ({len(manifest.vertex_ids)} points{uv_text}"
+                       f"{_ngon_text(manifest)}{extra})")
         return True
+
+    def _legacy_entry(self, project: Path, stem: str) -> Optional[NameEntry]:
+        """A stem a Mirai before the name registry sent (its manifest is on disk): Mirai's, for the manifest's object."""
+        from interop.goz.bridge import target_layer
+
+        text = read_manifest_text(self.manifest_dir, str(project / stem))
+        if text is None:
+            return None
+        try:
+            m = Manifest.from_json(text)
+        except (ValueError, TypeError):
+            return NameEntry(stem=stem, title="", scene=None, session="", object_id=-1, layer=None)  # never taken over
+        layer = target_layer(m)
+        return NameEntry(stem=stem, title=stem, scene=scene_key(m.scene_path), session=m.session_id,
+                         object_id=m.object_id, layer=None if layer is None else int(layer), updated=m.sent_at)
 
     def install(self) -> bool:
         try:
@@ -300,52 +330,91 @@ class ZBrushBridge:
             self.app.set_status(f"ZBrush: return failed: {type(exc).__name__}: {exc}")
         return arrived
 
-    def _manifests_for(self, identifier: str) -> list[Manifest]:
-        known = self._manifests.get(_key(identifier))
-        if known:
-            return known
-        text = read_manifest_text(self.manifest_dir, identifier)  # D11: a ticket from before this Mirai started
+    def _disk_manifest(self, identifier: str) -> Optional[Manifest]:
+        text = read_manifest_text(self.manifest_dir, identifier)  # D11: also a send of an earlier Mirai start
         if text is None:
-            return []
+            return None
         try:
-            return [Manifest.from_json(text)]
+            return Manifest.from_json(text)
         except (ValueError, TypeError):
-            return []
+            return None
+
+    def _manifests_for(self, identifier: str) -> list[Manifest]:
+        """This session's versions of the identifier, else the manifest on disk. The disk is the truth of who sent
+        under a name last: if another Mirai (window) sent there since, ZBrush's Tool holds that send, and this
+        session's versions are stale."""
+        known = self._manifests.get(_key(identifier))
+        disk = self._disk_manifest(identifier)
+        if known and (disk is None or any(m.transfer_id == disk.transfer_id for m in known)):
+            return known
+        return [disk] if disk is not None else []
+
+    def _resolve(self, identifier: str, goz: GozMesh) -> tuple[list[Manifest], Optional[str]]:
+        """The manifest versions a return links to, and the name it was sent under if ZBrush renamed it."""
+        versions = self._manifests_for(identifier)
+        if versions:
+            return versions, None
+        return self._link_by_topology(identifier, goz)
 
     def _plan_linked(self, identifier: str, goz: GozMesh,
                      texture: Optional[str] = None) -> tuple[ReturnPlan, Optional[Manifest]]:
+        versions, renamed_from = self._resolve(identifier, goz)
+        return self._plan_versions(identifier, goz, versions, renamed_from, texture)
+
+    def _plan_versions(self, identifier: str, goz: GozMesh, versions: list[Manifest], renamed_from: Optional[str],
+                       texture: Optional[str]) -> tuple[ReturnPlan, Optional[Manifest]]:
         """The plan against the newest manifest version the object still matches (after an Undo of an apply: the one
         before it); a conflict only if it matches none."""
-        versions = self._manifests_for(identifier)
-        renamed_from = None
-        if not versions:
-            versions, renamed_from = self._link_by_topology(identifier, goz)
         first: Optional[tuple[ReturnPlan, Optional[Manifest]]] = None
         for manifest in reversed(versions):
             plan = self.plan(identifier, goz, manifest, texture)
             if renamed_from is not None:
                 plan.notes.insert(0, f"linked by topology: ZBrush renamed {_short(renamed_from)!r} to "
-                                     f"{_short(identifier)!r}")
+                                     f"{_short(identifier)!r}, the next send goes there")
             if plan.kind is not ReturnKind.CONFLICT:
                 return plan, manifest
             first = first or (plan, manifest)
         return first or (self.plan(identifier, goz, None, texture), None)
 
+    def _topology_candidates(self, identifier: str) -> list[list[Manifest]]:
+        """This session's manifest histories, and - after a Mirai restart - the newest manifest on disk of every
+        name the registry holds for the current scene file (or this session)."""
+        out, seen, keys = [], set(), set()
+        scene = scene_key(self._scene_path())
+        for key, versions in self._manifests.items():
+            keys.add(key)
+            if not versions or id(versions) in seen:
+                continue
+            seen.add(id(versions))
+            m = versions[-1]
+            if m.session_id == self.session_id or (scene is not None and scene_key(m.scene_path) == scene):
+                out.append(versions)
+        self.names.reload()
+        for entry in self.names.entries:
+            if not ((scene is not None and entry.scene == scene) or entry.session == self.session_id):
+                continue
+            other = with_stem(identifier, entry.stem)
+            if _key(other) in keys:
+                continue
+            keys.add(_key(other))
+            m = self._disk_manifest(other)
+            if m is not None:
+                out.append([m])
+        return out
+
     def _link_by_topology(self, identifier: str, goz: GozMesh) -> tuple[list[Manifest], Optional[str]]:
         """A return under a name Mirai never sent (Manu 2026-11-06: ZBrush appends a number when a Tool of that name
-        exists already): the SubTool of this session with exactly the same topology; among several (an object's base
-        and its targets, duplicated objects) the one whose last known ZBrush shape most points equal bit for bit, only
-        if that best one is unique. The new name then becomes an alias of it. ([], None) = no link."""
+        exists already): the SubTool of this session (or of the current scene file, from disk) with exactly the same
+        topology; among several (an object's base and its targets, duplicated objects) the one whose last known ZBrush
+        shape most points equal bit for bit, only if that best one is unique. The new name then becomes an alias of it
+        (in memory and on disk) and the registry follows it, so the next send updates that Tool. ([], None) = no
+        link."""
         from interop.goz.bridge import sent_points, target_layer
 
         faces = [list(f) for f in goz.faces]
         to_world, _ = _placement()
         scored = []
-        seen = set()
-        for versions in self._manifests.values():
-            if not versions or id(versions) in seen:
-                continue
-            seen.add(id(versions))
+        for versions in self._topology_candidates(identifier):
             m = versions[-1]
             if len(m.vertex_ids) != len(goz.points) or m.faces != faces:
                 continue
@@ -362,8 +431,18 @@ class ZBrushBridge:
         if len(scored) > 1 and scored[0][0] == scored[1][0]:
             return [], None
         versions = scored[0][1]
+        sent_as = versions[-1].identifier
+        self._manifests.setdefault(_key(sent_as), versions)
         self._manifests[_key(identifier)] = versions  # the same list: rebases of either name land in both
-        return versions, versions[-1].identifier
+        entry = self.names.owner(stem_of(sent_as))
+        try:
+            write_manifest(self.manifest_dir, identifier, versions[-1].to_json())  # a later Mirai start finds it
+            if entry is not None:
+                self.names.follow(entry, stem_of(identifier))
+                self.names.save()
+        except OSError:
+            pass  # the link holds for this session
+        return versions, sent_as
 
     def plan(self, identifier: str, goz: GozMesh, manifest: Optional[Manifest],
              texture: Optional[str] = None) -> ReturnPlan:
@@ -379,8 +458,9 @@ class ZBrushBridge:
             new_group_name=new_group_name, texture=texture,
         )
 
-    def _copy_texture(self, goz: GozMesh, identifier: str) -> tuple[Optional[str], Optional[str]]:
-        """P3b: the return's texture copied beside the scene (or into `goz/textures/`); (path, note)."""
+    def _copy_texture(self, goz: GozMesh, known: list[Manifest]) -> tuple[Optional[str], Optional[str]]:
+        """P3b: the return's texture copied beside the scene (or into `goz/textures/`) under the linked object's name;
+        (path, note)."""
         if not goz.texture_path:
             return None, None
         from interop.goz.texture import copy_texture, texture_dir
@@ -388,7 +468,6 @@ class ZBrushBridge:
         source = Path(goz.texture_path)
         if not source.is_file():
             return None, f"texture {source.name} not found"
-        known = self._manifests_for(identifier)
         name = known[-1].object_name if known else (
             goz.name[len("GoZMesh_"):] if goz.name.startswith("GoZMesh_") else goz.name)
         try:
@@ -398,8 +477,9 @@ class ZBrushBridge:
         return str(copy.resolve()), note
 
     def _arrive(self, identifier: str, goz: GozMesh) -> None:
-        texture, note = self._copy_texture(goz, identifier)
-        plan, manifest = self._plan_linked(identifier, goz, texture)
+        versions, renamed_from = self._resolve(identifier, goz)
+        texture, note = self._copy_texture(goz, versions)
+        plan, manifest = self._plan_versions(identifier, goz, versions, renamed_from, texture)
         if note:
             plan.notes.append(note)
         self.waiting = [w for w in self.waiting if not same_identifier(w.identifier, identifier)]  # newer supersedes
@@ -443,6 +523,8 @@ class ZBrushBridge:
         del versions[:-32]
         try:
             write_manifest(self.manifest_dir, manifest.identifier, rebased.to_json())
+            if not same_identifier(plan.identifier, manifest.identifier):  # a renamed Tool: its own name too
+                write_manifest(self.manifest_dir, plan.identifier, rebased.to_json())
         except OSError:
             pass  # the in-memory manifest is enough for this session
 
