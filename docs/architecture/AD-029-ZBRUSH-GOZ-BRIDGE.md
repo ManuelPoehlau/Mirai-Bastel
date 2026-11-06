@@ -2,7 +2,8 @@
 
 **Status:** IMPLEMENTED (P1, 2026-11-05), `PROVISIONAL` UI (SPACE rows, no key). Decisions D1, D11, D12, D13 by Manu
 (2026-11-05); D2–D5 as the audit proposes, D6 open (see §7). Reference PC (Manu, 2026-11-05): send works and the head
-shows upright (§8); the way back (§9 steps 3–6) is still to be tested.
+shows upright (§8); returns through `Edit.bat` work (the P1 symmetry captures, §6). P2 (polygroups, n-gons incl. the
+mirror-symmetric split) passed the practical test on 2026-11-06 ([plan](../WP_GOZ_P2_PLAN.md) §6).
 **Builds on:** [ZBrush bridge audit](../future_ideas/ZBRUSH_BRIDGE_AUDIT.md) (§6–§8, decisions §10.3),
 [E1 probe](../../experiments/goz_probe/README.md) (facts §2, completeness rule §7, fingerprint §8.1, results §10a/§11),
 [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (objects), [AD-023](AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md)
@@ -168,7 +169,9 @@ Measured (container, A9): gollum_20k (21 875 points): send 0.15 s, helper 0.19 s
 Reference PC (Manu, 2026-11-05, ZBrush 2022.0.8): after registering, restarting ZBrush and picking Mirai with **R**,
 the send works and the head shows **upright** — the `(x, −y, −z)` map is confirmed, and so is the
 `known_to_zbrush` signal (`GoZApps\Mirai\GoZ_Config.txt`). Before that fix, a send without registration crashed ZBrush
-(§3). Not yet tested there: the real `Edit.bat` → helper → Mirai return path.
+(§3). The real `Edit.bat` → helper → Mirai return path delivered the P1 symmetry captures (`tests/fixtures/goz/zb2022_P1_*`).
+P2 practical test (Manu, 2026-11-06): groups and n-gons round trip as planned; with the mirror-symmetric split every
+mirror pair came back in Mirai even after strong smoothing over many split n-gons.
 
 ## 9. Practical test (Manu, reference PC)
 

@@ -1,7 +1,7 @@
 # WP GoZ P2 — polygroups ↔ regions, then n-gons (plan, 2026-11-05)
 
-**Status:** P2a and P2b IMPLEMENTED (2026-11-05, container-tested; E2 done on the reference PC, §2); the
-reference-PC practical test (§6) is open. Builds on [AD-029](architecture/AD-029-ZBRUSH-GOZ-BRIDGE.md) (P1,
+**Status:** DONE (P2a + P2b implemented 2026-11-05, container-tested; E2 §2 and the practical test §6 passed on the
+reference PC, Manu 2026-11-06). Further issues or improvements come from real work, as their own steps. Builds on [AD-029](architecture/AD-029-ZBRUSH-GOZ-BRIDGE.md) (P1,
 implemented and tested on the reference PC: send, return, confirm, Ctrl+Z, symmetry fix). Decisions below are Manu's
 (2026-11-05) unless marked `PROVISIONAL`. Order (Manu): **P2a polygroups first, then P2b n-gons.**
 
@@ -134,3 +134,7 @@ UVs (send / back), polypaint, masks, several SubTools in one step, morph targets
 All P1 acceptance criteria (AD-029 §8) stay green; the new tests above; reference-PC practical test: a WIP file with
 n-gons and groups → ZBrush → recolour + sculpt → GoZ → one confirm → groups and points in Mirai, Ctrl+Z restores
 both, n-gons still n-gons.
+
+**Result (Manu, reference PC, 2026-11-06): passed.** The mirror-symmetric split is „sehr viel besser“: even where many
+n-gons were split and after strong smoothing, every mirror pair was back in Mirai after the return. Manu: „Polygroups
+und NGon soweit erstmal erledigt“ — remaining problems or improvements will show during real work.
