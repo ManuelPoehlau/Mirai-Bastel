@@ -401,6 +401,15 @@ eigenes ZScript, das SubTools im aktiven Tool **per exaktem Namen** sucht und do
 Verdacht also: ZBrush legt beim GoZ-Export eine `.ZTL` (das ganze Tool) neben die `.GoZ` und lädt sie beim nächsten
 Senden wieder — daher das zusätzliche Tool mit altem Stand.
 
+**Schritt 1 erledigt (Manu, 2026-11-06 15:09, `captures/20261106-150900_043_names`):** *Import as SubTool* ist an.
+Neben Mirais vier `.GoZ` (15:07:47–48) liegen vier `<Name>.ztn` mit **derselben** Zeit und je **55 Byte** — genau die
+Länge von `C:/Users/Public/Pixologic/GoZProjects/Default/SubD_Cube`, also zeigt vermutlich jede auf das Tool
+`SubD_Cube`. Mirai schreibt keine `.ztn`: ZBrush legt sie beim Laden an. Beim GoZ von Target 3 (15:08:33) schrieb
+ZBrush `SubD_Cube_Target_3.GoZ` und `.ztn` neu und eine Sekunde später `SubD_Cube.ztl` (271 KB): das **ganze Tool**,
+benannt nach der obersten SubTool. Verdacht: beim nächsten Senden folgt ZBrush `.ztn` → `SubD_Cube.ztl` und lädt
+diesen alten Stand als weiteres Tool. (Die Namen sind sauber: Target 3 hat inzwischen LayerId 4, der Name ist frei
+geworden wie vorgesehen.)
+
 1. Nach dem **GoZ** aus ZBrush (dein Schritt „Target ändern > GoZ“): `python -I experiments/goz_probe/probe_names.py`.
    Notieren: die Zeile „ZBrush tool files (.ZTL/.ztn)“ und `GoZ_Config.txt` (*Import as SubTool*).
 2. **Mit Mirai** (nach `git pull`), deinen Ablauf genau wie in Lauf 2. Notieren: neues Tool ja/nein, Name und Inhalt

@@ -45,6 +45,8 @@ def describe(path: Path) -> dict:
     st = path.stat()
     item = {"name": path.name, "bytes": st.st_size, "written": time.strftime("%Y-%m-%d %H:%M:%S",
                                                                             time.localtime(st.st_mtime))}
+    if path.suffix.lower() == ".ztn" and st.st_size <= 1024:  # T11: ZBrush's text file, it names a Tool
+        item["text"] = path.read_bytes().decode("latin-1", errors="replace").strip()
     if path.suffix.lower() == ".goz":
         data = path.read_bytes()
         item["header"] = data[4:32].split(b"\0")[0].decode("latin-1", errors="replace").strip(" .")
@@ -95,7 +97,8 @@ def main(argv=None) -> int:
     for i in files:
         extra = f"  [{i.get('header', '')}] mesh {i.get('mesh')!r} {i.get('points')}/{i.get('faces')}" \
             if "header" in i else ""
-        print(f"  {i['written']}  {i['bytes']:>10}  {i['name']}{extra}{'  ' + i['error'] if 'error' in i else ''}")
+        text = f"  -> {i['text']!r}" if "text" in i else ""
+        print(f"  {i['written']}  {i['bytes']:>10}  {i['name']}{extra}{text}{'  ' + i['error'] if 'error' in i else ''}")
     ztools = [i["name"] for i in files if i["name"].lower().endswith((".ztl", ".ztn"))]
     print(f"ZBrush tool files (.ZTL/.ztn): {len(ztools)} {ztools}")  # T11: GoB 2020 'mess up ZBrush importing subtools'
     print(f"Mirai names ({registry}):" if names is not None else f"Mirai names: none ({registry})")

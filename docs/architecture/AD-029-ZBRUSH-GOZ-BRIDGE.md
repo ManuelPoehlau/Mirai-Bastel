@@ -140,7 +140,10 @@ Now Mirai names its SubTools itself, without `GoZMakeObjectPath` (and no longer 
   active Tool by exact name, select it, lowest subdivision level, `Tool:Import`; else insert a new SubTool (or a new
   Tool while *Import as SubTool* is off). It also writes a `<name>.ztn` text file (the identifier) per object and can
   clean `.goz/.ztn/.ztl` from the project folder, and it rewrites *Import as SubTool* in `GoZ_Config.txt`. Mirai does
-  none of these writes (§3). Hypothesis for T11: ZBrush's `.ZTL` beside an exported Tool is loaded again on the next
+  none of these writes (§3). **T11 step 1** (Manu, 2026-11-06, `captures/20261106-150900_043_names`): *Import as
+  SubTool* on; beside Mirai's four `.GoZ` ZBrush made four `<name>.ztn` at the same second, each 55 bytes = the length
+  of `…/GoZProjects/Default/SubD_Cube` (each names the Tool, i.e. its top SubTool); the GoZ of target 3 rewrote its
+  `.GoZ`/`.ztn` and one second later wrote `SubD_Cube.ztl` (271 KB, the whole Tool). Hypothesis for T11: ZBrush's `.ZTL` beside an exported Tool is loaded again on the next
   send (the extra Tool with the old state). If confirmed, the options are Manu's decision: (a) a Mirai ZScript import
   by name like GoB (no ZBrush file touched, Mirai controls where each file goes), (b) moving Mirai's own names'
   `.ZTL` away before a send (writes into ZBrush's files), (c) one object per send.
