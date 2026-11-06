@@ -1,0 +1,53 @@
+{
+  "mesh": null,
+  "resend_of": "%USERPROFILE%\\Mirai_Bastel\\experiments\\goz_probe\\captures\\20261106-100117_305_receive",
+  "files": [
+    {
+      "identifier": "C:/Users/Public/Pixologic/GoZProjects/Default/C_bump",
+      "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\C_bump.GoZ",
+      "sha256": "cc14f5bdf866c8c9de40a17fb076d78d30c25bf67f80268dbae80ab42f5395a4"
+    }
+  ],
+  "identifier": "C:/Users/Public/Pixologic/GoZProjects/Default/C_bump",
+  "dry_run": false,
+  "style": "sdk",
+  "command": [
+    "C:\\Users\\Public\\Pixologic\\GoZBrush\\GoZBrushFromApp.exe"
+  ],
+  "steps": [
+    {
+      "t_ms": 10.1,
+      "what": "file already byte-identical, not rewritten",
+      "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\C_bump.GoZ"
+    },
+    {
+      "t_ms": 32.6,
+      "what": "wrote GoZ_ObjectList.txt",
+      "lines": [
+        "C:/Users/Public/Pixologic/GoZProjects/Default/C_bump"
+      ],
+      "read_back": [
+        "C:/Users/Public/Pixologic/GoZProjects/Default/C_bump"
+      ]
+    },
+    {
+      "t_ms": 40.9,
+      "what": "GoZ_Application.txt",
+      "before": "MiraiProbe",
+      "after": "MiraiProbe"
+    },
+    {
+      "t_ms": 64.2,
+      "what": "started GoZBrushFromApp",
+      "pid": 1676,
+      "command": [
+        "C:\\Users\\Public\\Pixologic\\GoZBrush\\GoZBrushFromApp.exe"
+      ]
+    },
+    {
+      "t_ms": 261.5,
+      "what": "GoZBrushFromApp exited",
+      "returncode": 0
+    }
+  ]
+}

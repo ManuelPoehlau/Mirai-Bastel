@@ -1,0 +1,40 @@
+E1 receive 20261106-095441_815  launched_by=edit_command  objects=1
+
+=== C:/Users/Public/Pixologic/GoZProjects/Default/E1_C_P1_UV1
+header text: b' 1.0 ZBrush GoZ Binary......'
+blocks:
+  @      32  tag      1 MESH                   size        36  count       1  modifier 0.0
+  @      68  tag   5001 FLAGS                  size        20  count       1  modifier 0.0
+  @      88  tag  10001 POINT_LIST             size      3928  count     326  modifier 0.0
+  @    4016  tag  20001 FACE4_LIST_FORMAT_1    size      5200  count     324  modifier 0.0
+  @    9216  tag  25001 UV4_LIST               size     10384  count     324  modifier 0.0
+  @   19600  tag  35001 MRGB_LIST              size      1320  count     326  modifier 0.0
+  @   20920  tag  30002 MASK16_LIST            size       668  count     326  modifier 0.0
+  @   21588  tag  40001 GROUPS_LIST            size       664  count     324  modifier 0.0
+  @   22252  tag  40002 CREASE_LIST            size       340  count     324  modifier 0.0
+  @   22592  tag      0 END_OF_FILE            size         0  count       0  modifier 0.0
+mesh name: 'GoZMesh_E1_C_P1_UV1'
+flags: 0 []
+points: 326  faces: 324 (FACE4_LIST_FORMAT_1) {'tri': 0, 'quad': 324}
+bbox min (-2.605081081390381, -4.778098106384277, -1.6476240158081055) max (2.605081081390381, 0.0, 1.6476240158081055) extent (5.210162162780762, 4.778098106384277, 3.295248031616211)
+first points: [(-1.593127965927124, -1.2034670114517212, 1.379699945449829), (-1.4726020097732544, -1.2055410146713257, -0.15149299800395966), (-1.6393200159072876, -0.17578299343585968, 1.6046040058135986), (-1.785796046257019, -1.5153650045394897, 0.648127019405365), (-2.3819069862365723, -0.9024710059165955, -0.15668299794197083)]
+last points: [(2.408144950866699, -0.6799299716949463, 1.2935450077056885), (2.342405080795288, -0.825918972492218, -0.07456400245428085), (0.12998299300670624, -3.3316149711608887, -1.3144199848175049), (0.12479300051927567, -3.124008893966675, -1.3572089672088623), (0.18626700341701508, -2.9506618976593018, -1.4094560146331787)]
+first faces: [(117, 11, 16, 159), (2, 0, 11, 13), (118, 12, 128, 165), (108, 112, 37, 38), (3, 9, 8, 0)]
+last faces: [(324, 279, 287, 325), (325, 287, 284, 293), (293, 284, 285, 292), (323, 308, 306, 282), (306, 307, 281, 282)]
+uvs (UV4_LIST): 324 faces, u 0.00195313..0.998047, v 0.00195313..0.770429
+first face uvs: [((0.9368442893028259, 0.4068339765071869), (0.8674923181533813, 0.44489771127700806), (0.828993022441864, 0.38766419887542725), (0.8850113749504089, 0.3565247058868408)), ((0.867836058139801, 0.5777115225791931), (0.8019914627075195, 0.4895036220550537), (0.8674923181533813, 0.44489771127700806), (0.9247855544090271, 0.524094820022583)), ((0.4999999403953552, 0.43053096532821655), (0.5530533194541931, 0.41569167375564575), (0.551337480545044, 0.5031313896179199), (0.5, 0.5005824565887451))]
+groups (id: faces): {15349: 324}
+anomalies: none
+matched sent mesh C by vertex and face counts
+Vergleich mit gesendetem Mesh C: Punkte/Flächen gesendet [326, 324], empfangen [326, 324]
+Achsen (regression): x_goz = +1.000000·x_sent +0.000000 (corr +1.000000);  y_goz = -1.000000·y_sent +0.000000 (corr -1.000000);  z_goz = -1.000000·z_sent +0.000000 (corr -1.000000)
+Maßstab: [1.0]  (signed permutation, scale 1, offset 0: True)
+Rest nach dieser Abbildung: max 0 (float32-Rundung ≈ 1e-7)
+Flächen: {'identical': 324, 'same_corners_rotated': 0, 'reversed_winding': 0, 'other': 0}
+Reihenfolge: same
+Rundreise unverändert: Punkte bitgleich (float32), Flächen gleich
+Morph-Ziel 'bump' (bridge): Gewicht -0.0000 (0 = Basis, 1 = Ziel); 218 von 326 Punkten bitgleich mit Basis + Ziel; Rest neben Basis + Gewicht·Ziel max 2.27e-07
+UVs je Fläche gegen die gesendeten / OBJ-UVs: {'identical': 0, 'flip_v': 0, 'flip_u': 0, 'other': 324, 'no_uvs_sent': 0}; max. Abweichung gleich 0.958, mit V gespiegelt 0.958
+Datei fertig beim Start: complete_at_start=True, exclusive_open=ok, changed_after_1s=False, geschrieben 425.8 ms vor dem Start
+
+no listener running: no ticket (nothing is started)

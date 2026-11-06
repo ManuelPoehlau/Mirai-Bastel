@@ -1,0 +1,82 @@
+{
+  "mesh": "C",
+  "identifier": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_UV",
+  "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_UV.GoZ",
+  "sha256": "0ce51d5fc9615c114d8841892d4d869ba481feb6902bd4b37baf04e402503f17",
+  "axis": "bridge",
+  "groups": null,
+  "uvs": "as-is",
+  "target": null,
+  "dry_run": false,
+  "style": "sdk",
+  "command": [
+    "C:\\Users\\Public\\Pixologic\\GoZBrush\\GoZBrushFromApp.exe"
+  ],
+  "steps": [
+    {
+      "t_ms": 11.6,
+      "what": "wrote GoZ_ObjectPath.txt",
+      "text": "E1_C_P1_UV"
+    },
+    {
+      "t_ms": 24.9,
+      "what": "started GoZMakeObjectPath",
+      "pid": 11200,
+      "exe": "C:\\Users\\Public\\Pixologic\\GoZBrush\\GoZMakeObjectPath.exe"
+    },
+    {
+      "t_ms": 93.3,
+      "what": "identifier received",
+      "identifier": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_UV",
+      "returncode": 0
+    },
+    {
+      "t_ms": 102.8,
+      "what": "wrote .GoZ",
+      "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_UV.GoZ",
+      "bytes": 19608,
+      "sha256": "0ce51d5fc9615c114d8841892d4d869ba481feb6902bd4b37baf04e402503f17",
+      "mesh_name": "E1_C_P1_UV",
+      "role": "base"
+    },
+    {
+      "t_ms": 103.1,
+      "what": "axis map",
+      "axis": "bridge",
+      "signs": [
+        1.0,
+        -1.0,
+        -1.0
+      ]
+    },
+    {
+      "t_ms": 120.1,
+      "what": "wrote GoZ_ObjectList.txt",
+      "lines": [
+        "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_UV"
+      ],
+      "read_back": [
+        "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_UV"
+      ]
+    },
+    {
+      "t_ms": 138.9,
+      "what": "GoZ_Application.txt",
+      "before": "Mirai",
+      "after": "MiraiProbe"
+    },
+    {
+      "t_ms": 155.7,
+      "what": "started GoZBrushFromApp",
+      "pid": 2888,
+      "command": [
+        "C:\\Users\\Public\\Pixologic\\GoZBrush\\GoZBrushFromApp.exe"
+      ]
+    },
+    {
+      "t_ms": 329.7,
+      "what": "GoZBrushFromApp exited",
+      "returncode": 0
+    }
+  ]
+}

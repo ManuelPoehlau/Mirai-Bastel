@@ -1,0 +1,124 @@
+{
+  "mesh": "C",
+  "identifier": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_B",
+  "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_B.GoZ",
+  "sha256": "92039e0b1c917302a013915c753df0b891ae95c0420e96a92c0ffa176f9b09e8",
+  "axis": "bridge",
+  "groups": null,
+  "uvs": null,
+  "target": "bump",
+  "files": [
+    {
+      "identifier": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_B",
+      "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_B.GoZ",
+      "sha256": "92039e0b1c917302a013915c753df0b891ae95c0420e96a92c0ffa176f9b09e8",
+      "role": "base"
+    },
+    {
+      "identifier": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_T",
+      "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_T.GoZ",
+      "sha256": "87382ccaf2e9f25edb773d6e6023ce139447312ca715bfd65d6663c9135dd8de",
+      "role": "target_bump"
+    }
+  ],
+  "dry_run": false,
+  "style": "sdk",
+  "command": [
+    "C:\\Users\\Public\\Pixologic\\GoZBrush\\GoZBrushFromApp.exe"
+  ],
+  "steps": [
+    {
+      "t_ms": 12.0,
+      "what": "wrote GoZ_ObjectPath.txt",
+      "text": "E1_C_P1_B"
+    },
+    {
+      "t_ms": 27.5,
+      "what": "started GoZMakeObjectPath",
+      "pid": 13088,
+      "exe": "C:\\Users\\Public\\Pixologic\\GoZBrush\\GoZMakeObjectPath.exe"
+    },
+    {
+      "t_ms": 93.6,
+      "what": "identifier received",
+      "identifier": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_B",
+      "returncode": 0
+    },
+    {
+      "t_ms": 99.0,
+      "what": "wrote .GoZ",
+      "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_B.GoZ",
+      "bytes": 9224,
+      "sha256": "92039e0b1c917302a013915c753df0b891ae95c0420e96a92c0ffa176f9b09e8",
+      "mesh_name": "E1_C_P1_B",
+      "role": "base"
+    },
+    {
+      "t_ms": 103.6,
+      "what": "wrote GoZ_ObjectPath.txt",
+      "text": "E1_C_P1_T"
+    },
+    {
+      "t_ms": 107.0,
+      "what": "started GoZMakeObjectPath",
+      "pid": 15768,
+      "exe": "C:\\Users\\Public\\Pixologic\\GoZBrush\\GoZMakeObjectPath.exe"
+    },
+    {
+      "t_ms": 172.6,
+      "what": "identifier received",
+      "identifier": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_T",
+      "returncode": 0
+    },
+    {
+      "t_ms": 177.9,
+      "what": "wrote .GoZ",
+      "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_T.GoZ",
+      "bytes": 9224,
+      "sha256": "87382ccaf2e9f25edb773d6e6023ce139447312ca715bfd65d6663c9135dd8de",
+      "mesh_name": "E1_C_P1_T",
+      "role": "target_bump"
+    },
+    {
+      "t_ms": 178.2,
+      "what": "axis map",
+      "axis": "bridge",
+      "signs": [
+        1.0,
+        -1.0,
+        -1.0
+      ]
+    },
+    {
+      "t_ms": 192.8,
+      "what": "wrote GoZ_ObjectList.txt",
+      "lines": [
+        "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_B",
+        "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_T"
+      ],
+      "read_back": [
+        "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_B",
+        "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_T"
+      ]
+    },
+    {
+      "t_ms": 211.4,
+      "what": "GoZ_Application.txt",
+      "before": "MiraiProbe",
+      "after": "MiraiProbe"
+    },
+    {
+      "t_ms": 223.9,
+      "what": "started GoZBrushFromApp",
+      "pid": 18700,
+      "command": [
+        "C:\\Users\\Public\\Pixologic\\GoZBrush\\GoZBrushFromApp.exe"
+      ]
+    },
+    {
+      "t_ms": 440.2,
+      "what": "GoZBrushFromApp exited",
+      "returncode": 0
+    }
+  ]
+}
