@@ -347,8 +347,11 @@ Ordner; bitte bei jedem Schritt die Uhrzeit notieren (oder die Reihenfolge einha
    *Tool → Layers → New* (Layer nimmt auf, REC an), dann *Tool → Import* → `meshes\C_bump.obj`. Notieren: hat der Layer
    jetzt den Buckel (Layer-Auge aus/an, Regler)? Dann **GoZ** dreimal: Layer auf 1 (voll), Layer aus, Layer auf 0.5.
    Falls *Import* den Layer nicht füllt oder ZBrush eine Meldung zeigt: Screenshot und notieren, was passiert ist.
-7. **Überlebt der Layer ein erneutes Senden?** Direkt nach Schritt 6:
-   `python -I experiments/goz_probe/probe_send.py --resend last`. Ist der Layer in ZBrush noch da?
+7. **Überlebt der Layer ein erneutes Senden?** Direkt nach Schritt 6, Layer **nicht** auf Aufnahme (REC aus), Regler
+   bleibt auf 0.5: `python -I experiments/goz_probe/probe_send.py --resend last` (schickt die letzte Rückgabe, also den
+   Stand mit Layer auf 0.5, an dasselbe Tool). Notieren: Ist der Layer noch da? Sieht der Buckel danach **stärker** aus
+   (dann hat ZBrush das Gesendete als neue Basis genommen und den Layer obendrauf gerechnet)? Zum Schluss einmal
+   **GoZ**.
 
 Danach R wieder auf „Mirai“, `captures/` mit `git add experiments/goz_probe/captures` committen und pushen.
 
