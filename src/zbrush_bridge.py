@@ -317,13 +317,53 @@ class ZBrushBridge:
         """The plan against the newest manifest version the object still matches (after an Undo of an apply: the one
         before it); a conflict only if it matches none."""
         versions = self._manifests_for(identifier)
+        renamed_from = None
+        if not versions:
+            versions, renamed_from = self._link_by_topology(identifier, goz)
         first: Optional[tuple[ReturnPlan, Optional[Manifest]]] = None
         for manifest in reversed(versions):
             plan = self.plan(identifier, goz, manifest, texture)
+            if renamed_from is not None:
+                plan.notes.insert(0, f"linked by topology: ZBrush renamed {_short(renamed_from)!r} to "
+                                     f"{_short(identifier)!r}")
             if plan.kind is not ReturnKind.CONFLICT:
                 return plan, manifest
             first = first or (plan, manifest)
         return first or (self.plan(identifier, goz, None, texture), None)
+
+    def _link_by_topology(self, identifier: str, goz: GozMesh) -> tuple[list[Manifest], Optional[str]]:
+        """A return under a name Mirai never sent (Manu 2026-11-06: ZBrush appends a number when a Tool of that name
+        exists already): the SubTool of this session with exactly the same topology; among several (an object's base
+        and its targets, duplicated objects) the one whose last known ZBrush shape most points equal bit for bit, only
+        if that best one is unique. The new name then becomes an alias of it. ([], None) = no link."""
+        from interop.goz.bridge import sent_points, target_layer
+
+        faces = [list(f) for f in goz.faces]
+        to_world, _ = _placement()
+        scored = []
+        seen = set()
+        for versions in self._manifests.values():
+            if not versions or id(versions) in seen:
+                continue
+            seen.add(id(versions))
+            m = versions[-1]
+            if len(m.vertex_ids) != len(goz.points) or m.faces != faces:
+                continue
+            obj = self.app.scene.objects.get(ObjectId(m.object_id))
+            layer = target_layer(m)
+            if obj is None or (layer is not None and layer not in obj.mesh.point_layer_ids()):
+                continue
+            held = m.zbrush_points if m.zbrush_points is not None else sent_points(obj, to_world, layer)
+            same = sum(1 for a, b in zip(held, goz.points) if tuple(a) == tuple(b))
+            scored.append((same, versions))
+        if not scored:
+            return [], None
+        scored.sort(key=lambda x: -x[0])
+        if len(scored) > 1 and scored[0][0] == scored[1][0]:
+            return [], None
+        versions = scored[0][1]
+        self._manifests[_key(identifier)] = versions  # the same list: rebases of either name land in both
+        return versions, versions[-1].identifier
 
     def plan(self, identifier: str, goz: GozMesh, manifest: Optional[Manifest],
              texture: Optional[str] = None) -> ReturnPlan:
@@ -415,10 +455,13 @@ class ZBrushBridge:
         if obj is None:
             return []
         to_world, _ = _placement()
+        own = self._manifests.get(_key(identifier))
         out = []
-        for key, versions in self._manifests.items():
-            if key == _key(identifier) or not versions or versions[-1].object_id != manifest.object_id:
+        seen = {id(own)}
+        for versions in self._manifests.values():  # a renamed Tool is an alias of the same list: count each list once
+            if id(versions) in seen or not versions or versions[-1].object_id != manifest.object_id:
                 continue
+            seen.add(id(versions))
             m = versions[-1]
             layer = target_layer(m)
             if layer is not None and layer not in obj.mesh.point_layer_ids():
@@ -454,6 +497,10 @@ def _ngon_text(manifest: Manifest) -> str:
         if stats["asymmetric"]:
             text += f", {stats['asymmetric']} not (no mirror partner or no valid symmetric split)"
     return text
+
+
+def _short(identifier: str) -> str:
+    return identifier.replace("\\", "/").rsplit("/", 1)[-1]
 
 
 def _key(identifier: str) -> str:

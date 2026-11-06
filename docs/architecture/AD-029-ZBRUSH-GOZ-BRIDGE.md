@@ -107,6 +107,12 @@ applied return, at most 32): a return is planned against the newest version the 
 **Ctrl+Z of an apply** the next GoZ links to the version before it and is offered again without a resend (Manu,
 2026-11-05: it used to be a conflict). Only a real Mirai edit since then is a conflict. A ticket from before this
 Mirai started has only the newest version (on disk).
+**A Tool ZBrush renamed** (Manu, 2026-11-06): when a Tool or SubTool of the sent name exists already in ZBrush, ZBrush
+appends a number on load and GoZ returns under that name, which no manifest knows. Such a return links by **exact
+topology** to a SubTool sent in this session; among several (an object's base and its targets, duplicated objects)
+to the one whose last known ZBrush shape has the most bit-identical points, only if that best one is unique; the new
+name then becomes an alias. The status line says „linked by topology: ZBrush renamed …“; the fingerprint and every
+other check apply as before. Not across a Mirai restart (the manifest on disk is keyed by the sent name).
 
 ## 6. Plan kinds (`bridge.ReturnKind`) and the apply
 

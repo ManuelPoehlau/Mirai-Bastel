@@ -133,6 +133,11 @@ the copied texture (fixed 2026-11-06, test `test_a_foreign_subtool_with_a_textur
 Note for the retest: an object selected in mode `4` shows its selection colour instead of its texture (AD-026
 `PROVISIONAL`); the new object is selected after the add, so the texture shows once mode `4` is left.
 
+**Renamed Tools (Manu, 2026-11-06):** with base + targets sent and older Tools of the same names in the ZBrush
+project, ZBrush loaded the base under a name with a number appended; UVs + texture on it came back as „not sent from
+Mirai“. Fixed by linking by topology (AD-029 §5). Workflow for UVs + texture with targets: unwrap and paint on the
+base SubTool and GoZ it; Mirai has one UV map per mesh, the targets share it.
+
 ## 6. Not in P3
 
 Sending textures to ZBrush, normal / displacement maps, polypaint as vertex colours (Mirai has no colour storage),

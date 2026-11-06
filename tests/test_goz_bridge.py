@@ -775,3 +775,41 @@ def test_a_foreign_subtool_with_a_texture_becomes_a_textured_new_object(env):
     obj = list(app.scene.objects.values())[-1]
     assert obj.mesh.has_face_uvs() and Path(obj.texture).parent == env["tmp"] / "textures"
     assert "with its texture (shown once it is not selected in mode 4)" in app.status_message
+
+
+
+# -- a Tool ZBrush renamed (Manu 2026-11-06) ---------------------------------------------------------------------------
+
+
+def test_a_return_under_a_name_zbrush_changed_links_by_topology(env):
+    """ZBrush appends a number when a Tool of the sent name exists already; GoZ then returns under that name. The
+    return links by exact topology to the SubTool whose shape it matches (base, not its target), says so, and further
+    returns under the new name stay linked."""
+    app = env["app"]
+    mesh, lid = _bump_target(app)
+    base_id = send(env)
+    target_renamed = env["paths"].read_object_list()[1] + "_2"
+    renamed = base_id + "_1"
+    goz_back(env, renamed, flipped(fixture("zb2022_C_move_brush.GoZ")))
+    assert "linked by topology: ZBrush renamed 'head_basemesh1' to 'head_basemesh1_1'" in app.status_message
+    assert "101 of 326 points moved" in app.status_message, app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    goz_back(env, renamed, flipped(fixture("zb2022_C_move_brush.GoZ")))
+    assert "no point moved" in app.status_message, app.status_message
+    goz = parse_goz(fixture("zb2022_E3_head_bump_target.GoZ"))
+    pts = list(goz.points)
+    pts[3] = (pts[3][0], pts[3][1] + 0.3, pts[3][2])
+    goz_back(env, target_renamed, encode_goz(goz.name, pts, goz.faces))
+    assert "of target 'Bump' moved" in app.status_message, app.status_message
+
+
+def test_no_link_when_the_topology_matches_no_sent_subtool_or_several_alike(env):
+    app = env["app"]
+    mesh = app.scene.edit_object.mesh
+    mesh.add_point_layer(PointLayerInfo("Flat"))  # a target without offsets: its SubTool equals the base point for point
+    send(env)
+    goz = parse_goz(flipped(fixture("zb2022_C_unchanged.GoZ")))
+    goz_back(env, str(env["paths"].project_dir() / "Other"), encode_goz(goz.name, goz.points, goz.faces[:-1]))
+    assert "not sent from Mirai" in app.status_message  # other topology
+    goz_back(env, str(env["paths"].project_dir() / "Tie"), encode_goz(goz.name, goz.points, goz.faces))
+    assert "not sent from Mirai" in app.status_message and "linked by topology" not in app.status_message  # a tie
