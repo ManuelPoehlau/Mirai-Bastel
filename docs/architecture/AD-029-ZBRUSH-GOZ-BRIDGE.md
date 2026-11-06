@@ -143,7 +143,15 @@ Now Mirai names its SubTools itself, without `GoZMakeObjectPath` (and no longer 
   none of these writes (§3). **T11 step 1** (Manu, 2026-11-06, `captures/20261106-150900_043_names`): *Import as
   SubTool* on; beside Mirai's four `.GoZ` ZBrush made four `<name>.ztn` at the same second, each 55 bytes = the length
   of `…/GoZProjects/Default/SubD_Cube` (each names the Tool, i.e. its top SubTool); the GoZ of target 3 rewrote its
-  `.GoZ`/`.ztn` and one second later wrote `SubD_Cube.ztl` (271 KB, the whole Tool). Hypothesis for T11: ZBrush's `.ZTL` beside an exported Tool is loaded again on the next
+  `.GoZ`/`.ztn` and one second later wrote `SubD_Cube.ztl` (271 KB, the whole Tool). **Steps 2–3 (15:15,
+  `…151522_094_names`): every `.ztn`, the targets' too, holds `…\Default\SubD_Cube`. With the `.ztl` there: the extra
+  Tool again. With the `.ztl` moved away by hand: no extra Tool, but six SubTools — `Target_1` (was the base),
+  `Target_1`, `Target_2`, `Target_3`, `Target_2`, `Target_3`. Result: ZBrush's GoZ import takes each file via its
+  `.ztn` to the Tool `SubD_Cube` and imports it into the SubTool of that name — the base right, target 1 into the base
+  too (renamed after its file), targets 2 and 3 find no `SubD_Cube` SubTool any more and are appended; a missing Tool
+  is loaded from `SubD_Cube.ztl`. So with *Import as SubTool* on, ZBrush's own GoZ cannot update several SubTools of one
+  Tool (not even one target); with it off every object is its own Tool whose `.ztn` names itself, and updates work (P3
+  practical test 3, E1 resends). This is what GoB's own ZScript import replaces.** The original hypothesis was: ZBrush's `.ZTL` beside an exported Tool is loaded again on the next
   send (the extra Tool with the old state). If confirmed, the options are Manu's decision: (a) a Mirai ZScript import
   by name like GoB (no ZBrush file touched, Mirai controls where each file goes), (b) moving Mirai's own names'
   `.ZTL` away before a send (writes into ZBrush's files), (c) one object per send.

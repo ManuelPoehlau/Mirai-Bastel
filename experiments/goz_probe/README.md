@@ -410,6 +410,18 @@ benannt nach der obersten SubTool. Verdacht: beim nächsten Senden folgt ZBrush 
 diesen alten Stand als weiteres Tool. (Die Namen sind sauber: Target 3 hat inzwischen LayerId 4, der Name ist frei
 geworden wie vorgesehen.)
 
+**Schritte 1–3 erledigt (Manu, 2026-11-06 15:15, `captures/20261106-151522_094_names`):** jede `.ztn` enthält
+`…\GoZProjects\Default\SubD_Cube`, auch die der drei Targets. Mit `SubD_Cube.ztl` im Ordner: wieder ein zusätzliches
+Tool wie in Lauf 2. Mit der `.ztl` von Hand weggeschoben: kein neues Tool, aber **sechs** SubTools: `Target_1`
+(war die Basis), `Target_1`, `Target_2`, `Target_3`, `Target_2`, `Target_3`. **Ergebnis:** ZBrushs eigener GoZ-Import
+führt jede Datei über ihre `.ztn` zum Tool `SubD_Cube` und importiert sie in die SubTool **dieses Namens**: die Basis
+richtig, Target 1 ebenfalls in die Basis (die dabei nach der Datei umbenannt wird), Target 2 und 3 finden keine
+SubTool `SubD_Cube` mehr und werden angehängt; fehlt das Tool, lädt ZBrush es aus `SubD_Cube.ztl` (das zusätzliche
+Tool). Mit *Import as SubTool* an kann ZBrushs GoZ also **mehrere SubTools eines Tools nicht aktualisieren** — auch ein
+einzelnes Target nicht. Mit *Import as SubTool* aus wird jedes Objekt ein eigenes Tool, dessen `.ztn` auf sich selbst
+zeigt (P3-Praxistest 3, E1-Resends: Aktualisieren funktioniert). Darum hat GoB den Import durch ein eigenes ZScript
+ersetzt (Suche per SubTool-Namen).
+
 1. Nach dem **GoZ** aus ZBrush (dein Schritt „Target ändern > GoZ“): `python -I experiments/goz_probe/probe_names.py`.
    Notieren: die Zeile „ZBrush tool files (.ZTL/.ztn)“ und `GoZ_Config.txt` (*Import as SubTool*).
 2. **Mit Mirai** (nach `git pull`), deinen Ablauf genau wie in Lauf 2. Notieren: neues Tool ja/nein, Name und Inhalt
