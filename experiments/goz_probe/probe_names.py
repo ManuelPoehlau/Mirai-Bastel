@@ -97,7 +97,11 @@ def main(argv=None) -> int:
     for i in files:
         extra = f"  [{i.get('header', '')}] mesh {i.get('mesh')!r} {i.get('points')}/{i.get('faces')}" \
             if "header" in i else ""
-        text = f"  -> {i['text']!r}" if "text" in i else ""
+        text = ""
+        if "text" in i:  # T11: a .ztn names the Tool ZBrush puts this object into
+            tool = i["text"].replace("\\", "/").rsplit("/", 1)[-1]
+            own = tool.casefold() == i["name"][:-4].casefold()
+            text = f"  -> {'own Tool' if own else 'SubTool of Tool ' + repr(tool)}"
         print(f"  {i['written']}  {i['bytes']:>10}  {i['name']}{extra}{text}{'  ' + i['error'] if 'error' in i else ''}")
     ztools = [i["name"] for i in files if i["name"].lower().endswith((".ztl", ".ztn"))]
     print(f"ZBrush tool files (.ZTL/.ztn): {len(ztools)} {ztools}")  # T11: GoB 2020 'mess up ZBrush importing subtools'
