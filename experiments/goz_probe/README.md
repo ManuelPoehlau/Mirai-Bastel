@@ -587,6 +587,7 @@ Not needed from Manu: any Maxon download (§4), any decision on technical approa
 | T9 / E3 | UV4 sent as-is comes back identical (no flip; ZBrush's GoZ of the OBJ import equals its `vt`). UV Master returns new UVs on all faces. *New From Polypaint* → a TEXTURE_MAP_PATH `<Tool>_TXTR.tif` (uncompressed TIFF 2048² RGB, stored bottom-up: matches the MRGB polypaint, byte order B G R mask, with row 0 = v 0). `--target bump`: both objects arrive, bit-identical. Layer import of `C_bump.obj` into a recording layer: weight 1.0 (slider 1), 1.0 again with the layer switched off, 0.5 (slider 0.5); the layer survives a resend. → WP_GOZ_P3_PLAN §2. | receive `20261106-095115_060` … `…100117_305`, `send_resend 100330` |
 | — | `captures/20261105-161526_255_send_A/send_log.json` is not valid JSON (a diagnostic of the reverted commit `d35a8a3` wrote into it); ignore it. | — |
 | — | ZBrush's own untouched-mesh blocks: MRGB `ff ff ff 01` per vertex, MASK16 `ffff`, GROUPS 0, CREASE 0 (CREASE block size 16 + faces, not padded to 4). `encode_goz(style="zbrush")` reproduces the T2 file byte for byte (fixture `tests/fixtures/zbrush2022_0_8_obj_import_A.GoZ`). | T2 capture |
+| T11b | Multi-object send with *Import as SubTool* off, clean folder: all `.ztn` still → SubD_Cube (Hypothesis B confirmed). ZBrush always groups a multi-object GoZ_ObjectList into one Tool with SubTools regardless of the setting. | `captures/20261106-155654_089_names` |
 
 ## 11. Result of E1 (2026-11-05)
 

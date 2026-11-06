@@ -79,6 +79,10 @@ def env(tmp_path):
     paths = GozPaths(root)
     for exe in ("GoZMakeObjectPath", "GoZBrushFromApp"):
         paths.utility(exe).write_bytes(b"")
+    # Fake ZBrush.exe and GoZ_Config.txt for the multi-SubTool ZScript path (AD-029 §3, option a)
+    fake_zbrush_exe = tmp_path / "fake_ZBrush.exe"
+    fake_zbrush_exe.write_bytes(b"")
+    (paths.gozbrush / "GoZ_Config.txt").write_text(f'PATH = "{fake_zbrush_exe}"\r\n')
     app = Application()
     app.init_scene("obj", obj_path=HEAD, store_type=TraceStore, symmetry_overlay_type=GLSymmetryOverlay)
     zb = FakeZBrush(paths)
@@ -982,3 +986,37 @@ def test_a_version_1_name_registry_gives_the_plain_names_back(env):
     send(env)
     assert _sent_names(env) == PLAIN
     assert json.loads(registry.read_text(encoding="utf-8"))["version"] == 2
+
+
+# -- multi-SubTool ZScript send (AD-029 §3, option a, T11b 2026-11-06) ------------------------------------------------
+
+
+def test_multi_object_send_uses_zscript_and_writes_ztn_files(env):
+    """Multi-object send (base + morph target): ZBrush.exe called with script, .ztn written for each."""
+    from core import LayerKind
+
+    app, paths = env["app"], env["paths"]
+    mesh = app.scene.edit_object.mesh
+    mesh.add_point_layer(PointLayerInfo("Target 1", kind=LayerKind.VECTOR))
+    zbrush_knows_mirai(env)
+    send(env)
+    # Two objects in list: base + target
+    listed = paths.read_object_list()
+    assert len(listed) == 2
+    # ZBrush.exe called (not GoZBrushFromApp) for multi-object
+    exes = [Path(c[0]).name for c in env["zb"].commands]
+    assert "GoZBrushFromApp" not in exes[-1]  # last call is ZBrush.exe
+    # .ztn written for each object, each pointing to its own identifier
+    from interop.goz.files import ansi_encoding
+    for ident in listed:
+        stem = Path(ident).stem
+        ztn = paths.project_dir() / (stem + ".ztn")
+        assert ztn.exists(), f"{stem}.ztn not written"
+        content = ztn.read_bytes().decode(ansi_encoding())
+        assert content == ident, f"{stem}.ztn should contain {ident!r}, got {content!r}"
+    # script was written
+    script = env["bridge"].manifest_dir / "mirai_import.zsc"
+    assert script.exists()
+    text = script.read_text()
+    for ident in listed:
+        assert Path(ident).stem in text
