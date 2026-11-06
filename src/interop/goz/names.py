@@ -15,6 +15,9 @@ Rules:
 - **Readable:** the stem is `short_name(<object>)` or `short_name(<object>_<target>)`; only a clash gives `_2`, `_3`, ...
   A stem clashes when another entry owns it, or when `<stem>.GoZ` lies in the project folder and is not Mirai's (no
   entry and no Mirai manifest for it): Mirai writes into no file it did not create (AD-029 §3).
+- **Gone object or target** (Manu, 2026-11-06: targets deleted and made again got `_2`, then `_3`): an entry of the
+  current scene file (or this session) whose object or morph target no longer exists frees its stem; the next object
+  or target of that wish name takes it over (and its Tool in ZBrush).
 - **Unsaved scene after a restart:** an entry of an unsaved scene from another session with the same wish stem is taken
   over (the same object sent again after a restart updates its Tool instead of counting up). Returns of the old
   session still only become new objects (the manifest names the old session, D11).
@@ -36,7 +39,9 @@ from typing import Callable, Optional
 from .files import write_text_atomic
 
 REGISTRY_FILE = "names.json"
-REGISTRY_VERSION = 1
+#: 2 (2026-11-06): a version-1 file is read as empty once - its entries of deleted targets held the plain names; the
+#: manifests on disk then give every stem back to its live object (`legacy`) and free those of gone ones (`dead`)
+REGISTRY_VERSION = 2
 #: the oldest entries beyond this are forgotten (their stems become free again)
 MAX_ENTRIES = 1000
 
@@ -120,6 +125,7 @@ class NameRegistry:
     def allocate(self, title: str, *, scene: Optional[str], session: str, object_id: int, layer: Optional[int],
                  foreign_file: Callable[[str], bool],
                  legacy: Callable[[str], Optional[NameEntry]] = lambda stem: None,
+                 dead: Callable[[NameEntry], bool] = lambda entry: False,
                  max_length: int = 40) -> NameEntry:
         """The entry of (scene / session, object, layer): the existing one, else the first free stem of `title`,
         `title_2`, ... (see the module rules). Not saved: the caller saves once the send is written."""
@@ -137,9 +143,11 @@ class NameRegistry:
                     if owner is not None:
                         self.entries.append(owner)
                 if owner is not None:
-                    if owner.is_for(scene, session, object_id, layer) or (
+                    if owner.is_for(scene, session, object_id, layer) or dead(owner) or (
                             owner.scene is None and owner.session != session and owner.title == title):
                         entry = owner
+                        if owner.scene != scene:
+                            owner.scene = None  # taken over: no longer the other scene's (`is_for` below decides)
                     continue
                 if foreign_file(stem):
                     continue

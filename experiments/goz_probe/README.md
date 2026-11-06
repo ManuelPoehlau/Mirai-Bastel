@@ -379,6 +379,31 @@ benennt: lesbar, ohne angehängte Zahl, und über Neustarts hinweg gleich.
 `captures/` (der `*_names`-Ordner) committen. Erwartung: kein „not sent from Mirai“, keine Zahl außer der eines
 Target-Namens, keine neue Kopie beim erneuten Senden.
 
+### T11 — Basis heißt nach erneutem Senden wie ein Target (2026-11-06, ~10 min)
+
+Beobachtung (Manu): Basis + 3 Targets gesendet, Target 3 in ZBrush geändert und per GoZ zurück, in Mirai die Basis
+geändert und erneut gesendet → die Basis-SubTool hat die Änderung, **heißt aber jetzt wie das letzte Target**
+(`…Target_3_3`, zwei SubTools gleichen Namens). Mirai hat dabei nachweislich richtig geschrieben (Basis-Datei unter dem
+Basis-Namen, Test `test_targets_made_again_take_their_plain_names_back`). Nur geändert: der Name *in* der Datei war
+bisher ohne die `_3` (`…Target_3`), jetzt ist er immer gleich dem Dateinamen. Fragen an ZBrush: Liegt es an dieser
+Abweichung (dann ist es jetzt weg), an der Reihenfolge der Liste (Basis zuerst, ZBrush benennt die Basis nach der
+letzten Datei?) oder an der gerade aktiven SubTool?
+
+1. **Mit Mirai** (nach `git pull`): genau deinen Ablauf wiederholen (Basis + Targets senden, ein Target ändern, GoZ,
+   übernehmen, Basis in Mirai ändern, senden). Behält die Basis ihren Namen → fertig, Rest überspringen.
+2. **Sonst mit der Probe**, R auf „Mirai Probe (E1)“:
+   a. `python -I experiments/goz_probe/probe_send.py --mesh C --axis bridge --target bump` → Tool/SubTools notieren
+      (`E1_C_P1_B…`, `E1_C_P1_T…`).
+   b. SubTool `…_T…` anklicken, ein Move-Strich, **GoZ**.
+   c. `python -I experiments/goz_probe/probe_send.py --mesh C --axis bridge --target bump --again` (dieselben zwei
+      Dateien noch einmal, Basis zuerst in der Liste) → Namen beider SubTools notieren.
+   d. Neu anfangen: Schritte a und b wiederholen (neue Namen), dann
+      `python -I experiments/goz_probe/probe_send.py --mesh C --axis bridge --target bump --again --base-last`
+      (Basis zuletzt in der Liste) → Namen notieren.
+   e. Falls in c und d die Basis umbenannt wird: d noch einmal, aber vor dem Senden die **Basis**-SubTool anklicken.
+
+Danach R wieder auf „Mirai“, `captures/` committen.
+
 ### Aufräumen
 
 `python -I experiments/goz_probe/install_probe_app.py --uninstall` entfernt nur `GoZApps\MiraiProbe\`. In ZBrush mit **R**

@@ -252,7 +252,8 @@ class ZBrushBridge:
                 entry = self.names.allocate(
                     short_name(title), scene=scene_key(scene_path), session=self.session_id, object_id=int(obj.id),
                     layer=key[1], foreign_file=lambda stem: (project / f"{stem}.GoZ").exists(),
-                    legacy=lambda stem: self._legacy_entry(project, stem))
+                    legacy=lambda stem: self._legacy_entry(project, stem),
+                    dead=lambda e: self._is_dead(e, scene_key(scene_path)))
                 identifier = str(project / entry.stem)
                 data, manifest = build_send(
                     app.scene, obj, identifier=identifier, transfer_id=transfer_id, session_id=self.session_id,
@@ -282,6 +283,13 @@ class ZBrushBridge:
         app.set_status(f"ZBrush: {obj.name!r} sent{as_text} ({len(manifest.vertex_ids)} points{uv_text}"
                        f"{_ngon_text(manifest)}{extra})")
         return True
+
+    def _is_dead(self, entry: NameEntry, scene: Optional[str]) -> bool:
+        """A name of the current scene file (or this session) whose object or morph target is gone: its stem is free."""
+        if not ((scene is not None and entry.scene == scene) or entry.session == self.session_id):
+            return False
+        obj = self.app.scene.objects.get(ObjectId(entry.object_id))
+        return obj is None or (entry.layer is not None and entry.layer not in {int(x) for x in obj.mesh.point_layer_ids()})
 
     def _legacy_entry(self, project: Path, stem: str) -> Optional[NameEntry]:
         """A stem a Mirai before the name registry sent (its manifest is on disk): Mirai's, for the manifest's object."""

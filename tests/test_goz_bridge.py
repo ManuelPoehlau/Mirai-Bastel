@@ -918,3 +918,67 @@ def test_a_return_does_not_reach_an_object_of_a_scene_loaded_since(env, tmp_path
     assert goz_back(env, identifier, flipped(fixture("zb2022_C_move_brush.GoZ"))) == 1
     assert "another Mirai session or scene" in app.status_message
     assert not any(r.startswith(APPLY_PREFIX) for r in env["bridge"].entries())
+
+
+def _three_targets(mesh):
+    from tests.test_goz_format import bump
+
+    lids = []
+    for k in (1, 2, 3):
+        lid = mesh.add_point_layer(PointLayerInfo(f"Target {k}"))
+        for v, d in bump(mesh).items():
+            mesh.set_layer_value(lid, v, tuple(c * k for c in d))
+        lids.append(lid)
+    return lids
+
+
+def _sent_names(env) -> list[str]:
+    listed = env["paths"].read_object_list()
+    names = [Path(i).name for i in listed]
+    assert [parse_goz(Path(i + ".GoZ").read_bytes()).name for i in listed] == names  # file name = MESH name
+    return names
+
+
+PLAIN = ["head_basemesh", "head_basemesh_Target_1", "head_basemesh_Target_2", "head_basemesh_Target_3"]
+
+
+def test_targets_made_again_take_their_plain_names_back(env):
+    """Manu 2026-11-06: base `SubD_Cube`, its targets came as `…Target_1_3`, `…Target_2_3`, `…Target_3_3`: in that saved
+    scene the targets had been deleted and made again twice (new LayerIds), and the names of the gone targets stayed
+    taken. A gone target frees its name; the file's MESH name is its file name."""
+    mesh = env["app"].scene.edit_object.mesh
+    env["scene_file"]["path"] = env["tmp"] / "cube.mirai.json"
+    for _round in range(2):
+        lids = _three_targets(mesh)
+        send(env)
+        assert _sent_names(env) == PLAIN
+        for lid in lids:
+            mesh.remove_point_layer(lid)
+    restart_mirai(env)
+    _three_targets(mesh)
+    send(env)
+    assert _sent_names(env) == PLAIN
+
+
+def test_a_version_1_name_registry_gives_the_plain_names_back(env):
+    """Manu's registry from the first version holds `_3` names for the live targets and the plain ones for gone
+    targets: it is read as empty once; the manifests on disk give the plain names to the live targets."""
+    mesh = env["app"].scene.edit_object.mesh
+    env["scene_file"]["path"] = env["tmp"] / "cube.mirai.json"
+    old = _three_targets(mesh)
+    send(env)
+    for lid in old:
+        mesh.remove_point_layer(lid)
+    new = _three_targets(mesh)
+    registry = env["bridge"].manifest_dir / "names.json"
+    raw = json.loads(registry.read_text(encoding="utf-8"))
+    oid = int(env["app"].scene.edit_object.id)
+    raw["version"] = 1
+    raw["entries"] += [{"stem": f"head_basemesh_Target_{k}_3", "title": f"head_basemesh_Target_{k}", "scene": None,
+                        "session": "old", "object_id": oid, "layer": int(lid), "former": [], "updated": 1.0}
+                       for k, lid in zip((1, 2, 3), new)]
+    registry.write_text(json.dumps(raw), encoding="utf-8")
+    restart_mirai(env)
+    send(env)
+    assert _sent_names(env) == PLAIN
+    assert json.loads(registry.read_text(encoding="utf-8"))["version"] == 2

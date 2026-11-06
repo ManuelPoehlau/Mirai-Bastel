@@ -114,10 +114,21 @@ Now Mirai names its SubTools itself, without `GoZMakeObjectPath` (and no longer 
 - **Unique, never into a foreign file:** a stem clashes when another registry entry owns it, or when `<stem>.GoZ` lies
   in the project folder without a registry entry and without a Mirai manifest for exactly that identifier (ZBrush's
   own GoZ of a Tool of that name, another app). Then `<stem>_2`, `_3`, …; the status line says „sent as '…'“.
+- **Gone object or target** (Manu, 2026-11-06: base `SubD_Cube`, targets as `…Target_1_3`, `…Target_2_3`,
+  `…Target_3_3`): the targets of that saved scene had been deleted and made again twice — new `LayerId`s — and the
+  entries of the gone targets kept the plain names. An entry of the current scene file (or session) whose object or
+  target no longer exists now frees its stem for the next one of that wish name (and its Tool). Registry version 2:
+  a version-1 file is read as empty once, the manifests on disk give the plain names back.
+- **MESH name = file name** (2026-11-06): the name inside the `.GoZ` is the identifier's stem (it was the wish name,
+  so `…Target_3_3.GoZ` said `…Target_3`).
 - **Earlier sends:** a Mirai manifest on disk for `<project>\<stem>` (from before the registry) makes that stem Mirai's
   for the manifest's object, so a saved scene keeps its Tool after the update.
 - **Following ZBrush:** when a return under another name links by topology (§5), the entry takes ZBrush's name; the
   next send updates that Tool. The old name stays Mirai's (`former`).
+- **Open (T11, ZBrush side):** after a target return and a base edit, a resend of base + targets updated the base
+  SubTool but ZBrush named it like the last target (Manu, 2026-11-06). Mirai wrote the base under its own name; the
+  only Mirai-side difference was the MESH name above. T11 checks whether that was it, the list order or the active
+  SubTool.
 
 ## 4. Return
 

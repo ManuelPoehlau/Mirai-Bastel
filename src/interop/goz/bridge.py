@@ -195,8 +195,9 @@ def build_send(
                 piece_uvs.append([list(mesh.corner_uv(f, v)) for v in piece])
     points = sent_points(obj, to_world, layer)
     groups, names, overlaps = send_groups(mesh, face_ids)
-    title = obj.name if layer is None else f"{obj.name}_{mesh.point_layer_info(layer).name}"
-    data = encode_goz(short_name(title), points, faces, groups, piece_uvs)
+    # the MESH name is the identifier's file name: ZBrush names the Tool after the identifier (E1: `E1_C1.GoZ` with
+    # MESH `E1_C` came back as `E1_C1`), so file and name never disagree (Manu 2026-11-06: `…_Target_3_3` / `…_Target_3`)
+    data = encode_goz(identifier.replace("\\", "/").rsplit("/", 1)[-1] or "Mirai", points, faces, groups, piece_uvs)
     if piece_uvs is not None:  # what ZBrush holds: the float32 values of the block
         piece_uvs = [[[as_float32(u), as_float32(v)] for u, v in piece] for piece in piece_uvs]
     manifest = Manifest(

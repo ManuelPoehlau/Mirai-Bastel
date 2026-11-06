@@ -930,3 +930,13 @@ def test_an_unreadable_name_registry_starts_empty(tmp_path):
     (tmp_path / "names.json").write_text("{not json", encoding="utf-8")
     reg = _registry(tmp_path)
     assert reg.entries == [] and _take(reg) == "Head"
+
+
+def test_a_name_of_a_gone_target_is_free_again(tmp_path):
+    reg = _registry(tmp_path)
+    assert _take(reg, "Cube_Target_1", scene="c.json", layer=3) == "Cube_Target_1"
+    gone = {3}
+    dead = (lambda e: e.layer in gone)
+    assert reg.allocate("Cube_Target_1", scene="c.json", session="s1", object_id=1, layer=8,
+                        foreign_file=lambda stem: False, dead=dead).stem == "Cube_Target_1"
+    assert _take(reg, "Cube_Target_1", scene="c.json", session="s2", layer=8) == "Cube_Target_1"  # it stays

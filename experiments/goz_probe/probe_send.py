@@ -114,6 +114,14 @@ def previous_identifier(captures: Path, mesh_id: str, axis: str = "raw") -> str 
     return None
 
 
+def previous_target_files(captures: Path) -> dict[str, str]:
+    """T11: role -> identifier of the last `--target` send (base and target in one transfer)."""
+    for log in reversed(send_logs(captures)):
+        if log.get("target") and log.get("files") and not log.get("dry_run"):
+            return {f["role"]: f["identifier"] for f in log["files"] if f.get("role")}
+    raise ProbeError("no earlier --target send to repeat (--again)")
+
+
 def sent_uvs(sent: dict, mode: str | None):
     """E3: the sidecar's corner UVs for the UV4 block (`flip-v`: v -> 1 - v), None without `--uvs`."""
     if mode is None:
@@ -142,14 +150,18 @@ def prepare_mesh(args, paths: GozPaths, steps: Steps) -> tuple[list[str], dict]:
     if args.target:
         bumped = [[a + b for a, b in zip(p, d)] for p, d in zip(sent["positions"], sent["target_bump"])]
         objects.append((short + "_T", bumped, "target_bump"))
-    fresh = args.new_identifier or args.groups or args.uvs or args.target
+    fresh = (args.new_identifier or args.groups or args.uvs or args.target) and not args.again
+    again = previous_target_files(args.captures) if args.again else {}
     identifiers, files = [], []
     for name_short, positions, role in objects:
-        identifier = None if fresh else previous_identifier(args.captures, args.mesh, args.axis)
+        identifier = again.get(role) if args.again else (
+            None if fresh else previous_identifier(args.captures, args.mesh, args.axis))
         if identifier:
             steps.add("reusing the identifier of an earlier send", identifier=identifier)
         else:
             identifier = make_object_path(paths, name_short, steps, dry_run=args.dry_run, timeout=args.wait_objectpath)
+        if args.target:  # T11: MESH name = file name, as Mirai writes it since 2026-11-06
+            name_short = identifier.replace("\\", "/").rsplit("/", 1)[-1]
         points = [[as_float32(s * c) for s, c in zip(signs, p)] for p in positions]
         data = encode_goz(name_short, points, sent["faces"], style=args.style, groups=groups, uvs=uvs)
         name = parse_goz(data).name  # our own file must pass our strict reader
@@ -158,8 +170,12 @@ def prepare_mesh(args, paths: GozPaths, steps: Steps) -> tuple[list[str], dict]:
         steps.add("wrote .GoZ", file=str(target), bytes=len(data), sha256=sha256(data), mesh_name=name, role=role)
         identifiers.append(identifier)
         files.append({"identifier": identifier, "file": str(target), "sha256": sha256(data), "role": role})
+    if args.base_last:  # T11: the targets first, the base as the last line of GoZ_ObjectList.txt
+        identifiers.reverse()
+        files.reverse()
     steps.add("axis map", axis=args.axis, signs=signs)
-    info = {"mesh": args.mesh, "identifier": identifiers[0], "file": files[0]["file"], "sha256": files[0]["sha256"],
+    base = next(f for f in files if f["role"] == "base")
+    info = {"mesh": args.mesh, "identifier": base["identifier"], "file": base["file"], "sha256": base["sha256"],
             "axis": args.axis, "groups": groups, "uvs": args.uvs, "target": args.target}
     if args.target:
         info["files"] = files
@@ -248,6 +264,10 @@ def main(argv=None) -> int:
     parser.add_argument("--uvs", choices=("as-is", "flip-v"), help="E3: send the mesh's corner UVs (UV4 block)")
     parser.add_argument("--target", choices=("bump",), help="E3: send base + base-with-bump as two objects")
     parser.add_argument("--new-identifier", action="store_true")
+    parser.add_argument("--again", action="store_true",
+                        help="T11: with --target, send base + target again to the identifiers of the last --target send")
+    parser.add_argument("--base-last", action="store_true",
+                        help="T11: with --target, list the target first and the base last in GoZ_ObjectList.txt")
     parser.add_argument("--keep-application", action="store_true")
     parser.add_argument("--tmap", action="store_true",
                         help="append the SDK-demo `-tmap` flag (texture-map round-trip; makes ZBrush export the "
