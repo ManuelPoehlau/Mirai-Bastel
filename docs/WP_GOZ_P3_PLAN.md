@@ -61,7 +61,7 @@ copies every map image a file names. Steps: E1 README §6 T9.
 | U3 | *UV Master → Unwrap*: all 324 faces come back with new UVs (u 0.002–0.998, v 0.002–0.770), points bit-identical. |
 | X1 | *New From Polypaint* then GoZ: a TEXTURE_MAP_PATH block names `…/GoZProjects/Default/<Tool>_TXTR.tif`: an uncompressed baseline TIFF, 2048², RGB 8 bit, one strip (12.6 MB). Sampled at the UVs it matches the returned polypaint (MRGB block, byte order B, G, R, mask) with **file row 0 = v 0** (mean difference 4.6 of 765; with V flipped 378) — stored bottom-up, as AD-026 says. |
 | M1 | `--target bump`: both objects of one transfer arrived as their own Tools; base and target came back bit-identical (target = `b + d` on all 326 points). |
-| M2 | `C.obj` imported, *Layers → New*, *Tool → Import* `C_bump.obj`: the layer holds the target exactly (weight 1.0000, rest 5.7e-7 = float32 under ZBrush's OBJ placement); with the layer slider at 0.5 the return is `b + 0.5 d` exactly. Notable: the GoZ with the layer **switched off** still returned the full target (weight 1.0000). Manu repeated it on 2026-11-06 with the slider at 0 (ZBrush then switches the eye off by itself): again the **target state**. So a layered Tool never returns the pure base by GoZ. |
+| M2 | `C.obj` imported, *Layers → New*, *Tool → Import* `C_bump.obj`: the layer holds the target exactly (weight 1.0000, rest 5.7e-7 = float32 under ZBrush's OBJ placement); with the layer slider at 0.5 the return is `b + 0.5 d` exactly. The capture meant as "layer off" returned the full target too (weight 1.0000); Manu repeated it on 2026-11-06 with the slider at 0 (ZBrush then switches the eye off by itself) and got the **base state** — the E3 capture was most likely a second GoZ with the layer still on. So the layer controls the return: off → base, 1 → target, 0.5 → half. |
 | M3 | Resend of that Tool with the layer not recording: the layer survived (Manu). The final GoZ after the resend was not captured. |
 
 ## 3. P3a — UVs (decided: „Mit übernehmen“; IMPLEMENTED 2026-11-06)
@@ -101,10 +101,10 @@ own identifier) in one transfer; a target return writes `d' = p − b` for the m
 fingerprint follows, what ZBrush holds of them stays the baseline), so base and target returns can alternate without a
 resend. Practical test 3 (Manu, 2026-11-06): works as expected.
 
-The layer route below is **not built** (recommendation: drop it): a layer at 0 / switched off still comes back as
-the target state (M2, repeated by Manu), so a Tool holding a target layer cannot give Mirai its base by GoZ, and the
-layer import was only shown on an OBJ-imported Tool. The SubTool route covers sending, sculpting and returning base
-and targets.
+The layer route below is **not built** yet. Feasible after M2 (layer off → base, 1 → target, a slider → the mix);
+still open: the layer import was shown only on an OBJ-imported Tool, not on a Tool Mirai sent by GoZ (ZBrush's OBJ
+placement differs from the GoZ frame, E1 T2) — one short PC check before building it. The SubTool route covers
+sending, sculpting and returning base and targets meanwhile.
 
 **Core, independent of E3:** a send may carry the base **and** its targets: each target `b + d` as its own SubTool
 (`<name>_<target>`, one identifier each, one `GoZ_ObjectList` line each, M1). The manifest gets `representation`
