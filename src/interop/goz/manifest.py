@@ -22,6 +22,8 @@ MANIFEST_VERSION = 1
 #: GoZ = Mirai rotated 180 deg about X (E1-Q6): written as (x, -y, -z), read back with the same map.
 AXIS_CONVENTION = "x,-y,-z"
 REPRESENTATION_BASE = "base"
+#: P3c: a morph target sent as `b + d`, `target:<LayerId>`
+TARGET_PREFIX = "target:"
 
 
 def _digest(chunks) -> str:
@@ -75,6 +77,13 @@ def regions_hash(mesh: Mesh) -> Optional[str]:
     return _digest([json.dumps([[r.name, sorted(int(f) for f in r.faces)] for r in regions.regions]).encode()])
 
 
+def uvs_hash(mesh: Mesh) -> Optional[str]:
+    """The face-corner UVs (P3a) in face-ID order, None without UVs."""
+    if not mesh.has_face_uvs():
+        return None
+    return _digest([json.dumps([[int(f), mesh.face_uvs(f)] for f in mesh.all_face_ids()]).encode()])
+
+
 def placement(obj: SceneObject) -> dict:
     t = obj.transform
     return {"translation": list(t.translation), "rotation": [list(r) for r in t.rotation], "scale": t.scale,
@@ -96,6 +105,7 @@ def fingerprint(scene: Scene, obj: SceneObject) -> dict:
         "layers": layers_fingerprint(mesh),
         "rig": rig_hash(scene),
         "regions": regions_hash(mesh),
+        "uvs": uvs_hash(mesh),
     }
 
 
@@ -104,10 +114,10 @@ def fingerprint_differences(sent: dict, now: dict) -> list[str]:
     the sent fingerprint has it (a P1 manifest on disk predates it)."""
     names = {"topology": "topology", "vertex_count": "topology", "face_count": "topology",
              "positions": "point positions", "placement": "object placement", "layers": "morph targets / weights",
-             "rig": "rig", "regions": "groups"}
+             "rig": "rig", "regions": "groups", "uvs": "UVs"}
     out: list[str] = []
     for key, label in names.items():
-        if key == "regions" and key not in sent:
+        if key in ("regions", "uvs") and key not in sent:
             continue
         if sent.get(key) != now.get(key) and label not in out:
             out.append(label)
@@ -145,6 +155,10 @@ class Manifest:
     #: P2b: every n-gon split in the file, `[face id, [indices of its pieces in faces]]` (`faces` / `face_ids` hold
     #: one entry per sent piece; a piece repeats its n-gon's face id)
     ngons: list = field(default_factory=list)
+    #: P3a: the UVs sent per piece (`[[u, v], ...]` per entry of `faces`), None = no UV block was sent; ZBrush's UVs
+    #: of the last applied return (like `zbrush_points`), None = as sent
+    sent_uvs: Optional[list] = None
+    zbrush_uvs: Optional[list] = None
     extra: dict = field(default_factory=dict)
 
     def to_json(self) -> str:

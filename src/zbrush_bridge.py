@@ -62,6 +62,8 @@ from interop.goz.transfer import (
 _ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INBOX = _ROOT / "goz" / "inbox"
 DEFAULT_MANIFESTS = _ROOT / "goz" / "manifests"
+#: P3b: textures of returns while the scene is not saved (Manu 2026-11-06: else beside the scene)
+DEFAULT_TEXTURES = _ROOT / "goz" / "textures"
 
 SEND_LABEL = "An ZBrush senden"
 APPLY_PREFIX = "ZBrush übernehmen: "
@@ -77,6 +79,8 @@ class Waiting:
     goz: GozMesh
     manifest: Optional[Manifest]
     plan: ReturnPlan
+    #: P3b: the copy of the texture this return named (made at arrival: ZBrush overwrites its file at the next GoZ)
+    texture: Optional[str] = None
 
     @property
     def tag(self) -> str:
@@ -121,6 +125,7 @@ class ZBrushBridge:
         root: Optional[Path] = None,
         inbox: Path = DEFAULT_INBOX,
         manifests: Path = DEFAULT_MANIFESTS,
+        textures: Path = DEFAULT_TEXTURES,
         scene_path: Callable[[], Optional[Path]] = lambda: None,
         runner=default_runner,
         clock: Callable[[], float] = time.monotonic,
@@ -129,12 +134,14 @@ class ZBrushBridge:
         self._root = root
         self.inbox = Inbox(inbox)
         self.manifest_dir = Path(manifests)
+        self.texture_dir = Path(textures)
         self._scene_path = scene_path
         self._runner = runner
         self._clock = clock
         self._last_poll = float("-inf")
         self.session_id = uuid.uuid4().hex
-        self._identifiers: dict[ObjectId, str] = {}
+        #: per (object, None = base / LayerId = target) its GoZ identifier
+        self._identifiers: dict[tuple, str] = {}
         #: per identifier the manifest versions of this session, oldest first: the send, then one per applied return,
         #: so a return after an Undo of an apply links to the version the object is back at (no resend needed)
         self._manifests: dict[str, list[Manifest]] = {}
@@ -224,16 +231,27 @@ class ZBrushBridge:
                 app.set_status("ZBrush: nothing sent - ZBrush does not know Mirai yet: restart ZBrush, choose 'Mirai' "
                                "with R beside the GoZ button once, then send")
                 return False
-            identifier = self._identifiers.get(obj.id) or make_identifier(paths, short_name(obj.name),
-                                                                          runner=self._runner)
+            from mirai.morph_targets import morph_target_ids
+
             scene_path = self._scene_path()
-            data, manifest = build_send(
-                app.scene, obj, identifier=identifier, transfer_id=uuid.uuid4().hex, session_id=self.session_id,
-                scene_path=None if scene_path is None else str(Path(scene_path).resolve()), to_world=to_world,
-                triangulate=_triangulate(), symmetry=symmetry_info(obj.mesh),
-            )
-            write_manifest(self.manifest_dir, identifier, manifest.to_json())
-            write_send(paths, identifier, data)
+            transfer_id = uuid.uuid4().hex
+            sends = []  # (key, identifier, data, manifest): the base first, then each morph target (P3c)
+            for layer in [None, *morph_target_ids(obj.mesh)]:
+                key = (obj.id, None if layer is None else int(layer))
+                title = obj.name if layer is None else f"{obj.name}_{obj.mesh.point_layer_info(layer).name}"
+                identifier = self._identifiers.get(key) or make_identifier(paths, short_name(title),
+                                                                           runner=self._runner)
+                self._identifiers[key] = identifier
+                data, manifest = build_send(
+                    app.scene, obj, identifier=identifier, transfer_id=transfer_id, session_id=self.session_id,
+                    scene_path=None if scene_path is None else str(Path(scene_path).resolve()), to_world=to_world,
+                    triangulate=_triangulate(), symmetry=symmetry_info(obj.mesh), layer=layer,
+                )
+                sends.append((key, identifier, data, manifest))
+            for _key_, identifier, _data, manifest in sends:
+                write_manifest(self.manifest_dir, identifier, manifest.to_json())
+            _k, identifier, data, manifest = sends[0]
+            write_send(paths, identifier, data, [(i, d) for _k2, i, d, _m in sends[1:]])
             launch_zbrush(paths, runner=self._runner)
         except (SendRefused, GozSetupError, OSError) as exc:
             app.set_status(f"ZBrush: {exc}")
@@ -241,9 +259,13 @@ class ZBrushBridge:
         except Exception as exc:  # a bug must show in the status line, never as a silent menu row (2026-11-05)
             app.set_status(f"ZBrush: nothing sent - failed: {type(exc).__name__}: {exc}")
             return False
-        self._identifiers[obj.id] = identifier
-        self._manifests[_key(identifier)] = [manifest]  # a send starts the history anew
-        app.set_status(f"ZBrush: {obj.name!r} sent ({len(manifest.vertex_ids)} points{_ngon_text(manifest)})")
+        for _k, ident, _d, m in sends:
+            self._manifests[_key(ident)] = [m]  # a send starts the history anew
+        targets = len(sends) - 1
+        extra = f"; {targets} morph target{'s' if targets != 1 else ''} as own SubTools" if targets else ""
+        uv_text = "; UVs" if manifest.sent_uvs is not None else ""
+        app.set_status(f"ZBrush: {obj.name!r} sent ({len(manifest.vertex_ids)} points{uv_text}{_ngon_text(manifest)}"
+                       f"{extra})")
         return True
 
     def install(self) -> bool:
@@ -290,19 +312,21 @@ class ZBrushBridge:
         except (ValueError, TypeError):
             return []
 
-    def _plan_linked(self, identifier: str, goz: GozMesh) -> tuple[ReturnPlan, Optional[Manifest]]:
+    def _plan_linked(self, identifier: str, goz: GozMesh,
+                     texture: Optional[str] = None) -> tuple[ReturnPlan, Optional[Manifest]]:
         """The plan against the newest manifest version the object still matches (after an Undo of an apply: the one
         before it); a conflict only if it matches none."""
         versions = self._manifests_for(identifier)
         first: Optional[tuple[ReturnPlan, Optional[Manifest]]] = None
         for manifest in reversed(versions):
-            plan = self.plan(identifier, goz, manifest)
+            plan = self.plan(identifier, goz, manifest, texture)
             if plan.kind is not ReturnKind.CONFLICT:
                 return plan, manifest
             first = first or (plan, manifest)
-        return first or (self.plan(identifier, goz, None), None)
+        return first or (self.plan(identifier, goz, None, texture), None)
 
-    def plan(self, identifier: str, goz: GozMesh, manifest: Optional[Manifest]) -> ReturnPlan:
+    def plan(self, identifier: str, goz: GozMesh, manifest: Optional[Manifest],
+             texture: Optional[str] = None) -> ReturnPlan:
         from mirai.regions import new_group_name
 
         to_world, to_object = _placement()
@@ -312,14 +336,35 @@ class ZBrushBridge:
             goz, manifest, self.app.scene, identifier=identifier, session_id=self.session_id,
             scene_path=None if scene_path is None else str(Path(scene_path).resolve()),
             to_world=to_world, to_object=to_object, symmetry=None if obj is None else symmetry_info(obj.mesh),
-            new_group_name=new_group_name,
+            new_group_name=new_group_name, texture=texture,
         )
 
+    def _copy_texture(self, goz: GozMesh, identifier: str) -> tuple[Optional[str], Optional[str]]:
+        """P3b: the return's texture copied beside the scene (or into `goz/textures/`); (path, note)."""
+        if not goz.texture_path:
+            return None, None
+        from interop.goz.texture import copy_texture, texture_dir
+
+        source = Path(goz.texture_path)
+        if not source.is_file():
+            return None, f"texture {source.name} not found"
+        known = self._manifests_for(identifier)
+        name = known[-1].object_name if known else (
+            goz.name[len("GoZMesh_"):] if goz.name.startswith("GoZMesh_") else goz.name)
+        try:
+            copy, note = copy_texture(source, texture_dir(self._scene_path(), self.texture_dir), name)
+        except OSError as exc:
+            return None, f"texture not copied: {exc}"
+        return str(copy.resolve()), note
+
     def _arrive(self, identifier: str, goz: GozMesh) -> None:
-        plan, manifest = self._plan_linked(identifier, goz)
+        texture, note = self._copy_texture(goz, identifier)
+        plan, manifest = self._plan_linked(identifier, goz, texture)
+        if note:
+            plan.notes.append(note)
         self.waiting = [w for w in self.waiting if not same_identifier(w.identifier, identifier)]  # newer supersedes
         if plan.in_place or plan.new_object:
-            w = Waiting(identifier, goz, manifest, plan)
+            w = Waiting(identifier, goz, manifest, plan, texture)
             self.waiting.append(w)
             prefix = APPLY_PREFIX if plan.in_place else NEW_OBJECT_PREFIX
             self.app.set_status(f"{plan.summary()} - SPACE > {prefix + w.tag!r}")
@@ -327,7 +372,7 @@ class ZBrushBridge:
             self.app.set_status(plan.summary())
 
     def confirm(self, w: Waiting) -> bool:
-        plan, manifest = self._plan_linked(w.identifier, w.goz)
+        plan, manifest = self._plan_linked(w.identifier, w.goz, w.texture)
         if plan.kind is not w.plan.kind:
             # the scene changed since the arrival: show the new verdict, apply nothing (the artist confirms again)
             w.plan = plan
@@ -335,11 +380,13 @@ class ZBrushBridge:
                 self._forget(w)
             self.app.set_status(f"{plan.summary()} - changed since it arrived, nothing applied")
             return False
+        siblings = self._sibling_shapes(manifest, w.identifier) if plan.in_place and manifest is not None else []
         done = self.app.apply_goz_return(plan)
         if done:
             self._forget(w)
             if plan.in_place and manifest is not None:
                 self._rebase(manifest, plan)
+                self._rebase_siblings(siblings, plan.object_id)
             if plan.new_object:
                 self.app.set_status(f"{self.app.status_message} - it is selected now: {SEND_LABEL!r} sends it "
                                     "(leave mode 4 to send the edit object)")
@@ -358,6 +405,40 @@ class ZBrushBridge:
             write_manifest(self.manifest_dir, manifest.identifier, rebased.to_json())
         except OSError:
             pass  # the in-memory manifest is enough for this session
+
+    def _sibling_shapes(self, manifest: Manifest, identifier: str) -> list[tuple[Manifest, list]]:
+        """The other SubTools of the same object (P3c: base and targets) with what ZBrush holds of each, taken before
+        an apply changes the object."""
+        from interop.goz.bridge import sent_points, target_layer
+
+        obj = self.app.scene.objects.get(ObjectId(manifest.object_id))
+        if obj is None:
+            return []
+        to_world, _ = _placement()
+        out = []
+        for key, versions in self._manifests.items():
+            if key == _key(identifier) or not versions or versions[-1].object_id != manifest.object_id:
+                continue
+            m = versions[-1]
+            layer = target_layer(m)
+            if layer is not None and layer not in obj.mesh.point_layer_ids():
+                continue
+            held = m.zbrush_points if m.zbrush_points is not None else sent_points(obj, to_world, layer)
+            out.append((m, [tuple(p) for p in held]))
+        return out
+
+    def _rebase_siblings(self, siblings: list[tuple[Manifest, list]], object_id) -> None:
+        from interop.goz.bridge import rebase_sibling
+
+        obj = self.app.scene.objects.get(object_id)
+        if obj is None:
+            return
+        to_world, _ = _placement()
+        for m, held in siblings:
+            rebased = rebase_sibling(m, self.app.scene, obj, to_world, held)
+            versions = self._manifests.setdefault(_key(m.identifier), [])
+            versions.append(rebased)
+            del versions[:-32]
 
     def _forget(self, w: Waiting) -> None:
         self.waiting = [x for x in self.waiting if x is not w]

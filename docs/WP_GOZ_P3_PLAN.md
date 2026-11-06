@@ -1,7 +1,7 @@
 # WP GoZ P3 — UVs, textures, morph targets (plan, 2026-11-06)
 
-**Status:** PREPARED. E3 (reference PC, ~25 min) comes before the code; the probe is container-tested
-(`experiments/goz_probe`, 53 tests). Builds on [AD-029](architecture/AD-029-ZBRUSH-GOZ-BRIDGE.md) (P1) and
+**Status:** P3a, P3b and the P3c core IMPLEMENTED (2026-11-06, container-tested; E3 done on the reference PC, §2).
+Open: the layer route of P3c (§5) and the practical test (§8). Builds on [AD-029](architecture/AD-029-ZBRUSH-GOZ-BRIDGE.md) (P1) and
 [WP_GOZ_P2_PLAN](WP_GOZ_P2_PLAN.md) (groups, n-gons, done), [AD-026](architecture/AD-026-FACE-CORNER-UVS-AND-TEXTURE.md)
 (face-corner UVs, one texture per object) and [AD-025](architecture/AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md)
 (morph targets = relative offsets, J-3). Decisions below are Manu's (2026-11-06) unless marked `PROVISIONAL`.
@@ -16,8 +16,12 @@
   überträgt nur ein Mesh pro SubTool und gibt immer den sichtbaren Zustand zurück, alle eingeschalteten Layer
   eingerechnet). Darum prüft E3, ob ZBrush ein Target per *Import* in einen Layer aufnimmt. Sicher geht in jedem Fall:
   Basis und jedes Target als eigenes SubTool, die Rückgabe weiß, was Basis und was Target ist.
-- **Vorher der PC-Test E3** (`experiments/goz_probe/README.md` §6 T9, ca. 25 min): UV-Richtung, UV Master, Textur aus
-  Polypaint, Basis + Target, und der Layer-Versuch.
+- **E3 erledigt (2026-11-06):** UVs kommen ungespiegelt an und zurück, UV Master liefert neue UVs, eine Textur aus
+  Polypaint kommt als TIFF (auf dem Kopf gespeichert, Mirai dreht die Kopie um), Basis und Target kommen in einem Senden
+  an, und ein Target lässt sich per *Import* in einen Layer laden; der Layer überlebt erneutes Senden.
+- **Gebaut:** UVs hin und zurück, Textur zurück (PNG-Kopie neben der Szene), Basis + jedes Target als eigenes SubTool;
+  ein in ZBrush gesculptetes Target kommt nur in sein Target zurück. **Noch nicht gebaut:** der Layer-Weg (§5) — dazu
+  eine Rückfrage an dich.
 
 ## 1. Facts this plan rests on
 
@@ -49,7 +53,21 @@ copies every map image a file names. Steps: E1 README §6 T9.
 | M2 a target as a ZBrush layer | T9.6 (weight 1 / 0 / 0.5 with the layer at 100 % / off / 50 %) | P3c layer route |
 | M3 layers survive a resend | T9.7 | whether Mirai may resend a base that has layers |
 
-## 3. P3a — UVs (decided: „Mit übernehmen“)
+**Result (Manu, reference PC, 2026-11-06; captures `20261106-0947…` to `…1003…`, order as in T9):**
+
+| # | Result |
+|---|---|
+| U1/U2 | Head sent with UV4 (`--uvs as-is`): returned UVs identical to the sent ones (max 3e-8, float32); ZBrush's own GoZ of the OBJ import also equals the OBJ `vt`. → GoZ's UV4 = OBJ `vt` convention, **no flip** either way. |
+| U3 | *UV Master → Unwrap*: all 324 faces come back with new UVs (u 0.002–0.998, v 0.002–0.770), points bit-identical. |
+| X1 | *New From Polypaint* then GoZ: a TEXTURE_MAP_PATH block names `…/GoZProjects/Default/<Tool>_TXTR.tif`: an uncompressed baseline TIFF, 2048², RGB 8 bit, one strip (12.6 MB). Sampled at the UVs it matches the returned polypaint (MRGB block, byte order B, G, R, mask) with **file row 0 = v 0** (mean difference 4.6 of 765; with V flipped 378) — stored bottom-up, as AD-026 says. |
+| M1 | `--target bump`: both objects of one transfer arrived as their own Tools; base and target came back bit-identical (target = `b + d` on all 326 points). |
+| M2 | `C.obj` imported, *Layers → New*, *Tool → Import* `C_bump.obj`: the layer holds the target exactly (weight 1.0000, rest 5.7e-7 = float32 under ZBrush's OBJ placement); with the layer slider at 0.5 the return is `b + 0.5 d` exactly. Notable: the GoZ with the layer **switched off** still returned the full target (weight 1.0000). |
+| M3 | Resend of that Tool with the layer not recording: the layer survived (Manu). The final GoZ after the resend was not captured. |
+
+## 3. P3a — UVs (decided: „Mit übernehmen“; IMPLEMENTED 2026-11-06)
+
+Built as below (`format.py` UV4/UV3, `bridge.plan_uvs`, `Manifest.sent_uvs` / `zbrush_uvs`, fingerprint `uvs`, the
+apply writes `set_face_uvs` in the same `_mesh_transaction`); a new object from a return takes ZBrush's UVs too.
 
 **Send:** when every face has UVs, a UV4 block with the corner UVs (convention by U1); n-gon pieces take their
 corners' UVs from the n-gon. A mesh with only some faces mapped: no block, status says so (`PROVISIONAL`).
@@ -61,7 +79,13 @@ disagree at a shared corner (cannot happen for one seamless n-gon) → keep Mira
 (`PROVISIONAL`). A return without UV block keeps Mirai's UVs. UVs-only change = `IN_PLACE`. After an apply ZBrush's
 UVs become the baseline (as `zbrush_points` / `zbrush_groups`).
 
-## 4. P3b — texture back (decided: copy beside the scene)
+## 4. P3b — texture back (decided: copy beside the scene; IMPLEMENTED 2026-11-06)
+
+Built: `interop/goz/texture.py` decodes ZBrush's uncompressed TIFF (stdlib), flips it vertically (X1) and writes
+`<object>_<hash>.png` — the 12.6 MB E3 image became a 233 KB PNG in 0.13 s; any other file is copied unchanged with a
+warning. The glue copies at arrival; the plan treats a copy other than the object's texture as a change (a
+texture-only return is appliable); the apply sets `SceneObject.texture` through `ObjectTextureCommand`, composed with
+the mesh delta into one Undo step (`_mesh_transaction(companion=...)`).
 
 If E3 shows a texture path: copy the image at arrival into `<scene stem>_textures/<object>_<n>.<ext>` beside the
 saved scene, else `goz/textures/` (the file in ZBrush's project folder is overwritten by the next GoZ). The apply sets
@@ -70,6 +94,14 @@ composite History command around the `MeshDeltaCommand`, `PROVISIONAL` — desig
 **Sending** a texture to ZBrush stays out until a safe path is known (`-tmap` is not one).
 
 ## 5. P3c — morph targets (decided: base and targets; as ZBrush layers if possible)
+
+**Core IMPLEMENTED (2026-11-06):** „An ZBrush senden“ sends the base and each morph target `b + d` (`<name>_<target>`,
+own identifier) in one transfer; a target return writes `d' = p − b` for the moved points of that layer only
+(symmetry fix on the target shape), one Undo step; after any apply the object's other SubTools are rebased (their
+fingerprint follows, what ZBrush holds of them stays the baseline), so base and target returns can alternate without a
+resend. The layer route below is **not built** yet: E3 M2 shows that a layer import works on an OBJ-imported Tool,
+but not yet on a Tool Mirai sent by GoZ (ZBrush's OBJ placement differs from the GoZ frame, E1 T2), and the
+switched-off layer still came back in the GoZ (M2) — to be clarified with Manu first.
 
 **Core, independent of E3:** a send may carry the base **and** its targets: each target `b + d` as its own SubTool
 (`<name>_<target>`, one identifier each, one `GoZ_ObjectList` line each, M1). The manifest gets `representation`
@@ -81,6 +113,16 @@ today. A target whose layer is gone since the send → new object.
 import (T9.6) puts them into layers of the base. Because a GoZ of the base returns the visible mix, its row then asks
 what it is: „als Basis“ (all layers off) or „als Target <name>“ (only that layer, 100 %) — never guessed
 (`PROVISIONAL`, wording after E3). M3 decides whether a resend of the base is allowed while ZBrush holds layers.
+
+## 8. Practical test (Manu, reference PC)
+
+1. Kopf mit UVs senden, in ZBrush *UV Master → Unwrap*, **GoZ**, übernehmen: Textur-Anzeige/UV-Ansicht in Mirai passt,
+   `Strg+Z` nimmt die UVs zurück.
+2. Polypaint, *Texture Map → New From Polypaint*, **GoZ**, übernehmen: die Textur steht richtig herum auf dem Kopf;
+   die Kopie liegt in `<Szene>_textures/`.
+3. Objekt mit einem Morph-Target senden: zwei SubTools/Tools in ZBrush. Das Target sculpten, **GoZ** auf dem Target,
+   übernehmen: nur das Target ändert sich (Morph-Regler in Mirai), die Basis bleibt. Danach die Basis sculpten und
+   **GoZ**: übernehmen ohne Konflikt.
 
 ## 6. Not in P3
 

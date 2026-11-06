@@ -97,10 +97,10 @@ def zbrush_knows_mirai(env) -> None:
 
 
 def send(env) -> str:
+    """Sends the object; returns the base's identifier (P3c: its morph targets follow in the same list)."""
     zbrush_knows_mirai(env)
     assert env["bridge"].activate(SEND_LABEL), env["app"].status_message
-    (identifier,) = env["paths"].read_object_list()
-    return identifier
+    return env["paths"].read_object_list()[0]
 
 
 def goz_back(env, identifier, data):
@@ -132,7 +132,7 @@ def test_send_writes_file_manifest_list_and_starts_zbrush_without_tmap(env):
     assert paths.application_file.read_text() == "Mirai"
     assert [Path(c[0]).stem for c in env["zb"].commands] == ["GoZMakeObjectPath", "GoZBrushFromApp"]
     assert all("-tmap" not in c for c in env["zb"].commands)
-    assert len(app.history) == 0 and "sent (326 points)" in app.status_message
+    assert len(app.history) == 0 and "sent (326 points; UVs)" in app.status_message
     assert send(env) == identifier  # a resend reuses the identifier: ZBrush updates the same Tool
     assert [Path(c[0]).stem for c in env["zb"].commands].count("GoZMakeObjectPath") == 1
 
@@ -615,7 +615,7 @@ def test_an_object_with_skin_weights_is_sent_and_a_weight_edit_is_a_conflict(env
     vids = mesh.all_vertex_ids()
     mesh.set_layer_value(lid, vids[0], [(1, 0.75), (2, 0.25)])
     identifier = send(env)
-    assert "sent (326 points)" in app.status_message
+    assert "sent (326 points" in app.status_message
     app.apply_mesh_change("reweight", lambda: mesh.set_layer_value(lid, vids[0], [(1, 1.0)]) or set())
     goz_back(env, identifier, flipped(fixture("zb2022_C_move_brush.GoZ")))
     assert "changed in Mirai since the send (morph targets / weights)" in app.status_message, app.status_message
@@ -641,3 +641,120 @@ def test_the_send_status_names_the_mirror_symmetric_ngon_split(env):
     identifier = send(env)
     assert "4 n-gons split in the file, 4 mirror-symmetric" in app.status_message, app.status_message
     assert len(parse_goz(Path(identifier + ".GoZ").read_bytes()).faces) > len(mesh.all_face_ids())
+
+
+# -- P3: UVs, texture, morph targets ------------------------------------------------------------------------------------
+
+
+def _uvs(mesh):
+    return {f: mesh.face_uvs(f) for f in mesh.all_face_ids()}
+
+
+def test_uv_master_return_is_applied_with_one_undo_step(env):
+    """Manu 2026-11-06 („Mit übernehmen“): ZBrush's new UVs (E3 capture) come in with the confirm, one Undo step."""
+    app = env["app"]
+    mesh = app.scene.edit_object.mesh
+    identifier = send(env)
+    before, uvs_before = positions(mesh), _uvs(mesh)
+    goz_back(env, identifier, fixture("zb2022_E3_head_uvmaster.GoZ"))
+    assert "no point moved, UVs changed" in app.status_message, app.status_message
+    history = len(app.history)
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    unwrapped = parse_goz(fixture("zb2022_E3_head_uvmaster.GoZ")).uvs
+    assert [mesh.face_uvs(f) for f in mesh.all_face_ids()] == [tuple(u) for u in unwrapped]
+    assert positions(mesh) == before and len(app.history) == history + 1
+    app._undo_redo(commands.UNDO)
+    assert _uvs(mesh) == uvs_before
+    app._undo_redo(commands.REDO)
+    goz_back(env, identifier, fixture("zb2022_E3_head_uvmaster.GoZ"))
+    assert "no point moved" in app.status_message and "UVs" not in app.status_message  # ZBrush's UVs are the baseline
+
+
+def _with_texture(data: bytes, path) -> bytes:
+    from interop.goz.format import BLOCK_HEADER, TAG_TEXTURE_MAP_PATH
+
+    raw = str(path).encode() + b"\0"
+    raw += b"\0" * (-len(raw) % 4)
+    return data[:-16] + BLOCK_HEADER.pack(TAG_TEXTURE_MAP_PATH, 16 + len(raw), 1, 0.0) + raw + data[-16:]
+
+
+def test_a_texture_from_zbrush_is_copied_beside_the_scene_and_undone_with_the_return(env):
+    from tests.test_goz_format import _tiff
+
+    app = env["app"]
+    obj = app.scene.edit_object
+    env["scene_file"]["path"] = env["tmp"] / "kopf.mirai.json"
+    identifier = send(env)
+    zbrush_file = Path(identifier + "_TXTR.tif")
+    zbrush_file.write_bytes(_tiff(2, 2, [b"\x10\x20\x30" * 2, b"\x40\x50\x60" * 2]))
+    goz_back(env, identifier, _with_texture(fixture("zb2022_E3_head_uvmaster.GoZ"), zbrush_file))
+    assert "texture: head_basemesh_" in app.status_message, app.status_message
+    zbrush_file.write_bytes(b"overwritten by the next GoZ")  # the copy was made at arrival
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    copy = Path(obj.texture)
+    assert copy.parent == env["tmp"] / "kopf_textures" and copy.suffix == ".png" and copy.is_file()
+    app._undo_redo(commands.UNDO)
+    assert obj.texture is None and _uvs(obj.mesh)[obj.mesh.all_face_ids()[0]] != parse_goz(
+        fixture("zb2022_E3_head_uvmaster.GoZ")).uvs[0]
+    app._undo_redo(commands.REDO)
+    assert obj.texture == str(copy)
+
+
+def test_a_texture_only_return_is_its_own_undo_step(env):
+    from tests.test_goz_format import _tiff
+
+    app = env["app"]
+    obj = app.scene.edit_object
+    identifier = send(env)
+    image = env["tmp"] / "paint_TXTR.tif"
+    image.write_bytes(_tiff(1, 1, [b"\x01\x02\x03"]))
+    goz_back(env, identifier, _with_texture(fixture("zb2022_E3_head_uvs_as_sent.GoZ"), image))
+    assert "no point moved, texture changed" in app.status_message, app.status_message
+    history = len(app.history)
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    assert Path(obj.texture).parent == env["bridge"].texture_dir and len(app.history) == history + 1
+    app._undo_redo(commands.UNDO)
+    assert obj.texture is None
+
+
+def _bump_target(app):
+    from tests.test_goz_format import bump
+
+    mesh = app.scene.edit_object.mesh
+    lid = mesh.add_point_layer(PointLayerInfo("Bump"))
+    for v, d in bump(mesh).items():
+        mesh.set_layer_value(lid, v, d)
+    return mesh, lid
+
+
+def test_base_and_target_go_as_two_subtools_and_a_target_sculpt_comes_back_into_its_layer(env):
+    """Manu 2026-11-06: base and targets to ZBrush (E3 T9.5: both arrive); a sculpt on the target SubTool goes into
+    that target only, one Undo step; the base's SubTool stays linked (no conflict afterwards)."""
+    app = env["app"]
+    mesh, lid = _bump_target(app)
+    base_id = send(env)
+    base_list = env["paths"].read_object_list()
+    assert len(base_list) == 2 and base_list[1].endswith("head_basemesh_Bump1")
+    assert "1 morph target as own SubTools" in app.status_message
+    target_id = base_list[1]
+    assert parse_goz(Path(target_id + ".GoZ").read_bytes()).points == parse_goz(
+        fixture("zb2022_E3_head_bump_target.GoZ")).points
+    goz = parse_goz(fixture("zb2022_E3_head_bump_target.GoZ"))
+    pts = list(goz.points)
+    pts[3] = (pts[3][0], pts[3][1] + 0.3, pts[3][2])
+    before, offsets_before = positions(mesh), mesh.layer_items(lid)
+    goz_back(env, target_id, encode_goz(goz.name, pts, goz.faces))
+    assert "1 of 326 points of target 'Bump' moved" in app.status_message, app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    v3 = mesh.all_vertex_ids()[3]
+    assert positions(mesh) == before
+    assert mesh.layer_value(lid, v3)[1] == pytest.approx(-(pts[3][1]) - mesh.vertex_position(v3)[1])
+    assert [x for x in mesh.layer_items(lid) if x[0] != v3] == [x for x in offsets_before if x[0] != v3]
+    goz_back(env, base_id, flipped(fixture("zb2022_C_move_brush.GoZ")))  # the base SubTool is still linked
+    assert "101 of 326 points moved" in app.status_message, app.status_message
+    assert env["bridge"].activate(row(env, APPLY_PREFIX))
+    goz_back(env, target_id, encode_goz(goz.name, pts, goz.faces))  # ZBrush still holds the same target
+    assert "no point of target 'Bump' moved" in app.status_message, app.status_message
+    app._undo_redo(commands.UNDO)
+    app._undo_redo(commands.UNDO)
+    assert positions(mesh) == before and mesh.layer_items(lid) == offsets_before

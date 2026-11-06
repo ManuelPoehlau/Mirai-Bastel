@@ -21,3 +21,7 @@ what ZBrush returns for a flipped send (E1 T5.2: ZBrush's GoZ round trip is the 
 
 The E2 files carry the probe's ids 101–104; the bridge sends region `k` as id `k`, so the tests map 101–104 to 1–4
 (ZBrush returns whatever ids it was sent, E2) and keep 3225 as ZBrush's new group.
+| `zb2022_E3_head_uvs_as_sent.GoZ` | `20261106-095115_060_receive` (E3, bridge frame) | head sent with its UVs (UV4 block, OBJ `vt` values) and returned unchanged: UVs identical (≤ 3e-8), no flip |
+| `zb2022_E3_head_uvmaster.GoZ` | `20261106-095441_815_receive` (E3) | then *UV Master → Unwrap*: new UVs on all 324 faces, points bit-identical |
+| `zb2022_E3_head_uvmaster_texture.GoZ` | `20261106-095617_452_receive` (E3) | then polypaint, *New From Polypaint*: same UVs, plus a TEXTURE_MAP_PATH block naming `…/E1_C_P1_UV1_TXTR.tif` (2048², uncompressed RGB, stored bottom-up; the 12 MB image itself is not copied here) |
+| `zb2022_E3_head_bump_target.GoZ` | `20261106-095824_807_receive` (E3) | the head plus the probe's bump target (`make_meshes.bump_offsets`), sent as its own object beside the base and returned unchanged: bit-identical to `b + d` |

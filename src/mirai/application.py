@@ -78,6 +78,8 @@ from .mesh_geometry import mesh_center_and_radius
 from . import object_space
 from .pivot import WorkingPivot
 from .scene_objects import (
+    CompositeCommand,
+    ObjectTextureCommand,
     editable_material,
     replace_scene,
     reset_scene,
@@ -3154,6 +3156,8 @@ class Application:
             name = unique_object_name(self.scene, f"{plan.label} ZBrush")
             obj = self._objects.add_mesh_object(lambda: mesh_from_goz(plan.goz), name, "ZBrush return")
             if obj is not None:
+                if plan.texture is not None and obj.mesh.has_face_uvs():
+                    obj.texture = plan.texture  # part of the object the Add step adds and removes
                 self._set_status(f"ZBrush: added {obj.name!r} as a new object - {plan.reason}")
             return obj is not None
         if not plan.in_place:
@@ -3186,9 +3190,17 @@ class Application:
                 mesh.set_vertex_position(vertex_id, position)
             if plan.regions_changed:
                 mesh.face_regions = plan.regions
+            for face_id, uvs in plan.uvs.items():
+                mesh.set_face_uvs(face_id, uvs)
+            for vertex_id, offset in plan.layer_offsets.items():
+                mesh.set_layer_value(plan.target_layer, vertex_id, offset)
             return set(positions)
 
-        changed = self._mesh_transaction(f"ZBrush return {obj.name}", mutate, moved_of=lambda moved: moved).changed
+        description = f"ZBrush return {obj.name}"
+        companion = (ObjectTextureCommand(obj, obj.texture, plan.texture, description)
+                     if plan.texture_changed else None)
+        changed = self._mesh_transaction(description, mutate, moved_of=lambda moved: moved,
+                                         companion=companion).changed
         self._set_status(plan.summary() + (" - applied (Ctrl+Z undoes it)" if changed else " - nothing to apply"))
         return changed
 
@@ -3199,6 +3211,7 @@ class Application:
         *,
         on_applied: Callable[[Any], None] | None = None,
         moved_of: Callable[[Any], set[VertexId] | None] | None = None,
+        companion=None,
     ) -> "_MeshTransaction":
         """The one commit boundary for a mesh change `Application` makes (AD-SYM-03 §2.2 T-a);
         `apply_mesh_change` is its external-host entry.
@@ -3224,9 +3237,18 @@ class Application:
             mesh.rollback_change(change)
             raise
         delta = mesh.end_change(change)
+        # `companion`: a not yet applied non-mesh Command (a ZBrush return's texture, WP_GOZ_P3 §4) that joins this
+        # step: applied here, one Undo step with the mesh delta, or alone when the mesh did not change.
+        if companion is not None:
+            companion.redo()
         if delta.empty:
+            if companion is not None:
+                self.history.push(companion)
+                self._record_selection_history(selection_before, mesh_step=False)
+                return _MeshTransaction(True, result)
             return _MeshTransaction(False, result)
-        self.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=description))
+        command = MeshDeltaCommand(mesh=mesh, delta=delta, description=description)
+        self.history.push(command if companion is None else CompositeCommand([command, companion], description))
         if on_applied is not None:
             on_applied(result)
         # AD-025 §4.2: a change of point layers only moves nothing the viewport draws (the rest

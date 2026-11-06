@@ -51,7 +51,7 @@ and last commit: [experiments/README.md](../experiments/README.md)). Their docs,
 | [WP_TOOLBOX_GAPS_PLAN.md](WP_TOOLBOX_GAPS_PLAN.md) | Geplant 2026-10-23: Collapse V/E/F, Select Through, Transform-Raum World/Normal, Grow/Shrink, Loop-Extend, Next/Prev Loop, Relax/Smooth, Subdivide — Pakete A/B/C, Slices, Tasten, Praxistest |
 | [WP_INSET_BEVEL_SLIDE.md](WP_INSET_BEVEL_SLIDE.md) | Gebaut 2026-10-29 (`PROVISIONAL`, Grundfunktion): Inset (`I` im Face-Modus), Bevel/Chamfer für Kanten und Punkte (`Ctrl+B`), Vertex Slide (`G` im Vertex-Modus); Entscheidungen, Nicht-Scope, Praxistest B25 |
 | [WP_GOZ_P2_PLAN.md](WP_GOZ_P2_PLAN.md) | ZBrush-Brücke P2 (erledigt, Praxistest bestanden 2026-11-06): Polygruppen ↔ Regionen (P2a, E2 erledigt), N-Gons (P2b) (nur in der Datei zerlegt, möglichst Vierecke); Manus Entscheidungen, PC-Test E2, Akzeptanz |
-| [WP_GOZ_P3_PLAN.md](WP_GOZ_P3_PLAN.md) | ZBrush-Brücke P3 (vorbereitet 2026-11-06): UVs (mit übernehmen), Textur zurück (Kopie neben der Szene), Morph-Targets (Basis + Targets, als ZBrush-Layer falls möglich); PC-Test E3 |
+| [WP_GOZ_P3_PLAN.md](WP_GOZ_P3_PLAN.md) | ZBrush-Brücke P3 (gebaut 2026-11-06, Layer-Weg + Praxistest offen): UVs (mit übernehmen), Textur zurück (Kopie neben der Szene), Morph-Targets (Basis + Targets, als ZBrush-Layer falls möglich); PC-Test E3 |
 | [WP_ORTHO_VIEWS_PLAN.md](WP_ORTHO_VIEWS_PLAN.md) | Gebaut 2026-10-28 (`PROVISIONAL`): Ortho/Persp (`U`), Standardansichten per Shift beim Orbit, Working Pivot rastet auf die Symmetrieebene (Manus V-1..V-3); Ergebnis und Praxistest B23 |
 
 ## For AI collaborators

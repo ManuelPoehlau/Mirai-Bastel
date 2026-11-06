@@ -338,6 +338,21 @@ class ObjectMaterialCommand:
             obj.material = after
 
 
+class ObjectTextureCommand:
+    """The texture path of one object (AD-026) as an Undo step (WP_GOZ_P3 §4: a ZBrush return's texture, composed with
+    its mesh change in one step). The view follows by `_highlight_signature`."""
+
+    def __init__(self, obj: SceneObject, before: str | None, after: str | None, description: str) -> None:
+        self.obj, self.before, self.after = obj, before, after
+        self.description = description
+
+    def undo(self) -> None:
+        self.obj.texture = self.before
+
+    def redo(self) -> None:
+        self.obj.texture = self.after
+
+
 class ObjectPivotCommand:
     """Pivot-Änderung eines Objekts (AD-021 §4.6 "transform/pivot change"); heute nur als Teil
     von "Apply transform" (M2-3), ein Pivot-Werkzeug gibt es nicht (Q-13)."""

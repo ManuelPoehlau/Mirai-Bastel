@@ -720,3 +720,154 @@ def test_ngons_across_the_plane_whose_seam_edge_was_dissolved_split_symmetricall
                                               if mesh.vertex_position(v)[0] == 0.0} | set(sym.seam)), sym.mirror)
     for f in ngons:
         assert sorted(len(p) for p in splits[f]) == [4, 4] and _is_own_mirror(splits[f], on_plane)
+
+
+# -- P3: UVs, texture, morph targets ------------------------------------------------------------------------------------
+
+
+def test_uv_block_round_trip_and_zbrushs_e3_files():
+    points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
+    uvs = [[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)], [(0.0, 0.0), (1.0, 1.0), (0.0, 1.0)]]
+    goz = parse_goz(encode_goz("uv", points, [(0, 1, 2, 3), (0, 2, 3)], uvs=uvs))
+    assert goz.uvs == (tuple(uvs[0]), tuple(uvs[1]))  # a triangle reads its three pairs
+    with pytest.raises(ValueError, match="one \\(u, v\\) per corner"):
+        encode_goz("uv", points, [(0, 1, 2, 3)], uvs=[uvs[1]])
+    sent = parse_goz(fixture("zb2022_E3_head_uvs_as_sent.GoZ"))
+    assert len(sent.uvs) == 324 and sent.texture_path is None
+    painted = parse_goz(fixture("zb2022_E3_head_uvmaster_texture.GoZ"))
+    assert painted.texture_path.endswith("E1_C_P1_UV1_TXTR.tif")
+
+
+def _head_uvs_as_bridge(mesh):
+    return [[tuple(as_float32(c) for c in mesh.corner_uv(f, v)) for v in mesh.face_vertices(f)]
+            for f in mesh.all_face_ids()]
+
+
+def test_send_carries_the_uvs_zbrush_keeps_them_and_uv_master_is_a_uv_change():
+    """E3 (2026-11-06): the UV4 block ZBrush returns equals what Mirai sent (OBJ `vt` convention, no flip); after UV
+    Master every face has new UVs - the plan writes them, no point moved."""
+    scene, obj = one_object_scene(head_mesh())
+    data, manifest = build_send(scene, obj, identifier="P/Kopf", transfer_id="t", session_id="s1", scene_path=None,
+                                to_world=identity, triangulate=triangulate_face)
+    assert [list(map(tuple, f)) for f in parse_goz(data).uvs] == _head_uvs_as_bridge(obj.mesh)
+    same = plan_for(scene, obj, fixture("zb2022_E3_head_uvs_as_sent.GoZ"), manifest=manifest)
+    assert same.kind is ReturnKind.UNCHANGED and same.uvs == {}
+    unwrapped = parse_goz(fixture("zb2022_E3_head_uvmaster.GoZ"))
+    plan = plan_for(scene, obj, fixture("zb2022_E3_head_uvmaster.GoZ"), manifest=manifest)
+    assert plan.kind is ReturnKind.IN_PLACE and plan.positions == {} and len(plan.uvs) == 324
+    assert plan.reason == "no point moved, UVs changed" and "UVs: 324 faces changed" in plan.summary()
+    first = obj.mesh.all_face_ids()[0]
+    assert plan.uvs[first] == tuple(unwrapped.uvs[0])
+
+
+def test_a_mirai_uv_edit_since_the_send_is_a_conflict():
+    scene, obj = one_object_scene(head_mesh())
+    mesh = obj.mesh
+    f = mesh.all_face_ids()[0]
+    plan = plan_for(scene, obj, fixture("zb2022_E3_head_uvmaster.GoZ"),
+                    edit=lambda: mesh.set_face_uvs(f, [(0.5, 0.5)] * len(mesh.face_vertices(f))))
+    assert plan.kind is ReturnKind.CONFLICT and "UVs" in plan.reason
+
+
+def test_uvs_back_onto_an_unmapped_mesh_and_ngon_pieces():
+    """No UVs sent (an unmapped mesh) -> ZBrush's UVs are new for every face; an n-gon takes its corners' UVs from
+    its pieces."""
+    mesh = Mesh()
+    ids = [mesh.add_vertex((x, y, 0.0)) for x, y in [(0, 0), (2, 0), (3, 1), (2, 2), (0, 2), (-1, 1)]]
+    ngon = mesh.add_face(ids)
+    scene, obj = one_object_scene(mesh)
+    data, manifest = build_send(scene, obj, identifier="P/Kopf", transfer_id="t", session_id="s1", scene_path=None,
+                                to_world=identity, triangulate=triangulate_face)
+    assert manifest.sent_uvs is None and parse_goz(data).uvs is None
+    sent = parse_goz(data)
+    uv_of = {k: (0.1 * k, 0.05 * k) for k in range(6)}
+    returned = encode_goz(sent.name, sent.points, sent.faces, sent.groups, [[uv_of[k] for k in f] for f in sent.faces])
+    plan = plan_for(scene, obj, returned, manifest=manifest)
+    assert plan.uvs == {ngon: tuple(tuple(as_float32(c) for c in uv_of[k]) for k in range(6))}
+    assert "UVs: 1 face new" in plan.summary()
+
+
+def bump(mesh) -> dict:
+    """E3's bump target (`experiments/goz_probe/make_meshes.bump_offsets`, restated): around the point with the largest
+    z, +z offset 0.15 x extent x w^2, w = 1 - distance / (0.3 x extent)."""
+    vids = mesh.all_vertex_ids()
+    pos = [mesh.vertex_position(v) for v in vids]
+    extent = max(max(p[c] for p in pos) - min(p[c] for p in pos) for c in range(3))
+    tip = max(pos, key=lambda p: (p[2], p[1], p[0]))
+    out = {}
+    for v, p in zip(vids, pos):
+        w = max(0.0, 1.0 - sum((a - b) ** 2 for a, b in zip(p, tip)) ** 0.5 / (0.3 * extent))
+        out[v] = (0.0, 0.0, 0.15 * extent * w * w)
+    return out
+
+
+def head_with_bump_target():
+    from core import PointLayerInfo
+
+    scene, obj = one_object_scene(head_mesh())
+    mesh = obj.mesh
+    lid = mesh.add_point_layer(PointLayerInfo("Bump"))
+    for v, d in bump(mesh).items():
+        mesh.set_layer_value(lid, v, d)
+    return scene, obj, lid
+
+
+def test_a_target_is_sent_as_b_plus_d_and_zbrushs_e3_copy_is_bit_identical():
+    scene, obj, lid = head_with_bump_target()
+    data, manifest = build_send(scene, obj, identifier="P/Kopf_Bump", transfer_id="t", session_id="s1",
+                                scene_path=None, to_world=identity, triangulate=triangulate_face, layer=lid)
+    assert manifest.representation == f"target:{int(lid)}" and parse_goz(data).name == "Kopf_Bump"
+    assert parse_goz(data).points == parse_goz(fixture("zb2022_E3_head_bump_target.GoZ")).points
+    plan = plan_for(scene, obj, fixture("zb2022_E3_head_bump_target.GoZ"), manifest=manifest)
+    assert plan.kind is ReturnKind.UNCHANGED and plan.target_layer == lid
+
+
+def test_a_sculpted_target_return_writes_offsets_into_that_layer_only():
+    scene, obj, lid = head_with_bump_target()
+    mesh = obj.mesh
+    _data, manifest = build_send(scene, obj, identifier="P/Kopf_Bump", transfer_id="t", session_id="s1",
+                                 scene_path=None, to_world=identity, triangulate=triangulate_face, layer=lid)
+    goz = parse_goz(fixture("zb2022_E3_head_bump_target.GoZ"))
+    pts = list(goz.points)
+    pts[7] = (pts[7][0] + 0.25, pts[7][1], pts[7][2])
+    plan = plan_for(scene, obj, encode_goz(goz.name, pts, goz.faces), manifest=manifest)
+    v7 = mesh.all_vertex_ids()[7]
+    assert plan.kind is ReturnKind.IN_PLACE and plan.positions == {} and set(plan.layer_offsets) == {v7}
+    b = mesh.vertex_position(v7)
+    assert plan.layer_offsets[v7] == tuple(as_float32(p) - q for p, q in zip(from_goz(pts[7]), b))
+    assert "1 of 326 points of target 'Bump' moved" in plan.summary() and "Bump" in plan.label
+
+
+def _tiff(width, height, rows):
+    """An uncompressed RGB TIFF in ZBrush 2022.0.8's layout (E3: II, one strip, rows in file order)."""
+    entries = [(256, 3, 1, width), (257, 3, 1, height), (258, 3, 1, 8), (259, 3, 1, 1), (262, 3, 1, 2),
+               (273, 4, 1, 0), (277, 3, 1, 3), (278, 3, 1, height), (279, 4, 1, 3 * width * height), (284, 3, 1, 1)]
+    ifd = 8
+    start = ifd + 2 + 12 * len(entries) + 4
+    out = b"II*\0" + struct.pack("<I", ifd) + struct.pack("<H", len(entries))
+    for tag, typ, n, value in entries:
+        value = start if tag == 273 else value
+        out += struct.pack("<HHI", tag, typ, n) + (struct.pack("<HH", value, 0) if typ == 3 else struct.pack("<I", value))
+    return out + b"\0\0\0\0" + b"".join(rows)
+
+
+def test_texture_copy_flips_zbrushs_bottom_up_tiff_into_a_png(tmp_path):
+    import zlib
+
+    from interop.goz.texture import copy_texture, texture_dir
+
+    rows = [bytes([10 * y, 0, 0]) * 3 for y in range(2)]  # file row 0 = v 0 (bottom) in ZBrush's file
+    source = tmp_path / "Kopf_TXTR.tif"
+    source.write_bytes(_tiff(3, 2, rows))
+    folder = texture_dir(tmp_path / "kopf.mirai.json", tmp_path / "fallback")
+    assert folder == tmp_path / "kopf_textures" and texture_dir(None, tmp_path / "fb") == tmp_path / "fb"
+    copy, note = copy_texture(source, folder, "Kopf")
+    assert note is None and copy.suffix == ".png" and copy.parent == folder
+    png = copy.read_bytes()
+    raw = zlib.decompress(png[png.index(b"IDAT") + 4: png.index(b"IEND") - 8])
+    assert raw == b"\0" + rows[1] + b"\0" + rows[0]  # top row of the PNG = the TIFF's last row
+    assert copy_texture(source, folder, "Kopf")[0] == copy  # same content, same copy
+    odd = tmp_path / "Kopf_TXTR.bmp"
+    odd.write_bytes(b"BM" + b"\0" * 20)
+    other, note = copy_texture(odd, folder, "Kopf")
+    assert other.suffix == ".bmp" and "upside down" in note

@@ -35,6 +35,17 @@ Rules (E1 README §11, audit §7):
   only at exactly mirrored positions, so the image is the same split. Measured before (head, 8 mirrored
   6-gon pairs): 0 of 8 pairs split alike. ZBrush's Smooth and Poseable Symmetry use the edges, so both halves should
   carry the same ones.
+- **UVs (P3a, docs/WP_GOZ_P3_PLAN.md §3; Manu 2026-11-06 „Mit übernehmen“):** a mesh whose every face has UVs sends a
+  UV4 block (per piece, the corners' UVs; ZBrush keeps them exactly, OBJ `vt` convention, E3). A same-topology return
+  whose UVs differ from the last known ones gives the changed faces ZBrush's UVs, in the same Undo step as points and
+  groups; a return with UVs where Mirai sent none (UV Master on an unmapped mesh) gives every face its UVs. An n-gon
+  whose pieces disagree at a shared corner keeps Mirai's UVs.
+- **Texture (P3b):** ZBrush names `<Tool>_TXTR.tif` (E3); the glue copies it (flipped to Mirai's orientation,
+  `interop.goz.texture`) before planning and passes the copy as `texture`; a copy other than the object's texture is a
+  change of its own (same Undo step).
+- **Morph targets (P3c):** a send may carry the base and each target `b + d` as its own SubTool
+  (`Manifest.representation` `target:<LayerId>`). A target's same-topology return writes `d' = p - b` for the points
+  ZBrush moved into that layer only (TargetView's rule); groups, UVs and texture of a target SubTool are ignored.
 - **Subdivided SubTool** (D13, Manu 2026-11-05; E1 T7/T7b/T7c): a return whose every interior point equals the
   one-step Catmull-Clark vertex point of the sent cage is held (`SUBDIVIDED`), not applied: ZBrush returns a smoothed
   cage after a Divide with SMT on and the file says nothing about it. A Divide without SMT returns the cage bit-identical
@@ -58,12 +69,19 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Sequence
 
-from core.ids import FaceId, ObjectId, VertexId
+from core.ids import FaceId, LayerId, ObjectId, VertexId
 from core.mesh import FaceRegion, FaceRegions, LayerKind, Mesh
 from core.scene import Scene, SceneObject
 
 from .format import GozMesh, as_float32, encode_goz
-from .manifest import Manifest, float32_hash, fingerprint, fingerprint_differences
+from .manifest import (
+    REPRESENTATION_BASE,
+    TARGET_PREFIX,
+    Manifest,
+    float32_hash,
+    fingerprint,
+    fingerprint_differences,
+)
 
 Position = tuple[float, float, float]
 Placement = Callable[[SceneObject, Position], Position]
@@ -111,9 +129,26 @@ def short_name(name: str) -> str:
     return (re.sub(r"[^A-Za-z0-9_]+", "_", name).strip("_") or "Mirai")[:40]
 
 
-def sent_points(obj: SceneObject, to_world: Placement) -> list[Position]:
-    mesh = obj.mesh
-    return [tuple(as_float32(c) for c in to_goz(to_world(obj, mesh.vertex_position(v)))) for v in mesh.all_vertex_ids()]
+def target_layer(manifest: Optional[Manifest]) -> Optional[LayerId]:
+    """The morph target a manifest's SubTool carries (P3c), None for the base."""
+    rep = manifest.representation if manifest is not None else REPRESENTATION_BASE
+    return LayerId(int(rep[len(TARGET_PREFIX):])) if rep.startswith(TARGET_PREFIX) else None
+
+
+def shape_position(mesh: Mesh, layer: Optional[LayerId]) -> Callable[[VertexId], Position]:
+    """The rest position (`layer` None) or the target shape `b + d` of a point."""
+    if layer is None:
+        return mesh.vertex_position
+
+    def position(v: VertexId) -> Position:
+        b, d = mesh.vertex_position(v), mesh.layer_value(layer, v)
+        return (b[0] + d[0], b[1] + d[1], b[2] + d[2])
+    return position
+
+
+def sent_points(obj: SceneObject, to_world: Placement, layer: Optional[LayerId] = None) -> list[Position]:
+    position = shape_position(obj.mesh, layer)
+    return [tuple(as_float32(c) for c in to_goz(to_world(obj, position(v)))) for v in obj.mesh.all_vertex_ids()]
 
 
 def build_send(
@@ -127,8 +162,11 @@ def build_send(
     to_world: Placement,
     triangulate: Optional[Triangulate] = None,
     symmetry: Optional[SymmetryInfo] = None,
+    layer: Optional[LayerId] = None,
     clock: Callable[[], float] = time.time,
 ) -> tuple[bytes, Manifest]:
+    """The `.GoZ` of the object's base (`layer` None) or of its morph target `layer` as `b + d` (P3c), and its
+    manifest."""
     mesh = obj.mesh
     vertex_ids = mesh.all_vertex_ids()
     mesh_faces = mesh.all_face_ids()
@@ -137,6 +175,8 @@ def build_send(
     index = {v: i for i, v in enumerate(vertex_ids)}
     faces: list[list[int]] = []
     face_ids: list[FaceId] = []
+    piece_uvs: Optional[list] = [] if mesh.has_face_uvs() and all(
+        mesh.face_uvs(f) is not None for f in mesh_faces) else None
     ngons: list = []
     big = [f for f in mesh_faces if len(mesh.face_vertices(f)) > 4]
     if big and triangulate is None:
@@ -151,16 +191,22 @@ def build_send(
         for piece in pieces:
             faces.append([index[v] for v in piece])
             face_ids.append(f)
-    points = sent_points(obj, to_world)
+            if piece_uvs is not None:
+                piece_uvs.append([list(mesh.corner_uv(f, v)) for v in piece])
+    points = sent_points(obj, to_world, layer)
     groups, names, overlaps = send_groups(mesh, face_ids)
-    data = encode_goz(short_name(obj.name), points, faces, groups)
+    title = obj.name if layer is None else f"{obj.name}_{mesh.point_layer_info(layer).name}"
+    data = encode_goz(short_name(title), points, faces, groups, piece_uvs)
+    if piece_uvs is not None:  # what ZBrush holds: the float32 values of the block
+        piece_uvs = [[[as_float32(u), as_float32(v)] for u, v in piece] for piece in piece_uvs]
     manifest = Manifest(
         transfer_id=transfer_id, session_id=session_id, identifier=identifier, object_id=int(obj.id),
         object_name=obj.name, scene_path=scene_path, vertex_ids=[int(v) for v in vertex_ids],
         face_ids=[int(f) for f in face_ids], faces=faces, sent_float32=float32_hash(points),
         fingerprint=fingerprint(scene, obj), sent_at=clock(), sent_groups=groups,
         group_names={str(k): v for k, v in names.items()}, rest_group=REST_GROUP, group_overlaps=overlaps,
-        ngons=ngons, extra={"ngon_split": stats} if stats else {},
+        ngons=ngons, extra={"ngon_split": stats} if stats else {}, sent_uvs=piece_uvs,
+        representation=REPRESENTATION_BASE if layer is None else f"{TARGET_PREFIX}{int(layer)}",
     )
     return data, manifest
 
@@ -345,6 +391,15 @@ class ReturnPlan:
     regions: Optional[FaceRegions] = None
     zbrush_groups: Optional[tuple[int, ...]] = None
     group_names: dict[int, str] = field(default_factory=dict)
+    #: P3a: new UVs per face to write, and ZBrush's UVs per piece of this return when read (the next baseline)
+    uvs: dict[FaceId, tuple] = field(default_factory=dict)
+    zbrush_uvs: Optional[list] = None
+    #: P3b: the copied texture to set on the object (`texture_changed`)
+    texture: Optional[str] = None
+    texture_changed: bool = False
+    #: P3c: a target return: its layer and the new offsets `d'` of the points ZBrush moved
+    target_layer: Optional[LayerId] = None
+    layer_offsets: dict[VertexId, Position] = field(default_factory=dict)
 
     @property
     def in_place(self) -> bool:
@@ -375,11 +430,13 @@ def plan_return(
     to_object: Placement,
     symmetry: Optional[SymmetryInfo] = None,
     new_group_name: Optional[GroupNamer] = None,
+    texture: Optional[str] = None,
 ) -> ReturnPlan:
     subtool = goz.name[len("GoZMesh_"):] if goz.name.startswith("GoZMesh_") else goz.name
     if manifest is None:
         return ReturnPlan(ReturnKind.UNKNOWN_OBJECT, identifier, subtool or identifier,
                           "not sent from Mirai - can be added as a new object", goz)
+    layer = target_layer(manifest)
     label = manifest.object_name
 
     def plan(kind: ReturnKind, reason: str, **kw) -> ReturnPlan:
@@ -395,7 +452,11 @@ def plan_return(
                     f"topology changed in ZBrush ({len(goz.points)} points / {len(goz.faces)} faces, sent "
                     f"{len(manifest.vertex_ids)} / {len(manifest.faces)}) - only as a new object", object_id=obj.id)
     differences = fingerprint_differences(manifest.fingerprint, fingerprint(scene, obj))
-    sent = sent_points(obj, to_world) if not differences else []
+    if layer is not None and layer not in obj.mesh.point_layer_ids():
+        return plan(ReturnKind.UNKNOWN_OBJECT, "its morph target is gone - can be added as a new object")
+    if layer is not None:
+        label = f"{obj.name} · {obj.mesh.point_layer_info(layer).name}"
+    sent = sent_points(obj, to_world, layer) if not differences else []
     if not differences and float32_hash(sent) != manifest.sent_float32:
         differences = ["sent points"]
     if differences:
@@ -414,11 +475,18 @@ def plan_return(
             positions[manifest.vertex_id(i)] = to_object(obj, from_goz(r))
             largest = max(largest, max(abs(a - b) for a, b in zip(r, s)))
     mesh = obj.mesh
+    if layer is not None:
+        return _target_plan(plan, obj, layer, positions, largest, sent, symmetry)
     groups = plan_groups(goz.groups, manifest, mesh, new_group_name, returned)
-    notes = list(groups.notes)
+    uvs = plan_uvs(goz.uvs, manifest, mesh)
+    texture_changed = texture is not None and texture != obj.texture
+    notes = list(groups.notes) + list(uvs.notes)
+    if texture_changed:
+        notes.append(f"texture: {texture.replace(chr(92), '/').rsplit('/', 1)[-1]}")
     group_kw = dict(zbrush_groups=groups.read, group_names=groups.names, regions_changed=groups.changed,
-                    regions=groups.regions)
-    if not positions and not groups.changed:
+                    regions=groups.regions, uvs=uvs.faces, zbrush_uvs=uvs.read, texture=texture,
+                    texture_changed=texture_changed)
+    if not positions and not groups.changed and not uvs.faces and not texture_changed:
         return plan(ReturnKind.UNCHANGED, "no point moved" + (", no group changed" if groups.read else ""),
                     object_id=obj.id, notes=notes, **group_kw)
     moved_by_zbrush = len(positions)
@@ -431,9 +499,75 @@ def plan_return(
     targets = sum(1 for lid in mesh.point_layer_ids() if mesh.point_layer_info(lid).kind is LayerKind.VECTOR)
     if targets:
         notes.append(f"{targets} morph target{'s' if targets != 1 else ''} follow the new base")
-    reason = f"{moved_by_zbrush} of {len(sent)} points moved" if positions else "no point moved, groups changed"
+    changed = [what for what, on in (("groups", groups.changed), ("UVs", bool(uvs.faces)),
+                                      ("texture", texture_changed)) if on]
+    reason = (f"{moved_by_zbrush} of {len(sent)} points moved" if positions
+              else "no point moved, " + " / ".join(changed) + " changed")
     return plan(ReturnKind.IN_PLACE, reason, object_id=obj.id, positions=positions, notes=notes, cage_like=cage_like,
                 **group_kw)
+
+
+def _target_plan(plan, obj: SceneObject, layer: LayerId, positions: dict, largest: float, sent, symmetry):
+    """A target SubTool's return (P3c): the moved points of `b + d` as new offsets `d' = p - b` of `layer`."""
+    mesh = obj.mesh
+    name = mesh.point_layer_info(layer).name
+    if not positions:
+        return plan(ReturnKind.UNCHANGED, f"no point of target {name!r} moved", object_id=obj.id, target_layer=layer)
+    notes = []
+    moved = len(positions)
+    if symmetry is not None:
+        notes.extend(symmetrize_positions(positions, mesh, symmetry, shape_position(mesh, layer)))
+    offsets = {}
+    for v, p in positions.items():
+        b = mesh.vertex_position(v)
+        offsets[v] = (p[0] - b[0], p[1] - b[1], p[2] - b[2])
+    return plan(ReturnKind.IN_PLACE, f"{moved} of {len(sent)} points of target {name!r} moved", object_id=obj.id,
+                positions={}, notes=notes, target_layer=layer, layer_offsets=offsets)
+
+
+# -- UVs (P3a) ----------------------------------------------------------------------------------------------------------
+
+
+@dataclass
+class UvPlan:
+    faces: dict = field(default_factory=dict)  # FaceId -> new UVs in boundary order
+    read: Optional[list] = None  # ZBrush's UVs per piece when taken into account
+    notes: list[str] = field(default_factory=list)
+
+
+def plan_uvs(returned, manifest: Manifest, mesh: Mesh) -> UvPlan:
+    """The faces whose UVs ZBrush changed (see module). Needs the sent topology (checked by the caller)."""
+    if returned is None:
+        return UvPlan()
+    got = [[[float(u), float(v)] for u, v in piece] for piece in returned]
+    baseline = manifest.zbrush_uvs if manifest.zbrush_uvs is not None else manifest.sent_uvs
+    if baseline is not None and got == baseline:
+        return UvPlan(read=got)
+    pieces_of: dict[FaceId, list[int]] = {}
+    for i in range(len(got)):
+        pieces_of.setdefault(manifest.face_id(i), []).append(i)
+    out: dict = {}
+    disagree = 0
+    for f, pieces in pieces_of.items():
+        if baseline is not None and all(got[i] == baseline[i] for i in pieces):
+            continue
+        corner: dict = {}
+        clash = False
+        for i in pieces:
+            for k, uv in zip(manifest.faces[i], got[i]):
+                v = manifest.vertex_id(k)
+                if corner.setdefault(v, tuple(uv)) != tuple(uv):
+                    clash = True
+        if clash:
+            disagree += 1
+            continue
+        out[f] = tuple(corner[v] for v in mesh.face_vertices(f))
+    notes = []
+    if out:
+        notes.append(f"UVs: {len(out)} face{'s' if len(out) != 1 else ''} " + ("new" if baseline is None else "changed"))
+    if disagree:
+        notes.append(f"{disagree} n-gon{'s' if disagree != 1 else ''} keep Mirai's UVs (their pieces disagree)")
+    return UvPlan(out, got, notes)
 
 
 def _piece_ok(piece: Sequence[Position], unit: Position, tol: float) -> bool:
@@ -657,10 +791,12 @@ def _gap(a: Position, b: Position) -> float:
     return max(abs(x - y) for x, y in zip(a, b))
 
 
-def symmetrize_positions(positions: dict[VertexId, Position], mesh: Mesh, symmetry: SymmetryInfo) -> list[str]:
+def symmetrize_positions(positions: dict[VertexId, Position], mesh: Mesh, symmetry: SymmetryInfo,
+                         current: Optional[Callable[[VertexId], Position]] = None) -> list[str]:
     """Makes the pairs and seam points this return touched exact again, within `SYMMETRY_TOLERANCE` of the object's
-    size (see module). Changes `positions` in place (a partner ZBrush left alone is added); returns the status notes."""
-    current = mesh.vertex_position
+    size (see module). Changes `positions` in place (a partner ZBrush left alone is added); returns the status notes.
+    `current`: the shape the positions belong to (a target's `b + d`), default the rest positions."""
+    current = current or mesh.vertex_position
     tol = SYMMETRY_TOLERANCE * _extent([current(v) for v in mesh.all_vertex_ids()])
     mirror = symmetry.mirror
     fixed_pairs = fixed_seam = 0
@@ -706,11 +842,12 @@ def symmetrize_positions(positions: dict[VertexId, Position], mesh: Mesh, symmet
 
 
 def mesh_from_goz(goz: GozMesh) -> Mesh:
-    """A new mesh in Mirai's world frame (the new-object path: identity placement, fresh IDs)."""
+    """A new mesh in Mirai's world frame (the new-object path: identity placement, fresh IDs; ZBrush's UVs, P3a)."""
     mesh = Mesh()
     ids = [mesh.add_vertex(from_goz(p)) for p in goz.points]
-    for face in goz.faces:
-        mesh.add_face([ids[i] for i in face])
+    uvs = goz.uvs or [None] * len(goz.faces)
+    for face, face_uvs in zip(goz.faces, uvs):
+        mesh.add_face([ids[i] for i in face], uvs=None if face_uvs is None else [tuple(uv) for uv in face_uvs])
     return mesh
 
 
@@ -725,5 +862,19 @@ def rebase_manifest(manifest: Manifest, scene: Scene, obj: SceneObject, to_world
     if plan is not None and plan.zbrush_groups is not None:  # ZBrush's ids become the baseline, new ids keep their name
         groups = dict(zbrush_groups=list(plan.zbrush_groups),
                       group_names={str(k): v for k, v in plan.group_names.items()})
-    return replace(manifest, fingerprint=fingerprint(scene, obj), sent_float32=float32_hash(sent_points(obj, to_world)),
+    if plan is not None and plan.zbrush_uvs is not None:
+        groups["zbrush_uvs"] = plan.zbrush_uvs
+    shape = sent_points(obj, to_world, target_layer(manifest))
+    return replace(manifest, fingerprint=fingerprint(scene, obj), sent_float32=float32_hash(shape),
                    zbrush_points=None if zbrush_points is None else [list(p) for p in zbrush_points], **groups)
+
+
+def rebase_sibling(manifest: Manifest, scene: Scene, obj: SceneObject, to_world: Placement,
+                   held: Sequence[Position]) -> Manifest:
+    """Another SubTool of the same object after an apply (P3c): ZBrush still holds `held` (its shape before the apply),
+    Mirai's object has a new fingerprint."""
+    from dataclasses import replace
+
+    shape = sent_points(obj, to_world, target_layer(manifest))
+    return replace(manifest, fingerprint=fingerprint(scene, obj), sent_float32=float32_hash(shape),
+                   zbrush_points=[list(p) for p in held])

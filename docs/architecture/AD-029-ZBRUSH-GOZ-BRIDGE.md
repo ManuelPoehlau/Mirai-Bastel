@@ -25,6 +25,8 @@ mirror-symmetric split) passed the practical test on 2026-11-06 ([plan](../WP_GO
 - **Läuft Mirai nicht:** Die Rückgabe wartet, bis Mirai startet (D11).
 - **Polygruppen (P2a, 2026-11-05):** Mirais Gruppen gehen als ZBrush-Polygruppen mit. In ZBrush umgefärbte Flächen
   kommen mit den Punkten zurück, gleiche Bestätigung, **ein** Undo-Schritt; eine in ZBrush neue Gruppe heißt „Group N“.
+- **P3 (2026-11-06):** UVs gehen mit und kommen mit zurück; eine Textur aus ZBrush kommt als Kopie neben die Szene;
+  Basis und jedes Morph-Target gehen als eigene SubTools, ein Target kommt nur in sein Target zurück.
 - **N-Gons (P2b, 2026-11-05):** werden nur in der gesendeten Datei zerlegt, möglichst in Vierecke. In Mirai bleiben
   sie N-Gons; zurück kommen die Punkte (und Gruppen). Bei eingeschalteter Symmetrie werden beide Hälften gleich
   (gespiegelt) zerlegt, N-Gons über der Mitte in sich symmetrisch.
@@ -39,7 +41,11 @@ polypaint, masks, morph targets sent as `b + d`, several SubTools in one Undo st
 every send carries the regions as GoZ polygroups; a same-topology return brings group changes with the points, one
 Undo step. **P2b (n-gons) is implemented** (2026-11-05, plan §4): a face with more than 4 corners is split **in the
 file only**, preferring quads, without new points; the return maps back by point index and Mirai's n-gons stay
-n-gons. **Next:** P3 (UVs, texture back, morph targets), planned in [`docs/WP_GOZ_P3_PLAN.md`](../WP_GOZ_P3_PLAN.md).
+n-gons. **P3 (2026-11-06,
+[`docs/WP_GOZ_P3_PLAN.md`](../WP_GOZ_P3_PLAN.md)):** UVs travel both ways (no flip, E3) and come back with the points;
+a texture ZBrush names comes back as a flipped PNG copy beside the scene, in the same Undo step; the base and each
+morph target go as their own SubTools, a target's return goes into that target only. Open: morph targets as ZBrush
+layers.
 
 ## 2. Packages and boundary
 

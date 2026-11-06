@@ -71,10 +71,14 @@ def write_manifest(directory: Path, identifier: str, manifest_json: str) -> None
     write_text_atomic(manifest_path(directory, identifier), manifest_json)
 
 
-def write_send(paths: GozPaths, identifier: str, data: bytes) -> Path:
+def write_send(paths: GozPaths, identifier: str, data: bytes, more: Sequence[tuple[str, bytes]] = ()) -> Path:
+    """Every `.GoZ` first, then one `GoZ_ObjectList.txt` naming all of them (P3c: base and targets in one transfer;
+    E3 T9.5: ZBrush 2022.0.8 takes both)."""
     target = Path(identifier + ".GoZ")
     write_bytes_atomic(target, data)
-    write_goz_list(paths.object_list, [identifier])
+    for other, payload in more:
+        write_bytes_atomic(Path(other + ".GoZ"), payload)
+    write_goz_list(paths.object_list, [identifier, *(other for other, _ in more)])
     write_text_atomic(paths.application_file, APP_FOLDER_NAME, encoding=ansi_encoding(), newline="")
     return target
 
