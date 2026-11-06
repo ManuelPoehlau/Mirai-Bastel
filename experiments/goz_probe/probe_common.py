@@ -309,7 +309,8 @@ def match_sent(goz: GozFile, identifier: str, sent: dict[str, dict], send_logs: 
     """Which sent mesh a received file is: by an earlier `probe_send` identifier, else by counts (a ZBrush OBJ import of
     `meshes/<id>.obj` keeps its counts), else by name."""
     for log in send_logs:
-        if log.get("identifier") and Path(log["identifier"]).name == Path(identifier).name and log.get("mesh") in sent:
+        names = [log.get("identifier")] + [f.get("identifier") for f in log.get("files") or () if log.get("mesh")]
+        if any(n and Path(n).name == Path(identifier).name for n in names) and log.get("mesh") in sent:
             return sent[log["mesh"]], f"identifier of the send log {log.get('log_dir')}"
     by_counts = [s for s in sent.values() if len(s["positions"]) == len(goz.points) and len(s["faces"]) == len(goz.faces)]
     if len(by_counts) == 1:
@@ -424,11 +425,13 @@ def analyse(goz: GozFile, sent: dict) -> dict:
         if same_order and candidate:
             sign = {m["axis"]: (AXES.index(m["from"]), 1.0 if m["factor"] > 0 else -1.0) for m in mapping}
             changed, max_diff = [], 0.0
+            backs = []
             for k, (expected, q) in enumerate(zip(sent_points, goz.points)):
                 back = [0.0, 0.0, 0.0]
                 for j, axis in enumerate(AXES):
                     i, s = sign[axis]
                     back[i] = s * q[j]  # a sign flip is exact in float32
+                backs.append(back)
                 if back != list(expected):
                     changed.append(k)
                     max_diff = max(max_diff, max(abs(x - y) for x, y in zip(back, expected)))
@@ -438,7 +441,61 @@ def analyse(goz: GozFile, sent: dict) -> dict:
                 "max_abs_diff": max_diff,
                 "first_changed": changed[:10],
             }
+    if "target_bump" in sent and same_order:
+        # a target distorts the axis fit (its bump moves the bounding box): try the two maps the probe sends with
+        # and the OBJ path (T2: y' = -y + (ymin + ymax), z' = -z + (zmin + zmax) of the imported base)
+        lo, hi = _bbox(sent["positions"])
+        maps = {"raw": ((1.0, 1.0, 1.0), (0.0, 0.0, 0.0)), "bridge": ((1.0, -1.0, -1.0), (0.0, 0.0, 0.0)),
+                "obj": ((1.0, -1.0, -1.0), (0.0, lo[1] + hi[1], lo[2] + hi[2]))}
+        candidates = []
+        for axis, (signs, offsets) in maps.items():
+            back = [[s * (c - o) for s, c, o in zip(signs, q, offsets)] for q in goz.points]
+            candidates.append({**compare_bump(sent, back), "axis": axis})
+        out["target_bump"] = min(candidates, key=lambda r: r["max_rest"])
+    if goz.uvs and sent.get("uvs") and len(goz.uvs) == len(sent["uvs"]):
+        out["uvs"] = compare_uvs(goz.uvs, sent["uvs"])
     return out
+
+
+def compare_bump(sent: dict, back: Sequence[Sequence[float]]) -> dict:
+    """E3: how a received shape relates to base `b` and the bump target `b + d`: the fitted weight
+    `w = sum((p - b) . d) / sum(d . d)` (0 = base, 1 = the target, a layer at 50 % = 0.5), how many points equal
+    `b + d` bit for bit, and the largest deviation from `b + w d`."""
+    base = sent["positions"]
+    d = sent["target_bump"]
+    num = math.fsum(sum((p[c] - b[c]) * dd[c] for c in range(3)) for p, b, dd in zip(back, base, d))
+    den = math.fsum(sum(c * c for c in dd) for dd in d) or 1.0
+    w = num / den
+    exact = sum(1 for p, b, dd in zip(back, base, d)
+                if list(p) == [as_float32(b[c] + dd[c]) for c in range(3)])
+    rest = max(max(abs(p[c] - (b[c] + w * dd[c])) for c in range(3)) for p, b, dd in zip(back, base, d))
+    return {"weight": w, "points_equal_to_target": exact, "points": len(base), "max_rest": rest}
+
+
+def compare_uvs(received: Sequence[Sequence[Sequence[float]]], sent: Sequence) -> dict:
+    """E3: per face the received UVs (first corners) against the sent / OBJ UVs: identical in float32, V flipped
+    (v' = 1 - v), U flipped, or other; and the largest difference of each reading."""
+    counts = {"identical": 0, "flip_v": 0, "flip_u": 0, "other": 0, "no_uvs_sent": 0}
+    worst = {"identical": 0.0, "flip_v": 0.0}
+    for got, want in zip(received, sent):
+        if want is None:
+            counts["no_uvs_sent"] += 1
+            continue
+        got = [tuple(uv) for uv in got[:len(want)]]
+        same = max(max(abs(g[0] - w[0]), abs(g[1] - w[1])) for g, w in zip(got, want))
+        flip_v = max(max(abs(g[0] - w[0]), abs(g[1] - (1.0 - w[1]))) for g, w in zip(got, want))
+        flip_u = max(max(abs(g[0] - (1.0 - w[0])), abs(g[1] - w[1])) for g, w in zip(got, want))
+        worst["identical"] = max(worst["identical"], same)
+        worst["flip_v"] = max(worst["flip_v"], flip_v)
+        if all(g == (as_float32(w[0]), as_float32(w[1])) for g, w in zip(got, want)):
+            counts["identical"] += 1
+        elif flip_v <= 1e-6:
+            counts["flip_v"] += 1
+        elif flip_u <= 1e-6:
+            counts["flip_u"] += 1
+        else:
+            counts["other"] += 1
+    return {"faces": counts, "max_diff": worst}
 
 
 def analysis_lines(result: dict) -> list[str]:
@@ -468,6 +525,15 @@ def analysis_lines(result: dict) -> list[str]:
                 f"{p['changed']} Punkte geändert, {p['bit_identical']} bitgleich; max. Abweichung {p['max_abs_diff']:.6g}; "
                 f"erste geänderte Indizes {p['first_changed']}"
             )
+    if "target_bump" in result:
+        t = result["target_bump"]
+        lines.append(f"Morph-Ziel 'bump' ({t['axis']}): Gewicht {t['weight']:.4f} (0 = Basis, 1 = Ziel); {t['points_equal_to_target']} "
+                     f"von {t['points']} Punkten bitgleich mit Basis + Ziel; Rest neben Basis + Gewicht·Ziel max "
+                     f"{t['max_rest']:.3g}")
+    if "uvs" in result:
+        u = result["uvs"]
+        lines.append(f"UVs je Fläche gegen die gesendeten / OBJ-UVs: {u['faces']}; max. Abweichung gleich "
+                     f"{u['max_diff']['identical']:.3g}, mit V gespiegelt {u['max_diff']['flip_v']:.3g}")
     return lines
 
 

@@ -39,7 +39,7 @@ polypaint, masks, morph targets sent as `b + d`, several SubTools in one Undo st
 every send carries the regions as GoZ polygroups; a same-topology return brings group changes with the points, one
 Undo step. **P2b (n-gons) is implemented** (2026-11-05, plan §4): a face with more than 4 corners is split **in the
 file only**, preferring quads, without new points; the return maps back by point index and Mirai's n-gons stay
-n-gons.
+n-gons. **Next:** P3 (UVs, texture back, morph targets), planned in [`docs/WP_GOZ_P3_PLAN.md`](../WP_GOZ_P3_PLAN.md).
 
 ## 2. Packages and boundary
 

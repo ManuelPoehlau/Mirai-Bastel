@@ -79,11 +79,30 @@ def head_mesh() -> Mesh:
 BUILDERS = {"A": tripod_mesh, "B": mirai_sphere_mesh, "C": head_mesh}
 
 
+def bump_offsets(positions) -> list[list[float]]:
+    """E3 (morph target): a deterministic bump around the point with the largest z (Mirai frame): offset along +z of
+    0.15 x extent x w^2, w = 1 - distance / (0.3 x extent), zero outside."""
+    extent = max(max(p[c] for p in positions) - min(p[c] for p in positions) for c in range(3))
+    tip = max(positions, key=lambda p: (p[2], p[1], p[0]))
+    radius = 0.3 * extent
+    out = []
+    for p in positions:
+        w = max(0.0, 1.0 - sum((a - b) ** 2 for a, b in zip(p, tip)) ** 0.5 / radius)
+        out.append([0.0, 0.0, 0.15 * extent * w * w])
+    return out
+
+
 def sidecar(mesh_id: str, mesh: Mesh) -> dict:
     vertex_ids = mesh.all_vertex_ids()
     index = {vid: i for i, vid in enumerate(vertex_ids)}
     face_ids = mesh.all_face_ids()
+    extra: dict = {}
+    if mesh.has_face_uvs():  # E3: the corner UVs as Mirai holds them (= the OBJ's vt), None for a face without
+        extra["uvs"] = [None if mesh.face_uvs(f) is None else [list(uv) for uv in mesh.face_uvs(f)] for f in face_ids]
+    if mesh_id == "C":
+        extra["target_bump"] = bump_offsets([mesh.vertex_position(v) for v in vertex_ids])
     return {
+        **extra,
         "id": mesh_id,
         "name": MESH_NAMES[mesh_id],
         "positions": [list(mesh.vertex_position(v)) for v in vertex_ids],
@@ -103,8 +122,14 @@ def write_meshes(out: Path, ids=("A", "B", "C")) -> list[Path]:
         name = MESH_NAMES[mesh_id]
         obj = out / f"{mesh_id}.obj"
         write_text_atomic(obj, mesh_to_obj(mesh, name))
-        write_json_atomic(out / f"{mesh_id}.sent.json", sidecar(mesh_id, mesh))
+        car = sidecar(mesh_id, mesh)
+        write_json_atomic(out / f"{mesh_id}.sent.json", car)
         written.append(obj)
+        if "target_bump" in car:  # E3: the target shape as Mirai's OBJ export would write it (for a ZBrush layer import)
+            for vid, d in zip(mesh.all_vertex_ids(), car["target_bump"]):
+                p = mesh.vertex_position(vid)
+                mesh.set_vertex_position(vid, (p[0] + d[0], p[1] + d[1], p[2] + d[2]))
+            write_text_atomic(out / f"{mesh_id}_bump.obj", mesh_to_obj(mesh, name + "_bump"))
     return written
 
 

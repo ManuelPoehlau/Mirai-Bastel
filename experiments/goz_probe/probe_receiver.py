@@ -115,6 +115,11 @@ def _safe(function, *args):
         return f"error: {type(exc).__name__}: {exc}"
 
 
+def n_map(record: dict) -> str:
+    """The capture prefix of a map image: the object's file prefix (`00_...`) plus `map`."""
+    return Path(record["copy"]).name.split("_", 1)[0] + "map"
+
+
 def _listener_pid(inbox: Path):
     try:
         return int(json.loads((inbox / LOCK_NAME).read_text(encoding="utf-8"))["pid"])
@@ -216,6 +221,23 @@ def receive(
             "anomalies": goz.anomalies,
         }
         report.append(dump(goz).rstrip("\n"))
+        maps = record["maps"] = []
+        for key, value in goz.strings.items():  # E3: texture / normal / displacement map paths -> copy the image
+            if not key.endswith("_MAP_PATH"):
+                continue
+            image = Path(value)
+            entry = {"block": key, "path": value, "stat": stat_record(image)}
+            if entry["stat"]["exists"]:
+                try:
+                    data = image.read_bytes()
+                    copy = cap / f"{n_map(record)}_{image.name}"
+                    write_bytes_atomic(copy, data)
+                    entry.update(copy=str(copy), sha256=sha256(data), bytes=len(data), head=data[:16].hex())
+                except OSError as exc:
+                    entry["read_error"] = str(exc)
+            maps.append(entry)
+            report.append(f"{key}: exists={entry['stat']['exists']} bytes={entry.get('bytes')} "
+                          f"copy={Path(entry['copy']).name if 'copy' in entry else None}")
         match, how = match_sent(goz, record["identifier"], sent, logs)
         record["matched_sent"] = {"id": match["id"] if match else None, "by": how}
         if match is not None:

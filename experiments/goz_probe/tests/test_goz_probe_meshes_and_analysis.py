@@ -14,7 +14,7 @@ def test_meshes_are_deterministic(tmp_path):
     make_meshes.write_meshes(a)
     make_meshes.write_meshes(b)
     names = sorted(p.name for p in a.iterdir())
-    assert names == ["A.obj", "A.sent.json", "B.obj", "B.sent.json", "C.obj", "C.sent.json"]
+    assert names == ["A.obj", "A.sent.json", "B.obj", "B.sent.json", "C.obj", "C.sent.json", "C_bump.obj"]
     assert all((a / n).read_bytes() == (b / n).read_bytes() for n in names)
 
 

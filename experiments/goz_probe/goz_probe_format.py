@@ -138,6 +138,9 @@ class GozFile:
     face_tag: Optional[int] = None
     faces: list[Face] = field(default_factory=list)
     groups: list[int] = field(default_factory=list)
+    #: E3: per face its (u, v) pairs as the UV block holds them (UV4: four per face, UV3: three), [] = no UV block
+    uvs: list[tuple[tuple[float, float], ...]] = field(default_factory=list)
+    uv_tag: Optional[int] = None
     strings: dict[str, str] = field(default_factory=dict)
     anomalies: list[str] = field(default_factory=list)
     end_size_field: Optional[int] = None
@@ -234,6 +237,12 @@ def parse_goz(data: bytes) -> GozFile:
             goz.points = [tuple(values[3 * i: 3 * i + 3]) for i in range(count)]
         elif tag == TAG_GROUPS_LIST:
             goz.groups = list(struct.unpack_from(f"<{count}H", payload))
+        elif tag in (TAG_UV4_LIST, TAG_UV3_LIST):
+            per = 4 if tag == TAG_UV4_LIST else 3
+            values = struct.unpack_from(f"<{2 * per * count}f", payload)
+            goz.uv_tag = tag
+            goz.uvs = [tuple((values[2 * (per * i + k)], values[2 * (per * i + k) + 1]) for k in range(per))
+                       for i in range(count)]
         elif tag in FACE_TAGS:
             if goz.faces:
                 goz.anomalies.append("second face block (the later one is used)")
@@ -291,6 +300,7 @@ def encode_goz(
     style: str = "sdk",
     header_text: bytes = PROBE_HEADER_TEXT,
     groups: Optional[Sequence[int]] = None,
+    uvs: Optional[Sequence[Sequence[Sequence[float]]]] = None,
 ) -> bytes:
     """MESH, FLAGS, POINT_LIST (float32), FACE4_LIST_FORMAT_1, (ZBrush's default attribute blocks), END.
     `name` is used as given for "sdk"; "gozmesh" and "zbrush" add the `GoZMesh_` prefix unless it is there."""
@@ -326,6 +336,14 @@ def encode_goz(
         if len(groups) != len(faces) or not all(0 <= int(g) <= 0xFFFF for g in groups):
             raise ValueError("groups: one 16-bit id per face")
         parts.append(_block(TAG_GROUPS_LIST, len(faces), struct.pack(f"<{len(faces)}H", *(int(g) for g in groups))))
+    if uvs is not None:  # E3: UV4_LIST, four (u, v) per face in corner order; a triangle repeats its last pair
+        if len(uvs) != len(faces) or any(len(u) != len(f) for u, f in zip(uvs, faces)):
+            raise ValueError("uvs: one (u, v) per corner of every face")
+        values = []
+        for face_uvs in uvs:
+            corners = list(face_uvs) + [face_uvs[-1]] * (4 - len(face_uvs))
+            values.extend(float(c) for uv in corners for c in uv)
+        parts.append(_block(TAG_UV4_LIST, len(faces), struct.pack(f"<{len(values)}f", *values)))
     if style == "zbrush":
         parts += [
             _block(TAG_MRGB_LIST, n, ZBRUSH_DEFAULT_MRGB * n),
@@ -366,6 +384,12 @@ def dump(goz: GozFile, *, head: int = 5) -> str:
     if goz.faces:
         lines.append(f"first faces: {goz.faces[:head]}")
         lines.append(f"last faces: {goz.faces[-head:]}")
+    if goz.uvs:
+        us = [uv[0] for f in goz.uvs for uv in f]
+        vs = [uv[1] for f in goz.uvs for uv in f]
+        lines.append(f"uvs ({TAG_NAMES.get(goz.uv_tag)}): {len(goz.uvs)} faces, u {min(us):.6g}..{max(us):.6g}, "
+                     f"v {min(vs):.6g}..{max(vs):.6g}")
+        lines.append(f"first face uvs: {goz.uvs[:3]}")
     if goz.groups:
         from collections import Counter
 
