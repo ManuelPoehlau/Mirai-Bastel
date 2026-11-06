@@ -56,6 +56,7 @@ from interop.goz.transfer import (
     Inbox,
     default_runner,
     launch_zbrush,
+    launch_zbrush_with_script,
     read_manifest_text,
     write_manifest,
     write_send,
@@ -266,7 +267,12 @@ class ZBrushBridge:
             self.names.save()
             _k, identifier, data, manifest = sends[0]
             write_send(paths, identifier, data, [(i, d) for _k2, i, d, _m in sends[1:]])
-            launch_zbrush(paths, runner=self._runner)
+            if len(sends) > 1:
+                launch_zbrush_with_script(
+                    paths, [i for _, i, _, _ in sends], self.manifest_dir, runner=self._runner
+                )
+            else:
+                launch_zbrush(paths, runner=self._runner)
         except (SendRefused, GozSetupError, OSError) as exc:
             app.set_status(f"ZBrush: {exc}")
             return False

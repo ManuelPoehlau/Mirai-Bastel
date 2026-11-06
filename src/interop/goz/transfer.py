@@ -70,6 +70,29 @@ def launch_zbrush(paths: GozPaths, *, runner: Runner = default_runner):
     return runner([str(exe)], paths.gozbrush)  # never `-tmap` (E1 T5.2)
 
 
+def launch_zbrush_with_script(
+    paths: GozPaths,
+    identifiers: Sequence[str],
+    script_dir: Path,
+    *,
+    runner: Runner = default_runner,
+):
+    """Multi-SubTool send: write .ztn files and call ZBrush.exe with the import ZScript (AD-029 §3, option a).
+    Tool:Import in ZScript does not write .ztn files, so pre-written ones stay intact."""
+    from .zscript import make_import_script, write_ztn_files, zbrush_exe
+
+    project = paths.project_dir()
+    objects = [(Path(ident).stem, str(Path(ident + ".GoZ"))) for ident in identifiers]
+    write_ztn_files(project, identifiers)
+    script_text = make_import_script(objects)
+    script_path = Path(script_dir) / "mirai_import.zsc"
+    write_text_atomic(script_path, script_text)
+    exe = zbrush_exe(paths)
+    if not exe.is_file():
+        raise GozSetupError(f"{exe} not found: start ZBrush once so it writes GoZ_Config.txt")
+    runner([str(exe), str(script_path)], paths.gozbrush)
+
+
 def read_manifest_text(directory: Path, identifier: str) -> Optional[str]:
     try:
         return manifest_path(directory, identifier).read_text(encoding="utf-8")
