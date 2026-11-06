@@ -32,6 +32,9 @@ mirror-symmetric split) passed the practical test on 2026-11-06 ([plan](../WP_GO
   kommen mit den Punkten zurück, gleiche Bestätigung, **ein** Undo-Schritt; eine in ZBrush neue Gruppe heißt „Group N“.
 - **P3 (2026-11-06):** UVs gehen mit und kommen mit zurück; eine Textur aus ZBrush kommt als Kopie neben die Szene;
   Basis und jedes Morph-Target gehen als eigene SubTools, ein Target kommt nur in sein Target zurück.
+- **Basis + Targets erneut senden (2026-11-06, Praxistest T12: läuft stabil):** ZBrushs eigenes GoZ bringt mehrere
+  SubTools eines Tools durcheinander. Mirai importiert sie deshalb mit einem eigenen ZScript (wie GoB): einmal in
+  ZBrush *ZScript > Load* → `GoZApps\Mirai\MiraiGoZ_Import.txt`; das Tool muss beim erneuten Senden das aktive sein.
 - **N-Gons (P2b, 2026-11-05):** werden nur in der gesendeten Datei zerlegt, möglichst in Vierecke. In Mirai bleiben
   sie N-Gons; zurück kommen die Punkte (und Gruppen). Bei eingeschalteter Symmetrie werden beide Hälften gleich
   (gespiegelt) zerlegt, N-Gons über der Mitte in sich symmetrisch.
@@ -111,7 +114,8 @@ GoB does it (§3 „Names“ open item; behaviour only, no GoB code):
 - ZScript usage `[V]` from GoB's working import on ZBrush 2021+ (`StrFind` 0-based / −1, `IGetTitle "Tool:ItemInfo"`
   minus its last character, `SubToolGetCount` / `SubToolSelect`, `Tool:SubTool:Insert` + `PopUp:PolyMesh3D`, the SDiv
   guard, `MemReadString` by line); `[H]` only the result file (`MemWriteString`, `MemSaveToFile`) and that ZBrush writes
-  the `.zsc` beside the loaded `.txt`. Not verified on the reference PC yet (T12, probe README §6).
+  the `.zsc` beside the loaded `.txt`. **Reference PC (Manu, 2026-11-06, T12): runs stably** — base + targets sent,
+  a target sculpted and returned, the base edited in Mirai and resent, without wrong SubTools or extra Tools.
 - Mirai writes only into its own app folder: no `.ztn` (the first version of option a wrote them; not needed — the
   script does not use them, and ZBrush writes its own on export), no `.ztl`, no ZBrush setting. Exception approved by
   Manu (2026-11-06): starting `ZBrush.exe` with Mirai's script. An object without targets goes as before through

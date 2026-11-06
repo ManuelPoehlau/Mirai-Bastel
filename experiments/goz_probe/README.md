@@ -480,6 +480,9 @@ jede SubTool **über ihren Namen im aktiven Tool** und importiert dort. Objekte 
 Bei einem Fehler: Meldung von ZBrush (Screenshot), Mirais Statuszeile, und den Inhalt von
 `GoZApps\Mirai\MiraiGoZ_Result.txt` notieren.
 
+**Ergebnis (Manu, 2026-11-06):** „es scheint soweit tatsächlich stabil zu laufen“ — Basis + Targets kommen richtig an
+und werden beim erneuten Senden richtig aktualisiert.
+
 ### Aufräumen
 
 `python -I experiments/goz_probe/install_probe_app.py --uninstall` entfernt nur `GoZApps\MiraiProbe\`. In ZBrush mit **R**
