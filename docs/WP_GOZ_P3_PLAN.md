@@ -61,7 +61,7 @@ copies every map image a file names. Steps: E1 README §6 T9.
 | U3 | *UV Master → Unwrap*: all 324 faces come back with new UVs (u 0.002–0.998, v 0.002–0.770), points bit-identical. |
 | X1 | *New From Polypaint* then GoZ: a TEXTURE_MAP_PATH block names `…/GoZProjects/Default/<Tool>_TXTR.tif`: an uncompressed baseline TIFF, 2048², RGB 8 bit, one strip (12.6 MB). Sampled at the UVs it matches the returned polypaint (MRGB block, byte order B, G, R, mask) with **file row 0 = v 0** (mean difference 4.6 of 765; with V flipped 378) — stored bottom-up, as AD-026 says. |
 | M1 | `--target bump`: both objects of one transfer arrived as their own Tools; base and target came back bit-identical (target = `b + d` on all 326 points). |
-| M2 | `C.obj` imported, *Layers → New*, *Tool → Import* `C_bump.obj`: the layer holds the target exactly (weight 1.0000, rest 5.7e-7 = float32 under ZBrush's OBJ placement); with the layer slider at 0.5 the return is `b + 0.5 d` exactly. Notable: the GoZ with the layer **switched off** still returned the full target (weight 1.0000). |
+| M2 | `C.obj` imported, *Layers → New*, *Tool → Import* `C_bump.obj`: the layer holds the target exactly (weight 1.0000, rest 5.7e-7 = float32 under ZBrush's OBJ placement); with the layer slider at 0.5 the return is `b + 0.5 d` exactly. Notable: the GoZ with the layer **switched off** still returned the full target (weight 1.0000). Manu repeated it on 2026-11-06 with the slider at 0 (ZBrush then switches the eye off by itself): again the **target state**. So a layered Tool never returns the pure base by GoZ. |
 | M3 | Resend of that Tool with the layer not recording: the layer survived (Manu). The final GoZ after the resend was not captured. |
 
 ## 3. P3a — UVs (decided: „Mit übernehmen“; IMPLEMENTED 2026-11-06)
@@ -99,9 +99,12 @@ composite History command around the `MeshDeltaCommand`, `PROVISIONAL` — desig
 own identifier) in one transfer; a target return writes `d' = p − b` for the moved points of that layer only
 (symmetry fix on the target shape), one Undo step; after any apply the object's other SubTools are rebased (their
 fingerprint follows, what ZBrush holds of them stays the baseline), so base and target returns can alternate without a
-resend. The layer route below is **not built** yet: E3 M2 shows that a layer import works on an OBJ-imported Tool,
-but not yet on a Tool Mirai sent by GoZ (ZBrush's OBJ placement differs from the GoZ frame, E1 T2), and the
-switched-off layer still came back in the GoZ (M2) — to be clarified with Manu first.
+resend. Practical test 3 (Manu, 2026-11-06): works as expected.
+
+The layer route below is **not built** (recommendation: drop it): a layer at 0 / switched off still comes back as
+the target state (M2, repeated by Manu), so a Tool holding a target layer cannot give Mirai its base by GoZ, and the
+layer import was only shown on an OBJ-imported Tool. The SubTool route covers sending, sculpting and returning base
+and targets.
 
 **Core, independent of E3:** a send may carry the base **and** its targets: each target `b + d` as its own SubTool
 (`<name>_<target>`, one identifier each, one `GoZ_ObjectList` line each, M1). The manifest gets `representation`
@@ -123,6 +126,12 @@ what it is: „als Basis“ (all layers off) or „als Target <name>“ (only th
 3. Objekt mit einem Morph-Target senden: zwei SubTools/Tools in ZBrush. Das Target sculpten, **GoZ** auf dem Target,
    übernehmen: nur das Target ändert sich (Morph-Regler in Mirai), die Basis bleibt. Danach die Basis sculpten und
    **GoZ**: übernehmen ohne Konflikt.
+
+**Practical test (Manu, 2026-11-06):** step 3 as expected. Steps 1–2 started from a Tool made in ZBrush (so the
+return was offered as a new object): the new object had UVs but **no texture** — the new-object plans did not carry
+the copied texture (fixed 2026-11-06, test `test_a_foreign_subtool_with_a_texture_becomes_a_textured_new_object`).
+Note for the retest: an object selected in mode `4` shows its selection colour instead of its texture (AD-026
+`PROVISIONAL`); the new object is selected after the add, so the texture shows once mode `4` is left.
 
 ## 6. Not in P3
 

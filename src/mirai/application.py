@@ -3156,9 +3156,11 @@ class Application:
             name = unique_object_name(self.scene, f"{plan.label} ZBrush")
             obj = self._objects.add_mesh_object(lambda: mesh_from_goz(plan.goz), name, "ZBrush return")
             if obj is not None:
-                if plan.texture is not None and obj.mesh.has_face_uvs():
+                textured = plan.texture is not None and obj.mesh.has_face_uvs()
+                if textured:
                     obj.texture = plan.texture  # part of the object the Add step adds and removes
-                self._set_status(f"ZBrush: added {obj.name!r} as a new object - {plan.reason}")
+                self._set_status(f"ZBrush: added {obj.name!r} as a new object - {plan.reason}" + (
+                    " - with its texture (shown once it is not selected in mode 4)" if textured else ""))
             return obj is not None
         if not plan.in_place:
             self._set_status(plan.summary())

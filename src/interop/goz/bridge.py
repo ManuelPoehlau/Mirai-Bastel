@@ -435,11 +435,12 @@ def plan_return(
     subtool = goz.name[len("GoZMesh_"):] if goz.name.startswith("GoZMesh_") else goz.name
     if manifest is None:
         return ReturnPlan(ReturnKind.UNKNOWN_OBJECT, identifier, subtool or identifier,
-                          "not sent from Mirai - can be added as a new object", goz)
+                          "not sent from Mirai - can be added as a new object", goz, texture=texture)
     layer = target_layer(manifest)
     label = manifest.object_name
 
     def plan(kind: ReturnKind, reason: str, **kw) -> ReturnPlan:
+        kw.setdefault("texture", texture)  # a new object takes the texture too (Manu 2026-11-06)
         return ReturnPlan(kind, identifier, label, reason, goz, manifest, **kw)
 
     same_scene = manifest.session_id == session_id or (scene_path is not None and manifest.scene_path == scene_path)

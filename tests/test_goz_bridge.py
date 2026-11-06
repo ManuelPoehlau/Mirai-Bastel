@@ -83,7 +83,8 @@ def env(tmp_path):
     zb = FakeZBrush(paths)
     scene_file = {"path": None}
     bridge = ZBrushBridge(app, root=root, inbox=tmp_path / "inbox", runner=zb, clock=itertools.count().__next__,
-                          scene_path=lambda: scene_file["path"], manifests=tmp_path / "manifests")
+                          scene_path=lambda: scene_file["path"], manifests=tmp_path / "manifests",
+                          textures=tmp_path / "textures")
     return {"app": app, "bridge": bridge, "zb": zb, "paths": paths, "inbox": tmp_path / "inbox", "tmp": tmp_path,
             "scene_file": scene_file}
 
@@ -758,3 +759,19 @@ def test_base_and_target_go_as_two_subtools_and_a_target_sculpt_comes_back_into_
     app._undo_redo(commands.UNDO)
     app._undo_redo(commands.UNDO)
     assert positions(mesh) == before and mesh.layer_items(lid) == offsets_before
+
+
+def test_a_foreign_subtool_with_a_texture_becomes_a_textured_new_object(env):
+    """Manu 2026-11-06: a Tool started in ZBrush, UV Master + New From Polypaint, GoZ -> the new object had UVs but no
+    texture (the new-object plans dropped it)."""
+    from tests.test_goz_format import _tiff
+
+    app = env["app"]
+    image = env["tmp"] / "Foreign_TXTR.tif"
+    image.write_bytes(_tiff(1, 1, [b"\x01\x02\x03"]))
+    goz_back(env, str(env["paths"].project_dir() / "Foreign"),
+             _with_texture(fixture("zb2022_E3_head_uvmaster.GoZ"), image))
+    assert env["bridge"].activate(row(env, NEW_OBJECT_PREFIX))
+    obj = list(app.scene.objects.values())[-1]
+    assert obj.mesh.has_face_uvs() and Path(obj.texture).parent == env["tmp"] / "textures"
+    assert "with its texture (shown once it is not selected in mode 4)" in app.status_message
