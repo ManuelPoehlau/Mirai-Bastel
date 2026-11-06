@@ -379,28 +379,34 @@ benennt: lesbar, ohne angehängte Zahl, und über Neustarts hinweg gleich.
 `captures/` (der `*_names`-Ordner) committen. Erwartung: kein „not sent from Mirai“, keine Zahl außer der eines
 Target-Namens, keine neue Kopie beim erneuten Senden.
 
-### T11 — Basis heißt nach erneutem Senden wie ein Target (2026-11-06, ~10 min)
+### T11 — Erneutes Senden von Basis + Targets in ein bestehendes Tool (2026-11-06, ~15 min)
 
-Beobachtung (Manu): Basis + 3 Targets gesendet, Target 3 in ZBrush geändert und per GoZ zurück, in Mirai die Basis
-geändert und erneut gesendet → die Basis-SubTool hat die Änderung, **heißt aber jetzt wie das letzte Target**
-(`…Target_3_3`, zwei SubTools gleichen Namens). Mirai hat dabei nachweislich richtig geschrieben (Basis-Datei unter dem
-Basis-Namen, Test `test_targets_made_again_take_their_plain_names_back`). Nur geändert: der Name *in* der Datei war
-bisher ohne die `_3` (`…Target_3`), jetzt ist er immer gleich dem Dateinamen. Fragen an ZBrush: Liegt es an dieser
-Abweichung (dann ist es jetzt weg), an der Reihenfolge der Liste (Basis zuerst, ZBrush benennt die Basis nach der
-letzten Datei?) oder an der gerade aktiven SubTool?
+**Bisher beobachtet (Manu, 2026-11-06).** Basis + 3 Targets gesendet (ein Tool, vier SubTools, Namen korrekt), ein
+Target in ZBrush geändert, **GoZ**, in Mirai übernommen, dann die Basis in Mirai geändert und erneut gesendet:
+- Lauf 1 (Dateiname `…Target_3_3`, Name in der Datei `…Target_3`): kein neues Tool; die Basis-SubTool hat die
+  Basis-Änderung, heißt aber wie das letzte Target.
+- Lauf 2 (beide Namen gleich): ZBrush legt **zusätzlich ein neues Tool** an (Namen korrekt; Basis und Target 1 ohne,
+  Target 2 und 3 mit der Basis-Änderung). Im alten Tool hat die Basis die Basis-Änderung, heißt aber jetzt wie
+  Target 1.
 
-1. **Mit Mirai** (nach `git pull`): genau deinen Ablauf wiederholen (Basis + Targets senden, ein Target ändern, GoZ,
-   übernehmen, Basis in Mirai ändern, senden). Behält die Basis ihren Namen → fertig, Rest überspringen.
-2. **Sonst mit der Probe**, R auf „Mirai Probe (E1)“:
-   a. `python -I experiments/goz_probe/probe_send.py --mesh C --axis bridge --target bump` → Tool/SubTools notieren
-      (`E1_C_P1_B…`, `E1_C_P1_T…`).
-   b. SubTool `…_T…` anklicken, ein Move-Strich, **GoZ**.
-   c. `python -I experiments/goz_probe/probe_send.py --mesh C --axis bridge --target bump --again` (dieselben zwei
-      Dateien noch einmal, Basis zuerst in der Liste) → Namen beider SubTools notieren.
-   d. Neu anfangen: Schritte a und b wiederholen (neue Namen), dann
-      `python -I experiments/goz_probe/probe_send.py --mesh C --axis bridge --target bump --again --base-last`
-      (Basis zuletzt in der Liste) → Namen notieren.
-   e. Falls in c und d die Basis umbenannt wird: d noch einmal, aber vor dem Senden die **Basis**-SubTool anklicken.
+Mirai schreibt dabei nachweislich das Richtige: vier Dateien, Basis zuerst, jede unter ihrem Namen, alle mit der
+Basis-Änderung, nur Target 3 zusätzlich mit seiner. Das Einspielen **mehrerer** Dateien in ein **bestehendes** Tool
+macht ZBrush also anders, als die Namen sagen. E3 hat nur das erste Laden geprüft. Seit 2026-11-06 schreibt Mirai den
+Namen in der Datei wie ZBrush selbst: `GoZMesh_<Name>` (bisher ohne Präfix).
+
+1. `python -I experiments/goz_probe/probe_names.py` (zeigt u. a. `GoZ_Config.txt`, also ob *Import as SubTool* an ist).
+2. **Mit Mirai** (nach `git pull`), deinen Ablauf genau wie in Lauf 2. Notieren: neues Tool ja/nein, Name und Inhalt
+   jeder SubTool, welche SubTool vor dem Senden aktiv war. Ist alles richtig → fertig.
+3. **Sonst mit der Probe** (R auf „Mirai Probe (E1)“). Jede Runde beginnt mit einem frischen Senden (neues Tool):
+   `python -I experiments/goz_probe/probe_send.py --mesh C --axis bridge --target bump` → Tool mit `E1_C_P1_B…`
+   und `E1_C_P1_T…`. Dann SubTool `…_T…` anklicken, ein Move-Strich, **GoZ**. Dann das erneute Senden; die Basis ist
+   dabei um 3 Einheiten zur Seite verschoben, so sieht man, welche SubTool die Basis-Datei bekommt:
+   - a. `… --target bump --again --shift-base 3` (Name ohne Präfix, Basis zuerst)
+   - b. `… --target bump --again --shift-base 3 --style gozmesh` (Name mit `GoZMesh_`, wie Mirai jetzt)
+   - c. wie b, plus `--base-last` (Basis zuletzt in der Liste)
+   - d. wie b, aber vor dem Senden die **Basis**-SubTool anklicken
+   (Die frische Runde vor b–d auch mit `--style gozmesh` senden.) Pro Runde notieren: neues Tool ja/nein, welche
+   SubTool steht seitlich verschoben (= Basis-Datei), welche hat den Buckel (= Target-Datei), wie heißen sie.
 
 Danach R wieder auf „Mirai“, `captures/` committen.
 

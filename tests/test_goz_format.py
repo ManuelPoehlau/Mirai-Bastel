@@ -816,7 +816,7 @@ def test_a_target_is_sent_as_b_plus_d_and_zbrushs_e3_copy_is_bit_identical():
     scene, obj, lid = head_with_bump_target()
     data, manifest = build_send(scene, obj, identifier="P/Kopf_Bump", transfer_id="t", session_id="s1",
                                 scene_path=None, to_world=identity, triangulate=triangulate_face, layer=lid)
-    assert manifest.representation == f"target:{int(lid)}" and parse_goz(data).name == "Kopf_Bump"
+    assert manifest.representation == f"target:{int(lid)}" and parse_goz(data).name == "GoZMesh_Kopf_Bump"
     assert parse_goz(data).points == parse_goz(fixture("zb2022_E3_head_bump_target.GoZ")).points
     plan = plan_for(scene, obj, fixture("zb2022_E3_head_bump_target.GoZ"), manifest=manifest)
     assert plan.kind is ReturnKind.UNCHANGED and plan.target_layer == lid

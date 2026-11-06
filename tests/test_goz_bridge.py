@@ -935,7 +935,7 @@ def _three_targets(mesh):
 def _sent_names(env) -> list[str]:
     listed = env["paths"].read_object_list()
     names = [Path(i).name for i in listed]
-    assert [parse_goz(Path(i + ".GoZ").read_bytes()).name for i in listed] == names  # file name = MESH name
+    assert [parse_goz(Path(i + ".GoZ").read_bytes()).name for i in listed] == ["GoZMesh_" + n for n in names]
     return names
 
 

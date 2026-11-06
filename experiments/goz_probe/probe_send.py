@@ -146,7 +146,10 @@ def prepare_mesh(args, paths: GozPaths, steps: Steps) -> tuple[list[str], dict]:
     signs = AXIS_MAPS[args.axis]
     groups = band_groups(sent) if args.groups == "bands" else None
     uvs = sent_uvs(sent, args.uvs)
-    objects = [(short + ("_B" if args.target else ""), sent["positions"], "base")]
+    base_positions = sent["positions"]
+    if args.shift_base:  # T11: the base moved sideways, so ZBrush shows which SubTool took the base file
+        base_positions = [[p[0] + args.shift_base, p[1], p[2]] for p in base_positions]
+    objects = [(short + ("_B" if args.target else ""), base_positions, "base")]
     if args.target:
         bumped = [[a + b for a, b in zip(p, d)] for p, d in zip(sent["positions"], sent["target_bump"])]
         objects.append((short + "_T", bumped, "target_bump"))
@@ -266,6 +269,8 @@ def main(argv=None) -> int:
     parser.add_argument("--new-identifier", action="store_true")
     parser.add_argument("--again", action="store_true",
                         help="T11: with --target, send base + target again to the identifiers of the last --target send")
+    parser.add_argument("--shift-base", type=float, default=0.0, metavar="DX",
+                        help="T11: move the base by DX along x (the target stays), to see where ZBrush puts it")
     parser.add_argument("--base-last", action="store_true",
                         help="T11: with --target, list the target first and the base last in GoZ_ObjectList.txt")
     parser.add_argument("--keep-application", action="store_true")

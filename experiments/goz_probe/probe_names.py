@@ -89,6 +89,8 @@ def main(argv=None) -> int:
     except (OSError, ValueError):
         names = None
     made = [make_object_path(paths, name) for name in args.make]
+    config = read_text(paths.gozbrush / "GoZ_Config.txt") or ""
+    print("GoZ_Config.txt: " + " | ".join(line.strip() for line in config.splitlines() if line.strip()))
     print(f"{project}  ({len(files)} files)")
     for i in files:
         extra = f"  [{i.get('header', '')}] mesh {i.get('mesh')!r} {i.get('points')}/{i.get('faces')}" \
@@ -101,7 +103,7 @@ def main(argv=None) -> int:
     for m in made:
         print(f"GoZMakeObjectPath {m['asked']!r} -> {m['answer']!r}")
     out = new_capture_dir(args.captures, "names")
-    write_json_atomic(out / "names_log.json", redact({"project": str(project), "files": files, "mirai_names": names,
+    write_json_atomic(out / "names_log.json", redact({"project": str(project), "goz_config": config, "files": files, "mirai_names": names,
                                                       "make": made}))
     print(f"-> {out / 'names_log.json'}")
     return 0

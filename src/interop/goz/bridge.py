@@ -120,6 +120,10 @@ GroupNamer = Callable[[Optional[FaceRegions]], str]
 Triangulate = Callable[[Sequence[VertexId], dict], list]
 
 
+#: ZBrush's own MESH-name prefix (its GoZ files say `GoZMesh_<Tool>`)
+MESH_PREFIX = "GoZMesh_"
+
+
 class SendRefused(ValueError):
     """The object cannot travel through GoZ (the message is the status line)."""
 
@@ -195,9 +199,11 @@ def build_send(
                 piece_uvs.append([list(mesh.corner_uv(f, v)) for v in piece])
     points = sent_points(obj, to_world, layer)
     groups, names, overlaps = send_groups(mesh, face_ids)
-    # the MESH name is the identifier's file name: ZBrush names the Tool after the identifier (E1: `E1_C1.GoZ` with
-    # MESH `E1_C` came back as `E1_C1`), so file and name never disagree (Manu 2026-11-06: `…_Target_3_3` / `…_Target_3`)
-    data = encode_goz(identifier.replace("\\", "/").rsplit("/", 1)[-1] or "Mirai", points, faces, groups, piece_uvs)
+    # the MESH name is `GoZMesh_<file name>`, as ZBrush writes its own files (every E1-E3 return; E1 resends showed it
+    # accepts both): file and name never disagree (Manu 2026-11-06: `…_Target_3_3.GoZ` said `…_Target_3`), and a
+    # several-SubTool resend gives ZBrush the names in its own convention (T11)
+    data = encode_goz(MESH_PREFIX + (identifier.replace("\\", "/").rsplit("/", 1)[-1] or "Mirai"), points, faces,
+                      groups, piece_uvs)
     if piece_uvs is not None:  # what ZBrush holds: the float32 values of the block
         piece_uvs = [[[as_float32(u), as_float32(v)] for u, v in piece] for piece in piece_uvs]
     manifest = Manifest(
@@ -433,7 +439,7 @@ def plan_return(
     new_group_name: Optional[GroupNamer] = None,
     texture: Optional[str] = None,
 ) -> ReturnPlan:
-    subtool = goz.name[len("GoZMesh_"):] if goz.name.startswith("GoZMesh_") else goz.name
+    subtool = goz.name[len(MESH_PREFIX):] if goz.name.startswith(MESH_PREFIX) else goz.name
     if manifest is None:
         return ReturnPlan(ReturnKind.UNKNOWN_OBJECT, identifier, subtool or identifier,
                           "not sent from Mirai - can be added as a new object", goz, texture=texture)

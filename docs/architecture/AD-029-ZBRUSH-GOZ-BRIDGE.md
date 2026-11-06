@@ -119,16 +119,19 @@ Now Mirai names its SubTools itself, without `GoZMakeObjectPath` (and no longer 
   entries of the gone targets kept the plain names. An entry of the current scene file (or session) whose object or
   target no longer exists now frees its stem for the next one of that wish name (and its Tool). Registry version 2:
   a version-1 file is read as empty once, the manifests on disk give the plain names back.
-- **MESH name = file name** (2026-11-06): the name inside the `.GoZ` is the identifier's stem (it was the wish name,
-  so `…Target_3_3.GoZ` said `…Target_3`).
+- **MESH name = `GoZMesh_` + file name** (2026-11-06): the name inside the `.GoZ` is the identifier's stem (it was the
+  wish name, so `…Target_3_3.GoZ` said `…Target_3`), with ZBrush's own prefix (every ZBrush-written file has it; E1
+  resends showed both forms are taken).
 - **Earlier sends:** a Mirai manifest on disk for `<project>\<stem>` (from before the registry) makes that stem Mirai's
   for the manifest's object, so a saved scene keeps its Tool after the update.
 - **Following ZBrush:** when a return under another name links by topology (§5), the entry takes ZBrush's name; the
   next send updates that Tool. The old name stays Mirai's (`former`).
-- **Open (T11, ZBrush side):** after a target return and a base edit, a resend of base + targets updated the base
-  SubTool but ZBrush named it like the last target (Manu, 2026-11-06). Mirai wrote the base under its own name; the
-  only Mirai-side difference was the MESH name above. T11 checks whether that was it, the list order or the active
-  SubTool.
+- **Open (T11, ZBrush side): a resend of base + targets into an existing Tool** (Manu, 2026-11-06). After a target
+  return and a base edit, the resend (1) updated the base SubTool but ZBrush named it like the last target; (2) with
+  file and MESH names equal, ZBrush also made a new Tool (base and target 1 without, targets 2 and 3 with the base
+  edit) and named the old base like target 1. Mirai's four files were checked to be right (names, order, contents).
+  E3 covered only the first load of several SubTools. T11 separates MESH-name style, list order and active SubTool
+  with a visibly shifted base; until then a several-SubTool resend is `PROVISIONAL`.
 
 ## 4. Return
 
