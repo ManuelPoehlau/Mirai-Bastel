@@ -344,7 +344,8 @@ def test_install_writes_our_folder_refuses_a_foreign_one_and_uninstalls(root, tm
     assert not goz_install.is_installed(root)
     app = goz_install.install(root, tmp_path / "inbox", python="C:\\Python\\python.exe")
     names = sorted(p.name for p in app.iterdir())
-    assert names == [".mirai_goz_app", "Edit.bat", "GoZ_Info.txt", "Init.bat", "Locate.bat", "Mirai.cmd"]
+    assert names == [".mirai_goz_app", "Edit.bat", "GoZ_Info.txt", "Init.bat", "Locate.bat", "Mirai.cmd",
+                     "MiraiGoZ_Import.txt"]  # AD-029 §3 option a: loaded once in ZBrush
     info = (app / "GoZ_Info.txt").read_bytes()
     assert b'NAME\t\t= "Mirai"' in info and b"\r\n" in info and b"FLIP" not in info
     edit = (app / "Edit.bat").read_text()
@@ -940,3 +941,50 @@ def test_a_name_of_a_gone_target_is_free_again(tmp_path):
     assert reg.allocate("Cube_Target_1", scene="c.json", session="s1", object_id=1, layer=8,
                         foreign_file=lambda stem: False, dead=dead).stem == "Cube_Target_1"
     assert _take(reg, "Cube_Target_1", scene="c.json", session="s2", layer=8) == "Cube_Target_1"  # it stays
+
+
+# -- Mirai's ZBrush import script (interop.goz.zscript, AD-029 §3 option a) ----------------------------------------------
+
+
+def _outside_strings(text: str) -> str:
+    return "".join(part for i, part in enumerate(text.split('"')) if i % 2 == 0)
+
+
+def test_the_import_script_is_well_formed_and_uses_known_commands(root):
+    """No ZBrush here: the brackets balance (outside strings and comments), every command is one GoB's working import
+    uses on ZBrush 2021+ (plus the two that write the result), the paths are filled in with forward slashes."""
+    import re
+
+    from interop.goz import zscript
+
+    text = zscript.render_script(root)
+    code = "\n".join(line.split("//")[0] if not line.lstrip().startswith("//") else "" for line in text.splitlines())
+    depth = 0
+    for ch in _outside_strings(code):
+        depth += {"[": 1, "]": -1}.get(ch, 0)
+        assert depth >= 0
+    assert depth == 0
+    known = {"CanvasClick", "FileExists", "FileNameSetNext", "IExists", "IGetTitle", "IKeyPress", "IPress", "ISet", "If",
+             "IsEnabled", "Loop", "LoopExit", "MemCreate", "MemCreateFromFile", "MemDelete", "MemGetSize",
+             "MemReadString", "RoutineCall", "RoutineDef", "StrExtract", "StrFind", "StrFromAsc", "StrLength",
+             "StrMerge", "SubToolGetCount", "SubToolSelect", "VarDef", "VarInc", "VarSet",
+             "MemWriteString", "MemSaveToFile"}
+    assert set(re.findall(r"\[(\w+)", code)) <= known
+    assert "{" not in code and "\\" not in _outside_strings(code)
+    assert f'"{str(root.app_dir).replace(chr(92), "/")}/MiraiGoZ_List.txt"' in code
+
+
+def test_the_import_script_is_rewritten_only_when_it_changed(root):
+    import os
+
+    from interop.goz import zscript
+
+    txt = zscript.write_script(root)
+    os.utime(txt, (1000, 1000))
+    zscript.write_script(root)
+    assert txt.stat().st_mtime == 1000  # a loaded .zsc stays newer than an unchanged .txt
+    assert zscript.read_result(root) is None
+    (root.app_dir / zscript.RESULT_FILE).write_bytes(b"tok\nupdated:A\ntool:B\nmissing:C\n\0")
+    result = zscript.read_result(root)
+    assert result.token == "tok" and result.entries == [("updated", "A"), ("tool", "B"), ("missing", "C")]
+    assert result.summary() == "1 updated, 1 as a new Tool, 1 file missing"

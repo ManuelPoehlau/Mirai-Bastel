@@ -455,6 +455,31 @@ neues (E3 T9.5 hat das nicht festgehalten). Test T11b (5 min):
 
 Danach R wieder auf „Mirai“, `captures/` committen.
 
+### T12 — Mirais Import-Skript für Basis + Targets (AD-029 §3, 2026-11-06, ~10 min)
+
+T11b hat gezeigt: ZBrushs eigenes GoZ steckt mehrere Objekte immer in ein Tool und kann sie danach nicht richtig
+aktualisieren. Mirai importiert ein Objekt mit Targets deshalb jetzt mit einem eigenen ZScript (wie GoB): es sucht
+jede SubTool **über ihren Namen im aktiven Tool** und importiert dort. Objekte ohne Targets gehen wie bisher.
+
+0. `git pull`, Mirai neu starten. Damit es sauber startet: ZBrush schließen, in `GoZProjects\Default` alle
+   `SubD_Cube*`-Dateien von Hand in einen Sicherungsordner verschieben (auch `.ztn`/`.ztl`).
+1. In Mirai einmal SPACE → „ZBrush: Mirai bei GoZ eintragen“ (schreibt das Skript nach
+   `C:\Users\Public\Pixologic\GoZApps\Mirai\MiraiGoZ_Import.txt`). Steht die Zeile nicht im Menü (schon
+   eingetragen), reicht ein Senden: Mirai legt die Datei an und sagt in der Statuszeile, was zu laden ist. Danach
+   ZBrush starten (bei neu eingetragen: R → „Mirai“).
+2. In ZBrush **ZScript > Load** → `…\GoZApps\Mirai\MiraiGoZ_Import.txt`. Notieren: Fehlermeldung? Liegt danach
+   `MiraiGoZ_Import.zsc` im selben Ordner?
+3. Mirai: SubD_Cube mit Targets senden. Erwartung: **ein neues Tool** `SubD_Cube` mit den SubTools `SubD_Cube`,
+   `SubD_Cube_Target_1..3`; nach 1–2 s in Mirais Statuszeile „imported by Mirai's script - 1 as a new Tool, 3 added
+   as SubTool (…)“.
+4. In ZBrush `SubD_Cube_Target_3` ändern, **GoZ**, in Mirai übernehmen. In Mirai die Basis ändern, senden (das Tool
+   `SubD_Cube` muss in ZBrush das **aktive** sein). Erwartung: kein neues Tool, weiterhin genau vier SubTools mit
+   richtigen Namen, alle vier haben die Basis-Änderung, Target 3 zusätzlich seine; Statuszeile „4 updated“.
+5. Noch einmal GoZ auf Target 3 und auf der Basis: kommen beide in Mirai richtig an?
+
+Bei einem Fehler: Meldung von ZBrush (Screenshot), Mirais Statuszeile, und den Inhalt von
+`GoZApps\Mirai\MiraiGoZ_Result.txt` notieren.
+
 ### Aufräumen
 
 `python -I experiments/goz_probe/install_probe_app.py --uninstall` entfernt nur `GoZApps\MiraiProbe\`. In ZBrush mit **R**

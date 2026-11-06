@@ -100,6 +100,20 @@ def zbrush_knows_mirai(env) -> None:
     if not goz_install.is_installed(paths):
         goz_install.install(paths, env["inbox"])
     (paths.app_dir / "GoZ_Config.txt").write_text('PATH = "C:/Mirai.cmd"\r\n')
+    script_loaded(paths)
+
+
+def script_loaded(paths) -> Path:
+    """The artist loaded Mirai's import script once (ZScript > Load): ZBrush compiled it to a newer `.zsc` beside it."""
+    import os
+
+    from interop.goz import zscript
+
+    txt = zscript.write_script(paths)
+    zsc = zscript.script_paths(paths)[1]
+    zsc.write_bytes(b"compiled")
+    os.utime(zsc, (txt.stat().st_mtime + 5, txt.stat().st_mtime + 5))
+    return zsc
 
 
 def send(env) -> str:
@@ -988,35 +1002,54 @@ def test_a_version_1_name_registry_gives_the_plain_names_back(env):
     assert json.loads(registry.read_text(encoding="utf-8"))["version"] == 2
 
 
-# -- multi-SubTool ZScript send (AD-029 §3, option a, T11b 2026-11-06) ------------------------------------------------
+# -- base + targets through Mirai's import script (AD-029 §3 option a; T11/T11b, Manu 2026-11-06) ----------------------
 
 
-def test_multi_object_send_uses_zscript_and_writes_ztn_files(env):
-    """Multi-object send (base + morph target): ZBrush.exe called with script, .ztn written for each."""
-    from core import LayerKind
+def test_base_and_targets_go_through_mirais_import_script(env):
+    """ZBrush's own GoZ puts several SubTools of one Tool in the wrong place (T11: six SubTools, the base renamed).
+    With targets Mirai starts ZBrush.exe with its compiled import script and a list (token, folder, names, base
+    first) instead of GoZBrushFromApp; it writes no `.ztn`. The script's result shows in the status line once."""
+    from interop.goz import zscript
 
     app, paths = env["app"], env["paths"]
-    mesh = app.scene.edit_object.mesh
-    mesh.add_point_layer(PointLayerInfo("Target 1", kind=LayerKind.VECTOR))
-    zbrush_knows_mirai(env)
+    _three_targets(app.scene.edit_object.mesh)
     send(env)
-    # Two objects in list: base + target
-    listed = paths.read_object_list()
-    assert len(listed) == 2
-    # ZBrush.exe called (not GoZBrushFromApp) for multi-object
-    exes = [Path(c[0]).name for c in env["zb"].commands]
-    assert "GoZBrushFromApp" not in exes[-1]  # last call is ZBrush.exe
-    # .ztn written for each object, each pointing to its own identifier
-    from interop.goz.files import ansi_encoding
-    for ident in listed:
-        stem = Path(ident).stem
-        ztn = paths.project_dir() / (stem + ".ztn")
-        assert ztn.exists(), f"{stem}.ztn not written"
-        content = ztn.read_bytes().decode(ansi_encoding())
-        assert content == ident, f"{stem}.ztn should contain {ident!r}, got {content!r}"
-    # script was written
-    script = env["bridge"].manifest_dir / "mirai_import.zsc"
-    assert script.exists()
-    text = script.read_text()
-    for ident in listed:
-        assert Path(ident).stem in text
+    exe, zsc = env["zb"].commands[-1]
+    assert Path(exe).name == "fake_ZBrush.exe" and zsc == str(zscript.script_paths(paths)[1])
+    assert "GoZBrushFromApp" not in [Path(c[0]).stem for c in env["zb"].commands]
+    lines = (paths.app_dir / zscript.LIST_FILE).read_bytes().decode().split("\r\n")
+    token = lines[0]
+    assert len(token) == 32 and lines[1] == str(paths.project_dir()).replace("\\", "/") + "/"
+    assert lines[2:] == PLAIN + [""]
+    assert not list(paths.project_dir().glob("*.ztn"))  # Mirai writes no ZBrush link files
+    (paths.app_dir / zscript.RESULT_FILE).write_bytes(
+        (token + "\nupdated:head_basemesh\nupdated:head_basemesh_Target_1\nadded:head_basemesh_Target_2\n"
+         "added:head_basemesh_Target_3\n").encode())
+    env["bridge"].tick()
+    assert "imported by Mirai's script - 2 updated, 2 added as SubTool" in app.status_message, app.status_message
+    app.set_status("")
+    env["bridge"].tick()
+    assert app.status_message == ""  # shown once
+
+
+def test_with_targets_nothing_is_sent_until_the_script_is_loaded_in_zbrush(env):
+    """No compiled script, or one older than the current `.txt`: refused before anything is written, with the
+    ZScript > Load path."""
+    import os
+
+    from interop.goz import zscript
+
+    app, paths = env["app"], env["paths"]
+    _three_targets(app.scene.edit_object.mesh)
+    zbrush_knows_mirai(env)
+    zsc = zscript.script_paths(paths)[1]
+    zsc.unlink()
+    assert not env["bridge"].activate(SEND_LABEL)
+    assert "ZScript > Load" in app.status_message and "MiraiGoZ_Import.txt" in app.status_message
+    assert not list(paths.project_dir().glob("*.GoZ"))
+    assert not list(env["bridge"].manifest_dir.glob("*.mirai-goz.json"))
+    zsc.write_bytes(b"old")
+    txt = zscript.script_paths(paths)[0]
+    os.utime(zsc, (txt.stat().st_mtime - 5, txt.stat().st_mtime - 5))
+    assert not env["bridge"].activate(SEND_LABEL) and "once more" in app.status_message
+    assert not list(paths.project_dir().glob("*.GoZ"))

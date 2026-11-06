@@ -37,6 +37,7 @@ from core.ids import ObjectId
 from core.scene import SceneObject
 from core.selection import SelectionMode
 from interop.goz import install as goz_install
+from interop.goz import zscript as goz_zscript
 from interop.goz.bridge import (
     ReturnKind,
     ReturnPlan,
@@ -150,6 +151,8 @@ class ZBrushBridge:
         self._manifests: dict[str, list[Manifest]] = {}
         self.waiting: list[Waiting] = []
         self._rows: dict[str, tuple[str, Waiting]] = {}
+        #: (token, object name) of the last send through Mirai's import script, until its result is shown
+        self._script_send: Optional[tuple[str, str]] = None
 
     @property
     def session_id(self) -> str:
@@ -262,15 +265,20 @@ class ZBrushBridge:
                     triangulate=_triangulate(), symmetry=symmetry_info(obj.mesh), layer=layer,
                 )
                 sends.append((key, identifier, data, manifest))
+            # several SubTools need Mirai's import script (ZBrush's own GoZ misplaces them, T11/T11b): checked
+            # before anything is written
+            zsc = goz_zscript.require_compiled(paths) if len(sends) > 1 else None
+            if zsc is not None:
+                goz_zscript.zbrush_exe(paths)
             for _key_, identifier, _data, manifest in sends:
                 write_manifest(self.manifest_dir, identifier, manifest.to_json())
             self.names.save()
             _k, identifier, data, manifest = sends[0]
             write_send(paths, identifier, data, [(i, d) for _k2, i, d, _m in sends[1:]])
-            if len(sends) > 1:
-                launch_zbrush_with_script(
-                    paths, [i for _, i, _, _ in sends], self.manifest_dir, runner=self._runner
-                )
+            if zsc is not None:
+                launch_zbrush_with_script(paths, zsc, transfer_id, project, [_short(i) for _k2, i, _d, _m in sends],
+                                          runner=self._runner)
+                self._script_send = (transfer_id, obj.name)
             else:
                 launch_zbrush(paths, runner=self._runner)
         except (SendRefused, GozSetupError, OSError) as exc:
@@ -318,8 +326,9 @@ class ZBrushBridge:
         except (GozSetupError, OSError) as exc:
             self.app.set_status(f"ZBrush: {exc}")
             return False
+        script = goz_zscript.script_paths(self.paths())[0]
         self.app.set_status(f"ZBrush: Mirai registered ({folder}) - restart ZBrush, then choose Mirai with R "
-                            "beside the GoZ button")
+                            f"beside the GoZ button; for objects with morph targets also ZScript > Load > {script}")
         return True
 
     # -- return -------------------------------------------------------------------------------------------------------
@@ -331,6 +340,7 @@ class ZBrushBridge:
             return 0
         self._last_poll = now
         arrived = 0
+        self._report_script_result()
         try:
             tickets = self.inbox.waiting()
             for ticket in tickets:
@@ -352,6 +362,21 @@ class ZBrushBridge:
             return Manifest.from_json(text)
         except (ValueError, TypeError):
             return None
+
+    def _report_script_result(self) -> None:
+        """The import script's result of the last send (once): what ZBrush updated, added or could not find."""
+        if self._script_send is None:
+            return
+        try:
+            result = goz_zscript.read_result(self.paths())
+        except (GozSetupError, OSError):
+            return
+        token, name = self._script_send
+        if result is None or result.token != token:
+            return
+        self._script_send = None
+        names = ", ".join(n for _w, n in result.entries)
+        self.app.set_status(f"ZBrush: {name!r} imported by Mirai's script - {result.summary()} ({names})")
 
     def _manifests_for(self, identifier: str) -> list[Manifest]:
         """This session's versions of the identifier, else the manifest on disk. The disk is the truth of who sent

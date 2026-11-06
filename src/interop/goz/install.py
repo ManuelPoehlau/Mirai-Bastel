@@ -94,6 +94,9 @@ def install(paths: GozPaths, inbox: Path, *, python: str = sys.executable) -> Pa
     for name, text in files.items():
         write_text_atomic(app / name, text.replace("\n", "\r\n"), encoding=encoding, newline="")
     write_text_atomic(app / "GoZ_Info.txt", GOZ_INFO.replace("\n", "\r\n"), newline="")
+    from .zscript import write_script
+
+    write_script(paths)  # AD-029 §3 option a: loaded once in ZBrush (ZScript > Load), for base + morph targets
     write_text_atomic(app / MARKER, json.dumps({"installed": time.strftime("%Y-%m-%d %H:%M:%S"), "python": python,
                                                 "helper": str(HELPER), "inbox": str(inbox), "pid": os.getpid()}))
     return app

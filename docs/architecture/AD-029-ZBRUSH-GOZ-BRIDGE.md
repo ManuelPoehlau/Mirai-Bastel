@@ -90,22 +90,32 @@ ZBrush's project folder; it carries a GROUPS block, P2a: region `k` → id `k`, 
 `GoZBrushFromApp.exe` **without `-tmap`** (E1 T5.2), started as E1 started it (plain `Popen`). No
 History entry. ZBrush's own preferences (*Import as SubTool*) are never changed.
 
-**Multi-object send (base + morph targets, 2026-11-06, option a, T11b):** ZBrush always groups a
-multi-object `GoZ_ObjectList.txt` into one Tool with SubTools, regardless of *Import as SubTool*
-(T11b confirmed 2026-11-06, hypothesis B). ZBrush's own GoZ import also cannot update several SubTools of
-one Tool: every `.ztn` ZBrush writes points to the top SubTool name, so resends via `GoZBrushFromApp`
-route every file to the wrong SubTool (§3 T11 details). Instead, for multi-object sends:
-(a) **`.ztn` files** are written by Mirai BEFORE calling ZBrush — one per object, each containing its own
-identifier (e.g. `…/Default/head_basemesh`), not the top-Tool name ZBrush would write. This ensures GoZ
-returns reach the right `.GoZ` file. `Tool:Import` in ZScript does NOT write `.ztn` files, so the
-pre-written ones survive.
-(b) **A ZScript** (`interop/goz/zscript.py`, `goz/manifests/mirai_import.zsc`) is generated and
-`ZBrush.exe <script_path>` is called instead of `GoZBrushFromApp.exe`. ZBrush is single-instance; the
-script runs in the already-running ZBrush (confirmed Manu 2026-11-06). The script finds each SubTool in
-the active Tool by exact name (`[IGetTitle,"Tool"]` + `[StrFind]` + length check) and calls
-`[ISet,"Tool:Geometry:SDiv",1]` then `[FileNameSetNext,…][IPress,"Tool:Import"]`; if no match, it appends
-a new SubTool (`[IPress,"Tool:SubTool:Append"]`). Mirai does not rewrite ZBrush's *Import as SubTool*
-preference.
+**Base + morph targets (option a, rebuilt 2026-11-06 after review; T11/T11b).** ZBrush always puts the objects of one
+`GoZ_ObjectList.txt` into one Tool as SubTools (T11b: also with *Import as SubTool* off), and its own GoZ import cannot
+update them: every `.ztn` it writes names the Tool, each file goes into the SubTool of the Tool's name (T11). So an
+object with targets is not imported by ZBrush's GoZ but by **Mirai's import script** (`interop/goz/zscript.py`), the way
+GoB does it (§3 „Names“ open item; behaviour only, no GoB code):
+- The script is fixed: `GoZApps\Mirai\MiraiGoZ_Import.txt` (written at registration and before each such send, only
+  when its content changed). ZBrush runs compiled scripts, so the artist loads the `.txt` **once** (*ZScript > Load*),
+  ZBrush compiles `MiraiGoZ_Import.zsc` beside it. A send with targets is refused — before anything is written — while
+  that `.zsc` is missing or older than the `.txt` (a new script version asks for one more load).
+- Per send Mirai writes `GoZApps\Mirai\MiraiGoZ_List.txt` (token = `transfer_id`, the project folder, the names, base
+  first), the `.GoZ` files and `GoZ_ObjectList.txt` / `GoZ_Application.txt` as before, then starts
+  `ZBrush.exe <MiraiGoZ_Import.zsc>` (`PATH` of `GoZBrush\GoZ_Config.txt`) instead of `GoZBrushFromApp`; a running ZBrush
+  takes the script (Manu, 2026-11-06).
+- The script, per name: the SubTool of exactly that name in the **active** Tool → lowest subdivision level,
+  `Tool:Import` of the `.GoZ` (ZBrush names the SubTool after the file, so the next send finds it again); the base not in
+  the active Tool → a new Tool from it; a target not there → a new SubTool. It writes `MiraiGoZ_Result.txt` (token,
+  `updated:` / `added:` / `tool:` / `missing:` per name); Mirai's tick shows it once in the status line. A list whose
+  token is already in the result is skipped (loading the `.txt` runs the script once).
+- ZScript usage `[V]` from GoB's working import on ZBrush 2021+ (`StrFind` 0-based / −1, `IGetTitle "Tool:ItemInfo"`
+  minus its last character, `SubToolGetCount` / `SubToolSelect`, `Tool:SubTool:Insert` + `PopUp:PolyMesh3D`, the SDiv
+  guard, `MemReadString` by line); `[H]` only the result file (`MemWriteString`, `MemSaveToFile`) and that ZBrush writes
+  the `.zsc` beside the loaded `.txt`. Not verified on the reference PC yet (T12, probe README §6).
+- Mirai writes only into its own app folder: no `.ztn` (the first version of option a wrote them; not needed — the
+  script does not use them, and ZBrush writes its own on export), no `.ztl`, no ZBrush setting. Exception approved by
+  Manu (2026-11-06): starting `ZBrush.exe` with Mirai's script. An object without targets goes as before through
+  `GoZBrushFromApp` (one Tool, E1-verified).
 
 **Names (Manu, 2026-11-06; `interop/goz/names.py`).** Until then the identifier came from `GoZMakeObjectPath.exe` at
 the first send of each Mirai session. Manu (reference PC): even after a ZBrush restart, a fresh scene and an emptied
@@ -151,13 +161,13 @@ Now Mirai names its SubTools itself, without `GoZMakeObjectPath` (and no longer 
   `…\Default\SubD_Cube`. With *Import as SubTool* off and no `.ztl`: no extra Tool, but six SubTools with the wrong
   names — ZBrush routes each file via its `.ztn` to the SubTool of that name, finding the base only, appending the
   rest. T11b (clean folder, *Import as SubTool* off): still one Tool with four SubTools — ZBrush **always** groups a
-  multi-object list into one Tool regardless of the setting (hypothesis B confirmed). Fix: pre-written per-object `.ztn`
-  files and ZScript import (see above and `interop/goz/zscript.py`).
+  multi-object list into one Tool regardless of the setting (hypothesis B confirmed). Fix: Mirai's import script
+  („Base + morph targets“ above). The first version (local agent, `1efc15c`) generated a script per send as text named
+  `.zsc` with ZScript calls that do not exist or count differently (`VarGet`, `StrFind` 1-based, `IGetTitle "Tool"`,
+  `SubTool:Append` with a file); rebuilt the same day as a fixed script after GoB's working one.
   **GoB** (Blender bridge, read 2026-11-06 at `464676b`, behaviour only, no code taken): reached the same conclusion
-  in 2020 and uses an identical approach: a ZScript that finds each SubTool by exact name and calls `Tool:Import`, with
-  per-object `.ztn` files. Mirai does not rewrite *Import as SubTool* or delete `.ztl` files (AD-029 §3).
-  New §3 exceptions (Manu, 2026-11-06): Mirai may write `.ztn` files; `ZBrush.exe` may be called with a script path
-  for multi-object sends.
+  in 2020: a ZScript that finds each SubTool by exact name and calls `Tool:Import`. GoB also writes per-object `.ztn`
+  files, rewrites *Import as SubTool* and deletes `.ztl` files; Mirai does none of these.
 
 ## 4. Return
 
