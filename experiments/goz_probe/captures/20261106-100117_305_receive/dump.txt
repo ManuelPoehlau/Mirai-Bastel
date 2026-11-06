@@ -1,0 +1,38 @@
+E1 receive 20261106-100117_305  launched_by=edit_command  objects=1
+
+=== C:/Users/Public/Pixologic/GoZProjects/Default/C_bump
+header text: b' 1.0 ZBrush GoZ Binary......'
+blocks:
+  @      32  tag      1 MESH                   size        32  count       1  modifier 0.0
+  @      64  tag   5001 FLAGS                  size        20  count       1  modifier 0.0
+  @      84  tag  10001 POINT_LIST             size      3928  count     326  modifier 0.0
+  @    4012  tag  20001 FACE4_LIST_FORMAT_1    size      5200  count     324  modifier 0.0
+  @    9212  tag  25001 UV4_LIST               size     10384  count     324  modifier 0.0
+  @   19596  tag  35001 MRGB_LIST              size      1320  count     326  modifier 0.0
+  @   20916  tag  30002 MASK16_LIST            size       668  count     326  modifier 0.0
+  @   21584  tag  40001 GROUPS_LIST            size       664  count     324  modifier 0.0
+  @   22248  tag  40002 CREASE_LIST            size       340  count     324  modifier 0.0
+  @   22588  tag      0 END_OF_FILE            size         0  count       0  modifier 0.0
+mesh name: 'GoZMesh_C_bump'
+flags: 0 []
+points: 326  faces: 324 (FACE4_LIST_FORMAT_1) {'tri': 0, 'quad': 324}
+bbox min (-2.605081081390381, 0.0, -2.038386106491089) max (2.605081081390381, 4.778098106384277, 1.6476240158081055) extent (5.210162162780762, 4.778098106384277, 3.6860101222991943)
+first points: [(-1.593127965927124, 3.5746312141418457, 1.379699945449829), (-1.4726020097732544, 3.572557210922241, -0.15149299800395966), (-1.6393200159072876, 4.6023149490356445, 1.6046040058135986), (-1.785796046257019, 3.262733221054077, 0.648127019405365), (-2.3819069862365723, 3.875626802444458, -0.15668299794197083)]
+last points: [(2.408144950866699, 4.09816837310791, 1.2935450077056885), (2.342405080795288, 3.952179431915283, -0.07456400245428085), (0.12998299300670624, 1.4464832544326782, -1.4829661846160889), (0.12479300051927567, 1.6540892124176025, -1.5848716497421265), (0.18626698851585388, 1.8274363279342651, -1.6634228229522705)]
+first faces: [(117, 11, 16, 159), (2, 0, 11, 13), (118, 12, 128, 165), (108, 112, 37, 38), (3, 9, 8, 0)]
+last faces: [(324, 279, 287, 325), (325, 287, 284, 293), (293, 284, 285, 292), (323, 308, 306, 282), (306, 307, 281, 282)]
+uvs (UV4_LIST): 324 faces, u 0.006843..0.992863, v 0.009041..0.998161
+first face uvs: [((0.1369519978761673, 0.33407700061798096), (0.14168600738048553, 0.2663860023021698), (0.21342800557613373, 0.2709220051765442), (0.20539100468158722, 0.3258900046348572)), ((0.02563299983739853, 0.2019599974155426), (0.15041400492191315, 0.19435900449752808), (0.14168600738048553, 0.2663860023021698), (0.03444100171327591, 0.2719539999961853)), ((0.5086830258369446, 0.07024399936199188), (0.4428119957447052, 0.09045299887657166), (0.4301530122756958, 0.010753000155091286), (0.5096679925918579, 0.00904100015759468))]
+groups (id: faces): {0: 324}
+anomalies: none
+matched sent mesh C by vertex and face counts
+Vergleich mit gesendetem Mesh C: Punkte/Flächen gesendet [326, 324], empfangen [326, 324]
+Achsen (bbox): x_goz = +1.000000·x_sent +0.000000;  y_goz = +1.000000·y_sent +0.000000;  z_goz = +1.118584·z_sent -0.195381
+Maßstab: [1.0, 1.118584]  (signed permutation, scale 1, offset 0: False)
+Flächen: {'identical': 324, 'same_corners_rotated': 0, 'reversed_winding': 0, 'other': 0}
+Reihenfolge: same
+Morph-Ziel 'bump' (obj): Gewicht 0.5000 (0 = Basis, 1 = Ziel); 0 von 326 Punkten bitgleich mit Basis + Ziel; Rest neben Basis + Gewicht·Ziel max 5.72e-07
+UVs je Fläche gegen die gesendeten / OBJ-UVs: {'identical': 324, 'flip_v': 0, 'flip_u': 0, 'other': 0, 'no_uvs_sent': 0}; max. Abweichung gleich 2.96e-08, mit V gespiegelt 0.996
+Datei fertig beim Start: complete_at_start=True, exclusive_open=ok, changed_after_1s=False, geschrieben 401.8 ms vor dem Start
+
+no listener running: no ticket (nothing is started)

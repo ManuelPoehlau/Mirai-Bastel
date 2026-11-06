@@ -1,0 +1,262 @@
+{
+  "t0_ns": 1793955183993952100,
+  "t0_local": "20261106-095303_993",
+  "launched_by": "edit_command",
+  "argv": [
+    "%USERPROFILE%\\Mirai_Bastel\\experiments\\goz_probe\\probe_receiver.py",
+    "--root",
+    "C:\\Users\\Public\\Pixologic",
+    "--launched-by",
+    "edit_command",
+    "--"
+  ],
+  "zbrush_args": [],
+  "cwd": "C:\\Users\\Public\\Pixologic\\GoZApps\\MiraiProbe",
+  "pid": 12644,
+  "process_chain": [
+    {
+      "pid": 12644,
+      "exe": "python.exe"
+    },
+    {
+      "pid": 17652,
+      "exe": "cmd.exe"
+    },
+    {
+      "pid": 10584,
+      "exe": "ZBrush.exe"
+    },
+    {
+      "pid": 2888,
+      "exe": "(exited or unknown)"
+    }
+  ],
+  "env": {
+    "OS": "Windows_NT",
+    "PROCESSOR_ARCHITECTURE": "AMD64",
+    "PUBLIC": "C:\\Users\\Public",
+    "SystemRoot": "C:\\WINDOWS"
+  },
+  "env_names_goz": [],
+  "python": {
+    "executable": "%USERPROFILE%\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+    "version": "3.14.2 (tags/v3.14.2:df79316, Dec  5 2025, 17:18:21) [MSC v.1944 64 bit (AMD64)]",
+    "platform": "win32"
+  },
+  "root": "C:\\Users\\Public\\Pixologic",
+  "settle_s": 1.0,
+  "gozbrush_texts": {
+    "GoZ_ObjectList.txt": {
+      "stat": {
+        "exists": true,
+        "size": 48,
+        "mtime_ns": 1793955183543781500
+      },
+      "text": "C:/Users/Public/Pixologic/GoZProjects/Default/C\n"
+    },
+    "GoZ_Application.txt": {
+      "stat": {
+        "exists": true,
+        "size": 10,
+        "mtime_ns": 1793955183711781700
+      },
+      "text": "MiraiProbe"
+    },
+    "GoZ_ProjectPath.txt": {
+      "stat": {
+        "exists": true,
+        "size": 46,
+        "mtime_ns": 1451583438000000000
+      },
+      "text": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\"
+    },
+    "GoZ_ObjectPath.txt": {
+      "stat": {
+        "exists": true,
+        "size": 56,
+        "mtime_ns": 1793954836118783800
+      },
+      "text": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\E1_C_P1_UV"
+    }
+  },
+  "app_config": {
+    "PATH": "C:/Users/%USERNAME%/Mirai_Bastel/experiments/goz_probe/probe_app.cmd"
+  },
+  "objects": [
+    {
+      "identifier": "C:/Users/Public/Pixologic/GoZProjects/Default/C",
+      "file": "C:\\Users\\Public\\Pixologic\\GoZProjects\\Default\\C.GoZ",
+      "stat_at_start": {
+        "exists": true,
+        "size": 22600,
+        "mtime_ns": 1793955183542781900
+      },
+      "ms_since_write_at_start": 451.1702,
+      "exclusive_open": "ok",
+      "sha256_at_start": "d09eec58c61d15d708c15c2bcfe9596efa1cdf3546daa4f014e9f84cdfa04c5c",
+      "copy": "%USERPROFILE%\\Mirai_Bastel\\experiments\\goz_probe\\captures\\20261106-095303_993_receive\\00_C.GoZ",
+      "stat_after_settle": {
+        "exists": true,
+        "size": 22600,
+        "mtime_ns": 1793955183542781900
+      },
+      "sha256_after_settle": "d09eec58c61d15d708c15c2bcfe9596efa1cdf3546daa4f014e9f84cdfa04c5c",
+      "changed_after_settle": false,
+      "complete_at_start": true,
+      "summary": {
+        "name": "GoZMesh_C",
+        "flags": 0,
+        "flag_names": [],
+        "subdiv": [],
+        "points": 326,
+        "faces": 324,
+        "face_types": {
+          "tri": 0,
+          "quad": 324
+        },
+        "header_text": " 1.0 ZBrush GoZ Binary......",
+        "blocks": [
+          [
+            1,
+            "MESH",
+            28,
+            1
+          ],
+          [
+            5001,
+            "FLAGS",
+            20,
+            1
+          ],
+          [
+            10001,
+            "POINT_LIST",
+            3928,
+            326
+          ],
+          [
+            20001,
+            "FACE4_LIST_FORMAT_1",
+            5200,
+            324
+          ],
+          [
+            25001,
+            "UV4_LIST",
+            10384,
+            324
+          ],
+          [
+            35001,
+            "MRGB_LIST",
+            1320,
+            326
+          ],
+          [
+            30002,
+            "MASK16_LIST",
+            668,
+            326
+          ],
+          [
+            40001,
+            "GROUPS_LIST",
+            664,
+            324
+          ],
+          [
+            40002,
+            "CREASE_LIST",
+            340,
+            324
+          ],
+          [
+            0,
+            "END_OF_FILE",
+            0,
+            0
+          ]
+        ],
+        "anomalies": []
+      },
+      "maps": [],
+      "matched_sent": {
+        "id": "C",
+        "by": "vertex and face counts"
+      },
+      "analysis": {
+        "sent_id": "C",
+        "counts": {
+          "sent": [
+            326,
+            324
+          ],
+          "received": [
+            326,
+            324
+          ]
+        },
+        "faces": {
+          "identical": 324,
+          "same_corners_rotated": 0,
+          "reversed_winding": 0,
+          "other": 0
+        },
+        "order": "same",
+        "axes": [
+          {
+            "axis": "x",
+            "from": "x",
+            "factor": 0.9999999946062611,
+            "offset": 0.0,
+            "corr": 1.0,
+            "method": "regression"
+          },
+          {
+            "axis": "y",
+            "from": "y",
+            "factor": -0.9999999841869689,
+            "offset": 4.778098165639202,
+            "corr": -0.9999999999999951,
+            "method": "regression"
+          },
+          {
+            "axis": "z",
+            "from": "z",
+            "factor": -0.9999999858940123,
+            "offset": -4.497138494929942e-09,
+            "corr": -0.9999999999999994,
+            "method": "regression"
+          }
+        ],
+        "mapping_is_signed_permutation": false,
+        "max_residual_after_mapping": 3.715489507172265e-07,
+        "target_bump": {
+          "weight": -3.689260061725941e-08,
+          "points_equal_to_target": 0,
+          "points": 326,
+          "max_rest": 5.720062254965796e-07,
+          "axis": "obj"
+        },
+        "uvs": {
+          "faces": {
+            "identical": 324,
+            "flip_v": 0,
+            "flip_u": 0,
+            "other": 0,
+            "no_uvs_sent": 0
+          },
+          "max_diff": {
+            "identical": 2.959060674267988e-08,
+            "flip_v": 0.9963220178947448
+          }
+        }
+      }
+    }
+  ],
+  "listener": {
+    "pid": null,
+    "alive": false
+  },
+  "duration_ms": 1061.2266999669373
+}
