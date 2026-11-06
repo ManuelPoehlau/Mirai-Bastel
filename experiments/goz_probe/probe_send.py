@@ -17,6 +17,10 @@ P1 bridge uses (Mirai's Y-up frame shows in ZBrush upside down and from behind w
 so it never updates a SubTool sent unflipped. `--axis raw` (default) writes the Mirai coordinates as they are.
 `--groups bands` (E2, polygroups for P2): adds a GROUPS block, four bands by the face centre's height, ids 101-104
 (distinct from ZBrush's random default id); short name `E1_<id>[_P1]_G`.
+`--uvs as-is|flip-v` (E3, UVs for P3): adds a UV4_LIST block with the mesh's corner UVs (`as-is` = Mirai's / the
+OBJ's (u, v); `flip-v` = (u, 1 - v)); short name suffix `_UV` / `_UVF`.
+`--target bump` (E3, morph targets for P3): sends **two** objects in one transfer: the base (`E1_C_P1_B`) and the base
+plus the sidecar's `target_bump` offsets (`E1_C_P1_T`), both in `GoZ_ObjectList.txt`.
 `--resend`: refuses when ZBrush's file changed since the capture (`--force` overrides).
 `--dry-run`: writes the files, runs no program (identifier = project folder / short name).
 Every step goes into `captures/<time>_send_<what>/send_log.json`.
@@ -110,29 +114,56 @@ def previous_identifier(captures: Path, mesh_id: str, axis: str = "raw") -> str 
     return None
 
 
+def sent_uvs(sent: dict, mode: str | None):
+    """E3: the sidecar's corner UVs for the UV4 block (`flip-v`: v -> 1 - v), None without `--uvs`."""
+    if mode is None:
+        return None
+    uvs = sent.get("uvs")
+    if not uvs or any(u is None for u in uvs):
+        raise ProbeError(f"mesh {sent['id']} has no UVs on every face (mesh C has them)")
+    if mode == "flip-v":
+        return [[[u, 1.0 - v] for u, v in face] for face in uvs]
+    return uvs
+
+
 def prepare_mesh(args, paths: GozPaths, steps: Steps) -> tuple[list[str], dict]:
     sent_path = args.meshes / f"{args.mesh}.sent.json"
     if not sent_path.is_file():
         raise ProbeError(f"{sent_path} missing: run make_meshes.py first")
     sent = json.loads(sent_path.read_text(encoding="utf-8"))
-    short = f"E1_{args.mesh}" + ("" if args.axis == "raw" else "_P1") + ("_G" if args.groups else "")
-    identifier = None if (args.new_identifier or args.groups) else previous_identifier(args.captures, args.mesh, args.axis)
-    if identifier:
-        steps.add("reusing the identifier of an earlier send", identifier=identifier)
-    else:
-        identifier = make_object_path(paths, short, steps, dry_run=args.dry_run, timeout=args.wait_objectpath)
+    if args.target and "target_bump" not in sent:
+        raise ProbeError(f"mesh {args.mesh} has no target_bump (mesh C has it; run make_meshes.py again)")
+    short = (f"E1_{args.mesh}" + ("" if args.axis == "raw" else "_P1") + ("_G" if args.groups else "")
+             + {None: "", "as-is": "_UV", "flip-v": "_UVF"}[args.uvs])
     signs = AXIS_MAPS[args.axis]
-    points = [[as_float32(s * c) for s, c in zip(signs, p)] for p in sent["positions"]]
     groups = band_groups(sent) if args.groups == "bands" else None
-    data = encode_goz(short, points, sent["faces"], style=args.style, groups=groups)
-    name = parse_goz(data).name
-    parse_goz(data)  # our own file must pass our strict reader
-    target = Path(identifier + ".GoZ")
-    write_bytes_atomic(target, data)
-    steps.add("wrote .GoZ", file=str(target), bytes=len(data), sha256=sha256(data), mesh_name=name)
+    uvs = sent_uvs(sent, args.uvs)
+    objects = [(short + ("_B" if args.target else ""), sent["positions"], "base")]
+    if args.target:
+        bumped = [[a + b for a, b in zip(p, d)] for p, d in zip(sent["positions"], sent["target_bump"])]
+        objects.append((short + "_T", bumped, "target_bump"))
+    fresh = args.new_identifier or args.groups or args.uvs or args.target
+    identifiers, files = [], []
+    for name_short, positions, role in objects:
+        identifier = None if fresh else previous_identifier(args.captures, args.mesh, args.axis)
+        if identifier:
+            steps.add("reusing the identifier of an earlier send", identifier=identifier)
+        else:
+            identifier = make_object_path(paths, name_short, steps, dry_run=args.dry_run, timeout=args.wait_objectpath)
+        points = [[as_float32(s * c) for s, c in zip(signs, p)] for p in positions]
+        data = encode_goz(name_short, points, sent["faces"], style=args.style, groups=groups, uvs=uvs)
+        name = parse_goz(data).name  # our own file must pass our strict reader
+        target = Path(identifier + ".GoZ")
+        write_bytes_atomic(target, data)
+        steps.add("wrote .GoZ", file=str(target), bytes=len(data), sha256=sha256(data), mesh_name=name, role=role)
+        identifiers.append(identifier)
+        files.append({"identifier": identifier, "file": str(target), "sha256": sha256(data), "role": role})
     steps.add("axis map", axis=args.axis, signs=signs)
-    return [identifier], {"mesh": args.mesh, "identifier": identifier, "file": str(target), "sha256": sha256(data),
-                          "axis": args.axis, "groups": groups}
+    info = {"mesh": args.mesh, "identifier": identifiers[0], "file": files[0]["file"], "sha256": files[0]["sha256"],
+            "axis": args.axis, "groups": groups, "uvs": args.uvs, "target": args.target}
+    if args.target:
+        info["files"] = files
+    return identifiers, info
 
 
 def _capture_dir(captures: Path, which: str) -> Path:
@@ -214,6 +245,8 @@ def main(argv=None) -> int:
     parser.add_argument("--axis", choices=tuple(AXIS_MAPS), default="raw",
                         help="raw: Mirai coordinates as they are; bridge: (x, -y, -z), the P1 conversion (README §11)")
     parser.add_argument("--groups", choices=("bands",), help="E2: send four polygroups (ids 101-104)")
+    parser.add_argument("--uvs", choices=("as-is", "flip-v"), help="E3: send the mesh's corner UVs (UV4 block)")
+    parser.add_argument("--target", choices=("bump",), help="E3: send base + base-with-bump as two objects")
     parser.add_argument("--new-identifier", action="store_true")
     parser.add_argument("--keep-application", action="store_true")
     parser.add_argument("--tmap", action="store_true",
