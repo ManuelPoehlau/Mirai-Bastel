@@ -33,6 +33,7 @@ Wichtig:
 from __future__ import annotations
 
 import dataclasses
+import json
 import math
 import os
 from pathlib import Path
@@ -53,7 +54,7 @@ from core import (
     VertexId,
 )
 from core.operations import CollapseRefused, MeshDeltaCommand
-from core.serialization import scene_from_json, scene_to_json
+from core.serialization import scene_from_dict, scene_to_dict
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
 from viewport.resource_store import ResourceStore, TraceStore
@@ -76,7 +77,9 @@ from .interaction.tools import resolve_selection_vertices
 from .interaction.tools.selection_helpers import selection_pivot
 from .mesh_geometry import mesh_center_and_radius
 from . import object_space
+from . import view_state
 from .pivot import WorkingPivot
+from . import view_state
 from .scene_objects import (
     CompositeCommand,
     ObjectTextureCommand,
@@ -558,6 +561,7 @@ class Application:
         self._orbit_virtual: tuple[float, float] | None = None
         self._view_name: str | None = None
         self._ortho_auto: bool = False
+        self._loaded_view = None  # the `view` of the scene file `init_scene` just read (see `load_scene`)
         # Transform gizmo (2026-10-21, AD-016 D3; promoted from the Playground, Manu). Off unless the host
         # draws it (`src/main.py` sets `gizmo_enabled`): Labs on `Application` get no invisible handles.
         # The handle press itself is a press session (`pointer_tools.GizmoPress`); `_gizmo_cache` = (key, pivot).
@@ -658,8 +662,11 @@ class Application:
         elif geometry_type == "file":
             if scene_path is None:
                 raise ValueError('geometry_type="file" requires scene_path')
-            loaded = scene_from_json(Path(scene_path).read_text(encoding="utf-8"))
+            data = json.loads(Path(scene_path).read_text(encoding="utf-8"))
+            loaded = scene_from_dict(data)
             replace_scene(self.scene, loaded)
+            # View state (`mirai.view_state`) rides in the file beside the core envelope; `load_scene` applies it.
+            self._loaded_view = data.get(view_state.VIEW_KEY) if isinstance(data, dict) else None
         # AD-029 §5: object IDs of a loaded file may repeat earlier ones; a ZBrush link of this session must not reach
         # an object of another scene through them (the bridge's session key includes this count)
         self.scene_generation = getattr(self, "scene_generation", 0) + 1
@@ -954,6 +961,20 @@ class Application:
         self._soft_preview_refresh()
         self.set_viewport_size(self.viewport_width, self.viewport_height)
         self.frame_scene()
+        view = self._loaded_view if geometry_type == "file" else None
+        self._loaded_view = None
+        if view is not None:
+            skipped = view_state.apply(self, view)  # after the framing: the saved camera wins
+            if skipped:
+                self._set_status(f"Scene view: could not restore {', '.join(skipped)}")
+
+    def restore_camera_state(self) -> None:
+        """The camera's fields were set from outside (`view_state`): leave a snapped standard view, refresh derived
+        state. View only - no History."""
+        self._view_name = None
+        self._ortho_auto = False
+        self._camera_changed()
+        self._refresh_hover()
 
     def save_scene_file(self, path: str | Path) -> bool:
         """Schreibt die Szene als Szenendatei (`core.serialization`, Manu 2026-10-15; Strg+S
@@ -962,13 +983,16 @@ class Application:
         Abgelehnt (Statuszeile, False), solange eine Interaktion die Tasten hält: mitten in
         W/E/R/T oder einer Knife-Session stünde ein halber Zustand im Mesh. Atomar über eine
         Nachbardatei, damit ein Fehler die alte Datei nicht zerstört. Kein History-Eintrag;
-        Selection, History und Kamera werden nicht gespeichert (Format, V1_SPEC §12)."""
+        Selection und History werden nicht gespeichert (Format, V1_SPEC §12); der Ansichts-Zustand (Display,
+        Licht, Kamera, ... `mirai.view_state`) reist unter `"view"` mit."""
         owner = self.interaction_owner
         if owner is not None:
             self._set_status(f"Save scene: not while the {owner} interaction runs")
             return False
         path = Path(path)
-        text = scene_to_json(self._morph.document_scene())
+        data = scene_to_dict(self._morph.document_scene())
+        data[view_state.VIEW_KEY] = view_state.capture(self)
+        text = json.dumps(data, indent=2)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")

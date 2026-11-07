@@ -15,6 +15,9 @@ liegt wie `SPACE` auf Fenster-Ebene (`install_handlers(..., save=...)`), nicht i
 Schreiben und Laden selbst machen `Application.save_scene_file` bzw.
 `Application.load_scene("file", scene_path=...)`; dieses Modul kennt nur Pfade und Labels und
 importiert kein pyglet (headless testbar).
+
+Die Ansicht (Display, Licht, Kamera, Symmetrie-Anzeige, SubD-Vorschau ...) reist in der Datei unter `"view"`
+mit und kommt beim Laden zurück (`mirai.view_state`, Manu 2026-11-07).
 """
 
 from __future__ import annotations
