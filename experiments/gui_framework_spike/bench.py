@@ -10,7 +10,6 @@ dasselbe Skript ohne xvfb laufen lassen.
 from __future__ import annotations
 
 import argparse
-import resource
 import statistics
 import sys
 import time
@@ -71,7 +70,25 @@ class run:
 
 
 def rss_mb() -> float:
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+    try:
+        import resource
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024.0
+    except ImportError:
+        import ctypes
+        import ctypes.wintypes
+
+        class _PMC(ctypes.Structure):
+            _fields_ = [("cb", ctypes.c_ulong), ("PageFaultCount", ctypes.c_ulong),
+                        ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaNonPagedPoolUsage", ctypes.c_size_t), ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                        ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
+
+        pmc = _PMC()
+        pmc.cb = ctypes.sizeof(pmc)
+        ctypes.windll.psapi.GetProcessMemoryInfo(
+            ctypes.windll.kernel32.GetCurrentProcess(), ctypes.byref(pmc), pmc.cb)
+        return pmc.WorkingSetSize / (1024.0 * 1024.0)
 
 
 def timed_frames(window, n, orbit: bool) -> list[float]:

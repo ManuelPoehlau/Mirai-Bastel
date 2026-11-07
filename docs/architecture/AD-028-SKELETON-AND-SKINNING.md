@@ -893,3 +893,4 @@ wenn eine bleiben soll, oder nenne eine andere.
    Gewicht 0 %).
 9. **Messlauf auf deinem PC:** `python experiments/drag_cost/probe_morph_gl.py --only-skin`, die Ausgabe in den Chat
    (die 16,7-ms-Grenze kann nur dein PC bestätigen; sie entscheidet, ob ein GPU-Zeichenweg das nächste Thema wird).
+   → **Gemessen 2026-11-07:** [`experiments/drag_cost/RESULTS_SKIN_IMGUI_REFERENCE_PC_2026-11-07.md`](../../experiments/drag_cost/RESULTS_SKIN_IMGUI_REFERENCE_PC_2026-11-07.md) — P-1-Grenze hält für Kopf und Körper ≤ 15 %; gollum_20k OVER (H5c bestätigt); _sync_geometry 73–77 % des Pose-Schritts (Hypothese bestätigt).

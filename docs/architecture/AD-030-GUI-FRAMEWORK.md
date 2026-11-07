@@ -133,7 +133,7 @@ Unterschied. (Ein früherer Lauf zeigte +7 ms; Ursache war die ungleiche Szene �
    bis dahin der Knopf.
 6. **Artist-Abnahme** von Optik, Schrift (Latin-1/Umlaute ok, CJK nicht ohne Glyph-Bereich), Skalierung/HiDPI (`font_scale_dpi`
    gesetzt, auf echter HiDPI-Hardware ungeprüft) und Farben nach dem Screenshot.
-7. **Messung** auf dem Referenz-PC (§3.3) vor der Übernahme; die hier gemessenen Zahlen kommen aus Software-GL.
+7. **Messung** auf dem Referenz-PC (§3.3): → **Gemessen 2026-11-07** ([`experiments/drag_cost/RESULTS_SKIN_IMGUI_REFERENCE_PC_2026-11-07.md`](../../experiments/drag_cost/RESULTS_SKIN_IMGUI_REFERENCE_PC_2026-11-07.md)) — imgui CPU 0.78/0.37 ms (offen/zu); Orbit p95 ≤ 12 ms (plain 10 ms). Die hier gemessenen Zahlen kamen aus Software-GL.
 
 ## 7. Migrationsplan (nur einordnen, nichts umgesetzt)
 
