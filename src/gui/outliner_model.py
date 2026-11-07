@@ -1,8 +1,9 @@
-"""Outliner-Panel, reine Logik (GUI-Framework-Spike, 2026-11-07, `PROVISIONAL`).
+"""Outliner-Panel, reine Logik (AD-030, 2026-11-07, `PROVISIONAL`).
 
 Kein pyglet, kein imgui: nur Funktionen über Scene und Selection. Das Panel zeichnet `rows(...)` und fragt bei einem
-Klick `click_selection` / `eye_plan`; es hält keinen Dokumentzustand (Brief: Core -> Viewport, nie zurück).
-Alle Änderungen laufen über die vorhandenen Object-Commands (`commands.HIDE_OBJECTS`, `SHOW_ALL_OBJECTS`).
+Klick `click_selection` / `eye_plan`; es hält keinen Dokumentzustand (Core -> Viewport, nie zurück). Änderungen laufen
+über `Application.select_objects` und `Application.set_objects_hidden` (beide ein Aufruf des ObjectController, Undo wie
+die Tasten Ctrl+H / Alt+H).
 """
 
 from __future__ import annotations
@@ -89,21 +90,21 @@ def click_selection(current: Iterable, clicked, modifiers: Iterable[str]) -> tup
 
 @dataclass(frozen=True)
 class EyePlan:
-    """Was ein Klick auf das Auge tut: erst die Auswahl auf `select` setzen (None = unverändert), dann `command`."""
+    """Was ein Klick auf das Auge tut: `hide` True/False auf `ids`, oder (`ids` leer) nichts, nur der Hinweis."""
 
-    select: frozenset | None
-    command: str | None
+    ids: tuple = ()
+    hide: bool = True
     note: str = ""
 
 
 def eye_plan(row: Row) -> EyePlan:
-    """Auge-Klick -> Plan. Ausblenden: `HideObjects` wirkt auf die Auswahl, also zuerst genau dieses Objekt wählen.
-    Einblenden: es gibt keinen Command für ein einzelnes Objekt (nur `ShowAllObjects`) - Befund im AD."""
-    if not row.hidden:
-        if not row.can_hide:
-            return EyePlan(None, None, "hält das Edit-Objekt, bleibt sichtbar")
-        return EyePlan(frozenset({row.object_id}), commands.HIDE_OBJECTS)
-    return EyePlan(None, commands.SHOW_ALL_OBJECTS, "Einzel-Einblenden fehlt: zeigt alle")
+    """Auge-Klick -> Plan: ein sichtbares Objekt wird ausgeblendet (außer das Edit-Objekt und seine Gruppen), ein
+    ausgeblendetes wieder eingeblendet."""
+    if row.hidden:
+        return EyePlan((row.object_id,), False)
+    if not row.can_hide:
+        return EyePlan((), True, "hält das Edit-Objekt, bleibt sichtbar")
+    return EyePlan((row.object_id,), True)
 
 
 def group_of(row: Row) -> str:

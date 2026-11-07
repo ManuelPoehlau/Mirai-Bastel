@@ -5,7 +5,7 @@ This file is for AI collaborators. [AGENTS.md](AGENTS.md) holds the project phil
 
 ## Quick reference
 
-**Repo**: Python 3.9+, pytest, no virtual env required (direct PYTHONPATH injection in tests).
+**Repo**: Python 3.10+ (since AD-030, `imgui-bundle`), pytest, no virtual env required (direct PYTHONPATH injection in tests).
 
 **Structure**:
 - `src/core/` — Production: V1 Core baseline, contract-frozen: interfaces, IDs and data integrity are protected
@@ -14,6 +14,9 @@ This file is for AI collaborators. [AGENTS.md](AGENTS.md) holds the project phil
   (`begin_change` / `end_change` / `rollback_change`, `MeshDeltaCommand`, `Mesh.watch()`): use it for history,
   rollback and derived data instead of `export_state()` / `load_state()` snapshots.
 - `src/viewport/`, `src/mirai/` — In-progress production areas
+- `src/gui/` — Panels (AD-030, Dear ImGui via `imgui-bundle`, Manu 2026-11-07): pure logic (`outliner_model`, `input_gate`) is
+  tested headless; `imgui_layer` draws and routes input (mouse only over a panel, keys only for a text field; the BindingSet
+  stays the input truth). New panels go here; a panel reads state and calls `Application`, it holds no document state.
 - `src/main.py` — the production app (own window); it is the product.
 - `experiments/` — the remaining research tools (index: `experiments/README.md`): `morph_lab` (separate Discovery
   tool/bridge; Production Morph lives in `src/mirai/`), `mehlsack_lab` (parked; no open Artist test), `drag_cost`
@@ -70,7 +73,7 @@ When unsure between sizes, start at the smaller one and escalate when the code r
 
 ## Code conventions
 
-- **Type hints**: Yes, use them (Python 3.9+ supports `list[T]` syntax)
+- **Type hints**: Yes, use them (Python 3.10+ supports `list[T]` and `X | Y`)
 - **Naming**: Classes are `PascalCase`, functions/methods are `snake_case`
 - **Comments**: Only for *why*, not *what*. Non-obvious invariants, workarounds, architectural constraints
 - **Imports**: Organize as stdlib, third-party, local; prefer relative imports in `src/`

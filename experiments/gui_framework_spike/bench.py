@@ -1,4 +1,4 @@
-"""Messung für das AD (Kriterien 2 und 3): Frame-Zeit mit/ohne imgui-Panel, Startzeit, Speicher, GL-Zustandslecks.
+"""Messung für AD-030 (Kriterien 2 und 3): Frame-Zeit mit/ohne imgui-Panel, Startzeit, Speicher, GL-Zustandslecks.
 
     xvfb-run -a python experiments/gui_framework_spike/bench.py [Mesh] [--frames N]
 
@@ -16,16 +16,59 @@ import sys
 import time
 from pathlib import Path
 
-_HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(_HERE))
+_ROOT = Path(__file__).resolve().parents[2]
+for _p in (str(_ROOT / "src"), str(_ROOT), str(_ROOT / "examples")):
+    sys.path.insert(0, _p)
 
 t_import = time.perf_counter()
-import run  # noqa: E402
+import main as production  # noqa: E402
+from gui.imgui_layer import ImguiLayer  # noqa: E402
 
 from pyglet import gl  # noqa: E402
 from pyglet.window import key, mouse  # noqa: E402
 
 IMPORT_S = time.perf_counter() - t_import
+
+
+class run:
+    """Fenster mit Production-Verdrahtung (wie `src/main.py`), optional mit Panel-Layer."""
+
+    _ROOT = _ROOT
+
+    @staticmethod
+    def build(argv=("cube",), with_panel=True, **layer_kwargs):
+        mesh = argv[0]
+        window = production.create_window("bench")
+        app = production.Application(keymap_path=production.KEYMAP_PATH)
+        app.gizmo_enabled = True
+        if mesh == "cube":
+            app.init_scene("cube", **production.GL_TYPES)
+        else:
+            app.init_scene("obj", obj_path=_mesh_path(mesh), **production.GL_TYPES)
+        app.frame_scene()
+        app.set_viewport_size(window.width, window.height)
+        layer = ImguiLayer(window, app, open_panel=with_panel, **layer_kwargs) if with_panel is not None else None
+        production.install_handlers(window, app, hud=production.Hud(app.bindings), triad=production.OrientationTriad(),
+                                    bone_tag=production.BoneTag(), gui=layer)
+        return window, app, layer
+
+    @staticmethod
+    def render_frame(window):
+        window.switch_to()
+        window.dispatch_event("on_draw")
+        window.dispatch_pending_events()
+        window.flip()
+
+    @staticmethod
+    def add_demo_objects(app):
+        from mirai.interaction import commands
+
+        teeth = [app.add_primitive("cube", name=f"Zahn {i + 1}").id for i in range(4)]
+        app.dispatch_command(commands.SET_OBJECT_MODE)
+        app.selection.objects = set(teeth[:2])
+        app.dispatch_command(commands.GROUP_OBJECTS)
+        app.selection.objects = set()
+
 
 
 def rss_mb() -> float:
@@ -77,8 +120,6 @@ def variant(label, mesh, frames, panel: bool | None, open_panel=True, guard=True
 
 
 def _build_plain(mesh):
-    import main as production
-
     window = production.create_window()
     app = production.Application(keymap_path=production.KEYMAP_PATH)
     app.gizmo_enabled = True
@@ -100,7 +141,7 @@ def _mesh_path(name: str):
 def leak_report():
     """Zustandslecks in beide Richtungen: (a) was der Layer ohne Sicherung am GL-Zustand ändert, (b) ob der Zustand, den
     Production hinterlässt, den Layer stört (Zeichnen mit absichtlich 'schmutzigem' Zustand, Pixelvergleich)."""
-    from imgui_layer import snapshot_gl_state
+    from gui.imgui_layer import snapshot_gl_state
 
     window, app, layer = run.build(argv=["cube"], guard_gl=False)
     run.add_demo_objects(app)

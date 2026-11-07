@@ -1,28 +1,59 @@
 """Echtes pyglet-Fenster (xvfb) mit den echten `install_handlers` und dem imgui-Layer: Eingabe-Hoheit und GL-Zustand.
 
-Läuft nur mit pyglet, imgui-bundle und Display: `xvfb-run -a python -m pytest experiments/gui_framework_spike/tests -q`.
+Läuft nur mit pyglet, imgui-bundle und Display: `xvfb-run -a python -m pytest tests/test_gui_imgui_window.py -q` (eigener Prozess, siehe CLAUDE.md zu GL-Tests).
 """
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-_HERE = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_HERE))
+import tests._bootstrap  # noqa: F401
 
 pytest.importorskip("imgui_bundle")
 pyglet = pytest.importorskip("pyglet")
 
 try:
-    import run  # noqa: E402  (legt src/ auf den Pfad, importiert main -> pyglet.window)
+    import main as production  # importiert pyglet.window
 except Exception as exc:  # kein Display
     pytest.skip(f"kein GL/Display: {exc}", allow_module_level=True)
 
+from gui.imgui_layer import ImguiLayer, snapshot_gl_state  # noqa: E402
 from mirai.interaction import commands  # noqa: E402
 from pyglet.window import key, mouse  # noqa: E402
+
+
+class run:  # kleine Helfer, wie sie auch das Messskript (`experiments/gui_framework_spike/bench.py`) braucht
+    @staticmethod
+    def build(argv=("cube",), **layer_kwargs):
+        window = production.create_window("gui test")
+        app = production.Application(keymap_path=production.KEYMAP_PATH)
+        app.gizmo_enabled = True
+        app.init_scene("cube", **production.GL_TYPES)
+        app.frame_scene()
+        app.set_viewport_size(window.width, window.height)
+        layer = ImguiLayer(window, app, **layer_kwargs)
+        production.install_handlers(
+            window, app, hud=production.Hud(app.bindings), triad=production.OrientationTriad(),
+            bone_tag=production.BoneTag(), gui=layer,
+        )
+        return window, app, layer
+
+    @staticmethod
+    def render_frame(window):
+        """Ein Frame ohne Event-Loop: pyglet reiht Ereignisse außerhalb von `app.run()` in eine Queue, ohne
+        `dispatch_pending_events` läuft `on_draw` nie."""
+        window.switch_to()
+        window.dispatch_event("on_draw")
+        window.dispatch_pending_events()
+        window.flip()
+
+    @staticmethod
+    def add_demo_objects(app):
+        teeth = [app.add_primitive("cube", name=f"Zahn {i + 1}").id for i in range(4)]
+        app.dispatch_command(commands.SET_OBJECT_MODE)
+        app.selection.objects = set(teeth[:2])
+        app.dispatch_command(commands.GROUP_OBJECTS)
+        app.selection.objects = set()
 
 
 @pytest.fixture()
@@ -112,14 +143,16 @@ def test_drag_from_viewport_over_panel_stays_with_application(env):
     assert calls["press"] == 1 and calls["drag"] >= 1 and calls["release"] == 1
 
 
-def test_eye_hides_through_the_command_and_undo_restores(env):
+def test_eye_hides_and_shows_one_object_and_undo_follows(env):
     window, app, layer, calls = env
     tooth = _id_of(app, "Zahn 3")
     _click(window, _center(layer.item_rects[("eye", tooth)]))
     assert app.scene.objects[tooth].hidden is True
     assert calls["press"] == 0
-    app.dispatch_command(commands.UNDO)
+    _click(window, _center(layer.item_rects[("eye", tooth)]))  # zweiter Klick blendet nur dieses Objekt wieder ein
     assert app.scene.objects[tooth].hidden is False
+    app.dispatch_command(commands.UNDO)
+    assert app.scene.objects[tooth].hidden is True
 
 
 def test_keys_in_text_field_trigger_no_command_and_w_release_is_not_lost(env):
@@ -155,8 +188,6 @@ def test_motion_over_panel_does_not_reach_application_hover(env):
 
 
 def test_layer_leaves_gl_state_as_found():
-    from imgui_layer import restore_gl_state, snapshot_gl_state  # noqa: F401
-
     try:
         window, app, layer = run.build(argv=["cube"])
     except Exception as exc:

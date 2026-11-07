@@ -754,7 +754,7 @@ Ctrl+G / Alt+G / Ctrl+Alt+G act on objects, `OBJECT_MODE_ROUTES`; Duplicate has 
 `DuplicateObjects` (independent copy incl. group members, same place, not paired; refused for a mesh with point layers),
 `GroupObjects`, `UngroupObjects` (dissolve a selected group / take a selected member out), `SelectObjectGroup`.
 Hidden objects are not drawn, not picked and leave the object selection; `Delete` on a group deletes its members too.
-Hidden is saved with the scene (not view state). Still open: locking, explicit order, group transform/pivot, the panel.
+Hidden is saved with the scene (not view state). The panel (AD-030, 2026-11-07, `src/gui/`) uses by-id entries `Application.set_objects_hidden(ids, hidden)` and `Application.select_objects(ids)` (one Undo step for hide/show, no history for select). Still open: locking, explicit order, group transform/pivot.
 
 ## 7. Questions
 

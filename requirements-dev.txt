@@ -7,3 +7,8 @@ pytest
 # Ohne pyglet oder ohne Display werden diese Tests übersprungen
 # (repo-root conftest.py).
 pyglet
+
+# Panel-GUI (AD-030, Manu 2026-11-07): Dear ImGui. Braucht Python >= 3.10. Fehlt das Paket, startet `src/main.py` ohne
+# Panels (eine Zeile auf stderr). Exakt gepinnt: neue Versionen ändern die API; Hochziehen nur mit
+# `xvfb-run -a python -m pytest tests/test_gui_imgui_window.py` und `experiments/gui_framework_spike/bench.py`.
+imgui-bundle==1.93.0

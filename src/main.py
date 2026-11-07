@@ -267,6 +267,11 @@ Scope (binding, see the handoffs):
   drawn, not clickable) and the current bone's name (`BoneTag`) are read-only overlays after the strip.
   Window level like the menus: `install_handlers(..., hud=None, triad=None, bone_tag=None)` keeps the old
   wiring for the Labs.
+- Panels (AD-030, Manu 2026-11-07, `PROVISIONAL` look, `src/gui/`): Dear ImGui (`imgui-bundle`, Python 3.10+) on the window's own GL
+  context. First panel: the Outliner (objects with group indent, click selects like the viewport, eye hides / shows one
+  object; toggled by its button, no key). The mouse goes to a panel only over it (or for a drag that began there), keys only
+  to an active text field; all else reaches `Application` unchanged. `install_handlers(..., gui=None)` keeps the old wiring;
+  without `imgui-bundle` the window starts without panels (`make_gui`).
 - Input truth (AD-013 addendum 2026-10-28): every key resolves through `app.bindings`, the one
   BindingSet - code defaults (`mirai.interaction.bindings`, engineering, `PROVISIONAL`) under Manu's
   repo-tracked `config/keymap.json` (`KEYMAP_PATH`, `Application(keymap_path=...)`). The window keys
@@ -455,6 +460,7 @@ def install_handlers(
     hud: Hud | None = None,
     triad: OrientationTriad | None = None,
     bone_tag: BoneTag | None = None,
+    gui=None,
 ) -> None:
     """Translates the window's events to `app` (WP-SYM-LAB-03 H6). Needs only
     `window.event` (decorator), `window.width`/`height` and, when drawn,
@@ -487,7 +493,12 @@ def install_handlers(
 
     `triad` (GUI Phase A1, `PROVISIONAL`, `src/hud.py`): the permanent XYZ orientation triad in a viewport
     corner, F5 / F6 switch its corner and size for the session. `bone_tag`: the current bone's name at its posed
-    head. Both only read `app`; `None` (default) keeps the wiring as it was."""
+    head. Both only read `app`; `None` (default) keeps the wiring as it was.
+
+    `gui` (AD-030, `src/gui/imgui_layer.py`): the panel layer (Dear ImGui). Its input handlers sit on top of the
+    handler stack and keep the mouse only over a panel (or a drag that began there) and the keys only for an active
+    text field - everything else reaches the handlers below unchanged; it is drawn after the HUD, under an open menu,
+    and does not react while a menu is open. `None` (default) keeps the wiring as it was."""
 
     # Temporary scene loader: last known cursor (None = centre of the window).
     cursor: tuple[float, float] | None = None
@@ -707,9 +718,16 @@ def install_handlers(
             triad.draw(app.camera, window.width, window.height, inset_top, inset_bottom)
         if bone_tag is not None:
             bone_tag.draw(app.current_bone_tag(), app.camera, window.width, window.height)
+        if gui is not None:
+            gui.draw()
         shown = open_menu()
         if shown is not None:
             shown.draw()
+
+    if gui is not None:
+        # Last: pyglet's `@window.event` handlers above share the top frame of the handler stack; pushing a frame now
+        # puts the panel's input handlers above them without replacing any.
+        gui.attach(blocked=lambda: open_menu() is not None)
 
 
 def _variant_switch(command: str | None, hud: Hud | None, triad: OrientationTriad | None) -> bool:
@@ -803,6 +821,19 @@ def run(window, app: Application) -> None:
     pyglet.app.run()
 
 
+def make_gui(window, app: Application):
+    """The panel layer (AD-030), or None when `imgui-bundle` is not installed: one stderr line, no panels, the rest of
+    the window works as before. Import and context are lazy - nothing of imgui is touched until the first frame."""
+    try:
+        import imgui_bundle  # noqa: F401
+    except ImportError:
+        print("Panels aus: imgui-bundle fehlt (pip install -r requirements-dev.txt)", file=sys.stderr, flush=True)
+        return None
+    from gui.imgui_layer import ImguiLayer
+
+    return ImguiLayer(window, app)
+
+
 def main() -> None:
     window = create_window()
 
@@ -890,6 +921,7 @@ def main() -> None:
         hud=Hud(app.bindings),
         triad=OrientationTriad(),
         bone_tag=BoneTag(),
+        gui=make_gui(window, app),
     )
     pyglet.clock.schedule_interval(lambda dt: zbrush.tick(), POLL_SECONDS)
     run(window, app)

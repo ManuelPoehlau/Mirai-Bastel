@@ -1,8 +1,8 @@
-"""Dear ImGui (imgui-bundle) im Production-Fenster, GUI-Framework-Spike (2026-11-07, `PROVISIONAL`).
+"""Dear ImGui (imgui-bundle) im Production-Fenster (AD-030, Manu 2026-11-07, `PROVISIONAL`).
 
-Ein Layer, der `src/main.py` nicht ändert: er hängt sich nach `install_handlers` an dasselbe Fenster
-(`window.push_handlers` für die Eingabe, ein umhüllter `on_draw` für das Zeichnen). Imports von imgui und pyglet.gl
-sind lazy (Muster `hud.py`), damit Tests ohne GL und ohne imgui laufen.
+`install_handlers(..., gui=layer)` ruft `layer.attach()` (Eingabe über `window.push_handlers`, oben auf dem Stack) und
+`layer.draw()` am Ende von `on_draw`, unter einem offenen Menü. Imports von imgui und pyglet.gl sind lazy (Muster
+`hud.py`), damit Tests ohne GL und ohne imgui laufen.
 
 Eingabe: `InputGate` entscheidet pro Ereignis, wer es bekommt (Kriterium 1). Zeichnen: nach dem Viewport und der HUD,
 mit Sicherung und Wiederherstellung des GL-Zustands (Kriterium 2).
@@ -13,8 +13,8 @@ from __future__ import annotations
 import time
 from typing import Callable
 
-from input_gate import InputGate
-import outliner_model as om
+from . import outliner_model as om
+from .input_gate import InputGate, rect_hit
 
 #: pyglet-Modifier-Bits (pyglet.window.key.MOD_*), hier lokal, damit der Modul-Import ohne pyglet geht.
 _MOD_SHIFT, _MOD_CTRL, _MOD_ALT = 1, 2, 4
@@ -83,10 +83,11 @@ class ImguiLayer:
     PANEL_POS = (12.0, 40.0)
     PANEL_SIZE = (280.0, 360.0)
 
-    def __init__(self, window, app, dispatch: Callable[[str], bool] | None = None, guard_gl: bool = True,
-                 open_panel: bool = True) -> None:
+    def __init__(self, window, app, guard_gl: bool = True, open_panel: bool = True,
+                 blocked: Callable[[], bool] | None = None) -> None:
+        """`blocked()`: True, solange etwas Modales (ein Menü) die Eingabe hat; das Panel fängt dann nichts."""
         self.window, self.app = window, app
-        self.dispatch = dispatch or app.dispatch_command
+        self._blocked = blocked or (lambda: False)
         self.guard_gl = guard_gl
         self.open_panel = open_panel
         self.collapsed: set = set()  # reiner Ansichtszustand des Panels (kein Dokumentzustand)
@@ -141,11 +142,13 @@ class ImguiLayer:
         st.set_color_(c.header_active, v(80, 110, 150, 230))
         st.set_color_(c.text, v(225, 230, 240))  # HUD `_VALUE`
 
-    def attach(self) -> None:
-        """Eingabe-Handler oben auf den Stack (laufen vor denen aus `install_handlers`) und `on_draw` umhüllen."""
+    def attach(self, blocked: Callable[[], bool] | None = None) -> None:
+        """Eingabe-Handler oben auf den Stack (laufen vor denen aus `install_handlers`)."""
         if self._attached:
             return
         self._attached = True
+        if blocked is not None:
+            self._blocked = blocked
         w = self.window
         w.push_handlers(
             on_mouse_press=self.on_mouse_press, on_mouse_release=self.on_mouse_release,
@@ -153,13 +156,6 @@ class ImguiLayer:
             on_mouse_scroll=self.on_mouse_scroll, on_key_press=self.on_key_press,
             on_key_release=self.on_key_release, on_text=self.on_text, on_text_motion=self.on_text_motion,
         )
-        inner = _find_handler(w, "on_draw")
-
-        @w.event
-        def on_draw():
-            if inner is not None:
-                inner()
-            self.draw()
 
     def close(self) -> None:
         """Baut Renderer und Kontext ab (nötig, wenn ein Prozess mehrere Fenster nacheinander baut, z.B. Tests)."""
@@ -178,9 +174,9 @@ class ImguiLayer:
         return app.interaction_owner is not None or app.pointer.active
 
     def _over_panel(self, x: float, y: float) -> bool:
-        if self._gesture_running():
+        if self._gesture_running() or self._blocked():
             return False
-        return any(_rect_hit(r, x, self.window.height - y) for r in self.panel_rects)
+        return any(rect_hit(r, x, self.window.height - y) for r in self.panel_rects)
 
     def _keyboard_wanted(self) -> bool:
         return self._ctx is not None and self._imgui.get_io().want_text_input
@@ -329,7 +325,7 @@ class ImguiLayer:
         changed, self.filter_text = imgui.input_text_with_hint("##filter", "Filter (Textfeld-Test)", self.filter_text)
         self._remember("filter", 0)
         if not object_mode:
-            imgui.text_colored(imgui.ImVec4(1.0, 0.8, 0.43, 1.0), "Modus 4 (Object) wählen: Aktionen sind aus")
+            imgui.text_colored(imgui.ImVec4(1.0, 0.8, 0.43, 1.0), "Auswählen nur in Modus 4 (Object)")
         needle = self.filter_text.strip().lower()
         listed = om.rows(app.scene, app.selection.objects, frozenset(self.collapsed))
         if needle:
@@ -353,11 +349,9 @@ class ImguiLayer:
         indent = row.depth * 16.0
         eye_w = imgui.get_frame_height()
         # Auge
-        imgui.begin_disabled(not object_mode)
         if self._eye_button(row, eye_w):
             self._eye(row)
         self._remember("eye", row.object_id)
-        imgui.end_disabled()
         imgui.same_line()
         imgui.dummy(imgui.ImVec2(indent, 1))
         imgui.same_line(0, 0)
@@ -405,21 +399,19 @@ class ImguiLayer:
             dl.add_line(imgui.ImVec2(cx - r, cy + r), imgui.ImVec2(cx + r, cy - r), c, 1.5)
         return pressed
 
-    # -- Aktionen: alles über vorhandene Commands, Panel hält keinen Dokumentzustand ------------------------------
+    # -- Aktionen: ein Aufruf an Application, das Panel hält keinen Dokumentzustand ---------------------------------
     def _click(self, row, mods) -> None:
         _, ids = om.click_selection(self.app.selection.objects, row.object_id, mods)
-        self.app.selection.objects = ids  # wie `ObjectController.select_at`; Highlight zieht `update_viewport` nach
-        self.last_note = f"Auswahl: {len(ids)}"
+        self.app.select_objects(ids)  # wie ein Viewport-Klick in Modus 4; das Highlight zieht `update_viewport` nach
+        self.last_note = f"Auswahl: {len(self.app.selection.objects)}"
 
     def _eye(self, row) -> None:
         plan = om.eye_plan(row)
-        if plan.command is None:
+        if not plan.ids:
             self.last_note = f"{row.name}: {plan.note}"
             return
-        if plan.select is not None:
-            self.app.selection.objects = set(plan.select)
-        ok = self.dispatch(plan.command)
-        self.last_note = (f"{plan.command}: {'ok' if ok else 'abgelehnt'}" + (f" ({plan.note})" if plan.note else ""))
+        self.app.set_objects_hidden(plan.ids, plan.hide)
+        self.last_note = self.app.status_message
 
 
 def _key_map(imgui) -> dict:
@@ -437,18 +429,3 @@ def _key_map(imgui) -> dict:
     for ch in "abcdefghijklmnopqrstuvwxyz":
         m[getattr(k, ch.upper())] = getattr(imgui.Key, ch)  # Ctrl+A/C/V/X im Textfeld
     return m
-
-
-def _find_handler(window, name: str):
-    """Der `on_draw` aus `install_handlers`: pyglets `@window.event` legt ihn in den Handler-Stack, nicht als Attribut
-    (Befund: dafür gibt es keine öffentliche API; `_event_stack` ist pyglet-intern, Pinning auf pyglet 2.x)."""
-    for frame in getattr(window, "_event_stack", ()):
-        if name in frame:
-            return frame.pop(name)
-    return getattr(window, name, None)
-
-
-def _rect_hit(rect, x, y) -> bool:
-    from input_gate import rect_hit
-
-    return rect_hit(rect, x, y)

@@ -261,3 +261,57 @@ def test_hide_and_group_keys_act_on_objects_in_mode_4_and_on_components_otherwis
     app.dispatch_command(commands.SET_VERTEX_MODE)
     app.dispatch_command(commands.HIDE_SELECTION)  # component hide: the objects stay as they are
     assert not any(o.hidden for o in app.scene.objects.values())
+
+
+# -- Panel entries (AD-030): by id, not by the object selection -------------------------------------------------
+
+
+def test_set_objects_hidden_by_id_hides_shows_and_undoes_without_touching_other_selection():
+    app = _app()
+    a, b = _with_teeth(app, 2)
+    _select(app, a)
+    assert app.set_objects_hidden([b], True)
+    assert app.scene.objects[b].hidden and not app.scene.objects[a].hidden
+    assert app.selection.objects == {a}
+    assert app.set_objects_hidden([b], True) is False  # already hidden
+    assert app.set_objects_hidden([b], False)
+    assert not app.scene.objects[b].hidden
+    app.dispatch_command(commands.UNDO)
+    assert app.scene.objects[b].hidden
+    app.dispatch_command(commands.UNDO)
+    assert not app.scene.objects[b].hidden
+
+
+def test_set_objects_hidden_refuses_edit_object_and_hiding_drops_selection():
+    app = _app()
+    (tooth,) = _with_teeth(app, 1)
+    assert app.set_objects_hidden([app.scene.edit_object_id], True) is False
+    _select(app, tooth)
+    assert app.set_objects_hidden([tooth], True)
+    assert tooth not in app.selection.objects
+
+
+def test_set_objects_hidden_group_follows_members_and_show_restores():
+    app = _app()
+    a, b, c = _with_teeth(app, 3)
+    _select(app, a, b)
+    _run(app, commands.GROUP_OBJECTS)
+    (group,) = [o for o in app.scene.objects.values() if o.state is ObjectState.GROUP]
+    assert app.set_objects_hidden([group.id, a], True)  # a rides along with its group
+    assert app.scene.is_hidden(a) and app.scene.is_hidden(b) and not app.scene.is_hidden(c)
+    assert app.set_objects_hidden([group.id], False)
+    assert not app.scene.is_hidden(a)
+
+
+def test_select_objects_only_in_object_mode_and_skips_hidden():
+    app = _app()
+    a, b = _with_teeth(app, 2)
+    app.selection.objects = set()
+    app.dispatch_command(commands.SET_VERTEX_MODE)  # nothing selected: the edit object stays the cube
+    assert app.select_objects([a]) is False
+    _select(app, b)
+    assert app.set_objects_hidden([b], True)
+    assert app.select_objects([a, b]) is True
+    assert app.selection.objects == {a}
+    assert app.select_objects([a]) is False  # no change
+    assert app.select_objects([]) is True and app.selection.objects == set()

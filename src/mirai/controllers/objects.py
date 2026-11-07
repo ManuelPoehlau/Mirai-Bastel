@@ -754,6 +754,60 @@ class ObjectController:
         services.status(f"Shown {', '.join(repr(obj.name) for obj in hidden)}")
         return True
 
+    # -- Panel entries (GUI framework AD-030, 2026-11-07, Manu "Go"): by object id, not by the object selection -------
+
+    def select_objects(self, object_ids) -> bool:
+        """The object selection becomes exactly these objects (the outliner's click; the same effect as a viewport
+        click in mode `4`, without a pick). Only in mode `4`, never under a held W/E/R, hidden and unknown objects
+        are left out. True = the selection changed; no history entry (as a click)."""
+        services = self.services
+        if self.gestures.session is not None or services.interaction_owner is not None:
+            return False
+        selection = services.selection
+        if selection.mode is not SelectionMode.OBJECT:
+            return False
+        scene = services.scene
+        wanted = {oid for oid in object_ids if oid in scene.objects and not scene.is_hidden(oid)}
+        if wanted == set(selection.objects):
+            return False
+        selection.objects = wanted
+        self._selection_changed()
+        self.sync_highlight()
+        return True
+
+    def set_hidden(self, object_ids, hidden: bool) -> bool:
+        """Hide / show these objects (the outliner's eye), one Undo step, in any mode. A group stands for its members
+        (they follow its flag); the edit object and the groups it hangs in stay visible (as `hide_selected`); a
+        member whose group is also named rides along. Hiding drops the objects from the selection."""
+        label = "Hide object" if hidden else "Show object"
+        if self.refused_during_interaction(label):
+            return False
+        services = self.services
+        scene = services.scene
+        keep = self._kept_visible()
+        targets, blocked = [], []
+        for obj in without_riders(scene, object_ids):
+            if obj.hidden == hidden:
+                continue
+            (blocked if hidden and obj.id in keep else targets).append(obj)
+        if not targets:
+            services.status(
+                f"{label}: {blocked[0].name!r} holds the edit object {scene.edit_object.name!r} - it stays visible"
+                if blocked
+                else f"{label}: already {'hidden' if hidden else 'shown'}"
+            )
+            return False
+        before = services.selection_snapshot()
+        removed: set = set()
+        for obj in targets:
+            obj.hidden = hidden
+            if hidden:
+                removed.add(obj.id)
+                removed.update(member.id for member in scene.descendants_of(obj.id))
+        self._visibility_changed(before, [(obj, not hidden, hidden) for obj in targets], label, removed or None)
+        services.status(f"{'Hidden' if hidden else 'Shown'} {', '.join(repr(obj.name) for obj in targets)}")
+        return True
+
     def group_selected(self) -> bool:
         """A new group (an object with an empty mesh) holding the selected objects; a selected member whose own group
         is also selected rides along with it. The group hangs where the members hung when they all shared one group,

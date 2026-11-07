@@ -2,18 +2,11 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+import tests._bootstrap  # noqa: F401
 
-_ROOT = Path(__file__).resolve().parents[3]
-for _p in (_ROOT / "src", _ROOT):
-    sys.path.insert(0, str(_p))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from mirai.application import Application  # noqa: E402
-from mirai.interaction import commands  # noqa: E402
-
-import outliner_model as om  # noqa: E402
+from gui import outliner_model as om
+from mirai.application import Application
+from mirai.interaction import commands
 
 
 def _app():
@@ -53,28 +46,25 @@ def test_click_modifiers_match_the_viewport_table():
     assert om.click_selection({1}, 3, ("alt",))[1] == {1, 3}
 
 
-def test_eye_on_visible_selects_then_hides_and_edit_object_refuses():
+def test_eye_hides_a_visible_object_and_refuses_the_edit_object():
     app = _app()
     (tooth,) = _teeth(app, 1)
     listed = {r.object_id: r for r in om.rows(app.scene, app.selection.objects)}
     plan = om.eye_plan(listed[tooth])
-    assert plan.command == commands.HIDE_OBJECTS and plan.select == frozenset({tooth})
-    app.selection.objects = set(plan.select)
-    assert app.dispatch_command(plan.command)
-    assert app.scene.objects[tooth].hidden
+    assert plan.ids == (tooth,) and plan.hide is True
+    assert app.set_objects_hidden(plan.ids, plan.hide)
     again = {r.object_id: r for r in om.rows(app.scene, app.selection.objects)}
     assert again[tooth].hidden and again[tooth].effectively_hidden
     edit = again[app.scene.edit_object_id]
-    assert not edit.can_hide and om.eye_plan(edit).command is None
+    assert not edit.can_hide and om.eye_plan(edit).ids == ()
 
 
-def test_eye_on_hidden_can_only_show_all():
+def test_eye_on_hidden_shows_just_that_object():
     app = _app()
     a, b = _teeth(app, 2)
-    app.selection.objects = {a}
-    app.dispatch_command(commands.HIDE_OBJECTS)
+    app.set_objects_hidden([a, b], True)
     row = {r.object_id: r for r in om.rows(app.scene, ())}[a]
     plan = om.eye_plan(row)
-    assert plan.command == commands.SHOW_ALL_OBJECTS
-    assert app.dispatch_command(plan.command)
-    assert not app.scene.objects[a].hidden
+    assert plan.ids == (a,) and plan.hide is False
+    assert app.set_objects_hidden(plan.ids, plan.hide)
+    assert not app.scene.objects[a].hidden and app.scene.objects[b].hidden

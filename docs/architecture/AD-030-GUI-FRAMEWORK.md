@@ -1,9 +1,9 @@
 # AD-030 — GUI-Framework für Panels: Dear ImGui (imgui-bundle) auf pyglet
 
-**Status:** DECIDED (Manu, 2026-11-07): **Ja**, Dear ImGui (`imgui-bundle`) ist das Panel-Framework. Optik („schlicht, an die HUD
-angepasst, ein-/ausklappbar“) und Aufwand für neue Panels passen; Python 3.12.10 erfüllt Bedingung §6.1. Offen bleiben §6.4–§6.7
-(Core-/Application-Änderungen, Taste, HiDPI, Messung auf dem Referenz-PC). Es gibt noch keinen Code in `src/`; der Spike liegt in [`experiments/gui_framework_spike/`](../../experiments/gui_framework_spike/README.md)
-(Branch `claude/gui-framework-spike`). Auftrag: [GUI_FRAMEWORK_SPIKE_BRIEF](../design/GUI_FRAMEWORK_SPIKE_BRIEF.md).
+**Status:** DECIDED and IMPLEMENTED (Phase 1, Manu "Go" 2026-11-07): **Ja**, Dear ImGui (`imgui-bundle`) ist das Panel-Framework. Optik („schlicht, an die HUD
+angepasst, ein-/ausklappbar“) und Aufwand für neue Panels passen; Python 3.12.10 erfüllt Bedingung §6.1. Phase 1 ist in `src/gui/` umgesetzt (§9); offen bleiben §6.5–§6.7
+(Taste, HiDPI, Messung auf dem Referenz-PC); der Spike liegt in [`experiments/gui_framework_spike/`](../../experiments/gui_framework_spike/README.md)
+(Branch `claude/gui-framework-spike`; Messskript dort geblieben). Auftrag: [GUI_FRAMEWORK_SPIKE_BRIEF](../design/GUI_FRAMEWORK_SPIKE_BRIEF.md).
 **Builds on:** [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) §6.8 (Outliner-Daten und -Commands, unverändert), AD-013 Addendum
 2026-10-28 (BindingSet = Eingabe-Wahrheit), [GUI_Bestandsaufnahme](../design/GUI_Bestandsaufnahme.md). Kein `src/core/`-Eingriff.
 
@@ -149,3 +149,21 @@ Unterschied. (Ein früherer Lauf zeigte +7 ms; Ursache war die ungleiche Szene �
 
 Windows/macOS-Lauf, echte GPU, HiDPI, Python 3.9 (nicht installierbar), IME, Drag-and-Drop, mehrere Fenster pro Prozess
 (`ImguiLayer.close()` ist nötig, imgui-Backend ist prozessglobal).
+
+## 9. Umsetzung Phase 1 (2026-11-07, Manu: „ich würde es direkt in src einbauen, du hast mein Go“)
+
+Die drei Application-Änderungen aus §4 sind gemacht, ohne die Outliner-Commands (AD-021 §6.8) anzufassen:
+
+| Änderung | Wo |
+|---|---|
+| `Application.set_objects_hidden(ids, hidden)` (Einzel-Aus-/Einblenden, ein Undo-Schritt, Edit-Objekt bleibt sichtbar, Gruppe = Mitglieder) | `ObjectController.set_hidden`, §4.1 erledigt |
+| `Application.select_objects(ids)` (nur Modus `4`, nie unter W/E/R, Verstecktes/Unbekanntes bleibt draußen, kein History-Eintrag) | `ObjectController.select_objects`, §4.2 erledigt |
+| `install_handlers(..., gui=layer)`: Eingabe oben auf dem Handler-Stack (am Ende, nach den `@window.event`), Zeichnen nach der HUD unter einem offenen Menü, im offenen Menü fängt das Panel nichts | `src/main.py`, §4.3 erledigt (kein `_event_stack`-Zugriff mehr) |
+
+Das Auge arbeitet jetzt je Objekt (Aus und Ein) und in jedem Modus; Auswählen nur in Modus `4`. Die Tasten Ctrl+H / Alt+H usw. und
+`config/keymap.json` sind unverändert; das Panel belegt keine Taste (Umschalten per Knopf).
+
+Fehlt `imgui-bundle` (oder Python < 3.10), startet `src/main.py` ohne Panels und schreibt eine Zeile auf stderr.
+Code: `src/gui/` (`outliner_model`, `input_gate`, `imgui_layer`), Tests `tests/test_gui_*.py` (die Fensterprüfung
+`test_gui_imgui_window.py` unter `xvfb-run -a` in eigenem Prozess; in einer Sammel-Sitzung mit headless-Modulen wird sie übersprungen),
+`tests/test_object_outliner.py` (Panel-Einstiege). Messskript: `experiments/gui_framework_spike/bench.py`.

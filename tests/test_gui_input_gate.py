@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+import tests._bootstrap  # noqa: F401
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from input_gate import InputGate, rect_hit  # noqa: E402
+from gui.input_gate import InputGate, rect_hit
 
 PANEL = (10.0, 10.0, 100.0, 200.0)
 

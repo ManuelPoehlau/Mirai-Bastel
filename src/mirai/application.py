@@ -794,6 +794,16 @@ class Application:
             lambda: PRIMITIVES[kind](), name or unique_object_name(self.scene, kind), f"Add {kind}"
         )
 
+    def select_objects(self, object_ids) -> bool:
+        """Outliner click (AD-030): the object selection becomes exactly `object_ids` (mode `4` only; hidden and
+        unknown ids are left out). True = it changed. See `ObjectController.select_objects`."""
+        return self._objects.select_objects(object_ids)
+
+    def set_objects_hidden(self, object_ids, hidden: bool) -> bool:
+        """Outliner eye (AD-030): hide or show these objects by id, one Undo step. The edit object and its groups
+        stay visible. See `ObjectController.set_hidden`."""
+        return self._objects.set_hidden(object_ids, hidden)
+
     def import_obj(self, path: str | Path) -> SceneObject | None:
         """OBJ import (SPACE menu, `src/obj_files.py`): the file becomes a new editable object like an
         Add-Mesh primitive (same Undo step, selection and status behaviour), named after the file.
