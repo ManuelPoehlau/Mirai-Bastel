@@ -1,7 +1,8 @@
 # AD-030 — GUI-Framework für Panels: Dear ImGui (imgui-bundle) auf pyglet
 
-**Status:** PROPOSED (2026-11-07) — Empfehlung **Ja, mit Bedingungen** (§6). Entscheidung liegt bei Manu (§7). Es gibt
-keinen Code in `src/`; der Spike liegt in [`experiments/gui_framework_spike/`](../../experiments/gui_framework_spike/README.md)
+**Status:** DECIDED (Manu, 2026-11-07): **Ja**, Dear ImGui (`imgui-bundle`) ist das Panel-Framework. Optik („schlicht, an die HUD
+angepasst, ein-/ausklappbar“) und Aufwand für neue Panels passen; Python 3.12.10 erfüllt Bedingung §6.1. Offen bleiben §6.4–§6.7
+(Core-/Application-Änderungen, Taste, HiDPI, Messung auf dem Referenz-PC). Es gibt noch keinen Code in `src/`; der Spike liegt in [`experiments/gui_framework_spike/`](../../experiments/gui_framework_spike/README.md)
 (Branch `claude/gui-framework-spike`). Auftrag: [GUI_FRAMEWORK_SPIKE_BRIEF](../design/GUI_FRAMEWORK_SPIKE_BRIEF.md).
 **Builds on:** [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) §6.8 (Outliner-Daten und -Commands, unverändert), AD-013 Addendum
 2026-10-28 (BindingSet = Eingabe-Wahrheit), [GUI_Bestandsaufnahme](../design/GUI_Bestandsaufnahme.md). Kein `src/core/`-Eingriff.
@@ -123,7 +124,7 @@ Unterschied. (Ein früherer Lauf zeigte +7 ms; Ursache war die ungleiche Szene �
 
 ## 6. Entscheidung (Empfehlung): Ja, mit Bedingungen
 
-1. **Python ≥ 3.10** als Mindestversion (CLAUDE.md, `requirements`), oder die Entscheidung kippt auf „nein“.
+1. **Python ≥ 3.10** als Mindestversion (CLAUDE.md, `requirements`). Erfüllt: Manu nutzt 3.12.10; CLAUDE.md und Requirements werden bei der Übernahme (§7 Phase 1) angepasst.
 2. **macOS:** Zielplattform ist Apple Silicon, macOS ≥ 14; Intel-Mac nur mit imgui-bundle ≤ 1.92.5. (Referenz-PC ist
    nach bisherigem Stand Windows; bitte bestätigen.)
 3. **Pinning** exakt, Hochziehen nur mit Lauf von `tests` des Spikes/`bench.py`.
