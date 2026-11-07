@@ -216,3 +216,77 @@ def test_move_gesture_follows_the_mouse_over_the_panel(env):
     assert calls["motion"] == 1
     window.dispatch_event("on_key_release", key.W, 0)
     _frame(window, 1)
+
+
+def _type(window, text):
+    for ch in text:
+        window.dispatch_event("on_text", ch)
+        _frame(window, 1)
+
+
+def _enter(window):
+    window.dispatch_event("on_key_press", key.RETURN, 0)
+    window.dispatch_event("on_key_release", key.RETURN, 0)
+    _frame(window, 2)
+
+
+def _double_click(window, pos):
+    _click(window, pos)
+    _click(window, pos)
+    _frame(window, 2)
+
+
+def test_double_click_renames_object_enter_commits_and_keys_stay_in_the_field(env):
+    window, app, layer, calls = env
+    tooth = _id_of(app, "Zahn 3")
+    _double_click(window, _center(layer.item_rects[("row", tooth)]))
+    assert layer.editing == ("o", tooth) and layer._keyboard_wanted()
+    _type(window, "Eck")  # der Text ist beim Start markiert: er ersetzt den Namen
+    _enter(window)
+    assert app.scene.objects[tooth].name == "Eck"
+    assert layer.editing is None
+    assert calls["key"] == 0  # Enter und die Buchstaben kamen nie bei Application an
+    app.dispatch_command(commands.UNDO)
+    assert app.scene.objects[tooth].name == "Zahn 3"
+
+
+def test_escape_cancels_the_rename_and_is_not_a_cancel_command(env):
+    window, app, layer, calls = env
+    tooth = _id_of(app, "Zahn 3")
+    _double_click(window, _center(layer.item_rects[("row", tooth)]))
+    _type(window, "X")
+    window.dispatch_event("on_key_press", key.ESCAPE, 0)
+    window.dispatch_event("on_key_release", key.ESCAPE, 0)
+    _frame(window, 2)
+    assert layer.editing is None and app.scene.objects[tooth].name == "Zahn 3"
+    assert calls["key"] == 0
+
+
+def _with_rig(app):
+    from core import Bone, BoneId, Rig
+
+    bones = (
+        Bone(BoneId(0), "Root", None, (0, 0, 0), (0, 1, 0)),
+        Bone(BoneId(1), "Spine", BoneId(0), (0, 1, 0), (0, 2, 0)),
+    )
+    app.scene.rig = Rig(bones=bones, bone_id_counter=2)
+    return BoneId(0), BoneId(1)
+
+
+def test_bones_listed_under_skeleton_click_selects_eye_hides_double_click_renames(env):
+    window, app, layer, calls = env
+    root, spine = _with_rig(app)
+    _frame(window, 3)
+    _click(window, _center(layer.item_rects[("bone", spine)]))
+    assert app._skeleton.current_bone == spine and calls["press"] == 0
+    _click(window, _center(layer.item_rects[("bone_eye", root)]))
+    assert root in app._skeleton.hidden and spine not in app._skeleton.hidden
+    _click(window, _center(layer.item_rects[("bone_eye", root)]))
+    assert app._skeleton.hidden == set()
+    _click(window, _center(layer.item_rects[("eye", "skeleton")]))
+    assert app._skeleton.hidden == {root, spine}
+    _double_click(window, _center(layer.item_rects[("bone", spine)]))
+    assert layer.editing == ("b", spine)
+    _type(window, "Wirbel")
+    _enter(window)
+    assert app.scene.rig.bone(spine).name == "Wirbel"

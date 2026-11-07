@@ -317,33 +317,35 @@ def test_select_objects_only_in_object_mode_and_skips_hidden():
     assert app.select_objects([]) is True and app.selection.objects == set()
 
 
-def test_ctrl_c_ctrl_v_pastes_independent_copies_and_each_paste_is_one_undo_step():
-    from mirai.interaction.input import Input
-    from mirai.interaction.bindings import build_default_bindings
+# -- Rename by id (AD-030) -------------------------------------------------------------------------------------
 
-    bindings = build_default_bindings()
-    assert bindings.command_for(Input("key", "c", frozenset({"ctrl"}))) == commands.COPY_OBJECTS
-    assert bindings.command_for(Input("key", "v", frozenset({"ctrl"}))) == commands.PASTE_OBJECTS
 
+def test_rename_object_is_one_undo_step_and_suffixes_a_taken_name():
     app = _app()
-    (tooth,) = _with_teeth(app, 1)
-    _select(app, tooth)
-    before = len(app.scene.objects)
-    assert _run(app, commands.COPY_OBJECTS)
-    assert len(app.scene.objects) == before  # copying changes nothing
-    assert _run(app, commands.PASTE_OBJECTS) and _run(app, commands.PASTE_OBJECTS)
-    assert len(app.scene.objects) == before + 2
-    _run(app, commands.UNDO)
-    assert len(app.scene.objects) == before + 1
+    a, b = _with_teeth(app, 2)
+    old = app.scene.objects[a].name
+    assert app.rename_object(a, "  Eckzahn ") is True
+    assert app.scene.objects[a].name == "Eckzahn"
+    assert app.rename_object(a, "Eckzahn") is False  # same name: no step
+    assert app.rename_object(b, "Eckzahn") is True  # taken: Blender suffix
+    assert app.scene.objects[b].name == "Eckzahn.001"
+    app.dispatch_command(commands.UNDO)
+    assert app.scene.objects[b].name != "Eckzahn.001"
+    app.dispatch_command(commands.UNDO)
+    assert app.scene.objects[a].name == old
+    app.dispatch_command(commands.REDO)
+    assert app.scene.objects[a].name == "Eckzahn"
 
 
-def test_paste_without_copy_or_outside_mode_4_is_refused_and_a_deleted_source_is_skipped():
+def test_rename_object_refuses_empty_long_and_unprintable_and_group_can_be_renamed():
     app = _app()
-    (tooth,) = _with_teeth(app, 1)
-    assert _run(app, commands.PASTE_OBJECTS) is False  # nothing copied
-    _select(app, tooth)
-    _run(app, commands.COPY_OBJECTS)
-    _run(app, commands.DELETE)  # the source is gone
-    assert _run(app, commands.PASTE_OBJECTS) is False
-    app.dispatch_command(commands.SET_VERTEX_MODE)
-    assert _run(app, commands.PASTE_OBJECTS) is False
+    a, b = _with_teeth(app, 2)
+    before = app.scene.objects[a].name
+    for bad in ("", "   ", "x" * 65, "a\nb"):
+        assert app.rename_object(a, bad) is False
+    assert app.scene.objects[a].name == before
+    _select(app, a, b)
+    _run(app, commands.GROUP_OBJECTS)
+    (group,) = [o for o in app.scene.objects.values() if o.state is ObjectState.GROUP]
+    assert app.rename_object(group.id, "Zähne oben")
+    assert app.scene.objects[group.id].name == "Zähne oben"

@@ -167,3 +167,19 @@ Fehlt `imgui-bundle` (oder Python < 3.10), startet `src/main.py` ohne Panels und
 Code: `src/gui/` (`outliner_model`, `input_gate`, `imgui_layer`), Tests `tests/test_gui_*.py` (die Fensterprüfung
 `test_gui_imgui_window.py` unter `xvfb-run -a` in eigenem Prozess; in einer Sammel-Sitzung mit headless-Modulen wird sie übersprungen),
 `tests/test_object_outliner.py` (Panel-Einstiege). Messskript: `experiments/gui_framework_spike/bench.py`.
+
+## 10. Umbenennen und Knochen im Outliner (2026-11-07, Manu)
+
+Manu: Umbenennen per Doppelklick auf den Namen; die Bones direkt mit in den Outliner, um sie ein- und auszublenden. Look und
+Regions bleiben offen (Idee: Regions im Outliner unter dem jeweiligen Mesh auflisten; noch nicht entschieden, nichts gebaut).
+
+| Was | Umsetzung |
+|---|---|
+| Doppelklick auf einen Namen (Objekt, Gruppe, Knochen) | Textfeld an Ort und Stelle, Text markiert; Enter oder Klick daneben übernimmt, Esc verwirft. Solange das Feld aktiv ist, bekommt es alle Tasten (Esc ist dann kein Cancel-Command, Enter kein Command); `InputGate` unverändert |
+| `Application.rename_object(id, name)` | `ObjectController.rename`, ein Undo-Schritt (`ObjectNameCommand`); Ränder weg, 1-64 druckbare Zeichen; trägt ein anderes Objekt den Namen schon, kommt ein `.001`-Suffix (wie bei neuen Objekten; die ZBrush-Brücke setzt eindeutige Namen voraus) |
+| `Application.rename_bone(id, name)` | `SkeletonController.rename_bone(name, bone=...)` (`RigCommand`, ein Undo-Schritt); Knochennamen müssen eindeutig sein (`Rig`), ein belegter Name wird abgelehnt, mit Statuszeile |
+| Knochen im Outliner | eigene Kopfzeile „Skeleton (n)“ unter den Objekten (ein-/ausklappbar, Auge dort blendet alle ein/aus), darunter der Baum nach Elternknochen (Einrückung, Ein-/Ausklappen); Klick = aktueller Knochen (`Application.select_bone`, in jedem Modus) |
+| Knochen ein-/ausblenden | `Application.set_bones_hidden(ids, hidden)`. **Entscheidung (Engineering, `PROVISIONAL`): Ansichtszustand** im `SkeletonController` wie die Pose: nicht gezeichnet, nicht pickbar, von Next/Previous übersprungen; kein Undo-Schritt, nicht in der Szenendatei, mit einer neuen Szene weg. Alternative: ein `hidden`-Feld am `Bone` (`src/core/rig.py`, gespeichert, mit Undo) wie bei Objekten; das ändert das Rig-Format und gehört dann in eine eigene Core-Entscheidung. Manu sagt, welche Variante |
+
+Tests: `tests/test_object_outliner.py` (Umbenennen), `tests/test_gui_bones.py` (Knochen), `tests/test_gui_imgui_window.py`
+(Doppelklick, Enter, Esc, Tasten im Feld, Knochen-Klick/Auge). `layer_declarations.METHOD_CLASSES`: `rename_bone` = „non-mesh“.

@@ -91,6 +91,11 @@ class ImguiLayer:
         self.guard_gl = guard_gl
         self.open_panel = open_panel
         self.collapsed: set = set()  # reiner Ansichtszustand des Panels (kein Dokumentzustand)
+        self.collapsed_bones: set = set()
+        self.skeleton_open = True
+        self.editing: tuple | None = None  # ("o"|"b", id): die Zeile im Umbenennen (Doppelklick)
+        self.edit_buf = ""
+        self._edit_focus = False
         self.filter_text = ""
         self.panel_rects: list[tuple] = []  # imgui-Koordinaten (oben links) des letzten Frames
         self.frame_ms: list[float] = []
@@ -322,7 +327,7 @@ class ImguiLayer:
         app = self.app
         io = imgui.get_io()
         object_mode = app.selection.mode.name == "OBJECT"
-        changed, self.filter_text = imgui.input_text_with_hint("##filter", "Filter (Textfeld-Test)", self.filter_text)
+        changed, self.filter_text = imgui.input_text_with_hint("##filter", "Filter", self.filter_text)
         self._remember("filter", 0)
         if not object_mode:
             imgui.text_colored(imgui.ImVec4(1.0, 0.8, 0.43, 1.0), "Auswählen nur in Modus 4 (Object)")
@@ -340,8 +345,94 @@ class ImguiLayer:
             mods.add("alt")
         for row in listed:
             self._row(row, mods, object_mode)
+        count = len(listed)
+        skeleton = app._skeleton
+        bones = om.bone_rows(skeleton.rig, skeleton.current_bone, skeleton.hidden, frozenset(self.collapsed_bones))
+        if bones:
+            count += self._skeleton_section(bones, needle)
         imgui.end_child()
-        imgui.text_disabled(self.last_note or f"{len(listed)} Zeilen")
+        imgui.text_disabled(self.last_note or f"{count} Zeilen")
+
+    def _skeleton_section(self, bones, needle: str) -> int:
+        """Die Knochen unter einer eigenen Kopfzeile; das Auge der Kopfzeile blendet alle ein/aus."""
+        imgui = self._imgui
+        skeleton = self.app._skeleton
+        everything = [r.bone_id for r in om.bone_rows(skeleton.rig, None)]
+        all_hidden = all(b in skeleton.hidden for b in everything)
+        imgui.push_id("skeleton")
+        if self._eye_button(all_hidden, all_hidden, imgui.get_frame_height()):
+            self.app.set_bones_hidden(everything, not all_hidden)
+            self.last_note = self.app.status_message
+        self._remember("eye", "skeleton")
+        imgui.same_line()
+        if imgui.small_button("[-]" if self.skeleton_open else "[+]"):
+            self.skeleton_open = not self.skeleton_open
+        imgui.same_line()
+        imgui.text_colored(imgui.ImVec4(0.55, 0.7, 0.95, 1.0), f"Skeleton ({len(everything)})")
+        imgui.pop_id()
+        shown = 0
+        if self.skeleton_open:
+            for row in bones:
+                if needle and needle not in row.name.lower():
+                    continue
+                self._bone_row(row)
+                shown += 1
+        return shown + 1
+
+    def _bone_row(self, row) -> None:
+        imgui = self._imgui
+        imgui.push_id(f"b{int(row.bone_id)}")
+        if self._eye_button(row.hidden, row.hidden, imgui.get_frame_height()):
+            self.app.set_bones_hidden([row.bone_id], not row.hidden)
+            self.last_note = self.app.status_message
+        self._remember("bone_eye", row.bone_id)
+        imgui.same_line()
+        imgui.dummy(imgui.ImVec2(row.depth * 16.0 + 16.0, 1))
+        imgui.same_line(0, 0)
+        if row.has_children:
+            if imgui.small_button("[+]" if row.bone_id in self.collapsed_bones else "[-]"):
+                self.collapsed_bones.symmetric_difference_update({row.bone_id})
+            imgui.same_line()
+        col = imgui.ImVec4(0.55, 0.58, 0.65, 1.0) if row.hidden else imgui.ImVec4(0.88, 0.9, 0.94, 1.0)
+        action = self._name_cell(("b", row.bone_id), row.name, row.name, row.current, col)
+        self._remember("bone", row.bone_id)
+        if action == "click":
+            self.app.select_bone(row.bone_id)
+            self.last_note = self.app.status_message
+        elif isinstance(action, tuple):  # ("rename", text)
+            self.app.rename_bone(row.bone_id, action[1])
+            self.last_note = self.app.status_message
+        imgui.pop_id()
+
+    def _name_cell(self, ekey, label: str, current_name: str, selected: bool, color):
+        """Der Name einer Zeile: Klick, Doppelklick = Umbenennen im Textfeld (Enter oder Klick daneben übernimmt, Esc
+        verwirft). Rückgabe: "click", ("rename", Text) oder None."""
+        imgui = self._imgui
+        if self.editing == ekey:
+            if self._edit_focus:
+                imgui.set_keyboard_focus_here()
+                self._edit_focus = False
+                first = True
+            else:
+                first = False
+            imgui.set_next_item_width(-1)
+            flags = imgui.InputTextFlags_.enter_returns_true | imgui.InputTextFlags_.auto_select_all
+            entered, self.edit_buf = imgui.input_text("##rename", self.edit_buf, flags)
+            self._remember("rename", ekey[1])
+            if imgui.is_key_pressed(imgui.Key.escape, False):
+                self.editing = None
+                return None
+            if entered or (not first and imgui.is_item_deactivated()):
+                self.editing = None
+                return ("rename", self.edit_buf) if self.edit_buf != current_name else None
+            return None
+        imgui.push_style_color(imgui.Col_.text, color)
+        clicked, _ = imgui.selectable(label, selected, imgui.SelectableFlags_.allow_overlap)
+        imgui.pop_style_color()
+        if imgui.is_item_hovered() and imgui.is_mouse_double_clicked(0):
+            self.editing, self.edit_buf, self._edit_focus = ekey, current_name, True
+            return None
+        return "click" if clicked else None
 
     def _row(self, row, mods, object_mode: bool) -> None:
         imgui = self._imgui
@@ -349,7 +440,7 @@ class ImguiLayer:
         indent = row.depth * 16.0
         eye_w = imgui.get_frame_height()
         # Auge
-        if self._eye_button(row, eye_w):
+        if self._eye_button(row.hidden, row.effectively_hidden, eye_w):
             self._eye(row)
         self._remember("eye", row.object_id)
         imgui.same_line()
@@ -365,12 +456,13 @@ class ImguiLayer:
         col = imgui.ImVec4(0.55, 0.58, 0.65, 1.0) if dim else (
             imgui.ImVec4(0.55, 0.7, 0.95, 1.0) if row.is_reference else (
                 imgui.ImVec4(1.0, 0.8, 0.43, 1.0) if row.is_group else imgui.ImVec4(0.88, 0.9, 0.94, 1.0)))
-        imgui.push_style_color(imgui.Col_.text, col)
-        clicked, _ = imgui.selectable(label, row.selected, imgui.SelectableFlags_.allow_overlap)
-        imgui.pop_style_color()
+        action = self._name_cell(("o", row.object_id), label, row.name, row.selected, col)
         self._remember("row", row.object_id)
-        if clicked and object_mode:
+        if action == "click" and object_mode:
             self._click(row, mods)
+        elif isinstance(action, tuple):
+            self.app.rename_object(row.object_id, action[1])
+            self.last_note = self.app.status_message
         if imgui.begin_popup_context_item("##ctx"):  # Framework-Fähigkeit prüfen (Brief: nicht im Spike)
             imgui.text_disabled(f"{om.group_of(row)}: {row.name}")
             imgui.menu_item("Duplizieren (kommt als Panel-Aktion)", "", False, False)
@@ -381,7 +473,7 @@ class ImguiLayer:
         a, b = self._imgui.get_item_rect_min(), self._imgui.get_item_rect_max()
         self.item_rects[(kind, key)] = (a.x, a.y, b.x - a.x, b.y - a.y)
 
-    def _eye_button(self, row, size: float) -> bool:
+    def _eye_button(self, hidden: bool, dim: bool, size: float) -> bool:
         imgui = self._imgui
         pressed = imgui.invisible_button("##eye", imgui.ImVec2(size, size))
         a, b = imgui.get_item_rect_min(), imgui.get_item_rect_max()
@@ -389,8 +481,7 @@ class ImguiLayer:
         cx, cy = (a.x + b.x) / 2, (a.y + b.y) / 2
         r = size * 0.32
         hot = imgui.is_item_hovered()
-        hidden = row.hidden
-        c = imgui.get_color_u32(imgui.ImVec4(0.38, 0.4, 0.45, 1) if (hidden or row.effectively_hidden)
+        c = imgui.get_color_u32(imgui.ImVec4(0.38, 0.4, 0.45, 1) if (hidden or dim)
                                 else imgui.ImVec4(0.9, 0.92, 0.96, 1) if hot else imgui.ImVec4(0.72, 0.76, 0.84, 1))
         dl.add_ellipse(imgui.ImVec2(cx, cy), imgui.ImVec2(r * 1.25, r * 0.8), c, 0.0, 20, 1.5)
         if not hidden:

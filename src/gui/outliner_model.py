@@ -72,6 +72,37 @@ def rows(scene, selected: Iterable, collapsed: frozenset = frozenset()) -> list[
     return out
 
 
+@dataclass(frozen=True)
+class BoneRow:
+    bone_id: object
+    name: str
+    depth: int
+    has_children: bool
+    current: bool  # die Zeile des aktuellen Knochens (hervorgehoben)
+    hidden: bool
+
+
+def bone_rows(rig, current, hidden: Iterable = (), collapsed: frozenset = frozenset()) -> list[BoneRow]:
+    """Die Knochen als Baum nach Elternknochen (Wurzeln und Geschwister nach ID, Tiefensuche); Kinder eingeklappter
+    Knochen fehlen. Ohne Rig leer."""
+    if rig is None:
+        return []
+    off = set(hidden)
+    out: list[BoneRow] = []
+
+    def emit(bone, depth: int) -> None:
+        kids = rig.children(bone.id)
+        out.append(BoneRow(bone.id, bone.name, depth, bool(kids), bone.id == current, bone.id in off))
+        if bone.id not in collapsed:
+            for kid in kids:
+                emit(rig.bone(kid), depth + 1)
+
+    for bone in rig.bones:
+        if bone.parent is None:
+            emit(bone, 0)
+    return out
+
+
 def click_selection(current: Iterable, clicked, modifiers: Iterable[str]) -> tuple[str, set]:
     """Klick auf eine Zeile -> (Select-Command des Viewports, neue Auswahl). Dieselbe Tabelle wie ein Viewport-Klick."""
     mods = frozenset(m for m in modifiers if m in ("shift", "ctrl", "alt"))

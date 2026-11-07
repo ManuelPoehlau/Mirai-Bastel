@@ -626,6 +626,9 @@ class SkeletonController:
         self.last_pose: dict = {}
         self.current: Optional[BoneId] = None
         self.pose_mode = False
+        #: Bones hidden by the outliner's eye (AD-030): view state like the pose - not drawn, not picked, skipped by
+        #: next / previous; no Undo step, not saved, gone with a new scene.
+        self.hidden: set = set()
         self._bound: dict = {}  # id(mesh) -> [mesh, watch, bound]
         #: the three stage-7 policies, in order (AD-028 §8.2)
         self.policies = (self.pose_mode_refusal, self.posed_refusal, self.placement_refusal)
@@ -691,6 +694,7 @@ class SkeletonController:
         self.pose, self.last_pose = {}, {}
         self.current = None
         self.pose_mode = False
+        self.hidden = set()
         for entry in self._bound.values():
             entry[1].close()
         self._bound.clear()
@@ -703,6 +707,7 @@ class SkeletonController:
         if any(not has(b) for b in self.pose):
             self.set_pose({b: p for b, p in self.pose.items() if has(b)})
         self.last_pose = {b: p for b, p in self.last_pose.items() if has(b)}
+        self.hidden = {b for b in self.hidden if has(b)}
         if self.current_bone is None:
             self.pose_mode = False
 
@@ -795,12 +800,17 @@ class SkeletonController:
         )
         return True
 
-    def rename_bone(self, name: str | None = None) -> bool:
+    def rename_bone(self, name: str | None = None, bone: BoneId | None = None) -> bool:
+        """The current bone, or `bone` (the outliner's double click, AD-030), gets `name` (without: the next of
+        `BONE_NAMES`). A name another bone has is refused (bone names are unique)."""
         services = self.services
         label = "Rename bone"
         if self._busy(label):
             return False
-        bone = self.current_bone
+        if bone is None:
+            bone = self.current_bone
+        elif self.rig is None or not self.rig.has_bone(bone):
+            return False
         if bone is None:
             services.status(f"{label}: no bone yet ({self.key_text(commands.BONE_ADD)} adds one)")
             return False
@@ -815,7 +825,8 @@ class SkeletonController:
                  and BONE_NAMES[(start + i) % len(BONE_NAMES)] != old),
                 None,
             )
-        if not name or name == old or name in taken:
+        name = name.strip() if isinstance(name, str) else name
+        if not name or name == old or name in taken or len(name) > 64 or not name.isprintable():
             services.status(f"{label}: {name!r} is not a free name")
             return False
         self._push_rig(rig.with_name(bone, name), f"Rename bone {old!r} {name!r}")
@@ -864,8 +875,40 @@ class SkeletonController:
             return False
         ids = rig.bone_ids()
         at = ids.index(self.current_bone)
-        self.current = ids[(at + step) % len(ids)]
+        for i in range(1, len(ids) + 1):  # the next bone that is not hidden (the outliner's eye)
+            candidate = ids[(at + step * i) % len(ids)]
+            if candidate not in self.hidden:
+                break
+        else:
+            services.status("Bones: all hidden (outliner eye)")
+            return False
+        self.current = candidate
         services.status(f"Current bone: {self.bone_name(self.current)!r} ({ids.index(self.current) + 1}/{len(ids)})")
+        return True
+
+    def select(self, bone: BoneId) -> bool:
+        """The outliner's click on a bone row: it becomes the current bone (as a click in pose mode, in any mode)."""
+        rig = self.rig
+        if rig is None or not rig.has_bone(bone) or self.gestures.session is not None:
+            return False
+        if self.current == bone:
+            return False
+        self.current = bone
+        self.services.status(f"Current bone: {self.bone_name(bone)!r}")
+        return True
+
+    def set_hidden(self, bones, hidden: bool) -> bool:
+        """The outliner's eye on bones: hide / show these (view state, `self.hidden`). True = something changed."""
+        rig = self.rig
+        if rig is None:
+            return False
+        known = {b for b in bones if rig.has_bone(b)}
+        changed = (known - self.hidden) if hidden else (known & self.hidden)
+        if not changed:
+            return False
+        self.hidden = (self.hidden | changed) if hidden else (self.hidden - changed)
+        names = ", ".join(repr(self.bone_name(b)) for b in sorted(changed))
+        self.services.status(f"{'Hidden' if hidden else 'Shown'} bone {names}")
         return True
 
     def toggle_pose_mode(self) -> bool:
@@ -1048,6 +1091,8 @@ class SkeletonController:
         width, height = services.viewport_size
         best = None
         for bid, head, tail in self.posed_segments():
+            if bid in self.hidden:
+                continue
             a = camera.project_to_screen(head, width, height)
             b = camera.project_to_screen(tail, width, height)
             if a is None or b is None:
@@ -1083,6 +1128,8 @@ class SkeletonController:
         current = self.current_bone
         items = []
         for bid, head, tail in segments:
+            if bid in self.hidden:
+                continue
             color = COLOR_BONE_CURRENT if bid == current else COLOR_BONE
             if not self.pose_mode:
                 color = color[:3] + (BONE_DIM_ALPHA,)
