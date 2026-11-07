@@ -17,6 +17,7 @@ in `src/` überführen. Welche Tests wann laufen: AGENTS.md §8a.
 | [`mehlsack_lab/`](mehlsack_lab/README.md) | Box per Mausrad, Loop/Ring direkt ziehen, signierte Einflusskurve (WP-MEHLSACK-LAB-01). Geparkt (Manu, 2026-10-29): Code bleibt, kein offener Test in ATELIER | nur gezielt |
 | [`goz_probe/`](goz_probe/README.md) | E1: GoZ-Handshake ZBrush 2022.0.8 ↔ Python (Registrierung als GoZ-App, Rückmeldung, Achsen, Reihenfolge) für die [ZBrush-Brücke](../docs/future_ideas/ZBRUSH_BRIDGE_AUDIT.md). Am 2026-11-05 auf dem Referenz-PC gelaufen: Handshake funktioniert (Ergebnis README §11); Grundlage für P1 | nur gezielt |
 | [`drag_cost/`](drag_cost/README.md) | GL-Kostensonden für W-Drag, Navigation, Hover und Picking (WP-VIEW-PATCH-01, WP-VIEW-PERF-01); Messwerkzeug für die offene Viewport-Performance | nur gezielt |
+| [`gui_framework_spike/`](gui_framework_spike/README.md) | Spike Dear ImGui (imgui-bundle) mit pyglet im Production-Fenster, Outliner-Panel; Ergebnis [AD-030](../docs/architecture/AD-030-GUI-FRAMEWORK.md) (2026-11-07). Nicht Artist-validiert | nur gezielt |
 
 ## Regressionsschutz
 

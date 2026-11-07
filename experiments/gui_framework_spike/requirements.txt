@@ -1,0 +1,4 @@
+# Nur für den Spike (GUI-Framework, AD-030). Nicht in requirements-dev.txt: die Entscheidung steht aus (Manu).
+# imgui-bundle >= 1.5 verlangt Python >= 3.10 (das Projekt sagt 3.9+), siehe AD-030 §3.4.
+imgui-bundle==1.93.0
+pyglet
