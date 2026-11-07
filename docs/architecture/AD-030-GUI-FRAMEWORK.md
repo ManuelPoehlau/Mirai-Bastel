@@ -191,3 +191,25 @@ Tests: `tests/test_object_outliner.py` (Umbenennen), `tests/test_gui_bones.py` (
   ausgeblendet ist; ohne ausgeblendete Knochen bleibt die Datei bytegleich zu vorher). Ältere Dateien laden unverändert.
 - **Namensschild entfernt:** der Knochenname am Kopf im Viewport (`BoneTag`, `Application.current_bone_tag`) ist weg; die
   Namen stehen im Outliner. Die HUD-Zeile „Rig“ (aktueller Knochen · Anzahl · Rest/Posed) bleibt.
+
+## 12. Menüleiste, SPACE-Menü und GoZ-Panel (2026-11-07, Manu)
+
+Entscheidung Manu: Dateiverwaltung in eine Leiste oben wie in jeder App; das SPACE-Menü bekommt oben „Add +“; GoZ ein
+eigenes Panel, weil dort später Optionen hineinmüssen (was alles gesendet wird: nur Mesh, auch Morphs, ...).
+
+- **Leiste „Datei“** (`gui/menus.py`): Neu (leere Szene: ein leeres Edit-Objekt, `Application.load_scene("empty")`), Öffnen
+  (Szenen aus `scenes/`), Speichern (Strg+S; bei neuer Szene wie „Speichern unter“), Speichern unter... (Namensfeld,
+  gleichnamig = überschrieben, Hinweis im Dialog), Importieren (OBJ-Liste aus `obj/`), Exportieren... (Namensfeld).
+  Dateinamen: `scene_files.clean_file_name` (Endung fällt weg, Rest außer `A-Za-z0-9_-` wird `_`).
+- **SPACE** öffnet ein ImGui-Popup am Cursor: Add + (Grundkörper, Basehead, Baseman als neue, **bearbeitbare** Objekte über
+  `import_obj`; das ist meine Annahme zu „Add“, Referenz gäbe es weiter per Shift+Klick bei den Beispielszenen), Textur
+  an/aus, Beispielszenen. Shift+A (Add Mesh) und Shift+M (Mirror) sind unverändert (alte Menüs, keine Taste geändert).
+  Ohne `imgui-bundle` bleibt das alte SPACE-Menü mit allen Zeilen.
+- **GoZ-Panel** (`gui/goz_panel.py`, Knopf neben „Outliner“): Senden, offene Rückgaben, Eintragen. Die Brücke
+  (`ZBrushBridge`) bleibt unverändert; Sende-Optionen kommen später.
+- **Eingabe:** solange ein Popup oder Dialog des Layers offen ist, gehört ihm die ganze Maus (`popup_open`, ein Klick daneben
+  schließt und erreicht den Viewport nie) und die Tasten sind modal (Esc oder SPACE schließen). Die Leiste ist ein weiteres
+  Panel-Rechteck. Keine Taste neu belegt.
+- **Bekannt:** liegt der HUD-Streifen oben (Variante `Strip top`), überdeckt die Leiste ihn; Standard ist unten.
+  Die Zeilen `SceneFiles.entries` / `ObjFiles.entries` / `ZBrushBridge.entries` bleiben für das Fallback-Menü bestehen.
+

@@ -658,7 +658,7 @@ class Application:
         `mirai.subdivision.gl_lines.GLSubdLineOverlay`). Die SubD-Vorschau (`self.subdivision`) hängt
         sich an jeden neuen Viewport; ohne Senke rechnet sie headless dieselben Segmente."""
         self._morph.drop_view()  # the reset replaces every object, the view included
-        if geometry_type in ("cube", "obj"):
+        if geometry_type in ("cube", "obj", "empty"):
             reset_scene(self.scene, *self._build_mesh(geometry_type, obj_path))
         elif geometry_type == "file":
             if scene_path is None:
@@ -734,6 +734,8 @@ class Application:
 
         if geometry_type in PRIMITIVES:
             return PRIMITIVES[geometry_type](), geometry_type, None
+        if geometry_type == "empty":
+            return Mesh(), "object", None  # File > New: one empty edit object (a Scene always has one)
         if geometry_type == "obj":
             if obj_path is None:
                 raise ValueError('geometry_type="obj" requires obj_path')

@@ -20,6 +20,8 @@ import re
 import time
 from pathlib import Path
 
+from scene_files import clean_file_name
+
 DEFAULT_OBJ_DIR = Path(__file__).resolve().parent.parent / "obj"
 MAX_LISTED_FILES = 10
 
@@ -77,9 +79,22 @@ class ObjFiles:
             counter += 1
         return path
 
-    def export(self) -> bool:
+    def path_for(self, name: str) -> Path | None:
+        stem = clean_file_name(name, ".obj")
+        return None if stem is None else self.directory / f"{stem}.obj"
+
+    def suggested_name(self) -> str:
+        return clean_file_name(self.app.scene.edit_object.name, ".obj") or "object"
+
+    def export(self, name: str | None = None) -> bool:
+        """Das Edit-Objekt als OBJ; mit `name` (Datei > Export) unter diesem Namen (eine gleichnamige Datei wird
+        überschrieben), ohne die alte Zeile „OBJ exportieren“ mit Zeitstempel."""
+        path = self.new_path() if name is None else self.path_for(name)
+        if path is None:
+            self.app.set_status("Export OBJ: the name has no usable characters")
+            return False
         try:
-            return self.app.export_obj(self.new_path())
+            return self.app.export_obj(path)
         except OSError as exc:
             self.app.set_status(f"Export OBJ failed: {exc}")
             return False

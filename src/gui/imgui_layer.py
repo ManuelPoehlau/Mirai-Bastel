@@ -80,13 +80,20 @@ class ImguiLayer:
     """Das Panel-System. `attach()` einmal nach `install_handlers`; `open_panel` schaltet den Outliner (kein Key:
     ein kleiner Knopf links oben, der Layer belegt keine Taste, Manus Freigabe fehlt)."""
 
-    PANEL_POS = (12.0, 40.0)
+    PANEL_POS = (12.0, 60.0)
     PANEL_SIZE = (280.0, 360.0)
 
     def __init__(self, window, app, guard_gl: bool = True, open_panel: bool = True,
-                 blocked: Callable[[], bool] | None = None) -> None:
-        """`blocked()`: True, solange etwas Modales (ein Menü) die Eingabe hat; das Panel fängt dann nichts."""
+                 blocked: Callable[[], bool] | None = None, services=None) -> None:
+        """`blocked()`: True, solange etwas Modales (ein Menü) die Eingabe hat; das Panel fängt dann nichts.
+        `services` (`gui.menus.Services`): schaltet Menüleiste, SPACE-Menü und GoZ-Panel ein; ohne bleibt es der Outliner."""
         self.window, self.app = window, app
+        self.services = services
+        self.menus = None
+        self.goz = None
+        self.goz_open = False
+        self.popup_open = False  # ein Menü/Dialog des Layers ist offen: ihm gehört die ganze Maus (letzter Frame)
+
         self._blocked = blocked or (lambda: False)
         self.guard_gl = guard_gl
         self.open_panel = open_panel
@@ -122,6 +129,13 @@ class ImguiLayer:
         self._last_time = time.perf_counter()
         self._style()
         self._dpi_scale()
+        if self.services is not None:
+            from .goz_panel import GozPanel
+            from .menus import Menus
+
+            self.menus = Menus(imgui, self.app, self.services)
+            if self.services.zbrush is not None:
+                self.goz = GozPanel(imgui, self.services.zbrush)
 
     def _dpi_scale(self) -> None:
         w, _ = self.window.get_size()
@@ -181,6 +195,8 @@ class ImguiLayer:
     def _over_panel(self, x: float, y: float) -> bool:
         if self._gesture_running() or self._blocked():
             return False
+        if self.popup_open:
+            return True
         return any(rect_hit(r, x, self.window.height - y) for r in self.panel_rects)
 
     def _keyboard_wanted(self) -> bool:
@@ -272,6 +288,27 @@ class ImguiLayer:
         if self._ctx is not None and self._keyboard_wanted():
             return True
 
+    # -- Menüs von außen (`main.py`) ---------------------------------------------------------------------------
+    @property
+    def has_menus(self) -> bool:
+        return self.services is not None
+
+    def open_space_menu(self, x: float, y: float) -> None:
+        """SPACE: das Menü am Cursor (pyglet-Koordinaten, y nach oben)."""
+        if self.services is not None:
+            self._ensure()
+            self.menus.open_space(float(x), self.window.height - float(y))
+
+    def save(self) -> None:
+        """Strg+S: speichern, bei einer neuen Szene mit Namensdialog."""
+        self._ensure()
+        self.menus.save()
+
+    def popup_key(self) -> None:
+        """Esc oder SPACE bei offenem Popup: alle Menüs und Dialoge des Layers schließen (im nächsten Frame)."""
+        if self.menus is not None:
+            self.menus.close_all()
+
     # -- Zeichnen ----------------------------------------------------------------------------------------------
     def draw(self) -> None:
         self._ensure()
@@ -297,30 +334,50 @@ class ImguiLayer:
 
     def _build(self) -> None:
         imgui = self._imgui
-        imgui.set_next_window_pos(imgui.ImVec2(8, 8), imgui.Cond_.always)
+        rects: list[tuple] = []
+        bar_h = 0.0
+        if self.menus is not None:
+            bar = self.menus.bar()
+            rects.append(bar)
+            bar_h = bar[3]
+        imgui.set_next_window_pos(imgui.ImVec2(8, bar_h + 6), imgui.Cond_.always)
         flags = (imgui.WindowFlags_.no_decoration | imgui.WindowFlags_.no_background
                  | imgui.WindowFlags_.always_auto_resize | imgui.WindowFlags_.no_move
                  | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
-        toggle_rect = None
         imgui.begin("##toggle", None, flags)
         if imgui.small_button("Outliner " + ("[-]" if self.open_panel else "[+]")):
             self.open_panel = not self.open_panel
+        if self.goz is not None:
+            imgui.same_line()
+            if imgui.small_button("GoZ " + ("[-]" if self.goz_open else "[+]")):
+                self.goz_open = not self.goz_open
         pos, size = imgui.get_window_pos(), imgui.get_window_size()
-        toggle_rect = (pos.x, pos.y, size.x, size.y)
+        rects.append((pos.x, pos.y, size.x, size.y))
         imgui.end()
-        if not self.open_panel:
-            self.panel_rects = [toggle_rect]
-            return
-        imgui.set_next_window_pos(imgui.ImVec2(*self.PANEL_POS), imgui.Cond_.first_use_ever)
-        imgui.set_next_window_size(imgui.ImVec2(*self.PANEL_SIZE), imgui.Cond_.first_use_ever)
-        imgui.set_next_window_size_constraints(imgui.ImVec2(200, 120), imgui.ImVec2(600, 900))
-        imgui.begin("Outliner", None, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.no_saved_settings
-                    | imgui.WindowFlags_.no_nav)
-        self._outliner()
-        pos, size = imgui.get_window_pos(), imgui.get_window_size()
-        imgui.end()
-        # Zwei getrennte Rechtecke (Knopf, Panel): was dazwischen liegt, gehört dem Viewport.
-        self.panel_rects = [toggle_rect, (pos.x, pos.y, size.x, size.y)]
+        # Getrennte Rechtecke (Leiste, Knöpfe, Panels): was dazwischen liegt, gehört dem Viewport.
+        if self.open_panel:
+            imgui.set_next_window_pos(imgui.ImVec2(*self.PANEL_POS), imgui.Cond_.first_use_ever)
+            imgui.set_next_window_size(imgui.ImVec2(*self.PANEL_SIZE), imgui.Cond_.first_use_ever)
+            imgui.set_next_window_size_constraints(imgui.ImVec2(200, 120), imgui.ImVec2(600, 900))
+            imgui.begin("Outliner", None, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.no_saved_settings
+                        | imgui.WindowFlags_.no_nav)
+            self._outliner()
+            pos, size = imgui.get_window_pos(), imgui.get_window_size()
+            imgui.end()
+            rects.append((pos.x, pos.y, size.x, size.y))
+        if self.goz is not None and self.goz_open:
+            w = self.window.get_size()[0]
+            imgui.set_next_window_pos(imgui.ImVec2(w - 250.0, self.PANEL_POS[1]), imgui.Cond_.first_use_ever)
+            imgui.begin("GoZ", None, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
+                        | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
+            self.goz.draw()
+            pos, size = imgui.get_window_pos(), imgui.get_window_size()
+            imgui.end()
+            rects.append((pos.x, pos.y, size.x, size.y))
+        self.panel_rects = rects
+        if self.menus is not None:
+            self.menus.popups()
+            self.popup_open = self.menus.popup_open
 
     def _outliner(self) -> None:
         imgui = self._imgui
