@@ -21,9 +21,9 @@ is dimmed.
 
 Change detection: `Hud.update` builds the snapshot every frame (a handful of attribute reads, no
 mesh walk) and compares it with the one the drawables were built from; pyglet labels are rebuilt
-only when it, the window size or a variant changed - orbit/zoom touch none of them. The triad and the bone tag are
-not part of it: they reuse three lines / three labels / one label and only move them (`OrientationTriad`,
-`BoneTag`), and only when their inputs changed.
+only when it, the window size or a variant changed - orbit/zoom touch none of them. The triad is
+not part of it: it reuses three lines / three labels and only moves them (`OrientationTriad`), and only when its
+inputs changed. (The bone name tag at the bone's head was removed 2026-11-07: the names are in the outliner.)
 
 Strip variants (open Artist question E4, switchable at runtime, window commands, not saved): position `bottom` /
 `top`, detail `compact` / `full`. `H` is plain show / hide. The triad sits in a viewport corner (`bottom-left` /
@@ -862,101 +862,4 @@ class OrientationTriad:
             return
         self.update(camera, width, height, inset_top, inset_bottom)
         if self._parts is not None:
-            self._parts.draw()
-
-
-#: The current bone's colour (`controllers.skeleton.COLOR_BONE_CURRENT`, orange) as bytes.
-_BONE_RGB = (255, 170, 60)
-_BONE_TAG_OFFSET = (10.0, 8.0)
-
-
-class _TagParts:
-    """One label on a dark plate, created once."""
-
-    def __init__(self) -> None:
-        from pyglet import graphics, shapes, text
-
-        self.batch = graphics.Batch()
-        back, front = graphics.Group(order=0), graphics.Group(order=1)
-        self.plate = shapes.Rectangle(0, 0, 10, LINE_HEIGHT - 2, color=_BG, batch=self.batch, group=back)
-        self.label = text.Label("", x=0, y=0, anchor_x="left", anchor_y="center", font_size=FONT_SIZE,
-                                color=(*_BONE_RGB, 255), batch=self.batch, group=front)
-
-    def draw(self) -> None:
-        from pyglet import gl
-
-        gl.glDisable(gl.GL_DEPTH_TEST)
-        gl.glEnable(gl.GL_BLEND)
-        gl.glBlendFunc(gl.GL_SRC_ALPHA, gl.GL_ONE_MINUS_SRC_ALPHA)
-        self.batch.draw()
-
-
-class BoneTag:
-    """The current bone's name at its posed head (Phase A1, item 5), in pose mode and in the component modes while
-    a rig exists - the answer to "on which bone does `8` write". One label and its plate, reused and moved."""
-
-    def __init__(self) -> None:
-        self.moves = 0
-        self.text_sets = 0
-        self.make_parts = _TagParts
-        self._parts = None
-        self._failed = False
-        self._shown = False
-        self._name: Optional[str] = None
-        self._at: Optional[tuple[float, float]] = None
-        #: The last screen position of the name (None = hidden) - for tests.
-        self.position: Optional[tuple[float, float]] = None
-
-    @property
-    def shown(self) -> bool:
-        return self._shown
-
-    @property
-    def name(self) -> Optional[str]:
-        return self._name
-
-    def update(self, tag, camera, width: int, height: int) -> bool:
-        """`tag` = `Application.current_bone_tag()`. True = the drawables changed."""
-        point = None
-        if tag is not None:
-            screen = camera.project_to_screen(tag[1], int(width), int(height))
-            if screen is not None and 0 <= screen[0] <= width and 0 <= screen[1] <= height:
-                point = (screen[0] + _BONE_TAG_OFFSET[0], screen[1] + _BONE_TAG_OFFSET[1])
-        self.position = point
-        if point is None:
-            changed = self._shown
-            self._shown = False
-            return changed
-        parts = self._ensure_parts()
-        if parts is None:
-            return False
-        name = tag[0]
-        changed = not self._shown
-        self._shown = True
-        if name != self._name:
-            self._name = name
-            parts.label.text = name
-            parts.plate.width = parts.label.content_width + 8
-            self.text_sets += 1
-            changed = True
-        if self._at is None or abs(point[0] - self._at[0]) >= 0.5 or abs(point[1] - self._at[1]) >= 0.5:
-            self._at = point
-            parts.label.x, parts.label.y = point[0] + 4, point[1]
-            parts.plate.position = (point[0], point[1] - (LINE_HEIGHT - 2) / 2)
-            changed = True
-        if changed:
-            self.moves += 1
-        return changed
-
-    def _ensure_parts(self):
-        if self._parts is None and not self._failed:
-            try:
-                self._parts = self.make_parts()
-            except Exception:
-                self._failed = True
-        return self._parts
-
-    def draw(self, tag, camera, width: int, height: int) -> None:
-        self.update(tag, camera, width, height)
-        if self._shown and self._parts is not None:
             self._parts.draw()

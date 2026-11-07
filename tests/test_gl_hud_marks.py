@@ -15,7 +15,7 @@ import pytest
 
 pyglet = pytest.importorskip("pyglet", reason="pyglet not installed")
 
-from hud import BoneTag, Hud, OrientationTriad, triad_center  # noqa: E402
+from hud import Hud, OrientationTriad, triad_center  # noqa: E402
 from mirai.application import Application  # noqa: E402
 from mirai.viewport import gizmo  # noqa: E402
 from mirai.viewport.camera import OrbitCamera  # noqa: E402
@@ -147,19 +147,6 @@ def test_the_triad_keeps_clear_of_the_strip_on_screen(gl_window, app, position, 
     assert not _find(buf, strip, red), "no triad pixel lands on the strip"
     cx, cy = triad_center(corner, triad.length, WIDTH, HEIGHT, hud.inset_top, hud.inset_bottom)
     assert _find(buf, (cx, cy - 3, cx + triad.length, cy + 3), red)
-
-
-def test_the_bone_tag_draws_with_the_real_label(gl_window, app):
-    tag = BoneTag()
-    camera = app.camera
-    info = ("Jaw", (0.0, 0.0, 0.0))
-    _frame(gl_window, lambda: tag.draw(info, camera, WIDTH, HEIGHT))
-    assert tag.shown and tag.name == "Jaw" and tag._parts is not None and tag.position is not None
-    x, y = tag.position
-    buf = _frame(gl_window, lambda: tag.draw(info, camera, WIDTH, HEIGHT))
-    assert _differs(_pixel(buf, x + 1, y)), "the dark plate behind the name"
-    buf = _frame(gl_window, lambda: tag.draw(None, camera, WIDTH, HEIGHT))
-    assert not _differs(_pixel(buf, x + 1, y)) and not tag.shown
 
 
 def test_orbiting_moves_the_real_triad_without_building_objects(gl_window):

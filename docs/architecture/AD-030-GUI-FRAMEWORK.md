@@ -179,7 +179,15 @@ Regions bleiben offen (Idee: Regions im Outliner unter dem jeweiligen Mesh aufli
 | `Application.rename_object(id, name)` | `ObjectController.rename`, ein Undo-Schritt (`ObjectNameCommand`); Ränder weg, 1-64 druckbare Zeichen; trägt ein anderes Objekt den Namen schon, kommt ein `.001`-Suffix (wie bei neuen Objekten; die ZBrush-Brücke setzt eindeutige Namen voraus) |
 | `Application.rename_bone(id, name)` | `SkeletonController.rename_bone(name, bone=...)` (`RigCommand`, ein Undo-Schritt); Knochennamen müssen eindeutig sein (`Rig`), ein belegter Name wird abgelehnt, mit Statuszeile |
 | Knochen im Outliner | eigene Kopfzeile „Skeleton (n)“ unter den Objekten (ein-/ausklappbar, Auge dort blendet alle ein/aus), darunter der Baum nach Elternknochen (Einrückung, Ein-/Ausklappen); Klick = aktueller Knochen (`Application.select_bone`, in jedem Modus) |
-| Knochen ein-/ausblenden | `Application.set_bones_hidden(ids, hidden)`. **Entscheidung (Engineering, `PROVISIONAL`): Ansichtszustand** im `SkeletonController` wie die Pose: nicht gezeichnet, nicht pickbar, von Next/Previous übersprungen; kein Undo-Schritt, nicht in der Szenendatei, mit einer neuen Szene weg. Alternative: ein `hidden`-Feld am `Bone` (`src/core/rig.py`, gespeichert, mit Undo) wie bei Objekten; das ändert das Rig-Format und gehört dann in eine eigene Core-Entscheidung. Manu sagt, welche Variante |
+| Knochen ein-/ausblenden | `Application.set_bones_hidden(ids, hidden)`. **Zuerst Ansichtszustand, am selben Tag auf Manus Wunsch gespeichert (§11).** Ausgeblendet = nicht gezeichnet, nicht pickbar, von Next/Previous übersprungen |
 
 Tests: `tests/test_object_outliner.py` (Umbenennen), `tests/test_gui_bones.py` (Knochen), `tests/test_gui_imgui_window.py`
 (Doppelklick, Enter, Esc, Tasten im Feld, Knochen-Klick/Auge). `layer_declarations.METHOD_CLASSES`: `rename_bone` = „non-mesh“.
+
+## 11. Knochen-Sichtbarkeit in der Szenendatei, Namensschild entfernt (2026-11-07, Manu)
+
+- **Gespeichert:** `Bone.hidden` (Core, [CORE_V1_FREEZE §7.1](CORE_V1_FREEZE.md) „Bone visibility“). Das Auge ist jetzt ein
+  Undo-Schritt (`RigCommand`), die Szenendatei trägt `"hidden": true` am Knochen (Version 8, nur wenn ein Knochen
+  ausgeblendet ist; ohne ausgeblendete Knochen bleibt die Datei bytegleich zu vorher). Ältere Dateien laden unverändert.
+- **Namensschild entfernt:** der Knochenname am Kopf im Viewport (`BoneTag`, `Application.current_bone_tag`) ist weg; die
+  Namen stehen im Outliner. Die HUD-Zeile „Rig“ (aktueller Knochen · Anzahl · Rest/Posed) bleibt.

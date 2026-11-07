@@ -264,8 +264,8 @@ Scope (binding, see the handoffs):
   commands `can_run` refuses; Display / View / Look / Region / Fixed in the "full" detail. F3 = strip bottom
   <-> top, F4 = compact <-> full, F5 / F6 = the orientation triad's corner / size (window commands, session
   variants, not saved, `PROVISIONAL`). The triad (`OrientationTriad`: world X/Y/Z turned by the camera, always
-  drawn, not clickable) and the current bone's name (`BoneTag`) are read-only overlays after the strip.
-  Window level like the menus: `install_handlers(..., hud=None, triad=None, bone_tag=None)` keeps the old
+  drawn, not clickable) is a read-only overlay after the strip (the bone name tag was removed 2026-11-07: names are in
+  the outliner). Window level like the menus: `install_handlers(..., hud=None, triad=None)` keeps the old
   wiring for the Labs.
 - Panels (AD-030, Manu 2026-11-07, `PROVISIONAL` look, `src/gui/`): Dear ImGui (`imgui-bundle`, Python 3.10+) on the window's own GL
   context. First panel: the Outliner (objects with group indent, click selects like the viewport, eye hides / shows one
@@ -340,7 +340,7 @@ from viewport.gl_point_overlay import GLPointOverlay  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 from viewport.gl_symmetry_overlay import GLSymmetryOverlay  # noqa: E402
 from viewport.gl_triangle_overlay import GLTriangleOverlay  # noqa: E402
-from hud import BoneTag, Hud, OrientationTriad  # noqa: E402
+from hud import Hud, OrientationTriad  # noqa: E402
 from morph_bridge import send_to_morph_lab  # noqa: E402
 from obj_files import ObjFiles  # noqa: E402
 from scene_files import SceneFiles, is_scene_file  # noqa: E402
@@ -459,7 +459,6 @@ def install_handlers(
     mirror_menu: SceneMenu | None = None,
     hud: Hud | None = None,
     triad: OrientationTriad | None = None,
-    bone_tag: BoneTag | None = None,
     gui=None,
 ) -> None:
     """Translates the window's events to `app` (WP-SYM-LAB-03 H6). Needs only
@@ -492,8 +491,8 @@ def install_handlers(
     full) for the session. It only reads `app`. `None` (default) keeps the wiring as it was.
 
     `triad` (GUI Phase A1, `PROVISIONAL`, `src/hud.py`): the permanent XYZ orientation triad in a viewport
-    corner, F5 / F6 switch its corner and size for the session. `bone_tag`: the current bone's name at its posed
-    head. Both only read `app`; `None` (default) keeps the wiring as it was.
+    corner, F5 / F6 switch its corner and size for the session. It only reads `app`; `None` (default) keeps the
+    wiring as it was.
 
     `gui` (AD-030, `src/gui/imgui_layer.py`): the panel layer (Dear ImGui). Its input handlers sit on top of the
     handler stack and keep the mouse only over a panel (or a drag that began there) and the keys only for an active
@@ -716,8 +715,6 @@ def install_handlers(
             inset_top, inset_bottom = hud.inset_top, hud.inset_bottom
         if triad is not None:  # always: also during gestures, in pose mode and in snapped ortho views
             triad.draw(app.camera, window.width, window.height, inset_top, inset_bottom)
-        if bone_tag is not None:
-            bone_tag.draw(app.current_bone_tag(), app.camera, window.width, window.height)
         if gui is not None:
             gui.draw()
         shown = open_menu()
@@ -920,7 +917,6 @@ def main() -> None:
         mirror_menu=mirror_menu,
         hud=Hud(app.bindings),
         triad=OrientationTriad(),
-        bone_tag=BoneTag(),
         gui=make_gui(window, app),
     )
     pyglet.clock.schedule_interval(lambda dt: zbrush.tick(), POLL_SECONDS)

@@ -605,8 +605,8 @@ def test_without_a_hud_h_reaches_the_application_and_does_nothing(wired):
     assert app.status_serial == serial
 
 
-def test_main_wires_a_hud_a_triad_and_a_bone_tag():
-    assert {"Hud", "OrientationTriad", "BoneTag"} <= set(main_module.main.__code__.co_names)
+def test_main_wires_a_hud_and_a_triad():
+    assert {"Hud", "OrientationTriad"} <= set(main_module.main.__code__.co_names)
 
 
 # -- AD-013 addendum 2026-10-28: the window keys are bindings, not literals ---------------------

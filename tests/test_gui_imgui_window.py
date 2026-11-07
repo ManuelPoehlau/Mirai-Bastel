@@ -34,7 +34,7 @@ class run:  # kleine Helfer, wie sie auch das Messskript (`experiments/gui_frame
         layer = ImguiLayer(window, app, **layer_kwargs)
         production.install_handlers(
             window, app, hud=production.Hud(app.bindings), triad=production.OrientationTriad(),
-            bone_tag=production.BoneTag(), gui=layer,
+            gui=layer,
         )
         return window, app, layer
 

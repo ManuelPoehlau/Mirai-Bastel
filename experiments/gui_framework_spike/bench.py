@@ -48,8 +48,7 @@ class run:
         app.frame_scene()
         app.set_viewport_size(window.width, window.height)
         layer = ImguiLayer(window, app, open_panel=with_panel, **layer_kwargs) if with_panel is not None else None
-        production.install_handlers(window, app, hud=production.Hud(app.bindings), triad=production.OrientationTriad(),
-                                    bone_tag=production.BoneTag(), gui=layer)
+        production.install_handlers(window, app, hud=production.Hud(app.bindings), triad=production.OrientationTriad(), gui=layer)
         return window, app, layer
 
     @staticmethod
@@ -127,8 +126,7 @@ def _build_plain(mesh):
         "cube", **production.GL_TYPES)
     app.frame_scene()
     app.set_viewport_size(window.width, window.height)
-    production.install_handlers(window, app, hud=production.Hud(app.bindings), triad=production.OrientationTriad(),
-                                bone_tag=production.BoneTag())
+    production.install_handlers(window, app, hud=production.Hud(app.bindings), triad=production.OrientationTriad())
     run.add_demo_objects(app)  # gleiche Szene wie die imgui-Varianten, sonst misst der Vergleich die Zusatzobjekte
     return window, app, None
 

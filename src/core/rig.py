@@ -6,7 +6,8 @@ behaviour - the pose, the evaluation, the commands - lives in `src/mirai` (`mira
 `PROVISIONAL`.
 
 - `Bone` (frozen): `id` (`BoneId`), `name` (non-empty, unique in the rig), `parent` (`BoneId` or None),
-  `head` / `tail` (finite, `|tail - head| > 1e-9`), `roll` (radians, finite).
+  `head` / `tail` (finite, `|tail - head| > 1e-9`), `roll` (radians, finite), `hidden` (outliner eye, 2026-11-07:
+  not drawn / not picked; saved only when True, so a file without hidden bones is unchanged).
 - `Rig` (frozen): `bones` in ascending `BoneId` order and `bone_id_counter`; validated on
   construction (ids below the counter and unique, parents exist, no cycle, names unique). Pure
   updates return a new value; a new bone takes the counter's id (never reused, AD-001).
@@ -23,7 +24,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from .ids import BoneId
 
@@ -63,9 +64,12 @@ class Bone:
     head: Vec3
     tail: Vec3
     roll: float = 0.0
+    hidden: bool = False
 
     def __post_init__(self) -> None:
         _require_bone_id(self.id, "Bone.id")
+        if not isinstance(self.hidden, bool):
+            raise TypeError(f"Bone.hidden ist ein bool: {self.hidden!r}")
         if self.parent is not None:
             _require_bone_id(self.parent, "Bone.parent")
             if self.parent == self.id:
@@ -90,7 +94,7 @@ class Bone:
         return math.dist(self.head, self.tail)
 
     def to_dict(self) -> dict:
-        return {
+        raw = {
             "id": int(self.id),
             "name": self.name,
             "parent": None if self.parent is None else int(self.parent),
@@ -98,6 +102,9 @@ class Bone:
             "tail": list(self.tail),
             "roll": self.roll,
         }
+        if self.hidden:
+            raw["hidden"] = True  # fehlt = sichtbar (wie `hidden` beim Objekt, Dateiversion 8)
+        return raw
 
     @classmethod
     def from_dict(cls, raw: dict) -> "Bone":
@@ -109,7 +116,14 @@ class Bone:
             head=raw["head"],
             tail=raw["tail"],
             roll=raw["roll"],
+            hidden=_flag(raw.get("hidden", False), "hidden"),
         )
+
+
+def _flag(value: object, what: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{what} muss true oder false sein: {value!r}")
+    return value
 
 
 def _int(value: object, what: str) -> int:
@@ -223,14 +237,24 @@ class Rig:
 
     def with_name(self, bone_id: BoneId, name: str) -> "Rig":
         b = self.bone(bone_id)
-        return self.with_bone(Bone(b.id, name, b.parent, b.head, b.tail, b.roll))
+        return self.with_bone(replace(b, name=name))
+
+    def with_hidden(self, bone_ids: Iterable[BoneId], hidden: bool) -> "Rig":
+        """A new rig whose named bones have `hidden` (unknown ids: `KeyError`)."""
+        ids = set(bone_ids)
+        for bone_id in ids:
+            self.bone(bone_id)
+        return Rig(tuple(replace(b, hidden=hidden) if b.id in ids else b for b in self.bones), self.bone_id_counter)
+
+    def hidden_ids(self) -> frozenset:
+        return frozenset(b.id for b in self.bones if b.hidden)
 
     def without_bone(self, bone_id: BoneId) -> "Rig":
         """A new rig without the bone; its children are re-parented to its parent with their rest
         frames unchanged (AD-028 §3.4). The counter stays (the id is never reused)."""
         gone = self.bone(bone_id)
         bones = tuple(
-            Bone(b.id, b.name, gone.parent, b.head, b.tail, b.roll) if b.parent == bone_id else b
+            replace(b, parent=gone.parent) if b.parent == bone_id else b
             for b in self.bones
             if b.id != bone_id
         )
