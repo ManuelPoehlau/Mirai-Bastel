@@ -1,7 +1,7 @@
 """Szenen speichern und laden im Production-Fenster (`PROVISIONAL`, Manu 2026-10-15).
 
 Entscheidung: keine OS-Dateidialoge; Szenendateien liegen im Ordner `scenes/` (Repo-Wurzel,
-in `.gitignore`) und erscheinen im temporären `SPACE`-Menü (`src/scene_menu.py`) als Zeilen:
+in `.gitignore`) und erscheinen in der Menüleiste „Datei“ (`src/gui/menus.py`, AD-030 §12); das alte SPACE-Menü (`src/scene_menu.py`, Fallback ohne imgui) zeigt sie als Zeilen:
 
     Szene speichern (Strg+S)    - die aktuelle Datei überschreiben, sonst eine neue anlegen
     Als neue Szene speichern    - immer eine neue Datei
@@ -40,6 +40,18 @@ FILE_LABEL_PREFIX = "Datei: "
 
 def is_scene_file(path: str | Path) -> bool:
     return str(path).lower().endswith(SCENE_SUFFIX)
+
+
+def clean_file_name(text: str, suffix: str = SCENE_SUFFIX) -> str | None:
+    """Der Dateistamm aus einer Eingabe (Speichern unter / Export): eine getippte Endung fällt weg, alles außer
+    Buchstaben, Ziffern, `_` und `-` wird zu `_`. None = nichts Brauchbares übrig."""
+    name = text.strip()
+    for tail in (suffix, ".mirai.json", ".obj"):
+        if name.lower().endswith(tail):
+            name = name[: -len(tail)]
+            break
+    name = re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_")
+    return name or None
 
 
 def _stem(path: Path) -> str:
@@ -125,6 +137,46 @@ class SceneFiles:
             return None
         self.current = path
         return path
+
+    def path_for(self, name: str) -> Path | None:
+        """Der Pfad einer Szene dieses Namens im Ordner (None = Name unbrauchbar)."""
+        stem = clean_file_name(name)
+        return None if stem is None else self.directory / f"{stem}{SCENE_SUFFIX}"
+
+    def suggested_name(self) -> str:
+        """Vorschlag für „Speichern unter“: die aktuelle Datei, sonst der Name des Edit-Objekts."""
+        if self.current is not None:
+            return _stem(self.current)
+        return clean_file_name(self.app.scene.edit_object.name) or "scene"
+
+    def save_as(self, name: str) -> Path | None:
+        """„Speichern unter“ mit Namen (Datei > Speichern unter, Manu 2026-11-07); eine gleichnamige Datei wird
+        überschrieben (der Dialog zeigt das an). None = nicht gespeichert (Statuszeile)."""
+        path = self.path_for(name)
+        if path is None:
+            self.app.set_status("Save scene: the name has no usable characters")
+            return None
+        try:
+            saved = self.app.save_scene_file(path)
+        except OSError as exc:
+            self.app.set_status(f"Save scene failed: {exc}")
+            return None
+        if not saved:
+            return None
+        self.current = path
+        self.app.set_status(f"Saved: {path.name}")
+        return path
+
+    def new(self) -> bool:
+        """Datei > Neu: eine leere Szene (ein leeres Objekt), keine aktuelle Datei mehr."""
+        try:
+            self.app.load_scene("empty", **self.gl_types)
+        except Exception as exc:
+            self.app.set_status(f"New scene failed: {exc}")
+            return False
+        self.current = None
+        self.app.set_status("New scene")
+        return True
 
     def load(self, path: str | Path) -> bool:
         """Szenendatei laden; ein Fehler wird Statuszeile, die Szene bleibt dann unverändert."""

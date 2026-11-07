@@ -169,24 +169,24 @@ Scope (binding, see the handoffs):
   Alt+Shift+M clears; masked points are skipped by W/E/R and Smooth / Relax and drawn dark (`GLMaskOverlay` in `GL_TYPES`).
 - Symmetry display (Shift+Ctrl+S, window level): shows / hides the symmetry plane and the seam / problem
   markers (`Application.toggle_symmetry_display`; display only, the definition stays).
-- OBJ import / export (`PROVISIONAL`, `src/obj_files.py`): rows in the SPACE menu - "OBJ exportieren"
-  writes the edit object (world space) to `obj/`, "OBJ importieren: <name>" adds a file of `obj/` as a
-  new editable object. AD-026: UVs come and go with the file, an OBJ's texture (MTL `map_Kd` or a
-  same-named image) becomes the object's texture and shows in the viewport; "Textur anzeigen: an/aus"
-  switches all textures (the row exists while an object has one).
-- ZBrush bridge (`PROVISIONAL`, AD-029 P1, `src/zbrush_bridge.py`): SPACE rows "An ZBrush senden" (the object as
-  `.GoZ` to ZBrush), "ZBrush übernehmen: ..." / "ZBrush als neues Objekt: ..." / "ZBrush verwerfen: ..." for a return
-  that arrived after GoZ in ZBrush (D1: applied only on that row, one Undo step), and once "ZBrush: Mirai bei GoZ
-  eintragen". No key. The bridge polls its inbox 4 times per second (`ZBrushBridge.tick`).
-- Scene files (`PROVISIONAL`, Manu 2026-10-15, `src/scene_files.py`): the
-  SPACE menu starts with "Szene speichern (Strg+S)", "Als neue Szene
-  speichern" and the saved scenes in `scenes/` ("Datei: <name>", newest
-  first); clicking a file row loads it (all objects, the edit object,
-  symmetry; selection/history reset, camera re-framed). Ctrl+S overwrites the
-  current scene file (the one last loaded or saved), else writes a new
-  `scenes/<edit object>_<date-time>.mirai.json`; refused while W/E/R/T or a
-  Knife session runs. Like SPACE it is window-level (`install_handlers(...,
-  save=...)`, window context `SaveScene`).
+- OBJ import / export (`PROVISIONAL`, `src/obj_files.py`): menu bar "Datei" (AD-030 §12) - "Importieren" lists the
+  files of `obj/` and adds one as a new editable object, "Exportieren..." asks for a name and writes the edit object
+  (world space) to `obj/<name>.obj`. AD-026: UVs come and go with the file, an OBJ's texture (MTL `map_Kd` or a
+  same-named image) becomes the object's texture and shows in the viewport; SPACE > "Textur anzeigen" switches all
+  textures (the row exists while an object has one).
+- ZBrush bridge (`PROVISIONAL`, AD-029 P1, `src/zbrush_bridge.py`): the "GoZ" panel (button next to "Outliner"):
+  "An ZBrush senden" (the object as `.GoZ` to ZBrush), one button per return that arrived after GoZ in ZBrush
+  ("ZBrush übernehmen: ..." / "ZBrush als neues Objekt: ..." / "ZBrush verwerfen: ...", D1: applied only on that
+  button, one Undo step), and once "Mirai bei GoZ eintragen". No key. The bridge polls its inbox 4 times per second
+  (`ZBrushBridge.tick`). Without `imgui-bundle` the old SPACE rows return.
+- Scene files (`PROVISIONAL`, Manu 2026-10-15, `src/scene_files.py`): menu bar "Datei" (Manu 2026-11-07): "Neu" (an
+  empty scene), "Öffnen" (the saved scenes in `scenes/`, newest first: all objects, the edit object, symmetry, view;
+  selection/history reset, camera re-framed), "Speichern" (Ctrl+S; a new scene asks for a name first), "Speichern
+  unter..." (name field -> `scenes/<name>.mirai.json`, an existing file is overwritten). Refused while W/E/R/T or a
+  Knife session runs. Ctrl+S is window-level (`install_handlers(..., save=...)`, window context `SaveScene`).
+- SPACE menu (AD-030 §12): with the panel layer it opens as an ImGui popup at the cursor: "Add +" (plane, cube,
+  sphere, cylinder, Basehead, Baseman: new editable objects), "Textur anzeigen", and the example scenes (click
+  loads, Shift+click adds as a Reference). Shift+A / Shift+M still open their own menus.
 - Morph Lab bridge (`PROVISIONAL`, Manu 2026-10-17, `src/morph_bridge.py`): `M` sends the
   selected object (mode `4`: the one selected; otherwise the edit object) to the Morph Lab, which
   opens in its own window with base and target already built. Window-level like Ctrl+S
@@ -347,6 +347,7 @@ from scene_files import SceneFiles, is_scene_file  # noqa: E402
 from zbrush_bridge import POLL_SECONDS, ZBrushBridge  # noqa: E402
 from scene_menu import (  # noqa: E402
     SceneMenu,
+    add_asset_object,
     add_mesh_entries,
     add_named_reference,
     add_primitive_named,
@@ -550,9 +551,20 @@ def install_handlers(
     # 2026-10-22: the pointer leaves the viewport on one side and comes back on the other during a transform.
     wrapper = CursorWrapper(window, app)
 
+    def gui_popup() -> bool:
+        """A menu or dialog of the panel layer is open (modal like the scene menu: it keeps every key)."""
+        return gui is not None and gui.popup_open
+
     @window.event
     def on_key_press(symbol: int, modifiers: int):
         inp = key_from_pyglet(symbol, modifiers)
+        if gui_popup():
+            command = window_command(app, inp)
+            if command is None and inp is not None:
+                command = app.bindings.command_for(inp)
+            if command in (commands.CANCEL, commands.OPEN_SCENE_MENU):
+                gui.popup_key()
+            return pyglet.event.EVENT_HANDLED
         shown = open_menu()
         if shown is not None:
             # Modal: the menu swallows every key; the scene menu key (SPACE) or Cancel (Esc) closes it.
@@ -568,6 +580,8 @@ def install_handlers(
             commands.OPEN_MIRROR_MENU: mirror_menu,
         }
         target = menus.get(command)
+        if command == commands.OPEN_SCENE_MENU and gui is not None and gui.has_menus:
+            target = gui  # the panel layer's own SPACE menu (Add +, textures, example scenes); same gesture guard
         if (
             target is not None
             # No menu in the middle of a running gesture (W/E/R/T, Knife).
@@ -576,7 +590,10 @@ def install_handlers(
         ):
             fallback = (window.width / 2, window.height / 2)
             cx, cy = cursor if cursor is not None else fallback
-            target.open(cx, cy, window.width, window.height)
+            if target is gui:
+                gui.open_space_menu(cx, cy)
+            else:
+                target.open(cx, cy, window.width, window.height)
             return pyglet.event.EVENT_HANDLED
         if command == commands.TOGGLE_SYMMETRY_DISPLAY:
             app.toggle_symmetry_display()
@@ -610,7 +627,7 @@ def install_handlers(
         track_ctrl(symbol, False)
         track_alt(symbol, False)
         track_shift(symbol, False)
-        if open_menu() is not None:
+        if open_menu() is not None or gui_popup():
             return pyglet.event.EVENT_HANDLED
         inp = key_from_pyglet(symbol, modifiers)
         if inp is not None:
@@ -818,7 +835,7 @@ def run(window, app: Application) -> None:
     pyglet.app.run()
 
 
-def make_gui(window, app: Application):
+def make_gui(window, app: Application, services=None):
     """The panel layer (AD-030), or None when `imgui-bundle` is not installed: one stderr line, no panels, the rest of
     the window works as before. Import and context are lazy - nothing of imgui is touched until the first frame."""
     try:
@@ -828,7 +845,7 @@ def make_gui(window, app: Application):
         return None
     from gui.imgui_layer import ImguiLayer
 
-    return ImguiLayer(window, app)
+    return ImguiLayer(window, app, services=services)
 
 
 def main() -> None:
@@ -907,17 +924,38 @@ def main() -> None:
         load=lambda name: run_mirror_entry(app, name),
         title="Mirror (Shift+M) - mode 4, selected objects",
     )
+    from gui.menus import Services
+
+    services = Services(
+        files=files,
+        obj_files=obj_files,
+        primitives=add_mesh_entries,
+        add_primitive=lambda name: add_primitive_named(app, name),
+        add_base=lambda name: add_asset_object(app, name),
+        scenes=scene_entries,
+        load_scene=lambda name: _load_example(name),
+        add_reference=lambda name: add_named_reference(app, name),
+        zbrush=zbrush,
+    )
+    gui = make_gui(window, app, services)
+
+    def _load_example(name: str) -> bool:
+        loaded = load_named_scene(app, name, GL_TYPES)
+        if loaded:
+            files.forget()
+        return loaded
+
     install_handlers(
         window,
         app,
         menu=menu,
-        save=files.save,
+        save=gui.save if gui is not None else files.save,
         morph=lambda: send_to_morph_lab(app),
         add_menu=add_menu,
         mirror_menu=mirror_menu,
         hud=Hud(app.bindings),
         triad=OrientationTriad(),
-        gui=make_gui(window, app),
+        gui=gui,
     )
     pyglet.clock.schedule_interval(lambda dt: zbrush.tick(), POLL_SECONDS)
     run(window, app)

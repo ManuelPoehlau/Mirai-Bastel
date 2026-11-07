@@ -116,6 +116,19 @@ def add_primitive_named(app, name: str) -> bool:
     return obj is not None
 
 
+def add_asset_object(app, name: str) -> bool:
+    """Ein Registry-Asset (Basehead, Baseman) als neues, **bearbeitbares** Objekt hinzufügen, wie ein Add-Mesh-
+    Primitiv (`Application.import_obj`: ein Undo-Schritt, UVs und Textur kommen mit). True = hinzugefügt."""
+    try:
+        from loaders.assets import asset_path  # lazy - Muster scene_factory
+
+        obj = app.import_obj(asset_path(name))
+    except Exception as exc:
+        app.set_status(f"Add {name!r} failed: {exc}")
+        return False
+    return obj is not None
+
+
 #: Einträge des Menüs "Mirror" (Text `PROVISIONAL`) -> (Application-Methode, Ebene).
 MIRROR_ENTRIES: dict[str, tuple[str, str | None]] = {
     "Mirror copy  X = 0": ("mirror_copy", "X"),
