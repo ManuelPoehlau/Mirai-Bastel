@@ -28,6 +28,7 @@ class InputGate:
         self._kbd = keyboard_wanted
         self._owner: dict[int, str] = {}  # Maustaste -> "imgui" | "app", gesetzt beim Press
         self._keys_forwarded: set[int] = set()
+        self._keys_kept: set[int] = set()  # Tasten, deren Press ImGui bekam
         self.hovering_panel = False
 
     # -- Maus ------------------------------------------------------------------------------------------------
@@ -55,13 +56,19 @@ class InputGate:
     # -- Tasten ----------------------------------------------------------------------------------------------
     def key_press(self, symbol: int) -> bool:
         if self._kbd():
+            self._keys_kept.add(symbol)
             return True
         self._keys_forwarded.add(symbol)
         return False
 
     def key_release(self, symbol: int) -> bool:
-        """Eine Taste, deren Press an `Application` ging, bekommt auch ihr Release dort (sonst bliebe z.B. W 'gehalten')."""
+        """Das Release geht dorthin, wo der Press hinging. An `Application`: sonst bliebe z.B. W 'gehalten'. An ImGui:
+        Enter/Esc schließen das Textfeld schon beim Drücken; ginge ihr Release an `Application`, hielte ImGui die Taste
+        für gedrückt und das nächste Feld schlösse sich sofort wieder (Manu 2026-11-07)."""
         if symbol in self._keys_forwarded:
             self._keys_forwarded.discard(symbol)
             return False
+        if symbol in self._keys_kept:
+            self._keys_kept.discard(symbol)
+            return True
         return self._kbd()

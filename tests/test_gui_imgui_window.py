@@ -365,3 +365,27 @@ def test_morph_panel_double_click_renames_and_view_greys_out_the_lifecycle(env):
     assert app.morph_view_open and len(app.morph_target_rows()) == 1
     _click(window, _center(layer.item_rects[("morph_edit", lid)]))  # jetzt „Zurück“
     assert not app.morph_view_open
+
+
+def _enter_slow(window):
+    """Enter wie von Hand: zwischen Drücken und Loslassen liegen Frames (das Feld schließt schon beim Drücken)."""
+    window.dispatch_event("on_key_press", key.RETURN, 0)
+    _frame(window, 2)
+    window.dispatch_event("on_key_release", key.RETURN, 0)
+    _frame(window, 2)
+
+
+def test_second_rename_after_enter_works_without_touching_the_viewport(env):
+    window, app, layer, calls = env
+    first, second = _id_of(app, "Zahn 3"), _id_of(app, "Zahn 4")
+    _double_click(window, _center(layer.item_rects[("row", first)]))
+    _type(window, "Eck")
+    _enter_slow(window)
+    assert app.scene.objects[first].name == "Eck"
+    _double_click(window, _center(layer.item_rects[("row", second)]))
+    _frame(window, 40)  # länger als die Wiederholverzögerung einer „hängenden“ Enter-Taste
+    assert layer.editing == ("o", second), "das zweite Feld schloss sich sofort wieder"
+    _type(window, "Molar")
+    _enter_slow(window)
+    assert app.scene.objects[second].name == "Molar"
+    assert calls["key"] == 0 and calls["key_release"] == 0  # das Enter-Release ging an ImGui, nicht an Application

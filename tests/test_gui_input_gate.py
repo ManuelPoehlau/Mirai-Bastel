@@ -53,3 +53,13 @@ def test_keys_go_to_app_unless_text_field_active():
     assert gate.key_release(104) is True
     state["kbd"] = False
     assert gate.key_release(104) is False  # nie weitergeleitet, harmlos
+
+
+def test_release_of_a_key_that_closed_the_text_field_still_goes_to_imgui():
+    gate, state = _gate()
+    state["kbd"] = True
+    assert gate.key_press(65293) is True  # Enter im Textfeld: übernimmt und schließt das Feld
+    state["kbd"] = False  # nächster Frame: kein Textfeld mehr aktiv
+    assert gate.key_release(65293) is True  # das Release bekommt trotzdem ImGui (sonst hinge Enter dort)
+    assert gate.key_press(65293) is False  # danach wieder normal an die App
+    assert gate.key_release(65293) is False

@@ -184,6 +184,11 @@ Regions bleiben offen (Idee: Regions im Outliner unter dem jeweiligen Mesh aufli
 Tests: `tests/test_object_outliner.py` (Umbenennen), `tests/test_gui_bones.py` (Knochen), `tests/test_gui_imgui_window.py`
 (Doppelklick, Enter, Esc, Tasten im Feld, Knochen-Klick/Auge). `layer_declarations.METHOD_CLASSES`: `rename_bone` = „non-mesh“.
 
+**Fix 2026-11-07 (Manu: „nach Enter lässt sich zeitweise kein anderer Name mehr ändern“):** Enter/Esc schließen das Feld
+schon beim Drücken; ihr Release ging danach an `Application`, ImGui hielt die Taste für gedrückt und das nächste Feld schloss
+sich sofort wieder. `InputGate.key_release` schickt das Release jetzt dorthin, wo der Press hinging (für ImGui wie schon für
+die App). Tests: `test_gui_input_gate.py`, `test_gui_imgui_window.py::test_second_rename_after_enter_works_without_touching_the_viewport`.
+
 ## 11. Knochen-Sichtbarkeit in der Szenendatei, Namensschild entfernt (2026-11-07, Manu)
 
 - **Gespeichert:** `Bone.hidden` (Core, [CORE_V1_FREEZE §7.1](CORE_V1_FREEZE.md) „Bone visibility“). Das Auge ist jetzt ein
