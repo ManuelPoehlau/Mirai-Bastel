@@ -1,6 +1,7 @@
 # Mirai-Bastel — CLAUDE.md
 
-This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project philosophy.
+This file is for AI collaborators. [AGENTS.md](AGENTS.md) holds the project philosophy; read it for size M/L tasks
+(see "Task size" below), not for small fixes.
 
 ## Quick reference
 
@@ -22,20 +23,38 @@ This file is for AI collaborators. Read [AGENTS.md](AGENTS.md) first for project
 - `tests/` — pytest suite for Production (`src/`). Bootstrap adds `src/` to path. Bare `pytest` runs `tests/` and
   `experiments/morph_lab/tests` (`pytest.ini`); every other tree only when named (AGENTS.md §8a).
 - `docs/` — Architecture, design, research decisions. Hierarchy: `README.md` → index → local docs → plans/specs
-- For Production GUI/UX tasks, start with [`docs/design/GUI_Bestandsaufnahme.md`](docs/design/GUI_Bestandsaufnahme.md),
-  then read [`GUI_STAGE1_HUD.md`](docs/design/GUI_STAGE1_HUD.md) and [`UX_RESEARCH.md`](docs/design/UX_RESEARCH.md).
+- For *new* Production GUI/UX features or redesigns (task size L, see below), start with
+  [`docs/design/GUI_Bestandsaufnahme.md`](docs/design/GUI_Bestandsaufnahme.md), then read
+  [`GUI_STAGE1_HUD.md`](docs/design/GUI_STAGE1_HUD.md) and [`UX_RESEARCH.md`](docs/design/UX_RESEARCH.md) (~17k tokens
+  together). For small GUI fixes do not read them; grep the relevant HUD/viewport code instead.
   The Bestandsaufnahme is a dated, non-normative assessment (`[V]` facts / `[H]` hypotheses / `[O]` Manu decisions),
   not an accepted GUI specification; verify it against the current code.
 - `references/` — External material (historical Mirai docs, etc.)
 
 ## Project workflow
 
-See `MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md` (§5 Haltepunkte, §7 Wer macht was) and AGENTS.md §7–§8.
+For size L work see `MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md` (§5 Haltepunkte, §7 Wer macht was) and AGENTS.md §7–§8;
+not needed for S/M tasks.
 Key rule: never move experiment code to `src/` without an explicit, documented decision. Working philosophy
 (Manu, 2026-10-21): solve rather than re-study, experiments only for material uncertainties, technical
 verification is the agent's job, shared bottlenecks first, larger coherent steps — AGENTS.md §7a.
 
-## Before changing or rebuilding code
+## Task size decides how much to read
+
+Session start is already expensive (tools, skills). Do not read documents "on stock"; read only when the task needs it.
+No README/AGENTS/Development-System crawl as a ritual.
+
+- **S — bug fix, small change** (≤ ~3 files, no new behaviour or architecture): read the affected code and its tests
+  (`grep` for the name), run the targeted test, commit. No docs reading unless the code points to a decision.
+  Skip the checklist below except step 6.
+- **M — new behaviour in one area**: additionally read that area's nearest `README.md` and the one doc it links for
+  this topic. Checklist steps 1–2 apply.
+- **L — new tool/system, `src/core/` change, architecture, GUI redesign, promotion from `experiments/`**: full
+  checklist below, AGENTS.md §1–§8a, Development System §5/§7.
+
+When unsure between sizes, start at the smaller one and escalate when the code reveals a documented decision.
+
+## Before changing or rebuilding code (sizes M and L)
 
 0. If the task is technical (performance, correctness), the default outcome is an implemented, tested,
    measured change — not a plan or another probe (AGENTS.md §7a)

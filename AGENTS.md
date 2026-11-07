@@ -4,7 +4,10 @@ This repository is developed by a human project owner together with multiple AI 
 
 ## 1. Read context before changing code
 
-Before working in a repository area:
+Scale the reading to the task (task sizes S/M/L: `CLAUDE.md`, "Task size decides how much to read"). For a small bug
+fix or change (size S) the affected code and its tests are enough; the list below applies to sizes M and L.
+
+Before working in a repository area (sizes M and L):
 
 1. Read the nearest `README.md`.
 2. Read the relevant plan/specification for that area.
