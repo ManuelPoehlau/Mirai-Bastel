@@ -751,7 +751,7 @@ Commands (`mirai.interaction.commands.OBJECT_MANAGEMENT_COMMANDS`; keys approved
 Ctrl+G / Alt+G / Ctrl+Alt+G act on objects, `OBJECT_MODE_ROUTES`; Duplicate has no key yet, see
 `docs/design/OUTLINER_KEYS_PROPOSAL.md`), mode `4`, one Undo step each, `ObjectController`:
 `HideObjects` (the edit object and the groups it hangs in stay visible), `IsolateObjects`, `ShowAllObjects`,
-`DuplicateObjects` (independent copy incl. group members, same place, not paired; refused for a mesh with point layers),
+`DuplicateObjects` and `CopyObjects` + `PasteObjects` (Ctrl+C / Ctrl+V, Manu 2026-11-07; independent copy incl. group members, same place, not paired; refused for a mesh with point layers),
 `GroupObjects`, `UngroupObjects` (dissolve a selected group / take a selected member out), `SelectObjectGroup`.
 Hidden objects are not drawn, not picked and leave the object selection; `Delete` on a group deletes its members too.
 Hidden is saved with the scene (not view state). The panel (AD-030, 2026-11-07, `src/gui/`) uses by-id entries `Application.set_objects_hidden(ids, hidden)` and `Application.select_objects(ids)` (one Undo step for hide/show, no history for select). Still open: locking, explicit order, group transform/pivot.
