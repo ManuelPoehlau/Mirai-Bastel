@@ -804,6 +804,22 @@ class Application:
         stay visible. See `ObjectController.set_hidden`."""
         return self._objects.set_hidden(object_ids, hidden)
 
+    def rename_object(self, object_id, name: str) -> bool:
+        """Outliner rename (AD-030): one Undo step; a taken name gets a `.001` suffix. See `ObjectController.rename`."""
+        return self._objects.rename(object_id, name)
+
+    def rename_bone(self, bone_id, name: str) -> bool:
+        """Outliner rename of a bone by id (AD-030); bone names are unique, a taken one is refused."""
+        return self._skeleton.rename_bone(name, bone=bone_id)
+
+    def select_bone(self, bone_id) -> bool:
+        """Outliner click on a bone: it becomes the current bone."""
+        return self._skeleton.select(bone_id)
+
+    def set_bones_hidden(self, bone_ids, hidden: bool) -> bool:
+        """Outliner eye on bones (view state: no Undo step, not saved). See `SkeletonController.set_hidden`."""
+        return self._skeleton.set_hidden(bone_ids, hidden)
+
     def import_obj(self, path: str | Path) -> SceneObject | None:
         """OBJ import (SPACE menu, `src/obj_files.py`): the file becomes a new editable object like an
         Add-Mesh primitive (same Undo step, selection and status behaviour), named after the file.

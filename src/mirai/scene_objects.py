@@ -296,6 +296,47 @@ class ObjectHiddenCommand:
             obj.hidden = after
 
 
+class ObjectNameCommand:
+    """Umbenennen als ein Undo-Schritt (Outliner 2026-11-07): `changes` = `(obj, before, after)`."""
+
+    def __init__(self, changes: list[tuple[SceneObject, str, str]], description: str) -> None:
+        self.changes = list(changes)
+        self.description = description
+
+    def undo(self) -> None:
+        for obj, before, _ in self.changes:
+            obj.name = before
+
+    def redo(self) -> None:
+        for obj, _, after in self.changes:
+            obj.name = after
+
+
+MAX_NAME_LENGTH = 64
+
+
+def clean_name(raw: str) -> str | None:
+    """Ein getippter Name: Ränder weg, mehrfache Leerzeichen bleiben. None = unbrauchbar (leer, zu lang, Steuerzeichen)."""
+    if not isinstance(raw, str):
+        return None
+    name = raw.strip()
+    if not name or len(name) > MAX_NAME_LENGTH or not name.isprintable():
+        return None
+    return name
+
+
+def free_object_name(scene: Scene, object_id: ObjectId, wanted: str) -> str:
+    """`wanted`, bzw. mit `.001`-Suffix, wenn ein *anderes* Objekt ihn schon trägt (Blender-Schema wie
+    `unique_object_name`; der eigene alte Name zählt nicht als belegt)."""
+    taken = {obj.name for oid, obj in scene.objects.items() if oid != object_id}
+    if wanted not in taken:
+        return wanted
+    n = 1
+    while f"{wanted}.{n:03d}" in taken:
+        n += 1
+    return f"{wanted}.{n:03d}"
+
+
 class ObjectParentCommand:
     """Umhängen in eine Gruppe als ein Undo-Schritt: `changes` = `(obj, before, after)` (ObjectId oder None). Die
     Prüfung (Gruppe, kein Zyklus) macht `Scene.set_parent` vor dem Command."""

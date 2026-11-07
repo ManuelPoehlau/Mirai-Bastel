@@ -315,3 +315,37 @@ def test_select_objects_only_in_object_mode_and_skips_hidden():
     assert app.selection.objects == {a}
     assert app.select_objects([a]) is False  # no change
     assert app.select_objects([]) is True and app.selection.objects == set()
+
+
+# -- Rename by id (AD-030) -------------------------------------------------------------------------------------
+
+
+def test_rename_object_is_one_undo_step_and_suffixes_a_taken_name():
+    app = _app()
+    a, b = _with_teeth(app, 2)
+    old = app.scene.objects[a].name
+    assert app.rename_object(a, "  Eckzahn ") is True
+    assert app.scene.objects[a].name == "Eckzahn"
+    assert app.rename_object(a, "Eckzahn") is False  # same name: no step
+    assert app.rename_object(b, "Eckzahn") is True  # taken: Blender suffix
+    assert app.scene.objects[b].name == "Eckzahn.001"
+    app.dispatch_command(commands.UNDO)
+    assert app.scene.objects[b].name != "Eckzahn.001"
+    app.dispatch_command(commands.UNDO)
+    assert app.scene.objects[a].name == old
+    app.dispatch_command(commands.REDO)
+    assert app.scene.objects[a].name == "Eckzahn"
+
+
+def test_rename_object_refuses_empty_long_and_unprintable_and_group_can_be_renamed():
+    app = _app()
+    a, b = _with_teeth(app, 2)
+    before = app.scene.objects[a].name
+    for bad in ("", "   ", "x" * 65, "a\nb"):
+        assert app.rename_object(a, bad) is False
+    assert app.scene.objects[a].name == before
+    _select(app, a, b)
+    _run(app, commands.GROUP_OBJECTS)
+    (group,) = [o for o in app.scene.objects.values() if o.state is ObjectState.GROUP]
+    assert app.rename_object(group.id, "Zähne oben")
+    assert app.scene.objects[group.id].name == "Zähne oben"

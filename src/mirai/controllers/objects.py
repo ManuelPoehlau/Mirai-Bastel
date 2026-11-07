@@ -43,6 +43,8 @@ from ..interaction.tools.transform import _resolve_space
 from ..object_mirror import PLANES as MIRROR_PLANES, in_sync, mirror_mesh, mirror_placement, mirror_transform
 from ..object_space import ObjectSpaceCamera
 from ..scene_objects import (
+    clean_name,
+    free_object_name,
     REFERENCE_GHOST_ALPHA,
     AddObjectCommand,
     ApplyRefused,
@@ -52,6 +54,7 @@ from ..scene_objects import (
     MirrorPairCommand,
     MirrorRefused,
     ObjectHiddenCommand,
+    ObjectNameCommand,
     ObjectMaterialCommand,
     ObjectParentCommand,
     ObjectPivotCommand,
@@ -806,6 +809,32 @@ class ObjectController:
                 removed.update(member.id for member in scene.descendants_of(obj.id))
         self._visibility_changed(before, [(obj, not hidden, hidden) for obj in targets], label, removed or None)
         services.status(f"{'Hidden' if hidden else 'Shown'} {', '.join(repr(obj.name) for obj in targets)}")
+        return True
+
+    def rename(self, object_id, raw: str) -> bool:
+        """The outliner's rename (double click, Enter): the object (or group) gets this name, one Undo step. A name
+        another object carries gets a `.001` suffix (as new objects do); empty, over-long or unprintable text is
+        refused. Same name = no step. True = renamed."""
+        label = "Rename object"
+        if self.refused_during_interaction(label):
+            return False
+        services = self.services
+        scene = services.scene
+        obj = scene.objects.get(object_id)
+        if obj is None:
+            return False
+        wanted = clean_name(raw)
+        if wanted is None:
+            services.status(f"{label}: the name must be 1-64 printable characters")
+            return False
+        name = free_object_name(scene, obj.id, wanted)
+        if name == obj.name:
+            return False
+        before, old = services.selection_snapshot(), obj.name
+        obj.name = name
+        services.history.push(ObjectNameCommand([(obj, old, name)], f"Rename {old!r} {name!r}"))
+        services.record_selection_history(before, mesh_step=False)
+        services.status(f"{old!r} is now {name!r}" + ("" if name == wanted else " (name was taken)"))
         return True
 
     def group_selected(self) -> bool:
