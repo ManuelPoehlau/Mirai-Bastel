@@ -51,6 +51,10 @@ ein Elternteil hat (sonst 4-7 wie bisher), damit ein älterer Build die Datei ab
 still zu verlieren. Gelesen werden 2-8; ein ungültiger Verweis (fehlende/Nicht-Gruppe, Kreis, Edit-Objekt Gruppe oder
 ausgeblendet) macht die Datei ungültig.
 
+Version 8 trägt auch die Sichtbarkeit der Knochen (Outliner 2026-11-07): ein Knochen mit `"hidden": true` (fehlt =
+sichtbar). Ein Rig mit ausgeblendetem Knochen wird als Version 8 geschrieben (sonst 7), damit ein älterer Build die
+Datei ablehnt, statt die Ausblendung beim Speichern still zu verlieren.
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -72,7 +76,7 @@ LAYERS_FORMAT_VERSION = 5
 UV_FORMAT_VERSION = 6
 #: Written when the scene has a rig or any mesh a weights layer (AD-028 §3.6).
 RIG_FORMAT_VERSION = 7
-#: Written when any object is a group, hidden or in a group (Outliner, 2026-11-07).
+#: Written when any object is a group, hidden or in a group, or any bone is hidden (Outliner, 2026-11-07).
 GROUP_FORMAT_VERSION = 8
 
 
@@ -83,7 +87,7 @@ def scene_to_dict(scene: Scene) -> dict:
     rigged = scene.rig is not None or any(_has_weights(obj.mesh) for obj in objects)
     grouped = any(
         obj.state is ObjectState.GROUP or obj.hidden or obj.parent is not None for obj in scene.objects.values()
-    )
+    ) or (scene.rig is not None and bool(scene.rig.hidden_ids()))
     if grouped:
         version = GROUP_FORMAT_VERSION
     elif rigged:

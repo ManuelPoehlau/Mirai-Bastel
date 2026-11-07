@@ -626,9 +626,6 @@ class SkeletonController:
         self.last_pose: dict = {}
         self.current: Optional[BoneId] = None
         self.pose_mode = False
-        #: Bones hidden by the outliner's eye (AD-030): view state like the pose - not drawn, not picked, skipped by
-        #: next / previous; no Undo step, not saved, gone with a new scene.
-        self.hidden: set = set()
         self._bound: dict = {}  # id(mesh) -> [mesh, watch, bound]
         #: the three stage-7 policies, in order (AD-028 §8.2)
         self.policies = (self.pose_mode_refusal, self.posed_refusal, self.placement_refusal)
@@ -638,6 +635,13 @@ class SkeletonController:
     @property
     def rig(self) -> Optional[Rig]:
         return self.services.scene.rig
+
+    @property
+    def hidden(self) -> frozenset:
+        """The bones hidden by the outliner's eye (AD-030, 2026-11-07): `Bone.hidden`, saved with the scene and an
+        Undo step. Not drawn, not picked, skipped by next / previous."""
+        rig = self.rig
+        return frozenset() if rig is None else rig.hidden_ids()
 
     @property
     def current_bone(self) -> Optional[BoneId]:
@@ -694,7 +698,6 @@ class SkeletonController:
         self.pose, self.last_pose = {}, {}
         self.current = None
         self.pose_mode = False
-        self.hidden = set()
         for entry in self._bound.values():
             entry[1].close()
         self._bound.clear()
@@ -707,7 +710,6 @@ class SkeletonController:
         if any(not has(b) for b in self.pose):
             self.set_pose({b: p for b, p in self.pose.items() if has(b)})
         self.last_pose = {b: p for b, p in self.last_pose.items() if has(b)}
-        self.hidden = {b for b in self.hidden if has(b)}
         if self.current_bone is None:
             self.pose_mode = False
 
@@ -898,16 +900,18 @@ class SkeletonController:
         return True
 
     def set_hidden(self, bones, hidden: bool) -> bool:
-        """The outliner's eye on bones: hide / show these (view state, `self.hidden`). True = something changed."""
+        """The outliner's eye on bones: hide / show these, one Undo step (the flag is part of the rig and of the scene
+        file). True = something changed."""
         rig = self.rig
-        if rig is None:
+        label = "Hide bone" if hidden else "Show bone"
+        if rig is None or self._busy(label):
             return False
         known = {b for b in bones if rig.has_bone(b)}
         changed = (known - self.hidden) if hidden else (known & self.hidden)
         if not changed:
             return False
-        self.hidden = (self.hidden | changed) if hidden else (self.hidden - changed)
         names = ", ".join(repr(self.bone_name(b)) for b in sorted(changed))
+        self._push_rig(rig.with_hidden(changed, hidden), f"{label} {names}")
         self.services.status(f"{'Hidden' if hidden else 'Shown'} bone {names}")
         return True
 

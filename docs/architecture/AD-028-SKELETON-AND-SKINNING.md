@@ -259,6 +259,7 @@ group's **original** values (as for vectors, AD-025 §4.1). Per primitive: `spli
   and file round trips (X-16).
 - **Journal:** unchanged — per-element records for writes, whole-layer records for bulk operations, value-free watches
   (AD-025 §4.2). Bone deletion rewrites only the affected values per element (O(affected), µs each).
+- **File, rig (2026-11-07):** a bone carries `"hidden": true` when the outliner hid it (absent = visible; version 8, [CORE_V1_FREEZE §7.1](CORE_V1_FREEZE.md)).
 - **File, mesh:** the layer entry as today with `"kind": "weights"` and `"values": {"<vid>": [[key, w], …]}`;
   `load_state` validates W1–W4 and refuses a non-canonical value (`ValueError`, the mesh unchanged).
 - **File, scene:** `"rig": {"bone_id_counter": n, "bones": [{"id", "name", "parent", "head", "tail", "roll"}, …]}`

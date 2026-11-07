@@ -319,6 +319,19 @@ missing or not a group, whose groups form a cycle, or whose edit object is a gro
 duplicate and delete on a group act on its members (`src/mirai`), so no transform chain exists. (5) contract tests
 `tests/test_object_outliner.py` (round trip v8, invalid hierarchy refused, remove with members refused via the commands).
 
+**Decision:** Bone visibility (2026-11-07; Manu: "Sichtbarkeit von Knochen auch in die Szenendatei"; outliner eye,
+[AD-030](AD-030-GUI-FRAMEWORK.md) §10)
+
+Freeze rule (§7): (1) requirement — hiding a bone in the outliner must survive saving and loading, like `hidden` of an
+object; (2) not solvable with the public API: `Bone` is frozen and the file has no place for view flags outside the
+rig; (3) documented in AD-030 §10; (4) smallest extension, data only: `Bone.hidden: bool = False` (validated bool),
+`Rig.with_hidden(ids, hidden)`, `Rig.hidden_ids()`; `with_name` / `without_bone` keep the flag. `Bone.to_dict` writes
+`"hidden": true` only when set (absent = visible) and `from_dict` reads it with default False (a non-bool is refused);
+`serialization.scene_to_dict` writes **version 8** also when a bone is hidden (a rig without hidden bones still writes 7,
+unchanged), reads 2-8. Not touched: `Scene`, `Mesh`, history, the rest frame, the skinning. (5) contract tests
+`tests/test_rig.py` (validation, round trip, absent key) and `tests/test_gui_bones.py` (version 7 stays 7, hidden = 8,
+round trip, Undo).
+
 **Decision:** WP Toolbox Gaps B1 Collapse V/E/F (2026-10-23; promotion by Manu,
 [WP_TOOLBOX_GAPS_PLAN](../WP_TOOLBOX_GAPS_PLAN.md) B1)
 

@@ -22,7 +22,6 @@ from hud import (
     TRIAD_LABEL_ROOM,
     TRIAD_MARGIN,
     TRIAD_SIZES,
-    BoneTag,
     Hud,
     OrientationTriad,
     hud_rows,
@@ -273,92 +272,18 @@ def test_the_hud_and_its_marks_assign_nothing_to_the_app(posed_rig):
     app = posed_rig.app
     guarded = Guard(app)
     Hud(app.bindings).update(guarded, 800, 600)
-    tag, triad = BoneTag(), OrientationTriad()
-    tag.make_parts, triad.make_parts = _FakeTagParts, _FakeTriadParts
-    tag.update(guarded.current_bone_tag(), app.camera, 800, 600)
+    triad = OrientationTriad()
+    triad.make_parts = _FakeTriadParts
     triad.update(guarded.camera, 800, 600)
     before = (app.status_serial, app.status_message, app.pose, app.selection.mode, app.current_bone, app.posed)
     for _ in range(3):
         hud_state(app)
-        app.current_bone_tag()
     assert before == (app.status_serial, app.status_message, app.pose, app.selection.mode, app.current_bone, app.posed)
-
-
-# -- the current bone's name ----------------------------------------------------------------------------------
-
-
-def test_the_bone_tag_exists_with_a_rig_in_pose_and_component_modes_only(posed_rig, app):
-    rig_app = posed_rig.app
-    assert app.current_bone_tag() is None  # no rig
-    name, head = rig_app.current_bone_tag()
-    assert name == rig_app.current_bone_name == rig_app.scene.rig.bone(rig_app.current_bone).name
-    # the same point the gizmo uses in pose mode: the current bone's posed head
-    assert tuple(head) == tuple(rig_app._skeleton.gizmo_pivot())
-    posed_rig.tap(key("3"))  # leaves pose mode: face mode, the name stays readable where `8` writes
-    try:
-        assert not rig_app.pose_mode and rig_app.current_bone_tag()[0] == name
-        posed_rig.tap(key("4"))  # object mode: no tag
-        assert rig_app.current_bone_tag() is None
-    finally:
-        posed_rig.tap(key("3"))
-        posed_rig.tap(POSE_MODE)
-    assert rig_app.pose_mode
-
-
-def test_the_bone_tag_sits_at_the_current_bones_posed_head(posed_rig):
-    app = posed_rig.app
-    heads = {bid: head for bid, head, _ in app._skeleton.posed_segments()}
-    assert tuple(app.current_bone_tag()[1]) == tuple(heads[app.current_bone])
-
-
-class _FakeTagParts:
-    def __init__(self):
-        self.label = _Obj(text="", x=0.0, y=0.0, content_width=0)
-        self.plate = _Obj(width=0, position=(0, 0))
-        self.draws = 0
-
-    def draw(self):
-        self.draws += 1
 
 
 class _Obj:
     def __init__(self, **kw):
         self.__dict__.update(kw)
-
-
-def test_the_bone_tag_is_one_reused_label_moved_only_when_needed(posed_rig):
-    app = posed_rig.app
-    tag = BoneTag()
-    made = []
-    tag.make_parts = lambda: made.append(_FakeTagParts()) or made[-1]
-    camera = app.camera
-    assert tag.update(None, camera, 800, 600) is False and not tag.shown
-    info = app.current_bone_tag()
-    assert tag.update(info, camera, 800, 600) is True and tag.shown and tag.name == info[0]
-    assert tag.position is not None and 0 <= tag.position[0] <= 800 and 0 <= tag.position[1] <= 600
-    parts = made[0]
-    assert parts.label.text == info[0] and parts.plate.width == 8  # fake label width 0 + the plate's margin
-    settled = (tag.moves, tag.text_sets)
-    for _ in range(5):  # nothing changed: nothing is touched
-        assert tag.update(info, camera, 800, 600) is False
-    assert (tag.moves, tag.text_sets) == settled and len(made) == 1
-    camera.orbit(0.2, 0.0)  # the head moves on screen: moved, the text is not set again
-    assert tag.update(info, camera, 800, 600) is True and tag.text_sets == settled[1] and len(made) == 1
-    camera.orbit(-0.2, 0.0)
-    assert tag.update(None, camera, 800, 600) is True and not tag.shown  # the rig went away / object mode
-    assert tag.update(None, camera, 800, 600) is False
-
-
-def test_the_bone_tag_hides_off_screen_and_behind_the_camera(posed_rig):
-    app = posed_rig.app
-    tag = BoneTag()
-    tag.make_parts = _FakeTagParts
-    name, head = app.current_bone_tag()
-    assert tag.update((name, (500.0, 500.0, 500.0)), app.camera, 800, 600) is False  # far off to a side
-    assert not tag.shown and tag.position is None
-    behind = tuple(c + 50 * d for c, d in zip(app.camera.eye(), app.camera.basis()[0]))
-    behind = tuple(2 * e - b for e, b in zip(app.camera.eye(), behind))
-    assert tag.update((name, behind), app.camera, 800, 600) is False and not tag.shown
 
 
 # -- the orientation triad: directions -------------------------------------------------------------------------

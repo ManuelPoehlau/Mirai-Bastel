@@ -234,6 +234,8 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         # AD-030 outliner: a bone's name only (`RigCommand`, no mesh change; the scan sees the name `rename_bone` of the
         # controller, whose sibling `delete_bone` does rewrite weights)
         "rename_bone": "non-mesh",
+        # AD-030: the eye on bones sets `Bone.hidden` (a `RigCommand`, no mesh change)
+        "set_bones_hidden": "non-mesh",
         # AD-025 Phase 3: the target lifecycle (one layer-only Undo step each) and the editing view
         "create_morph_target": MORPH,
         "rename_morph_target": MORPH,

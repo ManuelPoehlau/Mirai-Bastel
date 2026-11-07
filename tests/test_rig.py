@@ -223,3 +223,29 @@ def test_versions_2_to_8_are_read():
     data["version"] = 9
     with pytest.raises(ValueError):
         scene_from_dict(data)
+
+
+# -- Bone.hidden (outliner eye, 2026-11-07) ------------------------------------------------------------------------
+
+
+def test_bone_hidden_defaults_false_is_validated_and_saved_only_when_set():
+    import pytest
+
+    from core.rig import Bone, Rig
+    from core.ids import BoneId
+
+    plain = Bone(BoneId(0), "A", None, (0, 0, 0), (0, 1, 0))
+    assert plain.hidden is False and "hidden" not in plain.to_dict()
+    with pytest.raises(TypeError):
+        Bone(BoneId(0), "A", None, (0, 0, 0), (0, 1, 0), hidden=1)
+    hidden = Bone(BoneId(0), "A", None, (0, 0, 0), (0, 1, 0), hidden=True)
+    assert hidden.to_dict()["hidden"] is True and Bone.from_dict(hidden.to_dict()) == hidden
+    raw = plain.to_dict()
+    raw["hidden"] = "yes"
+    with pytest.raises(ValueError):
+        Bone.from_dict(raw)
+    rig = Rig((plain,), 1)
+    assert rig.with_hidden([BoneId(0)], True).hidden_ids() == {BoneId(0)}
+    assert rig.with_hidden([BoneId(0)], True).with_name(BoneId(0), "B").bone(BoneId(0)).hidden
+    with pytest.raises(KeyError):
+        rig.with_hidden([BoneId(5)], True)

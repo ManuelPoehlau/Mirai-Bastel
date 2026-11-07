@@ -4230,19 +4230,6 @@ class Application:
         skeleton = self._skeleton
         return skeleton.posed() and skeleton.bound(self.scene.mesh)
 
-    def current_bone_tag(self) -> tuple[str, tuple[float, float, float]] | None:
-        """(name, posed head in world) of the current bone for the window's name tag, shown in pose mode and in the
-        component modes (so the name is readable where `8` writes); None without a rig / bone / viewport, in
-        object mode outside pose mode and during a Knife session."""
-        if self.viewport is None or self.knife_active:
-            return None
-        skeleton = self._skeleton
-        if not skeleton.pose_mode and self.selection.mode is SelectionMode.OBJECT:
-            return None
-        head = skeleton.gizmo_pivot()
-        name = self.current_bone_name
-        return None if head is None or name is None else (name, head)
-
     @property
     def gesture_label(self) -> str | None:
         """The running hold-key gesture's own label ("Pose Rotate", "Set weight", ...), None = no gesture."""
