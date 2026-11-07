@@ -290,3 +290,78 @@ def test_bones_listed_under_skeleton_click_selects_eye_hides_double_click_rename
     _type(window, "Wirbel")
     _enter(window)
     assert app.scene.rig.bone(spine).name == "Wirbel"
+
+
+# -- AD-030 §13: das Morph-Panel ------------------------------------------------------------------------------------
+
+
+def _morph_weights(app) -> dict:
+    return {lid: w for lid, _, w, _ in app.morph_target_rows()}
+
+
+def test_morph_panel_new_target_click_name_and_solo(env):
+    window, app, layer, calls = env
+    _frame(window, 2)
+    assert ("morph_new", 0) in layer.item_rects and ("morph_zero", 0) not in layer.item_rects  # ohne Ziele nur „Neu“
+    _click(window, _center(layer.item_rects[("morph_new", 0)]))
+    _frame(window, 2)
+    _click(window, _center(layer.item_rects[("morph_new", 0)]))
+    _frame(window, 2)
+    lids = [r[0] for r in app.morph_target_rows()]
+    assert len(lids) == 2 and app.morph_current_target == lids[1]
+    assert calls["press"] == 0 and calls["key"] == 0  # alles im Panel, nichts an Application
+    _click(window, _center(layer.item_rects[("morph_name", lids[0])]))
+    assert app.morph_current_target == lids[0]
+    _click(window, _center(layer.item_rects[("morph_solo", lids[1])]))
+    assert _morph_weights(app) == {lids[0]: 0, lids[1]: 100} and app.morph_solo_target == lids[1]
+    _click(window, _center(layer.item_rects[("morph_solo", lids[1])]))
+    assert _morph_weights(app) == {lids[0]: 0, lids[1]: 0}
+    app.dispatch_command(commands.UNDO)  # das zweite „Neu“: Gewichte und Wahl waren kein Undo-Schritt
+    assert len(app.morph_target_rows()) == 1
+
+
+def test_morph_panel_slider_drag_sets_the_weight_without_history(env):
+    window, app, layer, calls = env
+    app.create_morph_target()
+    lid = app.morph_current_target
+    _frame(window, 3)
+    depth = len(app.history._undo_stack)
+    x, y, w, h = layer.item_rects[("morph_weight", lid)]
+    start, end = _to_pyglet(window, (x + 2, y + h / 2)), _to_pyglet(window, (x + w * 0.6, y + h / 2))
+    window.dispatch_event("on_mouse_motion", *start, 0, 0)
+    _frame(window, 1)
+    window.dispatch_event("on_mouse_press", *start, mouse.LEFT, 0)
+    _frame(window, 1)
+    steps = 6
+    for i in range(1, steps + 1):
+        px = start[0] + (end[0] - start[0]) * i / steps
+        window.dispatch_event("on_mouse_drag", px, start[1], (end[0] - start[0]) / steps, 0, mouse.LEFT, 0)
+        _frame(window, 1)
+    window.dispatch_event("on_mouse_release", *end, mouse.LEFT, 0)
+    _frame(window, 2)
+    weight = app.morph_weight
+    assert 40 <= weight <= 75, weight
+    assert len(app.history._undo_stack) == depth
+    assert calls["press"] == 0 and calls["drag"] == 0
+    assert f"{weight} %" in app.status_message  # eine Meldung beim Loslassen
+
+
+def test_morph_panel_double_click_renames_and_view_greys_out_the_lifecycle(env):
+    window, app, layer, calls = env
+    app.create_morph_target()
+    lid = app.morph_current_target
+    _frame(window, 3)
+    _double_click(window, _center(layer.item_rects[("morph_name", lid)]))
+    assert layer.editing == ("m", lid)
+    _type(window, "Smile")
+    _enter(window)
+    assert app.scene.mesh.point_layer_info(lid).name == "Smile"
+    assert calls["key"] == 0
+    app.dispatch_command(commands.SET_VERTEX_MODE)  # die Fixture steht in Modus 4; Tab geht aus 1/2/3
+    _frame(window, 2)
+    _click(window, _center(layer.item_rects[("morph_edit", lid)]))
+    assert app.morph_view_open, app.status_message
+    _click(window, _center(layer.item_rects[("morph_delete", 0)]))  # ausgegraut: nichts passiert
+    assert app.morph_view_open and len(app.morph_target_rows()) == 1
+    _click(window, _center(layer.item_rects[("morph_edit", lid)]))  # jetzt „Zurück“
+    assert not app.morph_view_open

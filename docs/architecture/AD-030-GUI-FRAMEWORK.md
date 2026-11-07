@@ -213,3 +213,26 @@ eigenes Panel, weil dort später Optionen hineinmüssen (was alles gesendet wird
 - **Bekannt:** liegt der HUD-Streifen oben (Variante `Strip top`), überdeckt die Leiste ihn; Standard ist unten.
   Die Zeilen `SceneFiles.entries` / `ObjFiles.entries` / `ZBrushBridge.entries` bleiben für das Fallback-Menü bestehen.
 
+
+## 13. Morph-Panel (2026-11-07, Manu)
+
+Manus Antworten (Planung 2026-11-07): Knopf „Morph“ neben Outliner/GoZ, Inhalt nur mit Zielen (sonst nur „+ Neues Ziel“);
+**ein Regler pro Ziel**, Klick auf den Namen macht es aktuell; erste Version zusätzlich **Alle 0 %** und **Solo**. Nicht
+dabei (später): Umsortieren per Ziehen, Filter. Löst Bestandsaufnahme L6 / L9 für Morph und Morph-Lab-Antwort J-4
+(„Schieberegler“) in Production.
+
+| Element | Verhalten |
+| --- | --- |
+| Fenster „Morph“ (`gui/morph_panel.py`, Logik `gui/morph_model.py`) | links unter dem Outliner, Standard offen; Kopf „Objekt · Basis“ bzw. „· Ziel 'X' daneben“ |
+| Name | Klick = aktuelles Ziel (`Application.select_morph_target`, wie `Shift+N`; in der Ansicht zeigt sie das neue Ziel); Doppelklick = Textfeld (dasselbe wie im Outliner, `rename_morph_target(name, lid)`, 1-64 druckbare Zeichen, belegter Name abgelehnt, ein Undo-Schritt) |
+| Regler 0-100 % | `set_morph_weight(w, lid, quiet=True)` je Frame (keine Statuszeile), eine Statuszeile beim Loslassen; Strg+Klick = Zahl tippen. Ansicht: kein Undo, nicht gespeichert (F-11) |
+| `S` (Solo) | `solo_morph_target(lid)`: nur dieses Ziel (bei 0 % auf seinen A/B-Wert, sonst 100 %), alle anderen 0 %; nochmal = Gewichte wie vorher. Jede andere Gewichtsänderung, Löschen oder Szenenwechsel verwirft den Merker (`MorphController.solo_restore`) |
+| Alle 0 % | `zero_morph_weights()`; der A/B-Merker bleibt (`N` antippen holt das aktuelle zurück) |
+| Bearbeiten / Zurück | wählt das Ziel und ruft `edit_morph_target` (= `Tab`); aus Modus 4 ausgegraut; in der Ansicht heißt der Knopf der bearbeiteten Zeile „Zurück“ (`leave_morph_target`) |
+| Neu / Löschen | `create_morph_target` / `delete_morph_target(lid)` (ein Undo-Schritt); in der Ansicht ausgegraut, Tooltip „nur an der Basis (Tab)“ |
+
+Keine Taste neu belegt, `config/keymap.json` unverändert; alle Knöpfe gehen über dieselben `MorphController`-Wege wie die
+Tasten (gleiche Ablehnungen). Neue/erweiterte `Application`-Methoden sind Ansicht oder schon deklarierte Morph-Lifecycle-
+Methoden (`layer_declarations.METHOD_CLASSES` unverändert; Gate-Test grün). Tests: `tests/test_gui_morph_panel_model.py`
+(headless), `tests/test_gui_imgui_window.py` (Neu, Name-Klick, Solo, Regler ziehen ohne History, Umbenennen, Ansicht).
+Praxistest Manu offen.

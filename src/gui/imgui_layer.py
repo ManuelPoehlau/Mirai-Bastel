@@ -92,6 +92,8 @@ class ImguiLayer:
         self.menus = None
         self.goz = None
         self.goz_open = False
+        self.morph = None  # AD-030 §13: das Morph-Panel (Knopf „Morph“, Standard offen)
+        self.morph_open = True
         self.popup_open = False  # ein Menü/Dialog des Layers ist offen: ihm gehört die ganze Maus (letzter Frame)
 
         self._blocked = blocked or (lambda: False)
@@ -129,6 +131,9 @@ class ImguiLayer:
         self._last_time = time.perf_counter()
         self._style()
         self._dpi_scale()
+        from .morph_panel import MorphPanel
+
+        self.morph = MorphPanel(imgui, self.app, self)
         if self.services is not None:
             from .goz_panel import GozPanel
             from .menus import Menus
@@ -351,6 +356,11 @@ class ImguiLayer:
             imgui.same_line()
             if imgui.small_button("GoZ " + ("[-]" if self.goz_open else "[+]")):
                 self.goz_open = not self.goz_open
+        if self.morph is not None:
+            imgui.same_line()
+            if imgui.small_button("Morph " + ("[-]" if self.morph_open else "[+]")):
+                self.morph_open = not self.morph_open
+            self._remember("toggle", "morph")
         pos, size = imgui.get_window_pos(), imgui.get_window_size()
         rects.append((pos.x, pos.y, size.x, size.y))
         imgui.end()
@@ -371,6 +381,16 @@ class ImguiLayer:
             imgui.begin("GoZ", None, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
                         | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
             self.goz.draw()
+            pos, size = imgui.get_window_pos(), imgui.get_window_size()
+            imgui.end()
+            rects.append((pos.x, pos.y, size.x, size.y))
+        if self.morph is not None and self.morph_open:
+            # links unter dem Outliner: eine Panel-Spalte, die Mitte bleibt Viewport
+            below = self.PANEL_POS[1] + self.PANEL_SIZE[1] + 10.0
+            imgui.set_next_window_pos(imgui.ImVec2(self.PANEL_POS[0], below), imgui.Cond_.first_use_ever)
+            imgui.begin("Morph", None, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
+                        | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
+            self.morph.draw()
             pos, size = imgui.get_window_pos(), imgui.get_window_size()
             imgui.end()
             rects.append((pos.x, pos.y, size.x, size.y))

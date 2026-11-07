@@ -152,7 +152,7 @@ Scharnier, harte Gewichte 1 in der Gruppe; ein echtes Rig mit Gelenk-Gewichten e
 |---|---|---|
 | J-2 Wechsel Basis ↔ Ziel | `←` / `→` zum Wechseln (`PROVISIONAL`; bei mehreren Targets später neu entscheiden) | **Umgesetzt 2026-10-17** als Lab-Taste über die App-Geste (kein Eingriff in `src/`); Tönung nicht beanstandet |
 | J-3 Basis nachträglich ändern | **relativ**: das Ziel nimmt die Änderung mit | **Umgesetzt 2026-10-17** (siehe „Annahmen“); Bezug nur in der Sitzung, gespeichert wird er erst mit dem Produktionsformat (AD-021 §4.9) |
-| J-4 Gewicht | **Schieberegler** (Pfeiltasten reichen nicht) | **Offen, andere Session**; braucht UI im Fenster und Performance beim Ziehen (siehe „Messung“) |
+| J-4 Gewicht | **Schieberegler** (Pfeiltasten reichen nicht) | In Production beantwortet (2026-11-07): Morph-Panel mit Regler pro Ziel ([AD-030 §13](../../docs/architecture/AD-030-GUI-FRAMEWORK.md#13-morph-panel-2026-11-07-manu)); das Lab selbst bleibt bei den Tasten |
 | J-5 Ziel formen | **daneben** (wie gebaut) | keine Änderung |
 | Gewicht als Undo-Schritt / gespeichert? | **Nein** | keine Änderung (wie gebaut) |
 | 6a Auswahl/Picking auf der Ruhelage | **hilft** (zeigt die Abweichung von der Basis) | keine Änderung; bewusst behalten |

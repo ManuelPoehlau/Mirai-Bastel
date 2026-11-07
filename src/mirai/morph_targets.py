@@ -70,8 +70,8 @@ from .interaction.input import (
 MAX_TARGETS = 64
 #: New targets are called "Target 1", "Target 2", ... (first free number).
 NEW_TARGET_PREFIX = "Target"
-#: What MORPH_RENAME cycles through (the app has no text field yet; `rename_morph_target(name)`
-#: takes any name for a later one). `PROVISIONAL`.
+#: What MORPH_RENAME (the key) cycles through; the morph panel's text field (AD-030 §13) passes any name to
+#: `rename_morph_target(name, lid)`. `PROVISIONAL`.
 RENAME_CYCLE = ("Smile", "Blink", "Jaw open", "Brow up", "Frown", "Pucker", "Cheek puff", "Sneer")
 #: Weight range and steps in whole percent (Morph Lab F-8: exact at 0 % and 100 %).
 MIN_WEIGHT, MAX_WEIGHT = 0, 100

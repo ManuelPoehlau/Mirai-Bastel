@@ -18,6 +18,7 @@ from core import Mesh, PointLayerInfo, Scene, SceneObject, SelectionMode
 from ..interaction import commands
 from ..interaction.session import PASS, Motion, Outcome
 from ..layer_declarations import view_refusal
+from ..scene_objects import clean_name
 from ..morph_targets import (
     DRAG_PIXELS_PER_PERCENT as MORPH_DRAG_PIXELS_PER_PERCENT,
     MAX_TARGETS as MORPH_MAX_TARGETS,
@@ -101,6 +102,8 @@ class MorphController:
         self.view: TargetView | None = None
         self.view_shift: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self.ab: dict[tuple, int] = {}  # (ObjectId, LayerId) -> the weight a tap returns to
+        # Morph panel solo (AD-030 §13, view state): ObjectId -> (the solo target, the weights before solo).
+        self.solo_restore: dict = {}
         self.weight_hold = MorphWeightHold(self)
 
     # -- reads (the public `morph_*` API of `Application`) ---------------------------------------------
@@ -164,6 +167,23 @@ class MorphController:
             more = len(parts) - limit
             return " · ".join(shown) + f" · +{more} more"
         return " · ".join(parts)
+
+    def rows(self) -> list[tuple]:
+        """The morph panel's rows (AD-030 §13): (LayerId, name, weight, is_current) in display order."""
+        obj = self.document_object
+        provider, current = self.display.provider, self.current_target
+        return [
+            (lid, obj.mesh.point_layer_info(lid).name, provider.weight(obj.id, lid), lid == current)
+            for lid in morph_target_ids(obj.mesh)
+        ]
+
+    @property
+    def solo_target(self):
+        """The target the panel's solo shows alone (view state), None = no solo."""
+        entry = self.solo_restore.get(self.document_object.id)
+        if entry is None or entry[0] not in morph_target_ids(self.document_object.mesh):
+            return None
+        return entry[0]
 
     def document_scene(self) -> Scene:
         """The scene as a file holds it: without a target's editing view, the base as the edit object."""
@@ -243,19 +263,29 @@ class MorphController:
         )
         return done.result
 
-    def rename_target(self, name: str | None = None) -> bool:
-        """Renames the edit object's target (one Undo step); without `name` the next name of
-        `morph_targets.RENAME_CYCLE` (the app has no text field yet)."""
+    def rename_target(self, name: str | None = None, lid=None) -> bool:
+        """Renames a target of the edit object (default: the current one; one Undo step); without `name` the next
+        name of `morph_targets.RENAME_CYCLE` (the key), with `name` the panel's text field (1-64 printable characters,
+        edges trimmed)."""
         services = self.services
         label = "Rename morph target"
         if self._lifecycle_refuses(label):
             return False
         mesh = services.scene.mesh
-        lid = self.current_target
+        lid = self.current_target if lid is None else lid
         if lid is None:
             services.status(f"{label}: this mesh has no target (Ctrl+N makes one)")
             return False
+        if lid not in morph_target_ids(mesh):
+            return False
         info = mesh.point_layer_info(lid)
+        if name is not None:
+            name = clean_name(name)
+            if name is None:
+                services.status(f"{label}: the name must be 1-64 printable characters")
+                return False
+            if name == info.name:
+                return False
         new = name or next_target_name(mesh, info.name)
         if not new or new == info.name or new in {mesh.point_layer_info(x).name for x in mesh.point_layer_ids()}:
             services.status(f"{label}: {new!r} is not a free name")
@@ -268,21 +298,28 @@ class MorphController:
         services.status(f"Morph target {info.name!r} is now {new!r} (again: next name)")
         return True
 
-    def delete_target(self) -> bool:
-        """Deletes the edit object's current target with its offsets (one Undo step; Undo brings it back exactly).
-        Its weight goes with it; the next target in the list becomes current."""
+    def delete_target(self, lid=None) -> bool:
+        """Deletes a target of the edit object (default: the current one) with its offsets (one Undo step; Undo
+        brings it back exactly). Its weight goes with it; deleting the current one makes the next in the list current."""
         services = self.services
         label = "Delete morph target"
         if self._lifecycle_refuses(label):
             return False
         mesh = services.scene.mesh
-        lid = self.current_target
+        current = self.current_target
+        lid = current if lid is None else lid
         if lid is None:
             services.status(f"{label}: this mesh has no target")
             return False
         ids = morph_target_ids(mesh)
+        if lid not in ids:
+            return False
         at = ids.index(lid)
-        neighbour = ids[at + 1] if at + 1 < len(ids) else (ids[at - 1] if at > 0 else None)
+        if lid != current:
+            neighbour = current
+        else:
+            neighbour = ids[at + 1] if at + 1 < len(ids) else (ids[at - 1] if at > 0 else None)
+        self.solo_restore.pop(services.scene.edit_object_id, None)
         name = mesh.point_layer_info(lid).name
         oid = services.scene.edit_object_id
         provider = self.display.provider
@@ -311,7 +348,21 @@ class MorphController:
         if len(ids) == 1:
             services.status(f"Morph: {self.status_text()} (the only target; Ctrl+N makes another)")
             return False
-        lid = ids[(ids.index(self.current_target) + step) % len(ids)]
+        return self.select_target(ids[(ids.index(self.current_target) + step) % len(ids)])
+
+    def select_target(self, lid) -> bool:
+        """This target of the document edit object becomes current (view state, no Undo step; the panel's click on a
+        name, `step_target` for the keys). With the editing view open, the view shows it."""
+        services = self.services
+        obj = self.document_object
+        if lid not in morph_target_ids(obj.mesh):
+            return False
+        owner = services.interaction_owner
+        if owner is not None:
+            services.status(f"Morph targets: not while the {owner} interaction runs")
+            return False
+        if lid == self.current_target:
+            return False
         self.display.provider.set_current(obj.id, lid)
         view = self.view
         if view is not None:
@@ -325,19 +376,72 @@ class MorphController:
         services.status(f"Morph: {self.status_text()}")
         return True
 
-    def set_weight(self, weight: int, lid=None) -> bool:
+    def set_weight(self, weight: int, lid=None, quiet: bool = False) -> bool:
         """The weight of a target of the document edit object (default: the current one); view state: no Undo
-        step, not saved."""
+        step, not saved. `quiet`: no status line (the panel's slider while it is dragged). Ends a panel solo."""
         obj = self.document_object
         lid = self.current_target if lid is None else lid
         if lid is None:
             self.services.status("Morph weight: this mesh has no target (Ctrl+N makes one)")
             return False
+        self.solo_restore.pop(obj.id, None)
         weight = self.display.provider.set_weight(obj.id, weight, lid)
         if weight > MORPH_MIN_WEIGHT:
             self.ab[(obj.id, lid)] = weight
         self.display.refresh()
-        self.services.status(f"Morph: {self.status_text()}")
+        if not quiet:
+            self.services.status(f"Morph: {self.weight_text(lid)}")
+        return True
+
+    def weight_text(self, lid) -> str:
+        """`status_text` for the current target, else 'name · w %' of `lid`."""
+        if lid == self.current_target:
+            return self.status_text() or ""
+        obj = self.document_object
+        return f"{obj.mesh.point_layer_info(lid).name} · {self.display.provider.weight(obj.id, lid)} %"
+
+    def solo(self, lid) -> bool:
+        """The panel's solo (AD-030 §13, view state): only `lid` shown (at its weight, 100 % when it was 0), every
+        other target at 0 %; again on the same target puts the weights back as they were. Any other weight change ends
+        the solo (its memory is dropped)."""
+        services = self.services
+        obj = self.document_object
+        ids = morph_target_ids(obj.mesh)
+        if lid not in ids:
+            return False
+        provider = self.display.provider
+        entry = self.solo_restore.pop(obj.id, None)
+        if entry is not None and entry[0] == lid:
+            for other, weight in entry[1].items():
+                if other in ids:
+                    provider.set_weight(obj.id, weight, other)
+            self.display.refresh()
+            services.status(f"Morph: solo {obj.mesh.point_layer_info(lid).name!r} ended, weights as before")
+            return True
+        before = entry[1] if entry is not None else {other: provider.weight(obj.id, other) for other in ids}
+        for other in ids:
+            if other != lid:
+                provider.set_weight(obj.id, MORPH_MIN_WEIGHT, other)
+        if provider.weight(obj.id, lid) == MORPH_MIN_WEIGHT:
+            provider.set_weight(obj.id, self.ab.get((obj.id, lid), MORPH_MAX_WEIGHT), lid)
+        self.solo_restore[obj.id] = (lid, before)
+        self.display.refresh()
+        services.status(f"Morph: solo {self.weight_text(lid)} (S again: weights as before)")
+        return True
+
+    def zero_all(self) -> bool:
+        """Every target of the document edit object at 0 % (view state); the A/B memory stays, so tapping N brings
+        the current one back. Ends a solo."""
+        obj = self.document_object
+        ids = morph_target_ids(obj.mesh)
+        if not ids:
+            return False
+        self.solo_restore.pop(obj.id, None)
+        provider = self.display.provider
+        for lid in ids:
+            provider.set_weight(obj.id, MORPH_MIN_WEIGHT, lid)
+        self.display.refresh()
+        self.services.status("Morph: every target at 0 %")
         return True
 
     def toggle_ab(self) -> bool:

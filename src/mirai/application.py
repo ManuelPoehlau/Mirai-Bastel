@@ -722,6 +722,7 @@ class Application:
         self._skeleton.reset()
         self._weight_view_follow()  # the view stays on across a load; the new scene's current bone is shown
         self._morph.ab.clear()
+        self._morph.solo_restore.clear()
         self._objects.pick_caches = {}
         self._objects.sync_views()
         self._apply_display()
@@ -3573,22 +3574,44 @@ class Application:
         current target. Returns the new `LayerId` or None (refused, status set)."""
         return self._morph.create_target(name)
 
-    def rename_morph_target(self, name: str | None = None) -> bool:
-        """Renames the edit object's target (one Undo step); without `name` the next name of
-        `morph_targets.RENAME_CYCLE`."""
-        return self._morph.rename_target(name)
+    def morph_target_rows(self) -> list[tuple]:
+        """The morph panel's rows (AD-030 §13): (LayerId, name, weight, is_current) of the document edit object."""
+        return self._morph.rows()
 
-    def delete_morph_target(self) -> bool:
-        """Deletes the edit object's current target with its offsets (one Undo step)."""
-        return self._morph.delete_target()
+    @property
+    def morph_solo_target(self):
+        """The target the morph panel's solo shows alone, None = no solo (view state)."""
+        return self._morph.solo_target
+
+    def select_morph_target(self, lid) -> bool:
+        """This target of the document edit object becomes current (the panel's click; view state)."""
+        return self._morph.select_target(lid)
+
+    def solo_morph_target(self, lid) -> bool:
+        """The panel's solo: only this target shown, again = weights as before (view state)."""
+        return self._morph.solo(lid)
+
+    def zero_morph_weights(self) -> bool:
+        """Every target of the document edit object at 0 % (view state)."""
+        return self._morph.zero_all()
+
+    def rename_morph_target(self, name: str | None = None, lid=None) -> bool:
+        """Renames the edit object's target (one Undo step); without `name` the next name of
+        `morph_targets.RENAME_CYCLE`; `lid` default = the current target."""
+        return self._morph.rename_target(name, lid)
+
+    def delete_morph_target(self, lid=None) -> bool:
+        """Deletes a target of the edit object (default: the current one) with its offsets (one Undo step)."""
+        return self._morph.delete_target(lid)
 
     def step_morph_target(self, step: int) -> bool:
         """The next / previous target of the document edit object becomes current (view state)."""
         return self._morph.step_target(step)
 
-    def set_morph_weight(self, weight: int, lid=None) -> bool:
-        """The weight of a target of the document edit object (default: the current one); view state."""
-        return self._morph.set_weight(weight, lid)
+    def set_morph_weight(self, weight: int, lid=None, quiet: bool = False) -> bool:
+        """The weight of a target of the document edit object (default: the current one); view state. `quiet`: no
+        status line (the panel's slider while dragged)."""
+        return self._morph.set_weight(weight, lid, quiet)
 
     def edit_morph_target(self) -> bool:
         """Tab on the base (H4, AD-025 §15): the target's editing view beside the base becomes the edit object."""

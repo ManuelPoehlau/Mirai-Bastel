@@ -44,10 +44,10 @@ Die größten Lücken liegen dort, wo eine Taste je nach Zustand etwas anderes t
 | L3 | **Ruhe/Pose und „gebunden“.** „posed/rest“ ist Text in der Rig-Zeile; „gebunden“ steht nirgends. Beide Sperren (Modellieren nur in Ruhe, Objekt fest) erfährt man erst durch die Ablehnung | \[V\] AD-028 §7, `status_text` | fehlende UI |
 | L4 | **Gewichte im Ruhezustand unsichtbar.** Keine Gewichts-Ansicht zum Einschalten; Prüfen heißt `7`/`8` halten und damit schon schreiben | \[V\] `_show_share` nur in der Geste | fehlende UI |
 | L5 | **Knochen-Hierarchie unsichtbar.** Elternknochen = der aktuelle beim Anlegen; man sieht ihn nicht und kann ihn nicht ändern; Wechseln blind per `Alt+J` | \[V\] AD-028 §8.3 | fehlende UI + Funktion (Umhängen fehlt) |
-| L6 | **Morph-Liste als Textzeile.** Höchstens 8 von bis zu 64 Zielen sichtbar, Gewicht als Zahl, kein Balken; „Basis“ gegen „Ziel daneben“ nur als Wort | \[V\] `targets_text`, `MAX_TARGETS = 64` | fehlende UI |
+| L6 | **Morph-Liste als Textzeile.** Höchstens 8 von bis zu 64 Zielen sichtbar, Gewicht als Zahl, kein Balken; „Basis“ gegen „Ziel daneben“ nur als Wort | \[V\] `targets_text`, `MAX_TARGETS = 64` | fehlende UI — *2026-11-07: Morph-Panel mit Regler pro Ziel, AD-030 §13* |
 | L7 | **Gleiches Gewicht für alles im HUD.** 16 Zeilen; Look, Display, View, Fixed ändern sich selten, stehen aber gleichrangig neben Modus und Achse | \[V\] Probe | UX-Frage |
 | L8 | **Gesperrtes wird nicht gezeigt.** `can_run` weiß es pro Befehl, das HUD zeigt es nicht | \[V\] `HudState.unavailable` | fehlende UI |
-| L9 | **Kein Umbenennen per Text.** Namenslisten statt Eingabe; bei vielen Zielen oder Knochen nicht tragfähig | \[V\] `RENAME_CYCLE`, `BONE_NAMES` | technische Grenze (kein Textfeld) |
+| L9 | **Kein Umbenennen per Text.** Namenslisten statt Eingabe; bei vielen Zielen oder Knochen nicht tragfähig | \[V\] `RENAME_CYCLE`, `BONE_NAMES` | technische Grenze (kein Textfeld) — *2026-11-07: Textfeld per Doppelklick im Outliner (AD-030 §10) und Morph-Panel (§13)* |
 | L10 | **Zwei Heat-Ansichten teilen eine Färbung.** Soft-Zone und Gewichte nutzen dieselbe Flächenfärbung; beide zugleich geht nicht | \[V\] `show_soft_weights` | Gestaltungsgrenze, bei L4 beachten |
 | L11 | **Keine permanente Raumorientierung.** Außerhalb einer aktiven Geste fehlt ein eigenständiger, stets sichtbarer Hinweis auf die X-/Y-/Z-Richtung im Weltraum. Das gestenbezogene Gizmo erfüllt diese Aufgabe nicht | \[V\] In der geprüften Viewport-Bestandsaufnahme ist kein separates Orientierungs-Gizmo erfasst | fehlende UI |
 
