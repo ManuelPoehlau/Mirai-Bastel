@@ -44,6 +44,13 @@ in `Mesh.export_state()` mit `"kind": "weights"`. Nur geschrieben, wenn die Scen
 Mesh einen Gewichts-Layer hat (sonst 4 / 5 / 6 wie bisher), damit ein älterer Build die Datei
 ablehnt, statt Rig oder Gewichte beim Speichern still zu verlieren. Gelesen werden 2-7.
 
+Version 8 (Gruppen und Ausblenden, Outliner 2026-11-07, CORE_V1_FREEZE §7.1) ist additiv: ein Objekt trägt
+`"hidden": true` (fehlt = sichtbar) und `"parent": <ObjectId der Datei>` (fehlt = oberste Ebene); eine Gruppe ist ein
+Objekt mit `"state": "group"` und leerem Mesh. Nur geschrieben, wenn ein Objekt eine Gruppe ist, ausgeblendet ist oder
+ein Elternteil hat (sonst 4-7 wie bisher), damit ein älterer Build die Datei ablehnt, statt die Gruppen beim Speichern
+still zu verlieren. Gelesen werden 2-8; ein ungültiger Verweis (fehlende/Nicht-Gruppe, Kreis, Edit-Objekt Gruppe oder
+ausgeblendet) macht die Datei ungültig.
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -65,6 +72,8 @@ LAYERS_FORMAT_VERSION = 5
 UV_FORMAT_VERSION = 6
 #: Written when the scene has a rig or any mesh a weights layer (AD-028 §3.6).
 RIG_FORMAT_VERSION = 7
+#: Written when any object is a group, hidden or in a group (Outliner, 2026-11-07).
+GROUP_FORMAT_VERSION = 8
 
 
 def scene_to_dict(scene: Scene) -> dict:
@@ -72,7 +81,12 @@ def scene_to_dict(scene: Scene) -> dict:
     layered = any(obj.mesh.has_point_layers() for obj in objects)
     textured = any(obj.mesh.has_face_uvs() or obj.texture is not None for obj in objects)
     rigged = scene.rig is not None or any(_has_weights(obj.mesh) for obj in objects)
-    if rigged:
+    grouped = any(
+        obj.state is ObjectState.GROUP or obj.hidden or obj.parent is not None for obj in scene.objects.values()
+    )
+    if grouped:
+        version = GROUP_FORMAT_VERSION
+    elif rigged:
         version = RIG_FORMAT_VERSION
     elif textured:
         version = UV_FORMAT_VERSION
@@ -97,7 +111,7 @@ def _has_weights(mesh: Mesh) -> bool:
 
 def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
-    if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION):
+    if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION, GROUP_FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
@@ -136,6 +150,10 @@ def _object_to_dict(obj: SceneObject) -> dict:
     }
     if obj.texture is not None:
         out["texture"] = obj.texture  # AD-026 (version 6); absent = none, so 4/5 files stay as they were
+    if obj.hidden:
+        out["hidden"] = True  # version 8
+    if obj.parent is not None:
+        out["parent"] = int(obj.parent)  # version 8
     return out
 
 
@@ -154,6 +172,8 @@ def _object_from_dict(raw: dict) -> SceneObject:
         state=ObjectState(raw["state"]),
         material=_material_from_dict(raw.get("material")),
         texture=raw.get("texture"),
+        hidden=bool(raw.get("hidden", False)),
+        parent=None if raw.get("parent") is None else ObjectId(raw["parent"]),
     )
 
 

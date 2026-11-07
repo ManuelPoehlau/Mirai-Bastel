@@ -204,11 +204,11 @@ def test_an_invalid_rig_makes_the_file_invalid(corrupt):
         scene_from_dict(data)
 
 
-def test_versions_2_to_7_are_read():
+def test_versions_2_to_8_are_read():
     scene = Scene()
     scene.mesh = _grid(1)
     plain = scene_to_dict(scene)
-    for version in (2, 3, 4, 5, 6, 7):
+    for version in (2, 3, 4, 5, 6, 7, 8):
         data = json.loads(json.dumps(plain))
         data["version"] = version
         loaded = scene_from_dict(data)
@@ -220,6 +220,6 @@ def test_versions_2_to_7_are_read():
     assert data["version"] == 7
     loaded = scene_from_dict(data)
     assert loaded.rig == scene.rig and loaded.mesh.layer_items(lid) == scene.mesh.layer_items(lid)
-    data["version"] = 8
+    data["version"] = 9
     with pytest.raises(ValueError):
         scene_from_dict(data)

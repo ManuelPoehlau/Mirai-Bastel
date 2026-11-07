@@ -134,9 +134,13 @@ def replace_scene(scene: Scene, loaded: Scene) -> SceneObject:
         obj.pivot = source.pivot
         obj.material = source.material
         obj.texture = source.texture
+        obj.hidden = source.hidden
         new_ids[source.id] = obj.id
         if source.id == loaded.edit_object_id:
             edit = obj
+    for source in loaded.objects.values():  # the groups of the file, on the new ids
+        if source.parent is not None:
+            scene.objects[new_ids[source.id]].parent = new_ids[source.parent]
     assert edit is not None  # Scene garantiert ein Edit-Objekt unter den Objekten
     scene.edit_object_id = edit.id
     _clear_mirror_pairs(scene)
@@ -274,6 +278,73 @@ def plan_object_delete(scene: Scene, selected: Iterable[ObjectId]) -> tuple[list
         )
     nearest = min(editable, key=lambda obj: (abs(int(obj.id) - int(edit_id)), int(obj.id)))
     return doomed, nearest.id
+
+
+class ObjectHiddenCommand:
+    """Ausblenden/Einblenden als ein Undo-Schritt (Outliner 2026-11-07): `changes` = `(obj, before, after)`."""
+
+    def __init__(self, changes: list[tuple[SceneObject, bool, bool]], description: str) -> None:
+        self.changes = list(changes)
+        self.description = description
+
+    def undo(self) -> None:
+        for obj, before, _ in self.changes:
+            obj.hidden = before
+
+    def redo(self) -> None:
+        for obj, _, after in self.changes:
+            obj.hidden = after
+
+
+class ObjectParentCommand:
+    """Umhängen in eine Gruppe als ein Undo-Schritt: `changes` = `(obj, before, after)` (ObjectId oder None). Die
+    Prüfung (Gruppe, kein Zyklus) macht `Scene.set_parent` vor dem Command."""
+
+    def __init__(self, changes: list[tuple[SceneObject, ObjectId | None, ObjectId | None]], description: str) -> None:
+        self.changes = list(changes)
+        self.description = description
+
+    def undo(self) -> None:
+        for obj, before, _ in self.changes:
+            obj.parent = before
+
+    def redo(self) -> None:
+        for obj, _, after in self.changes:
+            obj.parent = after
+
+
+def group_leaves(scene: Scene, ids: Iterable[ObjectId]) -> list[SceneObject]:
+    """Die Objekte, auf die ein Objekt-Command wirkt: eine ausgewählte Gruppe steht für alle ihre Mitglieder
+    (nur die sichtbaren, nie die Gruppe selbst), nach ID, ohne Doppelte."""
+    found: dict[ObjectId, SceneObject] = {}
+    for oid in ids:
+        obj = scene.objects.get(oid)
+        if obj is None:
+            continue
+        members = scene.descendants_of(oid) if obj.state is ObjectState.GROUP else (obj,)
+        for member in members:
+            if member.state is not ObjectState.GROUP and not scene.is_hidden(member.id):
+                found[member.id] = member
+    return [found[oid] for oid in sorted(found)]
+
+
+def without_riders(scene: Scene, ids: Iterable[ObjectId]) -> list[SceneObject]:
+    """Die ausgewählten Objekte ohne die, deren Gruppe auch ausgewählt ist (sie reisen mit ihr), nach ID."""
+    chosen = {oid for oid in ids if oid in scene.objects}
+    return [
+        scene.objects[oid]
+        for oid in sorted(chosen)
+        if not any(group.id in chosen for group in scene.ancestors_of(oid))
+    ]
+
+
+def subtree_depth_first(scene: Scene, roots: Iterable[SceneObject]) -> list[SceneObject]:
+    """Die Wurzeln samt allen Mitgliedern, Eltern vor Kindern."""
+    out: list[SceneObject] = []
+    for root in roots:
+        out.append(root)
+        out.extend(scene.descendants_of(root.id))
+    return out
 
 
 class ObjectStateCommand:
@@ -484,6 +555,8 @@ def pair_names(scene: Scene, pair: MirrorPair) -> str:
 def check_pairable(scene: Scene, objects: list[SceneObject]) -> None:
     """Die Ablehnungen beim Anlegen (Proposal §5.7): eine Referenz, ein Objekt in einem Paar."""
     for obj in objects:
+        if obj.state is ObjectState.GROUP:
+            raise MirrorRefused(f"{obj.name!r} is a group - select its objects instead")
         if obj.state is ObjectState.REFERENCE:
             raise MirrorRefused(f"{obj.name!r} is a Reference - locked (Alt+R makes it Normal)")
         pair = scene.mirror_pair_of(obj.id)

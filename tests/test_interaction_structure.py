@@ -37,7 +37,7 @@ NON_MODAL_FIELDS = {
     "_handlers", "_mode_policies", "tool_manager", "bindings", "keymap_load",
     # view state: camera, display, the viewport and its sinks and caches, picking
     "camera", "display", "viewport", "viewport_width", "viewport_height", "_look_row_index", "_pick_cache",
-    "gpu_picking", "subdivision", "morph", "skin", "surface_chain", "_soft_overlay", "_soft_bands", "_soft_shading_overlay",
+    "gpu_picking", "_loaded_view", "subdivision", "morph", "skin", "surface_chain", "_soft_overlay", "_soft_bands", "_soft_shading_overlay",
     "_soft_shading", "_weight_view", "_mask_overlay", "_tints_seen", "gizmo_enabled", "_gizmo_cache", "_gizmo_frame_cache",
     # input tracking and the hover (AD-019 `PointerGestures` included: navigation owns no keys, H2-R2)
     "pointer", "_cursor", "_press_point", "_shift_held", "_ctrl_held", "_alt_held", "coalesce_hover", "_hover_stale",

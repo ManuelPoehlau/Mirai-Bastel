@@ -152,6 +152,21 @@ CLEAR_TRANSFORM = "ClearTransform"
 # der umschaltet, ist verwirrend - Q-12 revidiert; Taste `PROVISIONAL`).
 TOGGLE_REFERENCE = "ToggleReference"
 
+# --- Objekt-Verwaltung (Outliner, Manu 2026-11-07; Namen `PROVISIONAL`, bewusst OHNE Standardtaste) ----
+# Ausblenden/Einblenden, Duplizieren und Gruppen für die in Modus `4` ausgewählten Objekte. Die Tasten
+# bestimmt Manu (Vorschlag in der Doku); bis dahin laufen sie über `dispatch_command`/API und das Outliner-Panel.
+HIDE_OBJECTS = "HideObjects"
+ISOLATE_OBJECTS = "IsolateObjects"
+SHOW_ALL_OBJECTS = "ShowAllObjects"
+DUPLICATE_OBJECTS = "DuplicateObjects"
+GROUP_OBJECTS = "GroupObjects"
+UNGROUP_OBJECTS = "UngroupObjects"
+SELECT_OBJECT_GROUP = "SelectObjectGroup"
+OBJECT_MANAGEMENT_COMMANDS = (
+    HIDE_OBJECTS, ISOLATE_OBJECTS, SHOW_ALL_OBJECTS, DUPLICATE_OBJECTS, GROUP_OBJECTS, UNGROUP_OBJECTS,
+    SELECT_OBJECT_GROUP,
+)
+
 # CONNECT (WP-06 B6, AD-017 "Contextual C"): global, nicht Topology-Lab —
 # 1 Edge selektiert → Split; 2+ Edges → Edge Connect (per-face); 2+ Vertices
 # → Vertex Connect (per-face); leere Auswahl → Knife-Session (WP-06 B7).

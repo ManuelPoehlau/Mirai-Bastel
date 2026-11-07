@@ -51,7 +51,9 @@ from ..scene_objects import (
     DeleteRefused,
     MirrorPairCommand,
     MirrorRefused,
+    ObjectHiddenCommand,
     ObjectMaterialCommand,
+    ObjectParentCommand,
     ObjectPivotCommand,
     ObjectStateCommand,
     ObjectTransformCommand,
@@ -60,6 +62,7 @@ from ..scene_objects import (
     check_pairable,
     describe_pair,
     editable_material,
+    group_leaves,
     object_base_color,
     object_finish,
     out_of_sync_text,
@@ -68,7 +71,9 @@ from ..scene_objects import (
     plan_object_delete,
     resync_command,
     selected_color,
+    subtree_depth_first,
     unique_object_name,
+    without_riders,
 )
 from ..viewport.look_controls import clamp_material_values, material_row
 from ..viewport.picking import pick_object
@@ -370,7 +375,9 @@ class ObjectController:
             return False
         services = self.services
         scene, selection = services.scene, services.selection
-        selected = [oid for oid in sorted(selection.objects) if oid in scene.objects]
+        # A group takes its members with it (Outliner 2026-11-07); members first so `Scene.remove_object` never meets
+        # a group that still has members, and Undo brings the same instances back.
+        selected = [obj.id for obj in subtree_depth_first(scene, without_riders(scene, selection.objects))]
         if not selected:
             services.status(f"{label}: no object selected - click one first")
             return False
@@ -379,6 +386,7 @@ class ObjectController:
         except DeleteRefused as exc:
             services.status(f"{label}: {exc}")
             return False
+        doomed.sort(key=lambda obj: -len(scene.ancestors_of(obj.id)))
         before = services.selection_snapshot()
         edit_before = scene.edit_object_id
         edit_changed = edit_after != edit_before
@@ -619,6 +627,258 @@ class ObjectController:
             followers.append((partner, partner.transform, obj, obj.transform, pair))
         return drivers, followers
 
+    # -- Outliner commands (Manu 2026-11-07, `PROVISIONAL`): hide, duplicate, group --------------------------------
+    #
+    # Mode `4`, the object selection; each is one Undo step. A selected group stands for its members. The edit object
+    # (and the groups it hangs in) is never hidden - it is the object `1/2/3` work on and the viewport draws it
+    # itself. No default keys yet (Manu decides); `management_command` is the one entry.
+
+    def management_command(self, command: str) -> bool:
+        return {
+            commands.HIDE_OBJECTS: self.hide_selected,
+            commands.ISOLATE_OBJECTS: self.isolate_selected,
+            commands.SHOW_ALL_OBJECTS: self.show_all,
+            commands.DUPLICATE_OBJECTS: self.duplicate_selected,
+            commands.GROUP_OBJECTS: self.group_selected,
+            commands.UNGROUP_OBJECTS: self.ungroup_selected,
+            commands.SELECT_OBJECT_GROUP: self.select_group,
+        }[command]()
+
+    def _selection_changed(self) -> None:
+        services = self.services
+        services.selection.hovered = None
+        if services.viewport is not None:
+            services.viewport.on_selection_changed()
+        self.sync_views()
+        services.refresh_hover()
+
+    def _visibility_changed(self, before: tuple, changes: list, description: str, removed: set | None = None) -> None:
+        """The common tail of a hide/show: one Undo step; hidden objects leave the object selection."""
+        services = self.services
+        services.history.push(ObjectHiddenCommand(changes, description))
+        if removed:
+            services.selection.objects = {oid for oid in services.selection.objects if oid not in removed}
+        services.record_selection_history(before, mesh_step=False)
+        self._selection_changed()
+
+    def _kept_visible(self) -> set:
+        scene = self.services.scene
+        edit = scene.edit_object_id
+        return {edit, *(group.id for group in scene.ancestors_of(edit))}
+
+    def hide_selected(self) -> bool:
+        label = "Hide object"
+        selected = self._mirror_selection(label)
+        if selected is None:
+            return False
+        services = self.services
+        scene = services.scene
+        keep = self._kept_visible()
+        targets, blocked = [], []
+        for obj in without_riders(scene, [obj.id for obj in selected]):
+            if obj.hidden:
+                continue
+            (blocked if obj.id in keep else targets).append(obj)
+        if not targets:
+            services.status(
+                f"{label}: {blocked[0].name!r} holds the edit object {scene.edit_object.name!r} - it stays visible"
+                if blocked
+                else f"{label}: already hidden"
+            )
+            return False
+        before = services.selection_snapshot()
+        removed: set = set()
+        for obj in targets:
+            obj.hidden = True
+            removed.add(obj.id)
+            removed.update(member.id for member in scene.descendants_of(obj.id))
+        self._visibility_changed(before, [(obj, False, True) for obj in targets], label, removed)
+        text = f"Hidden {', '.join(repr(obj.name) for obj in targets)}"
+        if blocked:
+            text += f" ({blocked[0].name!r} holds the edit object - stays visible)"
+        services.status(text)
+        return True
+
+    def isolate_selected(self) -> bool:
+        label = "Isolate object"
+        selected = self._mirror_selection(label)
+        if selected is None:
+            return False
+        services = self.services
+        scene = services.scene
+        leaves = group_leaves(scene, [obj.id for obj in selected])
+        if not leaves:
+            services.status(f"{label}: nothing visible is selected")
+            return False
+        keep = self._kept_visible()
+        for leaf in leaves:
+            keep.add(leaf.id)
+            keep.update(group.id for group in scene.ancestors_of(leaf.id))
+        changes = [
+            (obj, obj.hidden, obj.id not in keep) for obj in scene.objects.values() if obj.hidden != (obj.id not in keep)
+        ]
+        if not changes:
+            services.status(f"{label}: everything else is already hidden")
+            return False
+        before = services.selection_snapshot()
+        for obj, _, after in changes:
+            obj.hidden = after
+        self._visibility_changed(before, changes, label)
+        services.status(f"Isolated {', '.join(repr(obj.name) for obj in leaves)} - Show all brings the rest back")
+        return True
+
+    def show_all(self) -> bool:
+        label = "Show all objects"
+        if self.refused_during_interaction(label):
+            return False
+        services = self.services
+        hidden = [obj for obj in services.scene.objects.values() if obj.hidden]
+        if not hidden:
+            services.status(f"{label}: nothing is hidden")
+            return False
+        before = services.selection_snapshot()
+        for obj in hidden:
+            obj.hidden = False
+        self._visibility_changed(before, [(obj, True, False) for obj in hidden], label)
+        services.status(f"Shown {', '.join(repr(obj.name) for obj in hidden)}")
+        return True
+
+    def group_selected(self) -> bool:
+        """A new group (an object with an empty mesh) holding the selected objects; a selected member whose own group
+        is also selected rides along with it. The group hangs where the members hung when they all shared one group,
+        else on the top level, and becomes the object selection (W/E/R then move all members)."""
+        label = "Group objects"
+        selected = self._mirror_selection(label)
+        if selected is None:
+            return False
+        services = self.services
+        scene = services.scene
+        roots = without_riders(scene, [obj.id for obj in selected])
+        parents = {obj.parent for obj in roots}
+        parent = parents.pop() if len(parents) == 1 else None
+        before = services.selection_snapshot()
+        group = scene.add_object(Mesh(), name=unique_object_name(scene, "Group"), state=ObjectState.GROUP, parent=parent)
+        changes = [(obj, obj.parent, group.id) for obj in roots]
+        for obj in roots:
+            scene.set_parent(obj.id, group.id)
+        services.history.push(
+            CompositeCommand([AddObjectCommand(scene, group), ObjectParentCommand(changes, label)], label)
+        )
+        services.selection.objects = {group.id}
+        services.record_selection_history(before, mesh_step=False)
+        self._selection_changed()
+        services.status(f"{group.name!r}: {len(roots)} object(s) grouped - W/E/R move them together")
+        return True
+
+    def ungroup_selected(self) -> bool:
+        """A selected group is dissolved (its members move up to its own group); a selected member leaves its group
+        (to the group's group). One Undo step; the freed members stay selected."""
+        label = "Ungroup"
+        selected = self._mirror_selection(label)
+        if selected is None:
+            return False
+        services = self.services
+        scene = services.scene
+        dissolved = [obj for obj in selected if obj.state is ObjectState.GROUP]
+        dissolved_ids = {obj.id for obj in dissolved}
+        leaving = [
+            obj for obj in selected
+            if obj.state is not ObjectState.GROUP and obj.parent is not None and obj.parent not in dissolved_ids
+        ]
+        if not dissolved and not leaving:
+            services.status(f"{label}: nothing in a group is selected")
+            return False
+
+        def surviving(group_id):
+            while group_id in dissolved_ids:
+                group_id = scene.objects[group_id].parent
+            return group_id
+
+        changes = []
+        for group in dissolved:
+            for child in scene.children_of(group.id):
+                if child.id not in dissolved_ids:
+                    changes.append((child, group.id, surviving(group.parent)))
+        for obj in leaving:
+            changes.append((obj, obj.parent, surviving(scene.objects[obj.parent].parent)))
+        before = services.selection_snapshot()
+        for obj, _, after in changes:
+            obj.parent = after
+        steps: list = [ObjectParentCommand(changes, label)]
+        doomed = sorted(dissolved, key=lambda obj: -len(scene.ancestors_of(obj.id)))
+        for group in doomed:
+            scene.remove_object(group.id)
+        if doomed:
+            edit = scene.edit_object_id
+            steps.append(DeleteObjectsCommand(scene, doomed, edit, edit))
+        services.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, label))
+        services.selection.objects = (services.selection.objects - dissolved_ids) | {obj.id for obj, _, _ in changes}
+        services.record_selection_history(before, mesh_step=False)
+        self._selection_changed()
+        names = ", ".join(repr(obj.name) for obj in dissolved)
+        services.status(f"Ungrouped {names}" if dissolved else f"{len(leaving)} object(s) left their group")
+        return True
+
+    def select_group(self) -> bool:
+        """The selection becomes the group(s) the selected objects hang in (a selected group: its own group)."""
+        label = "Select group"
+        selected = self._mirror_selection(label)
+        if selected is None:
+            return False
+        services = self.services
+        groups = {obj.parent for obj in selected if obj.parent is not None}
+        if not groups:
+            services.status(f"{label}: the selection is not in a group")
+            return False
+        before = services.selection_snapshot()
+        services.selection.objects = set(groups)
+        services.record_selection_history(before, mesh_step=False)
+        self._selection_changed()
+        names = ", ".join(repr(services.scene.objects[oid].name) for oid in sorted(groups))
+        services.status(f"Group {names} selected")
+        return True
+
+    def duplicate_selected(self) -> bool:
+        """An independent copy (no instance) of the selected objects, with their groups' members: mesh (incl. its
+        symmetry, regions, UVs), placement, pivot, material, texture, state and hidden flag. Copies of members stay in
+        their group, a copied group's members hang in the copy. Not paired, same place (W moves the copy, which is
+        the object selection). Refused for a mesh with point layers (morph targets / weights, AD-025 §4.4). One Undo
+        step."""
+        label = "Duplicate"
+        selected = self._mirror_selection(label)
+        if selected is None:
+            return False
+        services = self.services
+        scene = services.scene
+        roots = without_riders(scene, [obj.id for obj in selected])
+        sources = subtree_depth_first(scene, roots)
+        layered = next((obj for obj in sources if obj.mesh.has_point_layers()), None)
+        if layered is not None:
+            services.status(f"{label}: {layered.name!r} has morph targets or weights - a copy is not supported yet")
+            return False
+        before = services.selection_snapshot()
+        copies: dict = {}
+        steps = []
+        for source in sources:
+            parent = copies[source.parent].id if source.parent in copies else source.parent
+            obj = scene.add_object(
+                Mesh.from_state(source.mesh.export_state()),
+                name=unique_object_name(scene, source.name),
+                state=source.state,
+                texture=source.texture,
+                parent=parent,
+            )
+            obj.transform, obj.pivot, obj.material, obj.hidden = source.transform, source.pivot, source.material, source.hidden
+            copies[source.id] = obj
+            steps.append(AddObjectCommand(scene, obj))
+        services.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, f"Duplicate {len(steps)} objects"))
+        services.selection.objects = {copies[obj.id].id for obj in roots}
+        services.record_selection_history(before, mesh_step=False)
+        self._selection_changed()
+        names = ", ".join(repr(copies[obj.id].name) for obj in roots)
+        services.status(f"Duplicated: {names} (selected; W/E/R move the copy)")
+        return True
+
     # -- the objects' views (AD-021 §4.6) ------------------------------------------------------------
 
     def sync_views(self) -> None:
@@ -628,7 +888,13 @@ class ObjectController:
         the selection overlays (§4.4 "Drawing")."""
         services = self.services
         scene = services.scene
-        others = {oid: obj for oid, obj in scene.objects.items() if oid != scene.edit_object_id}
+        # Groups have no geometry and a hidden object (or one in a hidden group) is not drawn: neither has a render
+        # entry or a pick cache (the edit object is never hidden, `hide_selected`).
+        others = {
+            oid: obj
+            for oid, obj in scene.objects.items()
+            if oid != scene.edit_object_id and obj.state is not ObjectState.GROUP and not scene.is_hidden(oid)
+        }
         for oid in [oid for oid in self.pick_caches if oid not in others]:
             del self.pick_caches[oid]
         for oid in [oid for oid in self.cameras if oid not in scene.objects]:
@@ -692,14 +958,16 @@ class ObjectController:
         services = self.services
         if services.selection.mode is not SelectionMode.OBJECT:
             return frozenset()
-        return frozenset(oid for oid in services.selection.objects if oid in services.scene.objects)
+        return frozenset(obj.id for obj in group_leaves(services.scene, services.selection.objects))
 
     def _highlight_signature(self) -> tuple:
         scene = self.services.scene
         return (
             self.highlighted(),
             scene.edit_object_id,
-            tuple((oid, obj.state, obj.material, obj.texture) for oid, obj in scene.objects.items()),
+            tuple(
+                (oid, obj.state, obj.material, obj.texture, obj.hidden, obj.parent) for oid, obj in scene.objects.items()
+            ),
         )
 
     def sync_highlight(self) -> None:
@@ -759,6 +1027,8 @@ class ObjectController:
         if len(selected) > 1:
             return f" · {len(selected)} objects selected - still editing {edit.name!r}"
         (obj,) = selected
+        if obj.state is ObjectState.GROUP:
+            return f" · {obj.name!r} is a group - still editing {edit.name!r}"
         if obj.state is ObjectState.REFERENCE:
             return f" · {obj.name!r} is a Reference - still editing {edit.name!r}"
         if obj.id == edit.id:
@@ -795,6 +1065,8 @@ class ObjectController:
         scene = services.scene
         candidates = []
         for oid, obj in scene.objects.items():
+            if obj.state is ObjectState.GROUP or scene.is_hidden(oid):
+                continue
             if oid == scene.edit_object_id:
                 cache = services.pick_cache
             else:
@@ -913,7 +1185,7 @@ class ObjectController:
         (RF-4, Q-1). None (refusal posted) when nothing or only References are selected."""
         services = self.services
         scene = services.scene
-        selected = [scene.objects[oid] for oid in sorted(services.selection.objects) if oid in scene.objects]
+        selected = group_leaves(scene, services.selection.objects)  # a selected group stands for its members
         targets = [obj for obj in selected if obj.state is not ObjectState.REFERENCE]
         references = tuple(obj.name for obj in selected if obj.state is ObjectState.REFERENCE)
         if not selected:

@@ -739,6 +739,22 @@ defaults to judge; whether Add should switch to mode `4` (this) or stay in the c
 the edit role" rule; Delete in `4` on `Delete` (Max/Blender habit) without a confirmation (Undo is the net). Not built: primitive
 parameters after creation (resolution, size), several segments/rings in the menu, duplicate/clone.
 
+### 6.8 Outliner data and commands — groups and hiding (2026-11-07, `PROVISIONAL`)
+
+Manu: no outliner without hide, duplicate and "several meshes in one object" (the teeth). Decision: **a group of
+objects, not several meshes per object** (option A) — an object keeps exactly one mesh, so the ID space, the edit
+object, morph targets, weights and symmetry are untouched. A group is an object with `ObjectState.GROUP` (empty mesh) and
+members point at it with `parent`; a group has no placement of its own (members keep absolute placements), so a selected
+group simply stands for its members (`scene_objects.group_leaves`). Core: see CORE_V1_FREEZE §7.1 (version 8).
+
+Commands (`mirai.interaction.commands.OBJECT_MANAGEMENT_COMMANDS`, **no default keys** — Manu decides, proposal in
+`docs/design/OUTLINER_KEYS_PROPOSAL.md`), mode `4`, one Undo step each, `ObjectController`:
+`HideObjects` (the edit object and the groups it hangs in stay visible), `IsolateObjects`, `ShowAllObjects`,
+`DuplicateObjects` (independent copy incl. group members, same place, not paired; refused for a mesh with point layers),
+`GroupObjects`, `UngroupObjects` (dissolve a selected group / take a selected member out), `SelectObjectGroup`.
+Hidden objects are not drawn, not picked and leave the object selection; `Delete` on a group deletes its members too.
+Hidden is saved with the scene (not view state). Still open: locking, explicit order, group transform/pivot, the panel.
+
 ## 7. Questions
 
 ### 7.1 For Manu (Artist)

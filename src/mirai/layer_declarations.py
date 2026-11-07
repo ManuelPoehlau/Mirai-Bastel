@@ -133,6 +133,9 @@ _NON_MESH_COMMANDS = (
     *sorted(commands.WINDOW_COMMANDS),
     # object level: placement, state and objects, never a mesh's content (Delete in `4` removes objects)
     commands.CLEAR_TRANSFORM, commands.TOGGLE_REFERENCE,
+    # Outliner (2026-11-07): visibility and groups are object state; Duplicate copies whole meshes and refuses
+    # point layers at its own site
+    *commands.OBJECT_MANAGEMENT_COMMANDS,
     # the symmetry definition, mask, hide and saved regions are not layer data
     commands.SYMMETRY_CYCLE, commands.MASK_TOGGLE, commands.MASK_INVERT, commands.MASK_CLEAR,
     commands.GROUP_MASK_TOGGLE, commands.HIDE_SELECTION, commands.ISOLATE_SELECTION, commands.SHOW_ALL,
@@ -226,6 +229,8 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "break_mirror_pairs": "non-mesh",
         "resync_mirror_pairs": "non-mesh",
         "mirror_copy": DECLARED,
+        # Outliner: refuses a mesh with point layers at its own site (`ObjectController.duplicate_selected`)
+        "duplicate_objects": "non-mesh",
         # AD-025 Phase 3: the target lifecycle (one layer-only Undo step each) and the editing view
         "create_morph_target": MORPH,
         "rename_morph_target": MORPH,
@@ -324,6 +329,7 @@ _VIEW_BASE_ONLY = frozenset(
         commands.SYMMETRY_CYCLE, commands.SEAM_TO_PLANE, commands.REGION_NEW, commands.REGION_NAME,
         commands.REGION_ADD, commands.REGION_REMOVE, commands.REGION_DELETE, commands.SET_OBJECT_MODE,
         commands.CLEAR_TRANSFORM, commands.TOGGLE_REFERENCE,
+        *commands.OBJECT_MANAGEMENT_COMMANDS,
     }
 )
 #: Methods that run on the view: the host entry (positions are written as offsets, the rest is reverted

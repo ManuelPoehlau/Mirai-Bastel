@@ -302,6 +302,23 @@ pinned the version number 3 (`test_scene_objects.py::TestSerializationV2::test_f
 (renamed)). (5) contract tests `tests/test_object_material.py` (value, validation, default None, v4 round trip, v2/v3
 load, missing key, invalid material refused).
 
+**Decision:** Outliner data — groups and hiding (2026-11-07; Manu: "Core darf erweitert werden", group of objects with
+member objects, no multi-mesh object; [AD-021 §6.8](AD-021-OBJECT-COMPONENT-MODEL.md))
+
+Freeze rule (§7): (1) requirement — an Outliner needs to hide whole objects and to hold several mesh objects (the teeth)
+under one container that moves, hides, duplicates and deletes as a unit, saved with the scene; (2) not solvable with the
+public API: `SceneObject` has `__slots__` and the object list is flat, a side table keyed by `ObjectId` would live outside
+the file format; (3) documented in AD-021 §6.8; (4) smallest extension, **data and invariants only**: `ObjectState.GROUP`
+(an object with an empty mesh), `SceneObject.hidden: bool = False`, `SceneObject.parent: ObjectId | None = None`;
+`Scene` gains `children_of`, `descendants_of`, `ancestors_of`, `is_hidden`, `set_parent` (the parent must be a group, no
+cycle), `add_object(..., parent=)`; `remove_object` refuses an object that still has members (like a mirror pair); a group
+is never the edit object. `src/core/serialization.py` writes **version 8** only when an object is a group, hidden or has a
+parent (`"hidden": true`, `"parent": <id>` per object, absent = default), reads 2-8, and refuses a file whose parent is
+missing or not a group, whose groups form a cycle, or whose edit object is a group or hidden. Not touched: `Mesh`,
+`Operation`, `HistoryStack`, `ObjectTransform`, `Selection`. A group has **no placement of its own**: W/E/R, hide,
+duplicate and delete on a group act on its members (`src/mirai`), so no transform chain exists. (5) contract tests
+`tests/test_object_outliner.py` (round trip v8, invalid hierarchy refused, remove with members refused via the commands).
+
 **Decision:** WP Toolbox Gaps B1 Collapse V/E/F (2026-10-23; promotion by Manu,
 [WP_TOOLBOX_GAPS_PLAN](../WP_TOOLBOX_GAPS_PLAN.md) B1)
 

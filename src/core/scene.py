@@ -61,10 +61,15 @@ ROTATION_TOLERANCE = 1e-9
 
 
 class ObjectState(Enum):
-    """Rolle eines Objekts in der Scene (AD-021 §4.7); erweiterbar (hidden, locked)."""
+    """Rolle eines Objekts in der Scene (AD-021 §4.7); erweiterbar (locked).
+
+    `GROUP` (Outliner, Manu 2026-11-07): ein Container ohne eigene Geometrie und Platzierung - sein
+    Mesh ist leer. Andere Objekte hängen über `SceneObject.parent` darin; Auswahl, Transform, Ausblenden,
+    Duplizieren und Löschen wirken auf die Mitglieder. Eine Gruppe ist nie Edit-Objekt."""
 
     NORMAL = "normal"
     REFERENCE = "reference"
+    GROUP = "group"
 
 
 def _vec3(values: Iterable[float], what: str) -> Vec3:
@@ -190,7 +195,7 @@ class SceneObject:
     einfache Werte, die künftige Objekt-Commands (M1/M2) ändern.
     """
 
-    __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material", "texture")
+    __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material", "texture", "hidden", "parent")
 
     def __init__(
         self,
@@ -203,6 +208,8 @@ class SceneObject:
         state: ObjectState = ObjectState.NORMAL,
         material: ObjectMaterial | None = None,
         texture: str | None = None,
+        hidden: bool = False,
+        parent: ObjectId | None = None,
     ) -> None:
         self._id = _require_object_id(object_id)
         self.mesh: Mesh = mesh
@@ -219,6 +226,11 @@ class SceneObject:
         if texture is not None and not (isinstance(texture, str) and texture):
             raise TypeError(f"erwartet einen nicht leeren Pfad oder None, nicht {texture!r}")
         self.texture: str | None = texture
+        # Outliner (2026-11-07): `hidden` = nicht gezeichnet, nicht pickbar (Ansicht, aber mit der Datei
+        # gespeichert); `parent` = die Gruppe, in der das Objekt hängt (None = oberste Ebene). Beides ändern
+        # nur Commands in `src/mirai`; `Scene.set_parent` prüft Gruppe und Zyklen.
+        self.hidden: bool = bool(hidden)
+        self.parent: ObjectId | None = None if parent is None else _require_object_id(parent)
 
     @property
     def id(self) -> ObjectId:
@@ -274,6 +286,7 @@ class Scene:
             loaded[obj.id] = obj
         if _require_object_id(edit_object_id) not in loaded:
             raise ValueError(f"Edit-Objekt {int(edit_object_id)} ist nicht unter den Objekten")
+        _check_hierarchy(loaded, edit_object_id)
         scene._object_ids = IdAllocator(ObjectId, start=object_id_counter)
         scene._objects = dict(sorted(loaded.items()))
         scene._edit_object_id = edit_object_id
@@ -321,9 +334,12 @@ class Scene:
         name: str = "object",
         state: ObjectState = ObjectState.NORMAL,
         texture: str | None = None,
+        parent: ObjectId | None = None,
     ) -> SceneObject:
-        """Neues Objekt mit frischer, nie wiederverwendeter ObjectId."""
-        obj = SceneObject(self._object_ids.allocate(), mesh, name=name, state=state, texture=texture)
+        """Neues Objekt mit frischer, nie wiederverwendeter ObjectId. `parent` = eine Gruppe der Scene."""
+        if parent is not None:
+            self._require_group(parent)
+        obj = SceneObject(self._object_ids.allocate(), mesh, name=name, state=state, texture=texture, parent=parent)
         self._objects[obj.id] = obj
         return obj
 
@@ -338,6 +354,9 @@ class Scene:
         if self.mirror_pair_of(object_id) is not None:
             # Ein Paar zeigt nie auf ein fehlendes Objekt: erst das Paar lösen (ein Command).
             raise ValueError(f"Objekt {int(object_id)} ist in einem Spiegelpaar - erst das Paar lösen")
+        if self.children_of(object_id):
+            # Wie das Paar: ein Kind zeigt nie auf eine fehlende Gruppe - erst die Mitglieder entfernen/umhängen.
+            raise ValueError(f"Objekt {int(object_id)} hat Mitglieder - erst diese entfernen oder umhängen")
         return self._objects.pop(object_id)
 
     def restore_object(self, obj: SceneObject) -> None:
@@ -354,6 +373,58 @@ class Scene:
         # Wieder an seinen Platz in der ID-Reihenfolge, damit Undo auch die
         # Reihenfolge exakt herstellt.
         self._objects = dict(sorted(self._objects.items()))
+
+    # ------------------------------------------------------------------
+    # Gruppen (Outliner, 2026-11-07)
+    # ------------------------------------------------------------------
+
+    def _require_group(self, object_id: ObjectId) -> SceneObject:
+        group = self._objects.get(_require_object_id(object_id))
+        if group is None:
+            raise ValueError(f"Gruppe {int(object_id)} ist nicht in der Scene")
+        if group.state is not ObjectState.GROUP:
+            raise ValueError(f"Objekt {int(object_id)} ist keine Gruppe")
+        return group
+
+    def children_of(self, object_id: ObjectId) -> tuple[SceneObject, ...]:
+        """Die direkten Mitglieder einer Gruppe, nach ID."""
+        return tuple(obj for obj in self._objects.values() if obj.parent == object_id)
+
+    def descendants_of(self, object_id: ObjectId) -> tuple[SceneObject, ...]:
+        """Alle Mitglieder, auch verschachtelte; Eltern vor ihren Kindern (Tiefensuche)."""
+        found: list[SceneObject] = []
+        stack = list(reversed(self.children_of(object_id)))
+        while stack:
+            obj = stack.pop()
+            found.append(obj)
+            stack.extend(reversed(self.children_of(obj.id)))
+        return tuple(found)
+
+    def ancestors_of(self, object_id: ObjectId) -> tuple[SceneObject, ...]:
+        """Die Gruppen über dem Objekt, die nächste zuerst."""
+        found: list[SceneObject] = []
+        parent = self._objects[object_id].parent
+        while parent is not None and parent in self._objects and len(found) <= len(self._objects):
+            group = self._objects[parent]
+            found.append(group)
+            parent = group.parent
+        return tuple(found)
+
+    def is_hidden(self, object_id: ObjectId) -> bool:
+        """Ausgeblendet: das Objekt selbst oder eine seiner Gruppen."""
+        obj = self._objects[object_id]
+        return obj.hidden or any(group.hidden for group in self.ancestors_of(object_id))
+
+    def set_parent(self, object_id: ObjectId, parent: ObjectId | None) -> None:
+        """Hängt ein Objekt in eine Gruppe (None = oberste Ebene). `ValueError` bei fehlender/Nicht-Gruppe
+        und bei einem Zyklus (die Gruppe selbst oder eines ihrer Mitglieder als Ziel). Ändert nur den Verweis;
+        Undo ist Sache des Commands."""
+        obj = self._objects[_require_object_id(object_id)]
+        if parent is not None:
+            self._require_group(parent)
+            if parent == object_id or any(d.id == parent for d in self.descendants_of(object_id)):
+                raise ValueError(f"Zyklus: {int(parent)} liegt in {int(object_id)}")
+        obj.parent = parent
 
     # ------------------------------------------------------------------
     # Spiegelpaare (OBJECT_MIRROR_SYMMETRY_PROPOSAL §5.1)
@@ -405,6 +476,8 @@ class Scene:
         # der Aufrufer leert sie nach dem Wechsel (AD-021 §4.4, Reihenfolge Q-5).
         if _require_object_id(object_id) not in self._objects:
             raise KeyError(f"Edit-Objekt {int(object_id)} ist nicht in der Scene")
+        if self._objects[object_id].state is ObjectState.GROUP:
+            raise ValueError(f"Eine Gruppe ({int(object_id)}) kann nicht Edit-Objekt sein")
         self._edit_object_id = object_id
 
     @property
@@ -436,3 +509,31 @@ class Scene:
         mit dem alten Mesh (AD-SYM-01).
         """
         self.edit_object.mesh = mesh
+
+
+def _check_hierarchy(objects: Mapping[ObjectId, SceneObject], edit_object_id: ObjectId) -> None:
+    """Gruppen-Invarianten einer geladenen Objektmenge: jedes `parent` ist eine Gruppe der Datei, keine Kette
+    läuft im Kreis, das Edit-Objekt ist keine Gruppe und nicht ausgeblendet (auch nicht über eine Gruppe)."""
+    for obj in objects.values():
+        seen = {obj.id}
+        parent = obj.parent
+        while parent is not None:
+            group = objects.get(parent)
+            if group is None:
+                raise ValueError(f"Objekt {int(obj.id)}: Gruppe {int(parent)} fehlt")
+            if group.state is not ObjectState.GROUP:
+                raise ValueError(f"Objekt {int(obj.id)}: {int(parent)} ist keine Gruppe")
+            if parent in seen:
+                raise ValueError(f"Objekt {int(obj.id)}: Gruppen im Kreis")
+            seen.add(parent)
+            parent = group.parent
+    edit = objects[edit_object_id]
+    if edit.state is ObjectState.GROUP:
+        raise ValueError(f"Edit-Objekt {int(edit_object_id)} ist eine Gruppe")
+    chain = [edit]
+    parent = edit.parent
+    while parent is not None:
+        chain.append(objects[parent])
+        parent = objects[parent].parent
+    if any(obj.hidden for obj in chain):
+        raise ValueError(f"Edit-Objekt {int(edit_object_id)} ist ausgeblendet")

@@ -84,6 +84,7 @@ from .scene_objects import (
     CompositeCommand,
     ObjectTextureCommand,
     editable_material,
+    group_leaves,
     replace_scene,
     reset_scene,
     unique_object_name,
@@ -826,6 +827,11 @@ class Application:
         Shift+M menu): `ObjectController.mirror_copy`."""
         return self._objects.mirror_copy(axis)
 
+    def duplicate_objects(self) -> bool:
+        """Duplicate the selected objects (and the members of selected groups) as independent copies (Outliner,
+        2026-11-07): `ObjectController.duplicate_selected`. Same as the `DuplicateObjects` command."""
+        return self._objects.duplicate_selected()
+
     def pair_selected(self, axis: str = "X") -> bool:
         """Pair two selected objects (proposal §5.5): `ObjectController.pair_selected`."""
         return self._objects.pair_selected(axis)
@@ -1075,6 +1081,7 @@ class Application:
         add(_MODE_COMMANDS, plain(self._run_mode))
         add(PLACEMENT_COMMANDS, plain(objects.placement_command))
         add((commands.TOGGLE_REFERENCE,), plain(lambda command: objects.reference_command()))
+        add(commands.OBJECT_MANAGEMENT_COMMANDS, plain(objects.management_command))
         add((commands.CONNECT,), plain(lambda command: self._connect_command()))
         add(_REMOVAL_COMMANDS, plain(self._run_removal))
         add((commands.COLLAPSE,), plain(lambda command: self._collapse_command()))
@@ -4260,9 +4267,9 @@ class Application:
         locked, `ObjectController.targets`); None when no movable object is selected. Cheap, so not cached."""
         scene = self.scene
         targets = [
-            scene.objects[oid]
-            for oid in self.selection.objects
-            if oid in scene.objects and scene.objects[oid].state is not ObjectState.REFERENCE
+            obj
+            for obj in group_leaves(scene, self.selection.objects)  # a selected group stands for its members
+            if obj.state is not ObjectState.REFERENCE
         ]
         # A mirror pair is one unit (proposal §5.4): with both selected the gizmo sits on the driver.
         ids = {obj.id for obj in targets}
