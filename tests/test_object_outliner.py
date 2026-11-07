@@ -261,3 +261,35 @@ def test_hide_and_group_keys_act_on_objects_in_mode_4_and_on_components_otherwis
     app.dispatch_command(commands.SET_VERTEX_MODE)
     app.dispatch_command(commands.HIDE_SELECTION)  # component hide: the objects stay as they are
     assert not any(o.hidden for o in app.scene.objects.values())
+
+
+def test_ctrl_c_ctrl_v_pastes_independent_copies_and_each_paste_is_one_undo_step():
+    from mirai.interaction.input import Input
+    from mirai.interaction.bindings import build_default_bindings
+
+    bindings = build_default_bindings()
+    assert bindings.command_for(Input("key", "c", frozenset({"ctrl"}))) == commands.COPY_OBJECTS
+    assert bindings.command_for(Input("key", "v", frozenset({"ctrl"}))) == commands.PASTE_OBJECTS
+
+    app = _app()
+    (tooth,) = _with_teeth(app, 1)
+    _select(app, tooth)
+    before = len(app.scene.objects)
+    assert _run(app, commands.COPY_OBJECTS)
+    assert len(app.scene.objects) == before  # copying changes nothing
+    assert _run(app, commands.PASTE_OBJECTS) and _run(app, commands.PASTE_OBJECTS)
+    assert len(app.scene.objects) == before + 2
+    _run(app, commands.UNDO)
+    assert len(app.scene.objects) == before + 1
+
+
+def test_paste_without_copy_or_outside_mode_4_is_refused_and_a_deleted_source_is_skipped():
+    app = _app()
+    (tooth,) = _with_teeth(app, 1)
+    assert _run(app, commands.PASTE_OBJECTS) is False  # nothing copied
+    _select(app, tooth)
+    _run(app, commands.COPY_OBJECTS)
+    _run(app, commands.DELETE)  # the source is gone
+    assert _run(app, commands.PASTE_OBJECTS) is False
+    app.dispatch_command(commands.SET_VERTEX_MODE)
+    assert _run(app, commands.PASTE_OBJECTS) is False

@@ -162,9 +162,13 @@ DUPLICATE_OBJECTS = "DuplicateObjects"
 GROUP_OBJECTS = "GroupObjects"
 UNGROUP_OBJECTS = "UngroupObjects"
 SELECT_OBJECT_GROUP = "SelectObjectGroup"
+# Copy / Paste (Manu 2026-11-07: "4 > Objekt auswählen STRG+C STRG+V, der Klassiker"): Copy remembers the selected
+# objects, Paste makes an independent copy of them (same as Duplicate, from the remembered objects).
+COPY_OBJECTS = "CopyObjects"
+PASTE_OBJECTS = "PasteObjects"
 OBJECT_MANAGEMENT_COMMANDS = (
     HIDE_OBJECTS, ISOLATE_OBJECTS, SHOW_ALL_OBJECTS, DUPLICATE_OBJECTS, GROUP_OBJECTS, UNGROUP_OBJECTS,
-    SELECT_OBJECT_GROUP,
+    SELECT_OBJECT_GROUP, COPY_OBJECTS, PASTE_OBJECTS,
 )
 
 # CONNECT (WP-06 B6, AD-017 "Contextual C"): global, nicht Topology-Lab —

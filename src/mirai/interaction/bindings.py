@@ -292,6 +292,10 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("m", "alt", "shift"), cmd.MASK_CLEAR)
     # Hide / Isolate / Show all (`PROVISIONAL`): Ctrl+H hides the selection, Ctrl+Shift+H isolates it, Alt+H shows all
     # (bare H stays the HUD toggle of the window level).
+    # Copy / Paste objects (Manu 2026-11-07, `PROVISIONAL`): Ctrl+C remembers the selected objects, Ctrl+V pastes an
+    # independent copy (mode `4`; Duplicate itself has no key).
+    bs.set_default(_key("c", "ctrl"), cmd.COPY_OBJECTS)
+    bs.set_default(_key("v", "ctrl"), cmd.PASTE_OBJECTS)
     bs.set_default(_key("h", "ctrl"), cmd.HIDE_SELECTION)
     bs.set_default(_key("h", "ctrl", "shift"), cmd.ISOLATE_SELECTION)
     bs.set_default(_key("h", "alt"), cmd.SHOW_ALL)

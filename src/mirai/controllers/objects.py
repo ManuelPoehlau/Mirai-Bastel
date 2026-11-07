@@ -301,6 +301,8 @@ class ObjectController:
         self.highlight_key: tuple | None = None
         self.cameras: dict[ObjectId, ObjectSpaceCamera] = {}
         self.reference_ghost: bool = False
+        #: Ctrl+C: the ids of the objects Ctrl+V copies (view state, no Undo step; an id that is gone is skipped)
+        self.clipboard: tuple[ObjectId, ...] = ()
         self.last_edit_switch_seconds: float = 0.0
 
     # -- adding, importing, exporting, deleting (AD-021 M1, Track A1/A2) -----------------------------
@@ -653,6 +655,8 @@ class ObjectController:
             commands.GROUP_OBJECTS: self.group_selected,
             commands.UNGROUP_OBJECTS: self.ungroup_selected,
             commands.SELECT_OBJECT_GROUP: self.select_group,
+            commands.COPY_OBJECTS: self.copy_selected,
+            commands.PASTE_OBJECTS: self.paste,
         }[command]()
 
     def _selection_changed(self) -> None:
@@ -849,19 +853,48 @@ class ObjectController:
         services.status(f"Group {names} selected")
         return True
 
+    def copy_selected(self) -> bool:
+        """Ctrl+C in mode `4`: remember the selected objects (a group stands for itself and its members). No scene
+        change, no Undo step."""
+        label = "Copy"
+        selected = self._mirror_selection(label)
+        if selected is None:
+            return False
+        roots = without_riders(self.services.scene, [obj.id for obj in selected])
+        self.clipboard = tuple(obj.id for obj in roots)
+        self.services.status(f"Copied {', '.join(repr(obj.name) for obj in roots)} - Ctrl+V pastes a copy")
+        return True
+
+    def paste(self) -> bool:
+        """Ctrl+V in mode `4`: an independent copy of the copied objects that still exist."""
+        label = "Paste"
+        services = self.services
+        if self.refused_during_interaction(label):
+            return False
+        if services.selection.mode is not SelectionMode.OBJECT:
+            services.status(f"{label}: works on objects - press 4 (Ctrl+C copies the selected objects)")
+            return False
+        alive = [oid for oid in self.clipboard if oid in services.scene.objects]
+        if not alive:
+            services.status(f"{label}: nothing copied - select objects and press Ctrl+C")
+            return False
+        return self._duplicate(alive, label)
+
     def duplicate_selected(self) -> bool:
-        """An independent copy (no instance) of the selected objects, with their groups' members: mesh (incl. its
-        symmetry, regions, UVs), placement, pivot, material, texture, state and hidden flag. Copies of members stay in
-        their group, a copied group's members hang in the copy. Not paired, same place (W moves the copy, which is
-        the object selection). Refused for a mesh with point layers (morph targets / weights, AD-025 §4.4). One Undo
-        step."""
         label = "Duplicate"
         selected = self._mirror_selection(label)
         if selected is None:
             return False
+        return self._duplicate([obj.id for obj in selected], label)
+
+    def _duplicate(self, ids, label: str) -> bool:
+        """An independent copy (no instance) of the objects, with their groups' members: mesh (incl. its symmetry,
+        regions, UVs), placement, pivot, material, texture, state and hidden flag. Copies of members stay in their
+        group, a copied group's members hang in the copy. Not paired, same place (W moves the copy, which is the object
+        selection). Refused for a mesh with point layers (morph targets / weights, AD-025 §4.4). One Undo step."""
         services = self.services
         scene = services.scene
-        roots = without_riders(scene, [obj.id for obj in selected])
+        roots = without_riders(scene, ids)
         sources = subtree_depth_first(scene, roots)
         layered = next((obj for obj in sources if obj.mesh.has_point_layers()), None)
         if layered is not None:
@@ -882,12 +915,12 @@ class ObjectController:
             obj.transform, obj.pivot, obj.material, obj.hidden = source.transform, source.pivot, source.material, source.hidden
             copies[source.id] = obj
             steps.append(AddObjectCommand(scene, obj))
-        services.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, f"Duplicate {len(steps)} objects"))
+        services.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, f"{label} {len(steps)} objects"))
         services.selection.objects = {copies[obj.id].id for obj in roots}
         services.record_selection_history(before, mesh_step=False)
         self._selection_changed()
         names = ", ".join(repr(copies[obj.id].name) for obj in roots)
-        services.status(f"Duplicated: {names} (selected; W/E/R move the copy)")
+        services.status(f"{label}: {names} (selected; W/E/R move the copy)")
         return True
 
     # -- the objects' views (AD-021 §4.6) ------------------------------------------------------------

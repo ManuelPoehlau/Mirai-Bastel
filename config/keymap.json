@@ -42,6 +42,8 @@
     {"context": "global", "input": {"kind": "key", "value": "g", "modifiers": ["ctrl"]}, "command": "RegionNew", "set": "2026-11-07"},
     {"context": "global", "input": {"kind": "key", "value": "g", "modifiers": ["alt"]}, "command": "RegionSelect", "set": "2026-11-07"},
     {"context": "global", "input": {"kind": "key", "value": "g", "modifiers": ["ctrl", "alt"]}, "command": "RegionRemove", "set": "2026-11-07"},
+    {"context": "global", "input": {"kind": "key", "value": "c", "modifiers": ["ctrl"]}, "command": "CopyObjects", "set": "2026-11-07"},
+    {"context": "global", "input": {"kind": "key", "value": "v", "modifiers": ["ctrl"]}, "command": "PasteObjects", "set": "2026-11-07"},
     {"context": "knife", "input": {"kind": "key", "value": "enter", "modifiers": []}, "command": "KnifeCommit", "set": "2026-09-22"},
     {"context": "knife", "input": {"kind": "key", "value": "z", "modifiers": ["ctrl", "shift"]}, "command": "Redo", "set": "2026-09-22"},
     {"context": "knife", "input": {"kind": "key", "value": "e", "modifiers": []}, "command": "KnifeLift", "set": "2026-10-02"},
