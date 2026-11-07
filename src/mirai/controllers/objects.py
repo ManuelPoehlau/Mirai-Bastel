@@ -91,6 +91,17 @@ PLACEMENT_COMMANDS: dict[str, str] = {
     commands.CLEAR_TRANSFORM: "Clear transform",
 }
 
+#: Outliner (Manu 2026-11-07, "ja, die Tasten sind ok"): in mode `4` the hide and group keys act on objects instead of
+#: components - the same pattern as Delete. Key -> object command; every other component command stays refused.
+OBJECT_MODE_ROUTES: dict[str, str] = {
+    commands.HIDE_SELECTION: commands.HIDE_OBJECTS,
+    commands.ISOLATE_SELECTION: commands.ISOLATE_OBJECTS,
+    commands.SHOW_ALL: commands.SHOW_ALL_OBJECTS,
+    commands.REGION_NEW: commands.GROUP_OBJECTS,
+    commands.REGION_SELECT: commands.SELECT_OBJECT_GROUP,
+    commands.REGION_REMOVE: commands.UNGROUP_OBJECTS,
+}
+
 #: AD-021 M1 (L-1: one gesture writes one level): commands that work on the edit object's components. In mode `4`
 #: they are refused with a status line, except the object transforms; a Reference is locked (RF-4, Q-1). Undo/Redo,
 #: display, Soft settings and constraints are state or history, not component work, and stay allowed.
@@ -1172,12 +1183,13 @@ class ObjectController:
         References)."""
         if self.services.selection.mode is not SelectionMode.OBJECT or command not in COMPONENT_COMMANDS:
             return None
-        if command in OBJECT_TRANSFORM_COMMANDS or command == commands.DELETE:
-            return None  # Delete in `4` deletes the selected objects (`delete_selected`)
+        if command in OBJECT_TRANSFORM_COMMANDS or command == commands.DELETE or command in OBJECT_MODE_ROUTES:
+            return None  # Delete in `4` deletes the selected objects (`delete_selected`); hide / group keys route
+        # (`OBJECT_MODE_ROUTES`)
         return (
             "Object mode: T, G, S, I, Ctrl+B, C, Shift+C, Dissolve, Shift+L/R, Shift+S, Alt+M, Shift+arrows and Ctrl+/- work"
             " on points/edges/faces"
-            " - press 1/2/3 (Delete removes the selected objects)"
+            " - press 1/2/3 (Delete removes the selected objects; Ctrl+H, Ctrl+G ... work on objects)"
         )
 
     def targets(self, label: str, hint: str) -> tuple[list[SceneObject], tuple[str, ...]] | None:

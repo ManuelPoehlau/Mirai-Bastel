@@ -131,7 +131,7 @@ from .controllers.gestures import (
 )
 from .controllers.knife import KnifeController
 from .controllers.morph import MorphController
-from .controllers.objects import PLACEMENT_COMMANDS, ObjectController, selection_state
+from .controllers.objects import OBJECT_MODE_ROUTES, PLACEMENT_COMMANDS, ObjectController, selection_state
 from .controllers.pointer_tools import PointerToolsController
 from .controllers.skeleton import SHARE_VIEW_MODE, ShareCache, SkeletonController
 from .controllers.symmetry import SymmetryController
@@ -1091,8 +1091,18 @@ class Application:
         add((commands.RESYMMETRIZE,), plain(lambda command: self._symmetry.open()))
         add((commands.SEAM_TO_PLANE,), plain(lambda command: self._symmetry.seam_to_plane()))
         add(_MASK_COMMANDS, plain(self._mask_command))
-        add(_HIDE_COMMANDS, plain(self._hide_command))
-        add(_REGION_COMMANDS, plain(self._region_command))
+        def object_routed(run: Callable[[str], bool]) -> Handler:
+            """Mode `4`: the hide and group keys work on objects (`OBJECT_MODE_ROUTES`), else on components."""
+
+            def handler(command: str, ctx, context) -> bool:
+                if self.selection.mode is SelectionMode.OBJECT and command in OBJECT_MODE_ROUTES:
+                    return objects.management_command(OBJECT_MODE_ROUTES[command])
+                return run(command)
+
+            return handler
+
+        add(_HIDE_COMMANDS, object_routed(self._hide_command))
+        add(_REGION_COMMANDS, object_routed(self._region_command))
         add((commands.EDGE_LOOP, commands.EDGE_RING), plain(self._loop_select))
         add((commands.LOOP_INSERT,), plain(lambda command: self._loop_insert()))
         add(_SELECTION_STEP_COMMANDS, plain(self._selection_step))

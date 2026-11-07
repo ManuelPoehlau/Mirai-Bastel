@@ -747,7 +747,8 @@ object, morph targets, weights and symmetry are untouched. A group is an object 
 members point at it with `parent`; a group has no placement of its own (members keep absolute placements), so a selected
 group simply stands for its members (`scene_objects.group_leaves`). Core: see CORE_V1_FREEZE §7.1 (version 8).
 
-Commands (`mirai.interaction.commands.OBJECT_MANAGEMENT_COMMANDS`, **no default keys** — Manu decides, proposal in
+Commands (`mirai.interaction.commands.OBJECT_MANAGEMENT_COMMANDS`; keys approved by Manu 2026-11-07: in mode `4` Ctrl+H / Ctrl+Shift+H / Alt+H and
+Ctrl+G / Alt+G / Ctrl+Alt+G act on objects, `OBJECT_MODE_ROUTES`; Duplicate has no key yet, see
 `docs/design/OUTLINER_KEYS_PROPOSAL.md`), mode `4`, one Undo step each, `ObjectController`:
 `HideObjects` (the edit object and the groups it hangs in stay visible), `IsolateObjects`, `ShowAllObjects`,
 `DuplicateObjects` (independent copy incl. group members, same place, not paired; refused for a mesh with point layers),

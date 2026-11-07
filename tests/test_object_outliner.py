@@ -245,3 +245,19 @@ def test_duplicate_is_refused_for_a_mesh_with_point_layers():
     before = len(app.scene.objects)
     assert _run(app, commands.DUPLICATE_OBJECTS) is False
     assert len(app.scene.objects) == before
+
+
+def test_hide_and_group_keys_act_on_objects_in_mode_4_and_on_components_otherwise():
+    app = _app()
+    a, b = _with_teeth(app, 2)
+    _select(app, a, b)
+    assert app.dispatch_command(commands.REGION_NEW)  # Ctrl+G in mode 4 = group the objects
+    (group,) = [o for o in app.scene.objects.values() if o.state is ObjectState.GROUP]
+    assert app.scene.objects[a].parent == group.id
+    assert app.dispatch_command(commands.HIDE_SELECTION)  # Ctrl+H in mode 4 = hide the object selection
+    assert app.scene.is_hidden(a)
+    assert app.dispatch_command(commands.SHOW_ALL)
+    assert not app.scene.is_hidden(a)
+    app.dispatch_command(commands.SET_VERTEX_MODE)
+    app.dispatch_command(commands.HIDE_SELECTION)  # component hide: the objects stay as they are
+    assert not any(o.hidden for o in app.scene.objects.values())

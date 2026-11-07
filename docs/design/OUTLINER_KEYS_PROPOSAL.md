@@ -1,7 +1,8 @@
-# Outliner — Tastenvorschlag (zur Freigabe durch Manu)
+# Outliner — Tasten (Hide/Gruppe freigegeben 2026-11-07)
 
-Stand 2026-11-07. Die Objekt-Verwaltungs-Commands (`AD-021 §6.8`) sind implementiert, haben aber **keine Standardtaste**.
-Nichts davon steht in `config/keymap.json`; eine Taste kommt erst nach deinem „passt“ (CLAUDE.md, Input).
+Stand 2026-11-07. Manu: „ja, die Tasten sind ok“ — die sechs Hide/Gruppen-Tasten unten sind verdrahtet (Modus `4` lenkt sie auf Objekte,
+`ObjectController.OBJECT_MODE_ROUTES`) und mit `"set": "2026-11-07"` in `config/keymap.json`. Duplizieren hat **keine Taste**
+(erst Panel/Rechtsklick, später ggf. `Ctrl+C`).
 
 ## Prinzip: keine neuen Tasten, wo es schon die passende Familie gibt
 
