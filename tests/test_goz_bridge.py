@@ -33,6 +33,7 @@ from zbrush_bridge import (
     DROP_PREFIX,
     INSTALL_LABEL,
     NEW_OBJECT_PREFIX,
+    RESET_NAMES_LABEL,
     SEND_LABEL,
     ZBrushBridge,
 )
@@ -220,7 +221,7 @@ def test_unchanged_and_divided_returns_change_nothing(env):
     assert "no point moved" in app.status_message
     goz_back(env, identifier, flipped(fixture("zb2022_C_divided_once.GoZ")))
     assert "looks divided in ZBrush" in app.status_message and "held" in app.status_message
-    assert env["bridge"].entries() == (SEND_LABEL,)
+    assert set(env["bridge"].entries()) <= {SEND_LABEL, RESET_NAMES_LABEL}
     assert positions(mesh) == before and len(app.history) == 0
 
 
@@ -264,7 +265,7 @@ def test_corrupt_transfer_changes_nothing(env):
     helper.run(env["paths"], env["inbox"], settle=0.0, deadline=0.0)
     env["bridge"].tick()
     assert "transfer incomplete" in app.status_message
-    assert env["bridge"].entries() == (SEND_LABEL,)
+    assert set(env["bridge"].entries()) <= {SEND_LABEL, RESET_NAMES_LABEL}
     assert positions(app.scene.edit_object.mesh) == before
 
 

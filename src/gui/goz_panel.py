@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 
-from zbrush_bridge import APPLY_PREFIX, DROP_PREFIX, INSTALL_LABEL, NEW_OBJECT_PREFIX, SEND_LABEL
+from zbrush_bridge import APPLY_PREFIX, DROP_PREFIX, INSTALL_LABEL, NEW_OBJECT_PREFIX, RESET_NAMES_LABEL, SEND_LABEL
 
 _REFRESH_SECONDS = 0.25
 
@@ -47,4 +47,8 @@ class GozPanel:
                 bridge.activate(INSTALL_LABEL)
                 self._read_at = float("-inf")
         imgui.separator()
+        if RESET_NAMES_LABEL in rows:
+            if imgui.small_button("GoZ-Namen zurücksetzen"):
+                bridge.activate(RESET_NAMES_LABEL)
+                self._read_at = float("-inf")
         imgui.text_disabled("Sende-Optionen folgen")

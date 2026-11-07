@@ -58,6 +58,7 @@ from interop.goz.transfer import (
     default_runner,
     launch_zbrush,
     launch_zbrush_with_script,
+    manifest_path,
     read_manifest_text,
     write_manifest,
     write_send,
@@ -74,6 +75,7 @@ APPLY_PREFIX = "ZBrush übernehmen: "
 NEW_OBJECT_PREFIX = "ZBrush als neues Objekt: "
 DROP_PREFIX = "ZBrush verwerfen: "
 INSTALL_LABEL = "ZBrush: Mirai bei GoZ eintragen"
+RESET_NAMES_LABEL = "ZBrush: GoZ-Namen zurücksetzen"
 POLL_SECONDS = 0.25
 
 
@@ -180,16 +182,21 @@ class ZBrushBridge:
                 rows += (INSTALL_LABEL,)
         except GozSetupError:
             pass
+        edit_obj = self.app.scene.edit_object
+        if edit_obj is not None and self._obj_stems(edit_obj):
+            rows += (RESET_NAMES_LABEL,)
         return rows
 
     def handles(self, label: str) -> bool:
-        return label in (SEND_LABEL, INSTALL_LABEL) or label in self._rows
+        return label in (SEND_LABEL, INSTALL_LABEL, RESET_NAMES_LABEL) or label in self._rows
 
     def activate(self, label: str) -> bool:
         if label == SEND_LABEL:
             return self.send()
         if label == INSTALL_LABEL:
             return self.install()
+        if label == RESET_NAMES_LABEL:
+            return self.reset_names()
         action, w = self._rows.get(label, (None, None))
         if w is None:
             return False
@@ -604,6 +611,59 @@ class ZBrushBridge:
             versions.append(rebased)
             del versions[:-32]
 
+    def _obj_stems(self, obj: SceneObject) -> list[str]:
+        """All stems registered for `obj` in the current scene or session."""
+        scene = scene_key(self._scene_path())
+        obj_id = int(obj.id)
+        return [e.stem for e in self.names.entries
+                if e.object_id == obj_id
+                and (e.session == self.session_id or (scene is not None and e.scene == scene))]
+
+    def reset_names(self) -> bool:
+        """Remove all GoZ name registry entries and manifests for the current object so the next send
+        allocates clean names (no `_2` suffix). Covers all sessions and scene variants that share these stems."""
+        obj = self.pick_object()
+        if obj is None:
+            return False
+        self.names.reload()
+        stems = self._obj_stems(obj)
+        if not stems:
+            self.app.set_status(f"ZBrush: {obj.name!r} hat keine registrierten GoZ-Namen")
+            return False
+        # Collect former aliases so renamed Tools are cleared too
+        stem_set = set(stems)
+        for e in self.names.entries:
+            if e.stem in stem_set:
+                stem_set.update(e.former)
+        # Remove all registry entries that use any of these stems (any session / scene)
+        removed = sum(1 for e in self.names.entries if e.stem in stem_set)
+        self.names.entries = [e for e in self.names.entries if e.stem not in stem_set]
+        # Delete manifest files and clear in-memory cache
+        deleted = 0
+        try:
+            project = self.paths().project_dir()
+            for stem in stem_set:
+                p = manifest_path(self.manifest_dir, str(project / stem))
+                if p.is_file():
+                    p.unlink()
+                    deleted += 1
+                self._manifests.pop(_key(str(project / stem)), None)
+        except (GozSetupError, OSError):
+            pass
+        # Drop any waiting returns that are linked to this object
+        before_w = len(self.waiting)
+        self.waiting = [w for w in self.waiting if w.plan.object_id != obj.id]
+        dropped = before_w - len(self.waiting)
+        self.names.save()
+        parts = [f"{removed} Namenseintr{'ag' if removed == 1 else 'äge'}"]
+        if deleted:
+            parts.append(f"{deleted} Manifest{'e' if deleted != 1 else ''}")
+        if dropped:
+            parts.append(f"{dropped} offene Rückgabe{'n' if dropped > 1 else ''} verworfen")
+        self.app.set_status(f"ZBrush: Namen für {obj.name!r} zurückgesetzt "
+                            f"({', '.join(parts)}) — nächstes Senden vergibt neue Namen")
+        return True
+
     def _forget(self, w: Waiting) -> None:
         self.waiting = [x for x in self.waiting if x is not w]
 
@@ -630,4 +690,4 @@ def _key(identifier: str) -> str:
     return os.path.normcase(identifier.replace("\\", "/"))
 
 
-__all__ = ["ZBrushBridge", "ReturnKind", "DEFAULT_INBOX"]
+__all__ = ["ZBrushBridge", "ReturnKind", "DEFAULT_INBOX", "RESET_NAMES_LABEL"]
