@@ -148,6 +148,31 @@ class OrbitCamera:
             self.ortho = bool(ortho)
         self.camera_revision += 1
 
+    def set_view_about(self, anchor: Vec3, yaw: float, pitch: float, ortho: bool | None = None) -> None:
+        """`set_view` as a rigid rotation of the whole camera about `anchor` (Dynamic Orbit Focus): the
+        anchor keeps its pixel, `distance` stays. `target - anchor` is carried from the old basis into the
+        new one (so `eye = target + distance·dir` holds), and in ortho the target then slides along the view
+        axis to the anchor's depth, which changes nothing on screen but keeps the depth range around it."""
+        forward, right, up = self.basis()
+        rel = v.sub(self.target, anchor)
+        a, b, c = v.dot(rel, forward), v.dot(rel, right), v.dot(rel, up)
+        self.yaw = yaw
+        self.pitch = pitch
+        if ortho is not None:
+            self.ortho = bool(ortho)
+        forward, right, up = self.basis()
+        target = v.add(anchor, v.add(v.scale(forward, a), v.add(v.scale(right, b), v.scale(up, c))))
+        if self.ortho:
+            target = v.add(target, v.scale(forward, v.dot(v.sub(anchor, target), forward)))
+        self.target = target
+        self.camera_revision += 1
+
+    def orbit_about(self, anchor: Vec3, d_yaw: float, d_pitch: float) -> None:
+        """`orbit` about `anchor` instead of `target` (same pitch limit, clamped before the rotation)."""
+        max_pitch = math.radians(85)
+        pitch = max(-max_pitch, min(max_pitch, self.pitch + d_pitch))
+        self.set_view_about(anchor, self.yaw + d_yaw, pitch)
+
     def set_ortho(self, ortho: bool) -> bool:
         """Ortho on/off (V-2 toggle). True = changed (revision bumped)."""
         ortho = bool(ortho)
