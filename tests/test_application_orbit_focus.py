@@ -199,17 +199,18 @@ def test_shift_snap_mid_orbit_keeps_the_focus_on_its_pixel():
     app.pointer_release("LEFT", *CENTRE)
 
 
-def test_alt_during_a_held_move_orbits_about_the_focus_and_alt_up_ends_it():
+def test_alt_during_a_held_move_orbits_about_the_selection_and_alt_up_ends_it():
     app = _grid_app()
     _move(app, {_grid_vertex(app, 0, 4)})
-    focus = _focus_world(app)
-    _select(app, V, {_grid_vertex(app, 2, 2)})
+    v = _grid_vertex(app, 2, 2)
+    _select(app, V, {v})
+    centre = app.scene.mesh.vertex_position(v)
     assert app.key_press(W)
-    pixel = _screen(app, focus)
+    pixel = _screen(app, centre)
     app.set_alt_held(True)
     for _ in range(4):
         app.pointer_motion(400, 300, 15.0, 5.0)
-    assert _close(_screen(app, focus), pixel)
+    assert _close(_screen(app, centre), pixel)
     assert app._orbit_anchor is not None
     app.set_alt_held(False)
     assert app._orbit_anchor is None
@@ -290,6 +291,105 @@ def test_object_mode_orbits_about_the_selected_objects():
     assert app.key_press(_key("4")), app.status_message
     obj = app.scene.edit_object
     app.selection.objects = {obj.id}
+    centre = object_space.to_world(obj, obj.pivot)
+    pixel = _screen(app, centre)
+    _alt_orbit(app)
+    assert _close(_screen(app, centre), pixel)
+
+
+# -- the selection has priority, a click sets the focus (Manu 2026-11-08) ------------------------------------------
+
+
+K1 = _key("1")
+
+
+def _click(app, point, *modifiers):
+    x, y = _screen(app, point)
+    app.pointer_motion(x, y)
+    app.pointer_press(_mouse("LEFT", *modifiers), x, y)
+    app.pointer_release("LEFT", x, y)
+
+
+def test_a_selected_face_beats_the_worked_area():
+    app = _grid_app()
+    _move(app, {_grid_vertex(app, 0, 0)})
+    old_focus = _focus_world(app)
+    face = _grid_face(app, 2, 2)
+    _select(app, F, {face})
+    mesh = app.scene.mesh
+    pts = [mesh.vertex_position(v) for v in mesh.face_vertices(face)]
+    centre = tuple(sum(p[i] for p in pts) / len(pts) for i in range(3))
+    pixel, old_pixel = _screen(app, centre), _screen(app, old_focus)
+    _alt_orbit(app)
+    assert _close(_screen(app, centre), pixel)
+    assert not _close(_screen(app, old_focus), old_pixel)
+
+
+def test_a_click_on_an_element_sets_the_focus_and_empty_space_keeps_it():
+    app = _grid_app()
+    _move(app, {_grid_vertex(app, 0, 0)})
+    app.key_press(K1)
+    v = _grid_vertex(app, 3, 2)
+    where = app.scene.mesh.vertex_position(v)
+    _click(app, where)
+    assert app.selection.vertices == {v}
+    assert app.orbit_focus.source == "select" and _close(_focus_world(app), where)
+    app.pointer_motion(5.0, 5.0)  # empty space: deselects, the focus stays
+    app.pointer_press(_mouse("LEFT"), 5.0, 5.0)
+    app.pointer_release("LEFT", 5.0, 5.0)
+    assert not app.selection.vertices
+    assert _close(_focus_world(app), where)
+    pixel = _screen(app, where)
+    _alt_orbit(app)
+    assert _close(_screen(app, where), pixel)
+    # Work afterwards overrides the click again.
+    w = _grid_vertex(app, 1, 3)
+    _move(app, {w})
+    assert app.orbit_focus.source == "work"
+    assert _close(_focus_world(app), app.scene.mesh.vertex_position(w))
+
+
+def test_a_click_on_an_already_selected_element_sets_the_focus_too():
+    app = _grid_app()
+    app.key_press(K1)
+    v = _grid_vertex(app, 1, 1)
+    _select(app, V, {v})
+    _click(app, app.scene.mesh.vertex_position(v), "shift")
+    assert _close(_focus_world(app), app.scene.mesh.vertex_position(v))
+
+
+def test_a_box_select_sets_the_focus_to_what_it_picked():
+    app = _grid_app()
+    app.key_press(K1)
+    mesh = app.scene.mesh
+    a, b = (_screen(app, mesh.vertex_position(_grid_vertex(app, r, c))) for r, c in ((3, 3), (4, 4)))
+    start = (min(a[0], b[0]) - 8.0, min(a[1], b[1]) - 8.0)
+    end = (max(a[0], b[0]) + 8.0, max(a[1], b[1]) + 8.0)
+    app.pointer_motion(*start)
+    app.pointer_press(_mouse("LEFT"), *start)
+    steps = 6
+    for i in range(1, steps + 1):
+        x = start[0] + (end[0] - start[0]) * i / steps
+        y = start[1] + (end[1] - start[1]) * i / steps
+        app.pointer_drag((end[0] - start[0]) / steps, (end[1] - start[1]) / steps, x, y)
+    app.pointer_release("LEFT", *end)
+    picked = set(app.selection.vertices)
+    assert picked
+    pts = [mesh.vertex_position(v) for v in picked]
+    centre = tuple(sum(p[i] for p in pts) / len(pts) for i in range(3))
+    assert app.orbit_focus.source == "select" and _close(_focus_world(app), centre)
+
+
+def test_a_click_on_an_object_in_mode_4_sets_the_focus_to_its_pivot():
+    app = _grid_app()
+    _move(app, {_grid_vertex(app, 4, 4)})
+    assert app.key_press(_key("4")), app.status_message
+    obj = app.scene.edit_object
+    _click(app, (1.5, 1.5, 0.0))  # on the grid's surface
+    assert app.selection.objects == {obj.id}
+    assert app.orbit_focus.object_id == obj.id
+    assert _close(_focus_world(app), object_space.to_world(obj, obj.pivot))
+    app.selection.objects = set()
     centre = object_space.to_world(obj, obj.pivot)
     pixel = _screen(app, centre)
     _alt_orbit(app)
