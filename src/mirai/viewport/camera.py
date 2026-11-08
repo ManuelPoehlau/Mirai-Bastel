@@ -156,12 +156,20 @@ class OrbitCamera:
         forward, right, up = self.basis()
         rel = v.sub(self.target, anchor)
         a, b, c = v.dot(rel, forward), v.dot(rel, right), v.dot(rel, up)
+        was_ortho = self.ortho
         self.yaw = yaw
         self.pitch = pitch
-        if ortho is not None:
-            self.ortho = bool(ortho)
         forward, right, up = self.basis()
         target = v.add(anchor, v.add(v.scale(forward, a), v.add(v.scale(right, b), v.scale(up, c))))
+        if ortho is not None:
+            self.ortho = bool(ortho)
+        if self.ortho and not was_ortho:
+            # Persp -> ortho keeps the size at the target only; to keep the anchor's pixel its sideways offset
+            # scales by distance / its depth (perspective divide), and the target goes to the anchor's depth.
+            depth = self.distance - a
+            if depth > self.near:
+                k = self.distance / depth
+                target = v.add(anchor, v.add(v.scale(right, b * k), v.scale(up, c * k)))
         if self.ortho:
             target = v.add(target, v.scale(forward, v.dot(v.sub(anchor, target), forward)))
         self.target = target

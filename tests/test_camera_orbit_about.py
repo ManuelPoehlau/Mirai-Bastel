@@ -94,3 +94,16 @@ def test_each_call_bumps_the_revision_once():
     camera.set_view_about((1.0, 0.0, 0.0), 0.0, QUARTER, ortho=True)
     assert camera.camera_revision == rev + 2
     assert camera.ortho is True
+
+
+def test_persp_to_ortho_keeps_the_anchor_on_its_pixel():
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=6.0, yaw=0.4, pitch=0.3)
+    anchor = (1.5, 2.0, -0.5)  # not at the target's depth
+    pixel = camera.project_to_screen(anchor, W, H)
+    camera.set_view_about(anchor, camera.yaw, camera.pitch, ortho=True)
+    assert camera.ortho
+    assert _dist(camera.project_to_screen(anchor, W, H), pixel) < 1e-6
+    camera.set_view_about(anchor, 0.0, QUARTER)
+    assert _dist(camera.project_to_screen(anchor, W, H), pixel) < 1e-6
+    camera.set_ortho(False)  # the anchor sits at the target's depth now: leaving ortho keeps it too
+    assert _dist(camera.project_to_screen(anchor, W, H), pixel) < 1e-6

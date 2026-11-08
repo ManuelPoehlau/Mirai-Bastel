@@ -52,6 +52,7 @@ and last commit: [experiments/README.md](../experiments/README.md)). Their docs,
 | [WP_INSET_BEVEL_SLIDE.md](WP_INSET_BEVEL_SLIDE.md) | Gebaut 2026-10-29 (`PROVISIONAL`, Grundfunktion): Inset (`I` im Face-Modus), Bevel/Chamfer für Kanten und Punkte (`Ctrl+B`), Vertex Slide (`G` im Vertex-Modus); Entscheidungen, Nicht-Scope, Praxistest B25 |
 | [WP_GOZ_P2_PLAN.md](WP_GOZ_P2_PLAN.md) | ZBrush-Brücke P2 (erledigt, Praxistest bestanden 2026-11-06): Polygruppen ↔ Regionen (P2a, E2 erledigt), N-Gons (P2b) (nur in der Datei zerlegt, möglichst Vierecke); Manus Entscheidungen, PC-Test E2, Akzeptanz |
 | [WP_GOZ_P3_PLAN.md](WP_GOZ_P3_PLAN.md) | ZBrush-Brücke P3 (gebaut 2026-11-06, Layer-Weg + Praxistest offen): UVs (mit übernehmen), Textur zurück (Kopie neben der Szene), Morph-Targets (Basis + Targets, als ZBrush-Layer falls möglich); PC-Test E3 |
+| [WP_DYNAMIC_ORBIT_FOCUS.md](WP_DYNAMIC_ORBIT_FOCUS.md) | Gebaut 2026-11-08 (`PROVISIONAL`): Orbit um den zuletzt bearbeiteten Bereich (ZBrush-artig), getrennt vom Working Pivot; Blender-Recherche, Architektur-Audit, Entscheidungen P1–P9, Praxistest offen |
 | [WP_ORTHO_VIEWS_PLAN.md](WP_ORTHO_VIEWS_PLAN.md) | Gebaut 2026-10-28 (`PROVISIONAL`): Ortho/Persp (`U`), Standardansichten per Shift beim Orbit, Working Pivot rastet auf die Symmetrieebene (Manus V-1..V-3); Ergebnis und Praxistest B23 |
 
 ## For AI collaborators

@@ -43,6 +43,8 @@ NON_MODAL_FIELDS = {
     "pointer", "_cursor", "_press_point", "_shift_held", "_ctrl_held", "_alt_held", "coalesce_hover", "_hover_stale",
     # navigation and views
     "_orbit_virtual", "_view_name", "_ortho_auto",
+    # Dynamic Orbit Focus (docs/WP_DYNAMIC_ORBIT_FOCUS.md): the worked area, its watch, the orbit anchor
+    "dynamic_orbit_focus", "_orbit_focus", "_focus_tracker", "_orbit_anchor",
     # sticky settings
     "_soft", "gizmo_size_name", "tweak_command", "group_mask",
     # protection state per object (Mask, Hide, the active Polygroup) - not mesh data, no History

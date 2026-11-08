@@ -78,6 +78,7 @@ from .interaction.tools.selection_helpers import selection_pivot
 from .mesh_geometry import mesh_center_and_radius
 from . import object_space
 from . import view_state
+from .orbit_focus import FocusTracker, OrbitFocus, focus_point
 from .pivot import WorkingPivot
 from . import view_state
 from .scene_objects import (
@@ -562,6 +563,14 @@ class Application:
         self._orbit_virtual: tuple[float, float] | None = None
         self._view_name: str | None = None
         self._ortho_auto: bool = False
+        # Dynamic Orbit Focus (docs/WP_DYNAMIC_ORBIT_FOCUS.md, `PROVISIONAL`): the last worked area (set only by
+        # committed geometric work, `_update_orbit_focus`), the watch it is read from and the world point the
+        # running orbit gesture turns about (resolved on its first step, `_orbit_anchor_point`). Separate from
+        # the Working Pivot: neither reads nor moves the other.
+        self.dynamic_orbit_focus: bool = True
+        self._orbit_focus: OrbitFocus | None = None
+        self._focus_tracker = FocusTracker()
+        self._orbit_anchor: tuple | None = None  # (point or None,) once resolved for the running gesture
         self._loaded_view = None  # the `view` of the scene file `init_scene` just read (see `load_scene`)
         # Transform gizmo (2026-10-21, AD-016 D3; promoted from the Playground, Manu). Off unless the host
         # draws it (`src/main.py` sets `gizmo_enabled`): Labs on `Application` get no invisible handles.
@@ -725,6 +734,9 @@ class Application:
         self._objects.pick_caches = {}
         self._objects.sync_views()
         self._apply_display()
+        self._orbit_focus = None  # its object id belongs to the old scene
+        self._orbit_anchor = None
+        self._focus_tracker.bind(self.scene.mesh)
 
     @staticmethod
     def _build_mesh(geometry_type: str, obj_path: str | Path | None) -> tuple[Mesh, str, str | None]:
@@ -871,10 +883,17 @@ class Application:
         command changed the edit object itself (`DeleteObjectsCommand`, `AddObjectCommand`): the
         scene is already switched there, only the view is behind. A morph target's editing view lives
         while it is the edit object: it closes here when another object became the edit object."""
+        view = self._morph.view
         closed = self._morph.close_if_left()
         if closed is not None:
+            focus = self._orbit_focus
+            if focus is not None and focus.object_id == closed and view is not None:
+                # The view and its base share one object space (only shifted beside it, like the camera): the
+                # work on the target stays the focus, now on the base.
+                self._orbit_focus = OrbitFocus(view.base_obj.id, focus.position, focus.source)
             self._masks.pop(closed, None)  # the view's hidden set is its base's (`_hidden_owner`): nothing to drop
         obj = self.scene.edit_object
+        self._focus_tracker.bind(obj.mesh)
         self._pick_cache.invalidate()
         self.selection.hovered = None
         if self.viewport is not None:
@@ -977,6 +996,7 @@ class Application:
     def restore_camera_state(self) -> None:
         """The camera's fields were set from outside (`view_state`): leave a snapped standard view, refresh derived
         state. View only - no History."""
+        self._orbit_anchor = None
         self._view_name = None
         self._ortho_auto = False
         self._camera_changed()
@@ -2304,6 +2324,8 @@ class Application:
         if held == self._alt_held:
             return False
         self._alt_held = held
+        if not held and not self.pointer.active:
+            self._orbit_anchor = None  # the Alt-orbit during a transform has no button release: Alt up ends it
         return True
 
     def set_ctrl_held(self, held: bool) -> bool:
@@ -3141,6 +3163,9 @@ class Application:
             if self.viewport is not None:
                 self.viewport.on_selection_changed()  # an object step can change mode / selection
         self._morph.after_history()
+        # After the morph view followed the base (P4: Undo / Redo of geometry moves the focus to where it changed).
+        self._orbit_anchor = None
+        self._update_orbit_focus(self._focus_tracker.take(), (self._selection_snapshot(),), source="undo")
         self._skeleton.after_history()
         self._prune_ghost_selection()
         # AD-021 §4.6: refresh the view of the objects an object step touched; an object step
@@ -3245,8 +3270,9 @@ class Application:
         description = f"ZBrush return {obj.name}"
         companion = (ObjectTextureCommand(obj, obj.texture, plan.texture, description)
                      if plan.texture_changed else None)
+        # A return can move most of the mesh: no localized worked area, the orbit focus stays (P9).
         changed = self._mesh_transaction(description, mutate, moved_of=lambda moved: moved,
-                                         companion=companion).changed
+                                         companion=companion, focus=False).changed
         self._set_status(plan.summary() + (" - applied (Ctrl+Z undoes it)" if changed else " - nothing to apply"))
         return changed
 
@@ -3258,6 +3284,7 @@ class Application:
         on_applied: Callable[[Any], None] | None = None,
         moved_of: Callable[[Any], set[VertexId] | None] | None = None,
         companion=None,
+        focus: bool = True,
     ) -> "_MeshTransaction":
         """The one commit boundary for a mesh change `Application` makes (AD-SYM-03 §2.2 T-a);
         `apply_mesh_change` is its external-host entry.
@@ -3290,7 +3317,7 @@ class Application:
         if delta.empty:
             if companion is not None:
                 self.history.push(companion)
-                self._record_selection_history(selection_before, mesh_step=False)
+                self._record_selection_history(selection_before, mesh_step=False, focus=focus)
                 return _MeshTransaction(True, result)
             return _MeshTransaction(False, result)
         command = MeshDeltaCommand(mesh=mesh, delta=delta, description=description)
@@ -3302,7 +3329,7 @@ class Application:
         layer_only = not (delta.vertices or delta.edges or delta.faces) and (
             delta.symmetry is None and delta.regions is None
         )
-        self._record_selection_history(selection_before, mesh_step=not layer_only)
+        self._record_selection_history(selection_before, mesh_step=not layer_only, focus=focus)
         moved = set() if layer_only else moved_of(result) if moved_of is not None else None
         if moved is None:
             self._notify_topology_changed()
@@ -3350,7 +3377,7 @@ class Application:
         selection.objects = {oid for oid in objects if oid in scene.objects}
 
     def _record_selection_history(
-        self, before: tuple, mesh_step: bool = True, object_meshes: frozenset = frozenset()
+        self, before: tuple, mesh_step: bool = True, object_meshes: frozenset = frozenset(), focus: bool = True
     ) -> None:
         """Von jedem Aufrufer, der gerade `history.push()` ausgelöst hat (bzw.
         gleich auslösen wird - siehe Aufrufstellen), mit dem VOR der Mutation
@@ -3358,13 +3385,20 @@ class Application:
         push()`: ein neuer Eintrag verwirft den Mirror-Redo-Zweig genau wie
         dort den echten. `mesh_step` False = ein Objekt-Schritt (AD-021 M1), dessen
         Undo/Redo das Mesh des Edit-Objekts nicht neu aufbaut. `object_meshes` (M2-3): die
-        Nicht-Edit-Objekte, deren Mesh der Schritt geändert hat."""
+        Nicht-Edit-Objekte, deren Mesh der Schritt geändert hat. `focus` False = a whole-mesh rewrite (Apply
+        Transform, Re-Symmetrize, a ZBrush return) that is no worked area: the orbit focus stays."""
+        # Orbit Focus: the watch is drained on every step, also a swallowed one (a refused morph-view edit wrote the
+        # view and undid it), so nothing leaks into the next step.
+        change = self._focus_tracker.take()
+        self._orbit_anchor = None
         if getattr(self.history, "swallowed", False):
             # The push before this call kept nothing (a morph target's editing view translated it to
             # no change, `TranslatingHistory`): no mirror entry either, the stacks stay 1:1.
             self.history.swallowed = False
             return
         after = self._selection_snapshot()
+        if focus:
+            self._update_orbit_focus(change, (after, before))
         self._selection_undo_stack.append((before, after, mesh_step, frozenset(object_meshes)))
         self._selection_redo_stack.clear()
 
@@ -3642,6 +3676,7 @@ class Application:
         click = self.pointer.release(button, x, y)
         if not self.pointer.active:
             self._orbit_virtual = None  # the orbit gesture (if any) is over; a snapped view stays
+            self._orbit_anchor = None
         if button == "LEFT":
             tools = self._pointer_tools
             gizmo = tools.gizmo_press
@@ -3974,7 +4009,11 @@ class Application:
         camera = self.camera
         if not snap:
             self._leave_view()
-            camera.orbit(d_yaw, d_pitch)
+            anchor = self._orbit_anchor_point()
+            if anchor is None:
+                camera.orbit(d_yaw, d_pitch)
+            else:
+                camera.orbit_about(anchor, d_yaw, d_pitch)
             return
         if self._orbit_virtual is None:
             self._orbit_virtual = (camera.yaw, camera.pitch)
@@ -3991,11 +4030,104 @@ class Application:
             if self._view_name is None:
                 self._ortho_auto = not self.camera.ortho
             self._view_name = name
-            self.camera.set_view(snap_yaw, snap_pitch, ortho=True)
+            self._set_view(snap_yaw, snap_pitch, ortho=True)
             self._set_status(f"View: {self.view_text}")
         else:
             self._leave_view()
-            self.camera.set_view(yaw, pitch)
+            self._set_view(yaw, pitch)
+
+    def _set_view(self, yaw: float, pitch: float, ortho: bool | None = None) -> None:
+        """The orbit gesture's absolute angles, turned about the orbit anchor (Dynamic Orbit Focus) or the target."""
+        anchor = self._orbit_anchor_point()
+        if anchor is None:
+            self.camera.set_view(yaw, pitch, ortho=ortho)
+        else:
+            self.camera.set_view_about(anchor, yaw, pitch, ortho=ortho)
+
+    # -- Dynamic Orbit Focus (docs/WP_DYNAMIC_ORBIT_FOCUS.md) ------------------------------------------------
+
+    @property
+    def orbit_focus(self) -> OrbitFocus | None:
+        """The remembered worked area (object space of its object), None = none yet."""
+        return self._orbit_focus
+
+    def orbit_focus_world(self) -> tuple | None:
+        """The worked area in world while its object exists, None otherwise."""
+        focus = self._orbit_focus
+        obj = None if focus is None else self.scene.objects.get(focus.object_id)
+        return None if obj is None else object_space.to_world(obj, focus.position)
+
+    def set_orbit_focus_world(self, point, object_id=None) -> None:
+        """Puts the focus at a world point in the space of `object_id` (default: the focus's own object); used to
+        keep it in place across a change of that object's space (Apply Transform). None clears it."""
+        if point is None:
+            self._orbit_focus = None
+            return
+        oid = object_id if object_id is not None else (
+            self._orbit_focus.object_id if self._orbit_focus is not None else self.scene.edit_object_id)
+        obj = self.scene.objects.get(oid)
+        if obj is None:
+            self._orbit_focus = None
+            return
+        source = self._orbit_focus.source if self._orbit_focus is not None else "work"
+        self._orbit_focus = OrbitFocus(oid, object_space.to_object(obj, tuple(point)), source)
+
+    def _update_orbit_focus(self, change, snapshots: tuple, source: str = "work") -> None:
+        """The worked area of one committed step (or Undo / Redo) becomes the focus; a step without geometric work
+        keeps it. `snapshots` = selections whose vertices are preferred, in order (after the step, before it)."""
+        if change is None:
+            return
+        mesh = self.scene.mesh
+        if self._focus_tracker.mesh is not mesh:
+            self._focus_tracker.bind(mesh)  # a desync (edit object switched without `_follow_edit_object`): skip
+            return
+        edit_id = self.scene.edit_object_id
+        preferred = [self._snapshot_vertices(mesh, snap) for snap in snapshots if snap[5] == edit_id]
+        point = focus_point(change, mesh, self._query_mesh(), preferred)
+        if point is not None:
+            self._orbit_focus = OrbitFocus(edit_id, point, source)
+
+    @staticmethod
+    def _snapshot_vertices(mesh: Mesh, snapshot: tuple) -> set:
+        """Vertex ids of a `_selection_snapshot` (removed vertices kept: Delete prefers what it removed)."""
+        mode, vertices, edges, faces = snapshot[:4]
+        if mode is SelectionMode.VERTEX:
+            return set(vertices)
+        out: set = set()
+        if mode is SelectionMode.EDGE:
+            for eid in edges:
+                if mesh.is_valid_edge(eid):
+                    out.update(mesh.edge_vertices(eid))
+        elif mode is SelectionMode.FACE:
+            for fid in faces:
+                if mesh.is_valid_face(fid):
+                    out.update(mesh.face_vertices(fid))
+        return out
+
+    def _orbit_anchor_point(self):
+        """The world point the running orbit gesture turns about, resolved once on its first step; None = the
+        camera target (the classic orbit). Order: the worked area (its object is the edit object, modes 1-3), the
+        selection's centre (mode 4: the selected objects' pivots), else the target. Never the Working Pivot."""
+        if self._orbit_anchor is None:
+            point = self._resolve_orbit_anchor() if self.dynamic_orbit_focus else None
+            if point is not None and self.camera.project_to_screen(point, max(1, self.viewport_width),
+                                                                   max(1, self.viewport_height)) is None:
+                point = None  # behind the camera: turning about it would swing the view away
+            self._orbit_anchor = (point,)
+        return self._orbit_anchor[0]
+
+    def _resolve_orbit_anchor(self):
+        scene = self.scene
+        if self.selection.mode is SelectionMode.OBJECT:
+            return self._gizmo_object_pivot()
+        focus = self._orbit_focus
+        if focus is not None and focus.object_id == scene.edit_object_id:
+            return object_space.to_world(scene.edit_object, focus.position)
+        mesh = scene.mesh
+        vertex_ids = resolve_selection_vertices(mesh, self.selection, self.selection.mode)
+        if not vertex_ids:
+            return None
+        return object_space.to_world(scene.edit_object, selection_pivot(self._query_mesh(), vertex_ids))
 
     def _leave_view(self) -> None:
         """Out of a snapped standard view; its automatic ortho goes with it (V-2)."""

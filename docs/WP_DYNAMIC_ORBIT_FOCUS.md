@@ -1,6 +1,6 @@
 # WP Dynamic Orbit Focus — Last Worked Area
 
-**Status:** in Arbeit 2026-11-08 (`PROVISIONAL`); Plan freigegeben von Manu 2026-11-08 ("Grundsätzlich freigabefähig nach Nachschärfung", dann "umsetzen"). Offene Produktentscheidungen §6: umgesetzt mit den empfohlenen Defaults, Praxistest offen.
+**Status:** gebaut 2026-11-08 (`PROVISIONAL`, Praxistest offen, §8). Plan freigegeben von Manu 2026-11-08 ("Grundsätzlich freigabefähig nach Nachschärfung", dann "umsetzen"); die Produktentscheidungen P1–P9 (§6) sind mit den empfohlenen Defaults umgesetzt und im Praxistest zu bestätigen.
 
 
 **Origin:** research + architecture audit (plan mode), then implemented in phases (§5).
@@ -291,3 +291,44 @@ Filter = the geometric gate of §4.2 (records, not `mesh_step`) + the explicit `
 - Complete inventory of camera writers (grep `orbit(|pan(|dolly(|set_view(|set_ortho(|camera.target =` in `src/`): `_orbit_step` `:3977`, `_apply_orbit_virtual` `:3994/:3998`, `_navigate` pan `:3951`, `pointer_scroll` dolly `:3684`, `_leave_view`/`_toggle_ortho` `set_ortho` `:4006/:4013`, `frame_scene` `:905`, `view_state._apply_camera` `view_state.py:167`, morph `_pan` `morph.py:415`. Only the first two become orbit-about; all others stay as they are (§4.4 items 4–5).
 - Snap orbit: Shift down/up mid-gesture via `set_shift_held` `:1936-1939`; same anchor, rigid rotations between absolute orientations → the anchor pixel never moves, also while switching snap ↔ free and persp ↔ ortho (`_ortho_auto`).
 - Alt-orbit during transforms: two entry points (`:3626-3628` gizmo/Tweak drag, `:3711-3713` armed W/E/R motion; Smooth/Relax excluded there) → no release event → anchor lifetime bound to Alt held (`set_alt_held`) and to the gesture; the transform keeps reading the camera per step (Move/Scale) or re-projects (Rotate dial) exactly as today.
+
+---
+
+## 8. Umsetzung 2026-11-08 und Praxistest
+
+**Gebaut (Phasen 1–3, 5; Phase 4 vereinfacht):**
+- `OrbitCamera.set_view_about` / `orbit_about` (`src/mirai/viewport/camera.py`); Vertrag im Addendum 2026-11-08 von
+  [VIEWPORT_V02_ARCHITECTURE §4.1](viewport/VIEWPORT_V02_ARCHITECTURE.md). **Abweichung vom Plan:** der Praxis-Pfad
+  Shift-Snap (Persp → Ortho) hätte den Anker springen lassen, weil Ortho- und Persp-Maßstab nur in der Tiefe des
+  Targets übereinstimmen; `set_view_about` skaliert beim Wechsel nach Ortho den seitlichen Versatz mit
+  `distance / Tiefe`, damit der Anker sein Pixel behält (Test `test_persp_to_ortho_keeps_the_anchor_on_its_pixel`).
+- `src/mirai/orbit_focus.py`: `OrbitFocus`, `FocusTracker` (ein `Mesh.watch()` auf dem Edit-Mesh), `worked_area`
+  (Stufen §4.2), `focus_point` (bevorzugte Mengen, BBox-Mitte).
+- `Application`: Fokus-Update in `_record_selection_history` (Watch vor dem `swallowed`-Rücksprung geleert) und in
+  `_apply_undo_redo` (nach `self._morph.after_history()`); `focus=False` für Apply Transform (Fokus bleibt am selben
+  Weltpunkt, `set_orbit_focus_world`), Re-Symmetrize und ZBrush-Rückgabe; Watch-Rebind und Morph-View→Basis-Umhängen
+  in `_follow_edit_object`; Anker in `_orbit_step` / `_set_view` (alle drei Orbit-Pfade), gelöscht bei Release,
+  Alt-Loslassen (ohne gedrückte Taste), jedem Commit/Undo, Scene-Load und `restore_camera_state`; Schalter
+  `Application.dynamic_orbit_focus` (Default an, keine Taste, kein HUD).
+- **Phase 4 vereinfacht:** in Modus 4 dreht der Orbit um die gewählten Objekte (`_gizmo_object_pivot`, ohne
+  Gizmo-Abhängigkeit); ein eigener Objekt-Fokus wird nicht gespeichert, weil ein bewegtes Objekt ohnehin gewählt ist.
+  Pose-Modus: nur Fallback (Auswahl / Target).
+- Tests: `tests/test_camera_orbit_about.py`, `tests/test_orbit_focus.py`, `tests/test_application_orbit_focus.py`;
+  volle Suite `xvfb-run -a python -m pytest tests -q` 2026-11-08: 6270 passed, 150 skipped.
+
+**Praxistest (für Manu, ca. 10 Minuten, `python src/main.py`, Kopf-Mesh):**
+1. Am Auge ein paar Vertices verschieben (W), dann Alt+LMB orbiten: dreht ums Auge, das Bild springt beim Start nicht.
+2. An der Nase extrudieren (T) oder schneiden (Knife): der nächste Orbit dreht um die Nase (die Cap / den Schnitt).
+3. Orbiten, pannen, zoomen, hovern, `U`: der Drehpunkt bleibt die Nase.
+4. Eine Transformation mit Esc abbrechen: der Drehpunkt bleibt, wo er war.
+5. Region-Farbe setzen, verstecken/zeigen, Symmetrieachse (Shift+S): der Drehpunkt bleibt.
+6. Ctrl+Z: der Drehpunkt geht dorthin, wo sich das Mesh durch das Undo geändert hat (P4).
+7. Während Alt+LMB-Orbit Shift drücken/loslassen: die Nase bleibt auf ihrem Pixel (Front/Side ortho und zurück).
+8. W halten, dann Alt halten und bewegen: dreht um den Fokus; Alt los, W arbeitet weiter.
+9. Mit Symmetrie an einem Auge arbeiten: der Drehpunkt liegt am bearbeiteten Auge, nicht auf der Ebene (P3).
+10. Working Pivot (P) setzen, dann arbeiten und orbiten: der Pivot bleibt unverändert, der Orbit folgt der Arbeit.
+11. Morph-Target bearbeiten (Tab), etwas formen, Tab zurück: der Drehpunkt kommt mit auf die Basis.
+12. Modus 4: der Orbit dreht um die gewählten Objekte.
+
+Rückmeldung bitte je Punkt KEEP / ändern; offene Entscheidungen bleiben P5 (Zoom zum Fokus) und P6 (Frame Selected
+auf `F`).

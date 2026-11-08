@@ -334,6 +334,7 @@ class SymmetryController:
             plan_description(plan),
             lambda mesh: set_plan_positions(mesh, plan),
             moved_of=lambda moved: moved,
+            focus=False,  # half the mesh: no localized worked area, the orbit focus stays (P9)
         ).changed
         if changed:
             services.status(f"Re-Symmetrize ausgeführt: {len(plan.changes)} Änderungen")

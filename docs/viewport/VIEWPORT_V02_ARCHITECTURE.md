@@ -134,6 +134,18 @@ Decisions V-1..V-3 (chat 2026-10-28, all as recommended):
 - The camera (and so ortho) is view state: not saved, no History.
 - Not in scope: snapping in the transform's Alt-orbit (`Application._navigate_during_transform`).
 
+#### Addendum 2026-11-08: orbit about a point (Dynamic Orbit Focus)
+
+`OrbitCamera.set_view_about(anchor, yaw, pitch, ortho=None)` / `orbit_about(anchor, d_yaw, d_pitch)` turn the whole
+camera rigidly about a world point: `target − anchor` is carried from the old (forward, right, up) basis into the
+new one, `distance` stays, so `eye = target + distance·dir` and every contract above hold; the anchor keeps its
+pixel in persp and ortho. In ortho the target then slides along `forward` to the anchor's depth (no visible change);
+switching persp → ortho inside the call scales the anchor's sideways offset by `distance / depth`, so a Shift snap
+keeps the anchor on its pixel too (the size at the *target* is no longer the invariant there; the `U` toggle is
+unchanged). During and after such an orbit the target is no longer the orbit centre: dolly still zooms toward the
+target, pan still moves it. The anchor is app state (`Application._orbit_anchor_point`), never camera state.
+Spec: [WP_DYNAMIC_ORBIT_FOCUS.md](../WP_DYNAMIC_ORBIT_FOCUS.md); tests `tests/test_camera_orbit_about.py`.
+
 ### 4.2 RenderMesh
 
 **Responsibility:** Persistent GPU geometry; dirty state tracking; update dispatch.

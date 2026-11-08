@@ -13,7 +13,7 @@ Pure maths: `camera` is the edit object's camera (`ObjectSpaceCamera` or `OrbitC
 
 Symmetry plane snap (V-3, Manu 2026-10-28; WP Ortho / Views): with symmetry on, a placed point within
 `PIVOT_PLANE_SNAP_PX` (screen) of its projection onto the symmetry plane lands exactly on the plane -
-in every view and after every placement mode (`snap_to_plane`; `Application._pivot_point_at` applies it).
+in every view and after every placement mode (`snap_to_plane`; `PivotPlacement.point_at` applies it).
 In an orthographic Side view every view ray runs along the plane normal, so the "inside" point of a
 mirror-symmetric mesh is on the plane already and the snap only removes float rounding.
 """

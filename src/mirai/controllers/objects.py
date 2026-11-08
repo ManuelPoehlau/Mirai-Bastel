@@ -1301,6 +1301,7 @@ class ObjectController:
             services.status(f"Apply transform: refused - {exc}")
             return False
         before = services.selection_snapshot()
+        focus_world = services.orbit_focus_world()  # the objects' spaces change, the worked area must not move
         parts: list = []
         transforms, pivots = [], []
         for obj, axis in zip(placed, axes):
@@ -1318,7 +1319,8 @@ class ObjectController:
         edit_id = services.scene.edit_object_id
         others = frozenset(obj.id for obj in placed if obj.id != edit_id)
         edit_changed = len(others) < len(placed)
-        services.record_selection_history(before, mesh_step=edit_changed, object_meshes=others)
+        services.record_selection_history(before, mesh_step=edit_changed, object_meshes=others, focus=False)
+        services.set_orbit_focus_world(focus_world)
         self.meshes_changed(others)
         if edit_changed:
             services.notify_topology_changed()
