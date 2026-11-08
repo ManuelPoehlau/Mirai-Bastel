@@ -4052,7 +4052,7 @@ class Application:
         return self._orbit_focus
 
     def orbit_focus_world(self) -> tuple | None:
-        """The worked area in world while its object exists, None otherwise."""
+        """The focus (last click or worked area) in world while its object exists, None otherwise."""
         focus = self._orbit_focus
         obj = None if focus is None else self.scene.objects.get(focus.object_id)
         return None if obj is None else object_space.to_world(obj, focus.position)
@@ -4117,17 +4117,40 @@ class Application:
         return self._orbit_anchor[0]
 
     def _resolve_orbit_anchor(self):
+        # Manu 2026-11-08: "Priorität hat allerdings immer die Auswahl" - the selection first, the focus (last
+        # click or work) only without one.
         scene = self.scene
         if self.selection.mode is SelectionMode.OBJECT:
-            return self._gizmo_object_pivot()
-        focus = self._orbit_focus
-        if focus is not None and focus.object_id == scene.edit_object_id:
-            return object_space.to_world(scene.edit_object, focus.position)
-        mesh = scene.mesh
-        vertex_ids = resolve_selection_vertices(mesh, self.selection, self.selection.mode)
-        if not vertex_ids:
-            return None
-        return object_space.to_world(scene.edit_object, selection_pivot(self._query_mesh(), vertex_ids))
+            point = self._gizmo_object_pivot()
+        else:
+            vertex_ids = resolve_selection_vertices(scene.mesh, self.selection, self.selection.mode)
+            point = None if not vertex_ids else object_space.to_world(
+                scene.edit_object, selection_pivot(self._query_mesh(), vertex_ids))
+        return point if point is not None else self.orbit_focus_world()
+
+    def focus_on_elements(self, ids) -> None:
+        """A click / Box / Lasso / Paint picked these components of the edit object: their centroid (on the drawn
+        mesh, like the selection centre) becomes the focus (Manu 2026-11-08: "Ein Klick auf ein Objekt oder ein
+        Element setzt immer den Fokuspunkt neu"). Nothing known = no change."""
+        mesh, shown = self.scene.mesh, self._query_mesh()
+        vertex_ids: set = set()
+        for hit in ids:
+            if isinstance(hit, VertexId):
+                if mesh.is_valid_vertex(hit):
+                    vertex_ids.add(hit)
+            elif isinstance(hit, EdgeId):
+                if mesh.is_valid_edge(hit):
+                    vertex_ids.update(mesh.edge_vertices(hit))
+            elif isinstance(hit, FaceId) and mesh.is_valid_face(hit):
+                vertex_ids.update(mesh.face_vertices(hit))
+        if vertex_ids:
+            self._orbit_focus = OrbitFocus(self.scene.edit_object_id, selection_pivot(shown, vertex_ids), "select")
+
+    def focus_on_object(self, object_id) -> None:
+        """A click on an object in mode `4`: its pivot becomes the focus."""
+        obj = self.scene.objects.get(object_id)
+        if obj is not None:
+            self._orbit_focus = OrbitFocus(object_id, tuple(obj.pivot), "select")
 
     def _leave_view(self) -> None:
         """Out of a snapped standard view; its automatic ortho goes with it (V-2)."""
@@ -4190,6 +4213,8 @@ class Application:
         selection = self.selection
         before = selection_state(selection)
         hit = self._pick(x, y)
+        if hit is not None:
+            self.focus_on_elements((hit,))  # also when the selection does not change (a selected element)
         if hit is None:
             if command == commands.SELECT:
                 selection.clear()

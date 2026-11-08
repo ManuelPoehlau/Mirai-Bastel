@@ -393,6 +393,7 @@ class DragSelect:
         through = "" if occlusion or not services.display.show_faces else " (through)"
         if self.kind == "box":
             found = services.pick_in_rect(normalized_rect(self.start, self.end), occlusion)
+            services.focus_on_elements(found)
             if self.add:
                 selection.add(found)
             else:
@@ -400,6 +401,10 @@ class DragSelect:
             label = "Box" + through
         else:
             label = "Paint"
+            painted = set(controller.active_selection_ids())
+            if self.add:
+                painted -= set(self.before[1]) | set(self.before[2]) | set(self.before[3])
+            services.focus_on_elements(painted)
         services.notify_selection_changed()
         services.soft_preview_refresh()
         services.status(f"{label}: {controller.selected_text()}")
@@ -420,6 +425,7 @@ class DragSelect:
         occlusion = controller.region_occlusion()
         through = "" if occlusion or not services.display.show_faces else " (through)"
         found = services.pick_in_polygon(polygon, occlusion)
+        services.focus_on_elements(found)
         if self.add:
             selection.add(found)
         else:

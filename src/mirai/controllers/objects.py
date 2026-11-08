@@ -1130,6 +1130,8 @@ class ObjectController:
         selection = services.selection
         before_state = selection_state(selection)
         hit = self.pick(x, y)
+        if hit is not None:
+            services.focus_on_object(hit)  # a click on an object sets the orbit focus (Manu 2026-11-08)
         if hit is None:
             if command == commands.SELECT:
                 selection.clear_objects()

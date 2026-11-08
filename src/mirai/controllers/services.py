@@ -170,6 +170,13 @@ class AppServices:
     def set_orbit_focus_world(self, point) -> None:
         self._app.set_orbit_focus_world(point)
 
+    def focus_on_elements(self, ids) -> None:
+        """Box / Lasso / Paint picked these components: they become the orbit focus (`Application.focus_on_elements`)."""
+        self._app.focus_on_elements(ids)
+
+    def focus_on_object(self, object_id) -> None:
+        self._app.focus_on_object(object_id)
+
     def record_selection_history(self, before: tuple, **kwargs) -> None:
         self._app._record_selection_history(before, **kwargs)
 

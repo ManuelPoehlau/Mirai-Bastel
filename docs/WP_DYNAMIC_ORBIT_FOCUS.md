@@ -174,9 +174,9 @@ Revised after the path audit (§7.4). One camera primitive, used by every orbit 
 - No per-frame or per-step geometry access: one O(1) `to_world` per gesture; fallback selection centre O(selection) once per gesture.
 
 ### 4.5 Fallback chain at gesture start
-1. Valid `OrbitFocus` whose object is the edit object (mode 1–3) → its world point.
-2. Selection centre of the edit object on `_query_mesh()` (mode 4: selected objects' pivots) — computed once per gesture, Working Pivot **not** substituted.
-3. `camera.target` → identical to today's behaviour.
+**Superseded by §9 (Manu 2026-11-08):** 1. the current selection centre (mode 4: the selected objects' pivots),
+2. the focus (last click / box / worked area) while its object exists, 3. `camera.target`. Original order: focus
+on the edit object → selection centre → target.
 
 ### 4.6 Feature flag
 `Application.dynamic_orbit_focus: bool` (`PROVISIONAL`, default per P8); no keymap entry, no HUD control until Manu decides.
@@ -220,13 +220,13 @@ Verification per phase: `pytest tests/test_camera.py tests/test_camera_ortho.py 
 
 | # | Decision | Recommended default | Why |
 |---|---|---|---|
-| P1 | Does a plain selection change move the focus? | **No** — selection is only the fallback when no work focus exists | Brief: work, not selection, drives navigation; selecting to inspect shouldn't swing the orbit |
+| P1 | Does a plain selection change move the focus? | ~~No~~ → **decided by Manu 2026-11-08 (§9):** the selection always has priority; a click / Box / Lasso / Paint on an element or object sets the focus | *"Priorität hat allerdings immer die Auswahl … Ein Klick auf ein Objekt oder ein Element setzt immer den Fokuspunkt neu"* |
 | P2 | Estimator for the worked region | **Bbox centre** of affected (preferred) vertices | Robust to uneven vertex density; mean (gizmo) skews toward dense spots |
 | P3 | Symmetry: focus on the worked side or on the plane? | **Worked side** (falls out of "post-op selection first", §4.2) | Working on the left eye should orbit the left eye, like ZBrush's stroke point |
 | P4 | Undo/Redo update focus? | **Yes**, to the region the step changed | The viewport follows where the mesh visibly changed; no extra state needed |
 | P5 | Zoom toward focus instead of screen centre? | **No** (unchanged dolly) for now | Keeps the change small; zoom-to-focus/mouse is a separate navigation decision |
 | P6 | Explicit "Frame Selected / set focus" command on reserved `F` | Separate later decision; not part of this work | Needs a keymap decision by Manu (AD-013) |
-| P7 | Edit-object switch: keep old object's focus? | **Fall back** to the new edit object's selection/target until work happens there | Orbiting around an object you just left feels wrong |
+| P7 | Edit-object switch: keep old object's focus? | ~~Fall back~~ → **dropped 2026-11-08 (§9):** the focus counts while its object exists; a click on the other object moves it there anyway | follows from P1 |
 | P8 | Default on or off | **On**, `PROVISIONAL` flag, confirmed by a practice test | Core of the requested feel; flag allows instant revert |
 | P9 | Re-Symmetrize / in-place ZBrush return: update focus? | **No** (whole-mesh rewrite = no localized work area) | A centre of half / the whole mesh is meaningless as an orbit pivot |
 
@@ -325,10 +325,74 @@ Filter = the geometric gate of §4.2 (records, not `mesh_step`) + the explicit `
 6. Ctrl+Z: der Drehpunkt geht dorthin, wo sich das Mesh durch das Undo geändert hat (P4).
 7. Während Alt+LMB-Orbit Shift drücken/loslassen: die Nase bleibt auf ihrem Pixel (Front/Side ortho und zurück).
 8. W halten, dann Alt halten und bewegen: dreht um den Fokus; Alt los, W arbeitet weiter.
+8b. Ein Face anklicken und orbiten: dreht um das Face, nicht um die zuletzt bearbeitete Stelle; ins Leere klicken
+    (Auswahl weg) und orbiten: dreht weiter um das zuletzt geklickte Face; Box/Lasso/Paint ebenso (§9).
 9. Mit Symmetrie an einem Auge arbeiten: der Drehpunkt liegt am bearbeiteten Auge, nicht auf der Ebene (P3).
 10. Working Pivot (P) setzen, dann arbeiten und orbiten: der Pivot bleibt unverändert, der Orbit folgt der Arbeit.
 11. Morph-Target bearbeiten (Tab), etwas formen, Tab zurück: der Drehpunkt kommt mit auf die Basis.
-12. Modus 4: der Orbit dreht um die gewählten Objekte.
+12. Modus 4: der Orbit dreht um die gewählten Objekte; ein Klick auf ein Objekt setzt den Fokus auf dessen Pivot.
 
 Rückmeldung bitte je Punkt KEEP / ändern; offene Entscheidungen bleiben P5 (Zoom zum Fokus) und P6 (Frame Selected
 auf `F`).
+
+---
+
+## 9. Revision 2 (2026-11-08, after Manu's practice feedback): selection has priority, clicks set the focus
+
+### Anlass
+Built state (commits `57ce7eb`, `8c89582`) works, but the priority is wrong. Manu: *"Priorität hat allerdings immer
+die Auswahl. Wenn ich ein Face auswähle und dann orbite, dann möchte ich um dieses face herum navigieren … Ein Klick
+auf ein Objekt oder ein Element setzt immer den Fokuspunkt neu und überschreibt den Punkt der zuletzt bearbeiteten
+Stelle."* Answers to the follow-up: Box / Lasso / Paint set the focus like a click; a click into empty space keeps
+the last focus. This replaces P1 ("selection does not move the focus") and P7 (focus only on the edit object).
+
+### New rules
+1. **Orbit anchor order** (resolved once per gesture, `Application._resolve_orbit_anchor`, `application.py:4119`):
+   - modes 1–3: **current selection centre** (edit object, `_query_mesh()`, centroid via `selection_pivot` = where the
+     gizmo sits; never the Working Pivot) → else the **focus** → else the target;
+   - mode 4: the selected objects' pivots (`_gizmo_object_pivot`, unchanged) → else the focus → else the target.
+   - The focus counts whenever its object still exists (P7 restriction "only on the edit object" dropped: a click on
+     another object now moves the focus there anyway).
+2. **The focus is set by** (last one wins):
+   - committed geometric work (unchanged, §4.2/§4.3);
+   - **a click on an element** (component `select_at`, every variant: replace / add / remove / toggle) → the clicked
+     element's centre;
+   - **a click on an object in mode 4** (`ObjectController.select_at`) → that object's pivot;
+   - **Box / Lasso / Paint** commit → centre of the elements the stroke picked (box/lasso: `found`; paint: the
+     elements added during the stroke, vs. `drag.before`).
+   - Not by: a click into empty space (focus stays), keyboard selection commands (select all, grow/shrink, loops —
+     covered by rule 1 while selected), hover, navigation. Pose-mode bone clicks: unchanged (not asked).
+3. Centre of clicked / box-selected elements = centroid of their vertices on `_query_mesh()` (same estimator as the
+   selection centre and the gizmo, so "deselect → orbit" turns about the same point as "selected → orbit"). The worked
+   area keeps its bbox centre (P2).
+
+### Changes (small, no new mechanism)
+- `src/mirai/application.py`
+  - `_resolve_orbit_anchor`: reorder as rule 1; focus valid when `scene.objects` has its object
+    (`orbit_focus_world()` already does that).
+  - New `focus_on_elements(ids)` (component ids of the edit object → centroid on `_query_mesh()`, stored as
+    `OrbitFocus(edit_id, local, "select")`; empty / unknown ids = no change) and `focus_on_object(oid)`
+    (`OrbitFocus(oid, obj.pivot, "select")`).
+  - `select_at` (`:4172`): after the pick, `if hit is not None: self.focus_on_elements({hit})` (before the
+    unchanged-selection early return, so a click on an already selected element still sets it).
+- `src/mirai/controllers/objects.py` `select_at` (`:1122`): `if hit is not None: services.focus_on_object(hit)`.
+- `src/mirai/controllers/pointer_tools.py` `DragSelect.commit` (`:380`) and `_finish_lasso` (`:409`):
+  `services.focus_on_elements(found)`; paint: the ids in `active_selection_ids()` not in the `before` snapshot.
+- `src/mirai/controllers/services.py`: `focus_on_elements`, `focus_on_object` pass-throughs.
+- Docs: `docs/WP_DYNAMIC_ORBIT_FOCUS.md` (§6 P1/P7 replaced with Manu's wording and date, §8 practice list updated),
+  `docs/future_ideas/VIEWPORT_NAVIGATION.md` line, VIEWPORT_V02 addendum unaffected.
+
+### Tests (`tests/test_application_orbit_focus.py`)
+- New: selected face beats the worked area (orbit keeps the face centre's pixel, not the old focus); click on an
+  element sets the focus (also add / remove click), then click into empty space → selection empty, focus stays,
+  orbit turns about the clicked element; box select sets the focus to the boxed elements; mode-4 click on an object
+  sets the focus to its pivot and survives deselect; work after a click overrides it again.
+- Adjust: `test_alt_during_a_held_move…` (anchor is now the selection centre), `test_switching_the_edit_object…`
+  (focus of a missing object → classic), Working Pivot separation test extended with a click.
+- Run: `xvfb-run -a python -m pytest tests/test_application_orbit_focus.py tests/test_orbit_focus.py
+  tests/test_camera_orbit_about.py tests/test_application_view_snap.py tests/test_transform_alt_orbit.py
+  tests/test_application_working_pivot.py tests/test_application_box_select*.py -q`, then the full suite once.
+
+**Umgesetzt 2026-11-08** wie oben: `Application._resolve_orbit_anchor` (Auswahl → Fokus → Target),
+`focus_on_elements` / `focus_on_object`, Aufrufe in `Application.select_at`, `ObjectController.select_at`,
+`DragSelect.commit` (Box, Paint) und `_finish_lasso`. Tests in `tests/test_application_orbit_focus.py`.
