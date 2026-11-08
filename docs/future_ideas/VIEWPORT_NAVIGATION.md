@@ -44,6 +44,12 @@ Navigation festlegen.
 
 ## Orbit / Zoom Focus
 
+**Orbit umgesetzt 2026-11-08** (`PROVISIONAL`): Dynamic Orbit Focus — der Orbit dreht um den zuletzt bearbeiteten
+Bereich (ZBrush-artig), ohne Fokus um die Auswahl, im Modus 4 um die gewählten Objekte, sonst wie bisher ums Target.
+Plan, Entscheidungen und Praxistest: [WP_DYNAMIC_ORBIT_FOCUS.md](../WP_DYNAMIC_ORBIT_FOCUS.md). Zoom to Object /
+Selection (Frame Selected auf dem reservierten `F`) und Zoom zum Fokus bleiben offen. Der Rest unten ist die
+ursprüngliche Idee.
+
 Später eventuell Navigation relativ zu Objekt oder Auswahl anbieten:
 
 - Orbit around Object

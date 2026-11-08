@@ -162,6 +162,14 @@ class AppServices:
     def restore_selection(self, snapshot: tuple) -> None:
         self._app._restore_selection(snapshot)
 
+    def orbit_focus_world(self):
+        """The orbit focus in world (`Application.orbit_focus_world`). Reason for the member: Apply Transform
+        changes the space the focus is stored in and puts it back at the same world point."""
+        return self._app.orbit_focus_world()
+
+    def set_orbit_focus_world(self, point) -> None:
+        self._app.set_orbit_focus_world(point)
+
     def record_selection_history(self, before: tuple, **kwargs) -> None:
         self._app._record_selection_history(before, **kwargs)
 
