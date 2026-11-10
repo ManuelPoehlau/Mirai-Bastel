@@ -397,10 +397,10 @@ approved default value) stays open until the P4 practical test.
 hinzukommt … Brauchen also Beide Möglichkeiten": a weld that joins two parts at one point only (a bowtie) is allowed and
 reported; a seam can be welded at once or point by point (§4.2, §19.10).
 
-**Open before P6 (prepared 2026-11-10 from the code of `symmetric_ops`, `symmetry`, `symmetry_coordination`; Manu
-decides, then P6 runs in a fresh session):**
+**Decided before P6 (Manu, 2026-11-10: "P6-a ja, P6-b ja, P6-c ja"; prepared from the code of `symmetric_ops`,
+`symmetry`, `symmetry_coordination`; P6 is built in a fresh session on these rules):**
 
-| # | Question | Proposal (agent) | Why / what it changes |
+| # | Question | Rule (proposed by the agent, **approved**) | Why / what it changes |
 |---|---|---|---|
 | P6-a | Symmetric Weld and coincident points (AMBIGUOUS, the documented P6 question) | The mirror image of a selected point = **every** point at its exact mirror position (its twin included; a seam point: itself and its twins). The weld groups of selection + image are welded as **whole groups**; the group of a mirror pair is snapped to the exact mirror of the normal side's survivor, a group on / around the plane is projected onto the plane (Collapse's coordinator does the same). Selected points with no point at the mirror position → `TEXT_UNPAIRED`. The result must pass the existing delta check (D-strict), else refused, nothing changed | Correspondence is exact and position-based: before a weld, doubled points are AMBIGUOUS (each has two candidates), so a point-wise partner does not exist. A group-wise image does, and the weld removes the ambiguity. Effect: a seam doubled by Detach + Attach can be welded with symmetry on, and the ears' borders on both sides in one step |
 | P6-b | The seam after a weld on the plane | Edges between welded points that lie exactly on the plane join the seam (Shift+S's rule, only at the welded points); seam ids that died in the weld are dropped (as Collapse) | Without it Re-Symmetrize would have no seam where the halves were welded back together |
@@ -411,10 +411,10 @@ decides, then P6 runs in a fresh session):**
 
 | # | Question | Proposal | P2 |
 |---|---|---|---|
-| D10-v | The artist-approved default Weld threshold | after the P4 practical test (§20) | not relevant (P4); P4 built with the provisional 0.001 × diagonal |
+| D10-v | The artist-approved default Weld threshold | after the P4 practical test (§20) | not relevant (P4); P4 built with the provisional 0.001 × diagonal. **Still open (Manu, 2026-11-10):** "das schau ich mir später nochmal an, was da der beste Startwert ist, vorerst so lassen" — 0.001 × diagonal stays |
 | O-8 | After Detach: stay in component mode on the source, or mode `4` with the new object selected | stay in component mode | **Decided (Manu, 2026-11-10, practical test P3): "O-8 KEEP"** — mode `3`, the source stays the edit object, no component selection, the new object neither selected nor edited (§17.6) |
 | O-14 | Select Linked "under the cursor" from a menu: the pointer over the menu bar has no hover (§17.2) | the SPACE menu remembers the element under the cursor when it opens; the "Mesh" menu shows a disabled hint; a key only by Manu's keymap decision | **Decided (Manu, 2026-11-10): "SPACE reicht vorerst (später Sub-Object Mode)"** — no key now; a later Sub-Object Mode is the place to revisit it |
-| O-11 | Bridge MVP only for loops of equal vertex count | yes | not relevant (P2); **P5 built as proposed** (`PROVISIONAL`, unequal counts refused with both numbers), confirmation in the practical test §22 |
+| O-11 | Bridge MVP only for loops of equal vertex count | yes | not relevant (P2); P5 built as proposed (unequal counts refused with both numbers). **Decided CHANGE (Manu, 2026-11-10): "O-11 auch mit ungleicher Zahl"** — Bridge must also join borders of unequal point counts; not built yet (an own step after P6, or with it if the fresh session's scope allows; the pairing then needs triangles or fans where the counts differ) |
 | O-12 | Separate by Islands: which island keeps the object | the one with the most faces | not relevant (P7) |
 | P6 | How symmetric Weld handles coincident points (AMBIGUOUS) | decided before P6 — prepared as P6-a…P6-d above | not relevant (P6) |
 | O-5b | An **unbound** destination receives weights from a weighted source: §3.2 (decided) creates the `"Skin"` layer, so the destination's own points (and points of other unweighted sources) end up unweighted in a mesh that is now bound. O-5 covers only a destination bound before the Attach | none — new, found in this pass | not blocking: P2 implements the decided rules literally (no O-5 refusal, since the destination was not bound; the status line states the count); Manu may decide otherwise after the practical test |
@@ -1039,7 +1039,7 @@ ausgewählten Punkte des Edit-Objekts.
 | # | Verdikt (KEEP / CHANGE / DROP) | Notiz |
 |---|---|---|
 | 1–2 | | |
-| 3 (D10-v: passt der Startwert 0,001 × Diagonale?) | | |
+| 3 (D10-v: passt der Startwert 0,001 × Diagonale?) | offen: „vorerst so lassen“ (Manu, 2026-11-10) | §10 |
 | 4 | | |
 | 5 | | |
 | 6 (W5) | CHANGE → gebaut: einzelne Paare erlaubt (Manu, 2026-11-10) | §19.10 |
@@ -1102,7 +1102,8 @@ borders, not on the selection).
 
 ### 21.6 Literal readings and `PROVISIONAL` choices
 
-Point or edge mode (Cap also takes faces; for Bridge a face selection would be ambiguous); equal counts (O-11);
+Point or edge mode (Cap also takes faces; for Bridge a face selection would be ambiguous); equal counts (O-11 as built;
+Manu decided CHANGE on 2026-11-10, unequal counts to follow, §10);
 pairing by distance only — the winding never chooses the direction (a twisted pairing that would fit the normals is
 not searched; it refuses as "normals disagree"); a border through a W5 point is open and refuses until that seam is
 closed; all texts.
@@ -1160,7 +1161,7 @@ Ränder, an denen in Modus `1` oder `2` ein Punkt bzw. eine Kante ausgewählt is
 |---|---|---|
 | 1–2 | | |
 | 3 | | |
-| 4 (O-11: nur gleiche Punktzahl?) | | |
+| 4 (O-11: nur gleiche Punktzahl?) | CHANGE: „O-11 auch mit ungleicher Zahl“ (Manu, 2026-11-10) | noch nicht gebaut, §10 |
 | 5 | | |
 
 Offen bei dir: **O-11** – reicht Bridge vorerst nur für Ränder mit gleicher Punktzahl (wie vorgeschlagen), oder brauchst
