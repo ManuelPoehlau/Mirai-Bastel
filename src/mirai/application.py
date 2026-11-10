@@ -3559,7 +3559,7 @@ class Application:
         `threshold` (None: `weld_default_threshold`) and the first refusal - an interaction, not point mode, the morph
         editing view, a symmetry definition (until P6), no distance, nothing selected, a posed rig with the mesh bound,
         the point-layer gate, no two points within the distance, a group touching hidden geometry (W10), and the
-        kernel's W2-W6 (`topology.weld.plan_weld`). The preview of "Mesh > Weld…" shows its groups and points."""
+        kernel's W2-W4 / W6 (`topology.weld.plan_weld`). The preview of "Mesh > Weld…" shows its groups and points."""
         label = weld_api.LABEL
         plan = weld_api.WeldPlan
         owner = self.interaction_owner
@@ -3608,9 +3608,10 @@ class Application:
         `VertexId` survives at the centroid of the original positions with the per-layer group mean
         (`topology.weld.weld`), whatever the selection order; UVs per face and regions stay. One Undo step
         (`_mesh_transaction`); refused with a status line and nothing changed when `weld_plan` refuses, and rolled back
-        exactly when the result fails W4-W6 after the change. Afterwards: point mode, the selected points that remain
+        exactly when the result fails W4 or W6 after the change. Afterwards: point mode, the selected points that remain
         stay selected (the survivors among them). The status line names the groups, the points, the distance used and
-        how many points averaged differing layer values (W11)."""
+        how many points averaged differing layer values (W11), and the points where two parts touch at one point only
+        (W5: allowed since Manu's "Change W5", 2026-11-10 - a seam may be welded point by point)."""
         weld_plan = self.weld_plan(threshold)
         if weld_plan.refusal is not None:
             self._set_status(weld_plan.refusal)
@@ -3640,6 +3641,11 @@ class Application:
         )
         if differing:
             text += f" - {differing} point(s) averaged differing target / weight values"
+        if weld_plan.bowties:
+            text += (
+                f" - {len(weld_plan.bowties)} point(s) join parts at that point only (weld the neighbours to close the"
+                f" seam)"
+            )
         self._set_status(text)
         return True
 

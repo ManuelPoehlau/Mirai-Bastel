@@ -98,3 +98,47 @@ def test_weld_rebuilds_the_view_and_undo_redo_draw_the_frames_of_before_and_afte
     assert _render(gl_window, app) == before
     assert app.key_press(Input("key", "y", frozenset({"ctrl"})))
     assert _render(gl_window, app) == after
+
+
+def test_a_single_pair_weld_draws_with_subd_and_undo_draws_the_frame_of_before(gl_window):
+    """W5 allowed (Manu 2026-11-10, "Change W5"): one pair of the doubled seam welded alone leaves a point where two
+    parts touch only there; the SubD level 2 surface and the overlays draw without a GL error, Undo draws exactly the
+    frame of before."""
+    gl_window.switch_to()
+    app = Application()
+    app.init_scene(
+        "obj",
+        obj_path=asset_path("subd_cube"),
+        store_type=GLRenderStore,
+        point_overlay_type=GLPointOverlay,
+        line_overlay_type=GLLineOverlay,
+        face_overlay_type=GLTriangleOverlay,
+        subd_overlay_type=GLSubdLineOverlay,
+    )
+    app.set_viewport_size(SIZE, SIZE)
+    mesh = app.scene.mesh
+    app.key_press(Input("key", "2", frozenset({"ctrl"})))
+    app.frame_scene()
+    app.dispatch_command(commands.SET_FACE_MODE)
+    half = {f for f in mesh.all_face_ids() if min(mesh.vertex_position(v)[0] for v in mesh.face_vertices(f)) >= 0.0}
+    objects = set(app.scene.objects)
+    app.selection.faces = set(half)
+    assert app.dispatch_command(commands.DETACH), app.status_message
+    (part,) = set(app.scene.objects) - objects
+    app.dispatch_command(commands.SET_OBJECT_MODE)
+    app.selection.objects = {part}
+    assert app.attach_objects(), app.status_message
+    app.dispatch_command(commands.SET_VERTEX_MODE)
+    by_position: dict = {}
+    for v in mesh.all_vertex_ids():
+        by_position.setdefault(tuple(mesh.vertex_position(v)), []).append(v)
+    pair = next(vs for p, vs in sorted(by_position.items()) if len(vs) == 2)
+    app.selection.vertices = set(pair)
+    app.viewport.on_selection_changed()
+    before = _render(gl_window, app)
+    assert app.weld_vertices(1e-6), app.status_message
+    assert "join parts at that point only" in app.status_message
+    after = _render(gl_window, app)
+    assert after != before
+    assert app.key_press(Input("key", "z", frozenset({"ctrl"})))
+    assert _render(gl_window, app) == before

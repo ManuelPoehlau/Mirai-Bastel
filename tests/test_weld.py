@@ -3,10 +3,11 @@
 
 Kernel: groups by distance through the spatial hash (W1, singletons and unselected points untouched), the exact group
 centroid and per-layer group mean for every merge order (W7) and the canonical survivor (W8, and why it is needed),
-the W2-W6 refusals predicted read-only, UVs per face and regions kept (W9), the W11 count. App: one Undo step with
+the W2-W4 / W6 refusals predicted read-only, W5 allowed and reported (Manu 2026-11-10, "Change W5": a seam welded point
+by point), UVs per face and regions kept (W9), the W11 count. App: one Undo step with
 exact Undo / Redo, the threshold in world space (scaled object) and its default from the world bounding box (D10), the
 command with the default, every refusal changing nothing (mode, editing view, symmetry until P6, nothing selected, a
-posed rig, no pair within the distance, W2-W6, W10 hidden), the check after the change rolled back exactly, save /
+posed rig, no pair within the distance, W2-W4 / W6, W10 hidden), the check after the change rolled back exactly, save /
 load, and the artist's case: a part detached and attached back is zipped shut again. Headless (`Application` with its
 trace viewport). The layer rules with morph targets and weights are `test_layer_topology_ops.py` /
 `test_weights_topology_ops.py`; the window is `test_gui_menus.py`, the GL frames `test_gl_weld.py`."""
@@ -221,7 +222,6 @@ REFUSALS = [
     ("W3 face", _close_diagonal, "share a face"),
     ("W4 twin faces", _twin_quads, "same points"),
     ("W4 three faces", _book, "more than two faces"),
-    ("W5 bowtie", _corner_touch, "bowtie"),
     ("W6 normals", _flipped, "normals"),
 ]
 
@@ -236,6 +236,72 @@ def test_the_kernel_predicts_every_refusal_read_only(name, make, text):
     with pytest.raises(weld_api.WeldRefused):
         weld(mesh, plan)
     assert mesh.export_state() == state
+
+
+def _two_strips() -> Mesh:
+    """Two 1x3 strips of quads side by side (normal +Z), unconnected: the seam at x = 1 has four points on each side."""
+    mesh = Mesh()
+    for x0 in (0.0, 1.0):
+        ids = {(i, k): mesh.add_vertex((x0 + i, float(k), 0.0)) for i in (0, 1) for k in range(4)}
+        for k in range(3):
+            mesh.add_face([ids[0, k], ids[1, k], ids[1, k + 1], ids[0, k + 1]])
+    return mesh
+
+
+def _seam_pairs(mesh: Mesh) -> list:
+    """The seam's pairs, bottom to top."""
+    pairs: dict = {}
+    for v in mesh.all_vertex_ids():
+        p = mesh.vertex_position(v)
+        if p[0] == 1.0:
+            pairs.setdefault(p[1], []).append(v)
+    return [pairs[y] for y in sorted(pairs)]
+
+
+def test_a_single_pair_of_two_parts_welds_and_is_reported():
+    """W5 (Manu 2026-11-10, "Change W5"): a pair whose parts would touch at that point only (a bowtie) is welded, not
+    refused; the plan names the survivor; the result is valid topology."""
+    mesh = _corner_touch()
+    plan = plan_weld(mesh, mesh.all_vertex_ids(), T)
+    assert plan.refusal is None and len(plan.groups) == 1 and plan.bowties == (plan.groups[0][0],)
+    survivors = _welded(mesh)
+    assert len(mesh.all_vertex_ids()) == 7 and len(mesh.vertex_edges(survivors[0])) == 4
+    assert_mesh_invariants(mesh)
+
+
+def test_a_seam_welded_point_by_point_equals_the_seam_welded_at_once():
+    """Both ways (Manu 2026-11-10: "Brauchen also beide Möglichkeiten"): pair by pair the first weld leaves a bowtie,
+    the next one merges the edge between them (W6 checked there) and the bowtie is gone; the end result has the same
+    topology and positions as welding the whole seam in one step."""
+    at_once = _two_strips()
+    _welded(at_once)
+    mesh = _two_strips()
+    reported = []
+    for pair in _seam_pairs(mesh):
+        plan = plan_weld(mesh, pair, T)
+        assert plan.refusal is None, plan.refusal
+        reported.append(len(plan.bowties))
+        change = mesh.begin_change()
+        weld(mesh, plan)
+        mesh.end_change(change)
+        assert_mesh_invariants(mesh)
+    assert reported == [1, 0, 0, 0]
+    assert mesh.export_state() == at_once.export_state()
+
+
+def test_a_flipped_part_welded_point_by_point_is_refused_at_the_first_merged_edge():
+    """W6 needs an edge both sides use: the first pair of a flipped strip welds (a bowtie, reported), the second pair
+    would merge an edge with disagreeing normals and is refused."""
+    flipped = Mesh()
+    for x0 in (0.0, 1.0):
+        ids = {(i, k): flipped.add_vertex((x0 + i, float(k), 0.0)) for i in (0, 1) for k in range(4)}
+        for k in range(3):
+            quad = [ids[0, k], ids[1, k], ids[1, k + 1], ids[0, k + 1]]
+            flipped.add_face(quad if x0 == 0.0 else quad[::-1])
+    first, second = _seam_pairs(flipped)[:2]
+    assert _welded(flipped, first)
+    plan = plan_weld(flipped, second, T)
+    assert plan.refusal is not None and "normals" in plan.refusal
 
 
 def test_uvs_per_face_and_regions_stay():
@@ -439,7 +505,7 @@ def test_posed_rig_with_a_bound_mesh_is_refused():
 
 
 def test_a_failure_after_the_change_is_rolled_back_exactly(monkeypatch):
-    """W5 / W6 are checked again on the real topology after the merge; a refusal there rolls the mesh back exactly and
+    """W4 / W6 are checked again on the real topology after the merge; a refusal there rolls the mesh back exactly and
     pushes nothing."""
     app = _app()
     _select_points(app)
@@ -456,6 +522,16 @@ def test_a_failure_after_the_change_is_rolled_back_exactly(monkeypatch):
     assert calls == [True, False]  # predicted, then checked on the result
     assert app.status_message == "Weld: refused after the change for the test"
     assert _snapshot(app) == before
+
+
+def test_the_status_names_points_that_join_two_parts_only_there():
+    app = _app(_corner_touch())
+    _select_points(app)
+    history = len(app.history)
+    assert app.weld_vertices(T), app.status_message
+    assert "1 point(s) join parts at that point only" in app.status_message
+    assert len(app.history) == history + 1
+    assert app.key_press(CTRL_Z) and len(app.scene.mesh.all_vertex_ids()) == 8
 
 
 def test_status_names_the_averaged_layer_values():

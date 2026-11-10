@@ -174,6 +174,7 @@ def test_the_weld_window_shows_the_default_and_its_preview_and_welds_with_the_fi
     """Ohne Fenster: Öffnen setzt den vorläufigen Startwert (0,001 × Diagonale, D10) ins Feld und rechnet die Vorschau
     („n Gruppen, m Punkte“ oder der Grund); eine Änderung des Felds rechnet sie neu; „Weld“ nutzt den Wert im Feld."""
     from gui.menus import WELD_ENTRY, WELD_LABEL, Menus, weld_preview
+    from mirai.interaction.input import Input
 
     assert (WELD_ENTRY, WELD_LABEL) == ("Weld…", "Weld")
     app = _weld_app()
@@ -191,6 +192,13 @@ def test_the_weld_window_shows_the_default_and_its_preview_and_welds_with_the_fi
     assert menus.weld(), app.status_message
     assert "(distance 0.0005)" in app.status_message and len(app.history) == history + 1
     assert len(app.scene.mesh.all_vertex_ids()) == 6
+    # W5 (Manu 2026-11-10, „Change W5“): ein einzelnes Paar wird verschweißt, die Vorschau sagt es vorher
+    app.key_press(Input("key", "z", frozenset({"ctrl"})))
+    mesh = app.scene.mesh
+    app.selection.vertices = {v for v in mesh.all_vertex_ids() if mesh.vertex_position(v)[1] == 0.0
+                              and 0.9 < mesh.vertex_position(v)[0] < 1.1}
+    menus.set_weld_threshold(0.0005)
+    assert weld_preview(menus.weld_plan) == "1 Gruppen, 2 Punkte, 1 nur an einem Punkt verbunden"
 
 
 # -- Fenster ------------------------------------------------------------------------------------------------------

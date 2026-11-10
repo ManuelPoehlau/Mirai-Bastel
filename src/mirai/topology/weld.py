@@ -4,14 +4,15 @@ The kernel over the public Mesh API, without app state; `Application.weld_plan` 
 in world space, hidden geometry (W10), the gates and the one `_mesh_transaction`. Texts `PROVISIONAL`.
 
 - `plan_weld(mesh, vertices, distance)` is read-only: the groups (W1, W2: connected components of pairs within
-  `distance` found through a spatial hash, every pair of a group within it - a clique) and the first refusal by W2-W6,
-  predicted on the face boundaries the weld touches before anything changes.
+  `distance` found through a spatial hash, every pair of a group within it - a clique), the first refusal by W2-W4
+  and W6, predicted on the face boundaries the weld touches before anything changes, and the survivors where separate
+  fans of faces would meet (W5, reported: Manu 2026-11-10 "Change W5" - a seam may be welded point by point).
 - `weld(mesh, plan)` changes the mesh: per group the helper edges as a star from the group's smallest id (W8:
   `add_edge(min, v)`, ascending), then **one** `core.operations.collapse_elements` over all groups - its group rule
   writes the centroid of the original positions (summed in ascending-id order) and the per-layer group mean
   (`combine_values(kind, …, "mean")`) over the chain's pairwise results (W7, F9), so the result does not depend on the
-  merge order. Afterwards the fans and the orientation around every survivor are checked again on the real topology
-  (W5, W6); a failure raises `WeldRefused`, and the caller's transaction rolls the mesh back exactly.
+  merge order. Afterwards W4 and the orientation of the merged edges are checked again on the real topology (W6); a
+  failure raises `WeldRefused`, and the caller's transaction rolls the mesh back exactly.
 
 Distances are compared in the mesh's own (object) space: the caller converts the world threshold (`t / s`, uniform
 scale, AD-021 Q-4). A pair is "within" the distance when `|p - q| <= distance`.
@@ -31,7 +32,7 @@ LABEL = "Weld"
 
 
 class WeldRefused(MeshError):
-    """The weld would leave topology Mirai does not allow (W4-W6); raised inside the step so the caller's transaction
+    """The weld would leave topology Mirai does not allow (W4, W6); raised inside the step so the caller's transaction
     rolls the mesh back exactly. `str(exc)` says why."""
 
 
@@ -40,13 +41,16 @@ class WeldPlan:
     """What a weld would merge, read-only. `groups`: each sorted by id (the first is the survivor, W8), at least two
     points, ordered by their first id; points within the distance of no other selected point are in none. `refusal`:
     the first reason it cannot run (None = it can). `merged_edges`: the vertex pairs (after the weld) where two
-    original edges become one (W4, W6). `threshold`: the world-space distance the caller planned with (the kernel
-    itself compares in object space; None when the kernel was called directly)."""
+    original edges become one (W4, W6). `bowties`: the survivors where separate fans of faces would meet after the weld
+    (W5: allowed and reported - the parts touch at that point only until the neighbouring points are welded too).
+    `threshold`: the world-space distance the caller planned with (the kernel itself compares in object space; None
+    when the kernel was called directly)."""
 
     groups: tuple[tuple[VertexId, ...], ...]
     refusal: str | None
     merged_edges: frozenset[frozenset[VertexId]] = frozenset()
     threshold: float | None = None
+    bowties: tuple[VertexId, ...] = ()
 
     @property
     def points(self) -> int:
@@ -55,7 +59,7 @@ class WeldPlan:
 
 def plan_weld(mesh: Mesh, vertices: Iterable[VertexId], distance: float) -> WeldPlan:
     """The groups of `vertices` (invalid ids ignored; the order of `vertices` does not matter, W1) within `distance`
-    (object space) and the first refusal by W2-W6. Read-only. A spatial hash with cell `distance` finds the pairs (each
+    (object space), the first refusal by W2-W4 / W6 and the W5 survivors. Read-only. A spatial hash with cell `distance` finds the pairs (each
     point looks at the 27 cells around it; no O(n²) scan over the selection)."""
     if not (isinstance(distance, (int, float)) and math.isfinite(distance) and distance > 0.0):
         return WeldPlan((), f"{LABEL}: the distance must be a number above 0")
@@ -96,14 +100,15 @@ def plan_weld(mesh: Mesh, vertices: Iterable[VertexId], distance: float) -> Weld
             return WeldPlan(groups, text)
     rep = {v: g[0] for g in groups for v in g}
     cycles, merged = _predicted_cycles(mesh, rep)
-    text = _result_refusal(cycles, {g[0] for g in groups}, merged, duplicates=True)
-    return WeldPlan(groups, text, merged)
+    survivors = {g[0] for g in groups}
+    text = _result_refusal(cycles, survivors, merged, duplicates=True)
+    return WeldPlan(groups, text, merged, bowties=_bowties(cycles, survivors))
 
 
 def weld(mesh: Mesh, plan: WeldPlan) -> list[VertexId]:
     """Welds the groups of `plan` (made by `plan_weld` on this mesh, without a refusal); returns the survivors in group
-    order - each the group's smallest id (W8). Raises `WeldRefused` (or `CollapseRefused`) when the result breaks
-    W4-W6; the caller rolls back. Call it inside a recording (`begin_change`)."""
+    order - each the group's smallest id (W8). Raises `WeldRefused` (or `CollapseRefused`) when the result breaks W4 or
+    W6; the caller rolls back. Call it inside a recording (`begin_change`)."""
     if plan.refusal is not None:
         raise WeldRefused(plan.refusal)
     groups = plan.groups
@@ -210,9 +215,9 @@ def _result_refusal(
     *,
     duplicates: bool,
 ) -> str | None:
-    """W4-W6 on the face boundaries around the survivors (predicted before, or read after the weld): no two faces on
-    the same corners and no edge with more than two faces (W4), one fan of faces around every survivor (W5: no bowtie),
-    and every merged edge used in opposite directions by its two faces (W6)."""
+    """W4 and W6 on the face boundaries around the survivors (predicted before, or read after the weld): no two faces on
+    the same corners and no edge with more than two faces (W4), and every merged edge used in opposite directions by
+    its two faces (W6). W5 (separate fans at a survivor) is not a refusal any more (`_bowties`)."""
     if duplicates:
         seen: set[frozenset[VertexId]] = set()
         for f in sorted(cycles, key=int):
@@ -231,14 +236,15 @@ def _result_refusal(
             return f"{LABEL}: an edge would join more than two faces"
         if key in merged and len(directed) == 2 and directed[0] == directed[1]:
             return f"{LABEL}: the normals of the two sides disagree - flip one part first"
-    for s in sorted(survivors, key=int):
-        fans = _fan_count(s, [cycles[f] for f in cycles if s in cycles[f]])
-        if fans > 1:
-            return (
-                f"{LABEL}: point {int(s)} would join {fans} separate fans of faces (a bowtie) - weld the neighbouring"
-                f" points too"
-            )
     return None
+
+
+def _bowties(cycles: dict[FaceId, list[VertexId]], survivors: set[VertexId]) -> tuple[VertexId, ...]:
+    """W5 (Manu 2026-11-10, "Change W5"): the survivors around which the faces form more than one fan after the weld - the
+    parts touch there at one point only (a bowtie) until a neighbouring pair is welded too. Allowed, reported."""
+    return tuple(
+        s for s in sorted(survivors, key=int) if _fan_count(s, [cycles[f] for f in cycles if s in cycles[f]]) > 1
+    )
 
 
 def _fan_count(s: VertexId, cycles: list[list[VertexId]]) -> int:

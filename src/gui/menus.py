@@ -50,7 +50,10 @@ def weld_preview(plan) -> str:
     """Die Vorschau im Weld-Fenster aus einem `WeldPlan`: was es verschmelzen würde, oder warum nicht."""
     if plan.refusal is not None:
         return plan.refusal
-    return f"{len(plan.groups)} Gruppen, {plan.points} Punkte"
+    text = f"{len(plan.groups)} Gruppen, {plan.points} Punkte"
+    if plan.bowties:  # W5 (Manu 2026-11-10, „Change W5“): erlaubt, aber sichtbar
+        text += f", {len(plan.bowties)} nur an einem Punkt verbunden"
+    return text
 
 
 def attach_request(app, take_look: bool) -> int | None:

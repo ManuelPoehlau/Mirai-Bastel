@@ -14,7 +14,8 @@ specification as built §17, practical test §18 (Manu, 2026-11-10: **O-8 KEEP**
 Sub-Object Mode)"; one finding fixed, §17.11). **P4 BUILT (2026-11-10):** Weld — `Application.weld_plan` /
 `weld_vertices` / `weld_default_threshold`, the kernel `src/mirai/topology/weld.py` (W1–W11), command `Weld` without a
 key, "Mesh" > "Weld…" with the threshold field and the preview; refused under a symmetry definition until P6;
-specification as built §19, practical test §20 (pending; D10-v open). P5–P7 (§11) are **not implemented**, each starts
+specification as built §19, practical test §20 (W5 changed by Manu on 2026-11-10: single pairs allowed and reported,
+§19.10; D10-v open). P5–P7 (§11) are **not implemented**, each starts
 only with its own go.
 Open points: §10.
 **Scope:** `src/mirai` and `src/gui` only. **No Core change, no file-format change, no keymap change** (no keys at all).
@@ -39,8 +40,10 @@ Open points: §10.
   dem Cursor dazu – z. B. ein ganzes Ohr vor dem Detach. Im Menü „Mesh“ steht es nur als Hinweis: über der Menüleiste
   gibt es keinen Cursor mehr am Mesh (§17.2; O-14: „SPACE reicht vorerst (später Sub-Object Mode)“).
 - **Weld** (Modus `1`, Menü „Mesh > Weld…“; gebaut 2026-11-10): verschmilzt nur ausgewählte, unverbundene Punkte,
-  exakt auf den Schwerpunkt der Gruppe, unabhängig von der Reihenfolge; lehnt alles ab, was unerwartete Topologie
-  ergäbe (Kette, verbundene Punkte, Bowtie, gegenläufige Normalen, verdeckte Geometrie). Das Fenster zeigt den Abstand
+  exakt auf den Schwerpunkt der Gruppe, unabhängig von der Reihenfolge; lehnt ab, was unerwartete Topologie ergäbe
+  (Kette, verbundene Punkte, gegenläufige Normalen, verdeckte Geometrie). Eine Naht geht auf einmal oder Punkt für
+  Punkt (dein „Change W5“): ein einzelnes Paar zweier Teile wird verschweißt, die Teile hängen dann nur an diesem
+  Punkt, bis die Nachbarn folgen – Fenster und Statuszeile sagen es. Das Fenster zeigt den Abstand
   als Zahl (Weltkoordinaten, änderbar) und die Vorschau „n Gruppen, m Punkte“; der Startwert (0,001 × Diagonale) ist
   vorläufig. Mit Symmetrie noch abgelehnt (bis P6). Ein Undo-Schritt. Praxistest: §20.
 - **Bridge** (zwei Ränder gleicher Punktzahl): Quads dazwischen, keine neuen Punkte → Morphs und Gewichte unberührt;
@@ -260,7 +263,7 @@ Inputs: the selected, visible vertices; a spatial hash with cell `t / s` (no pai
 | W2 | Groups = connected components of pairs within `t`; **every** pair inside a group must be within `t` (a clique). A transitive chain whose diameter exceeds `t` → refused |
 | W3 | No two members of a group share an edge or a face (that is Collapse) → Weld never removes or degenerates a face |
 | W4 | Merged border edges become one manifold edge; duplicate faces and edges with more than two faces → refused (`CollapseRefused`) |
-| W5 | No new non-manifold (bowtie) vertex: one face fan around each merged point; checked after the change, exact rollback on failure |
+| W5 | ~~No new non-manifold (bowtie) vertex: refused~~ — **changed (Manu, 2026-11-10, practical test P4: "Change W5", "Brauchen also beide Möglichkeiten")**: a merged point whose faces form more than one fan (two parts touching at that point only) is **allowed and reported** (preview and status line), so a seam can be welded point by point; the later Target Weld (§11) needs the same. §19.10 |
 | W6 | Every merged edge is used in opposite directions by its two faces, else refused ("normals disagree"); after the change, rollback |
 | W7 | **Group centroid:** position = `Σp / n` of the **original** positions, summed in ascending-`VertexId` order; **point layers = the explicit group mean** `combine_values(kind, [(value, 1/n) …], "mean")` (vectors: the same expression; weights: the convex per-key combination with `math.fsum`); both computed before any merge (F9) — **independent of the merge order** |
 | W8 | **Canonical surviving `VertexId`:** the helper edges are created as a star from the group's smallest id (`add_edge(min, v)` for every other member, ascending), so the surviving vertex is **the group's smallest `VertexId`**, for every selection order |
@@ -350,7 +353,7 @@ order-independent. The order test now checks the values, and the canonical-edge 
 |---|---|
 | P2 (tested 2026-11-10 except the reference-PC timing, §15.14) | Viewport and SubD rebuild after a large Attach (GL, reference hardware); the mixed mesh + object Undo step in the real command path; the D11 prune in the morph controller; skinning invariance under a posed rig (randomized); the look refusal and the explicit variant; the O-5 refusal and override; O-7; the D4 "worsen" case — full list §15.12 |
 | P3 (tested 2026-11-10, §17.9) | A detached part **crossing** the plane derives a usable seam (state VALID, symmetric ops, Re-Symmetrize if the seam splits it in two); Select Linked |
-| P4 (tested 2026-11-10, §19.8) | W2–W6 refusals (chain, connected members, bowtie, orientation), W10, the threshold field and its default from the bounding-box diagonal |
+| P4 (tested 2026-11-10, §19.8) | W2–W4 / W6 refusals (chain, connected members, coinciding faces, orientation), W5 allowed and reported (changed, §19.10), W10, the threshold field and its default from the bounding-box diagonal |
 | P5 | Bridge pairing, winding, refusal on conflicting normals; **Re-Symmetrize works again after the islands are bridged** into the head (component count back to 2) |
 | P6 | Symmetric Weld / Bridge, including coincident pre-weld points (AMBIGUOUS correspondence) |
 | P7 | Separate by Islands, the kept island (O-12) |
@@ -360,7 +363,7 @@ order-independent. The order test now checks the values, and the canonical-edge 
 **Decided (Manu, 2026-11-09):** D1 look refusal + explicit variant · D2 targets as `"<object> · <target>"`, never merged
 · D2b region naming of §3.3 · D3 refuse with a dial above 0 % or a posed rig · D4 Attach: PARTIAL allowed, AMBIGUOUS
 refused · D5 Detach mirrors like Delete, derived definition when VALID; Re-Symmetrize limitation accepted · D6 Weld
-strictness · D7 H3 group mean · D8 Bridge without UVs · D9 Bridge without region · D10 world-space threshold, provisional
+strictness (W5 changed by Manu on 2026-11-10, §19.10) · D7 H3 group mean · D8 Bridge without UVs · D9 Bridge without region · D10 world-space threshold, provisional
 reference 0.001 × world bounding-box diagonal, always visible and editable · D11 Undo removes the dial state of carried
 targets, Redo recreates them at 0 %.
 
@@ -385,6 +388,10 @@ targets, Redo recreates them at 0 %.
 window with the threshold as a number field (D10: always visible and editable, the provisional default prefilled), a
 preview of what it would merge ("n Gruppen, m Punkte") and "Weld" / "Abbrechen"; no key, no keymap change. D10-v (the
 approved default value) stays open until the P4 practical test.
+
+**Decided (Manu, 2026-11-10, practical test P4):** **W5 changed** — "Change W5, brauchen wir auch, wenn Target Weld
+hinzukommt … Brauchen also Beide Möglichkeiten": a weld that joins two parts at one point only (a bowtie) is allowed and
+reported; a seam can be welded at once or point by point (§4.2, §19.10).
 
 **Open (classified for P2 on 2026-11-10; none blocks P2):**
 
@@ -430,7 +437,7 @@ canonical survivor; Bridge attributes; the gate enumeration; save / load; a perf
 | Unweighted points stay at rest in a pose | medium, visible | refused by default; explicit override with the count (O-5) |
 | Rounding asymmetry after Attach | medium, visible | PARTIAL + status; precondition documented |
 | Re-Symmetrize unavailable with islands | medium, visible | existing refusal texts; works again after bridging (P5 test) |
-| Weld topology surprises | low | W2–W6 |
+| Weld topology surprises | low | W2–W4, W6; a bowtie point (W5, allowed since 2026-11-10) is reported |
 | Border averaging after Weld | medium, visible | W11 status; Bridge preferred for the ear |
 | Viewport cost of a large Attach | medium, unmeasured on GL | P2 acceptance |
 | Symmetric Weld with coincident points | open | decided before P6 |
@@ -873,14 +880,15 @@ Core, file-format or keymap change, no key.
 - `plan_weld(mesh, vertices, distance)` (read-only, object space): valid ids, sorted (W1); pairs through a spatial hash
   with cell `distance` (each point checks the 27 cells around it; "within" = `|p − q| ≤ distance`); groups = connected
   components of size ≥ 2, each sorted by id, ordered by their first id; then per group W2 (every pair within the
-  distance) and W3 (no shared edge or face); then W4–W6 **predicted** on the face boundaries around the welded points
-  with every member replaced by its group's smallest id: two faces on the same corners or an edge with more than two
-  faces (W4), more than one fan of faces around a survivor (W5, bowtie), a *merged* edge (two original edges landing on
-  one pair) used twice in the same direction (W6). Returns `WeldPlan(groups, refusal, merged_edges, threshold)`.
+  distance) and W3 (no shared edge or face); then W4 and W6 **predicted** on the face boundaries around the welded
+  points with every member replaced by its group's smallest id: two faces on the same corners or an edge with more than
+  two faces (W4), a *merged* edge (two original edges landing on one pair) used twice in the same direction (W6); and
+  the survivors whose faces would form more than one fan (W5, `bowties`: reported, not refused since §19.10). Returns
+  `WeldPlan(groups, refusal, merged_edges, threshold, bowties)`.
 - `weld(mesh, plan)` (inside a recording): per group `add_edge(min, v)` for the other members in ascending order (W8),
   then one `core.operations.collapse_elements(mesh, members, helpers)`: its group rule writes the centroid of the
   original positions (summed in ascending-id order) and the per-layer group mean over the chain's pairwise results (W7,
-  F9). The survivors must be the groups' smallest ids, and W4–W6 are checked again on the real boundaries around the
+  F9). The survivors must be the groups' smallest ids, and W4 / W6 are checked again on the real boundaries around the
   survivors (the same function as the prediction); a failure raises `WeldRefused` and the caller's transaction rolls
   back exactly.
 - `differing_points(mesh, groups)` (W11) and `world_threshold_default(diagonal)` (D10: `0.001 × diagonal`, None for 0).
@@ -894,15 +902,16 @@ default is used, and without one "enter a distance"; 6. no valid selected point;
 8. the point-layer gate (`weld_vertices` is DECLARED); 9. the kernel with `t / s` (uniform scale, AD-021 Q-4) — a
 distance not above 0 is refused there; 10. no group → "no two selected points within t - nothing to weld"; 11. a group
 touching hidden geometry (W10: `hidden.touches_hidden` per group — a selected point outside every group does not
-block); 12. the kernel's W2–W6.
+block); 12. the kernel's W2–W4 / W6.
 
 ### 19.4 The step (one Undo step)
 
 **One** `_mesh_transaction("Weld n points into k", weld)`; history: one `MeshDeltaCommand` and one selection-mirror
 entry. Afterwards point mode stays, and the previously selected points that still exist stay selected (the survivors
 among them; `PROVISIONAL`). Status: "Weld: n points into k (distance t)" plus " - m point(s) averaged differing target
-/ weight values" when W11 counts any. Undo restores the mesh and the selection exactly; Redo the welded state. A
-failure inside the step (W4–W6 after the change, an unexpected survivor, a `CollapseRefused`) is rolled back: no
+/ weight values" when W11 counts any, and " - k point(s) join parts at that point only (weld the neighbours to close
+the seam)" for W5 (§19.10). Undo restores the mesh and the selection exactly; Redo the welded state. A
+failure inside the step (W4 / W6 after the change, an unexpected survivor, a `CollapseRefused`) is rolled back: no
 history entry, selection unchanged. W9: face ids stay, so corner UVs per face (F10) and regions stay unchanged.
 
 ### 19.5 Threshold (D10)
@@ -925,18 +934,19 @@ selected point touches hidden geometry, W10 asks per group, so `weld_plan` check
 
 ### 19.7 Literal readings and `PROVISIONAL` choices
 
-Point mode only (the selection of edges or faces is not converted); "within" includes the distance itself; a member
-that already was a bowtie point refuses (W5 counts the fans after the weld, not their change); W6 checks merged edges
+Point mode only (the selection of edges or faces is not converted); "within" includes the distance itself; W6 checks merged edges
 only (an unrelated flipped face elsewhere is not Weld's business); "nothing to weld" is a refusal (no step); the
 selection afterwards; all texts.
 
 ### 19.8 Tests (production, `tests/`)
 
-- `tests/test_weld.py` (41): the group centroid and layer means for all 6 / 24 helper-edge orders of `collapse_elements`
+- `tests/test_weld.py` (45 after §19.10): the group centroid and layer means for all 6 / 24 helper-edge orders of `collapse_elements`
   (bit-exact, vector and weights layers) and the survivor varying with them (W8's reason), Weld's survivor = smallest
   id for every input order; the soup of four quads welds into the shared grid (invariants, UVs); selection only, any
   order; the spatial hash across cell borders and at the distance; a distance not above 0; W2, W3 (edge, face), W4
-  (twin faces, three faces on an edge), W5, W6 predicted read-only and refused in the app with nothing changed; W9 UVs
+  (twin faces, three faces on an edge), W6 predicted read-only and refused in the app with nothing changed; W5 (§19.10):
+  a single pair of two parts welds and is reported, a seam welded pair by pair equals the seam welded at once (export
+  identical), a flipped part welded pair by pair is refused at its first merged edge, the status line; W9 UVs
   and regions; W11; the default formula; one step with exact Undo / Redo; the command with the default; world-space
   threshold on a rotated, scaled, moved object and the default from its world box; no pair within the distance; five
   refusals changing nothing (edge / object mode, nothing selected, editing view, W10 hidden); symmetry until P6; the
@@ -945,9 +955,11 @@ selection afterwards; all texts.
 - `tests/test_layer_topology_ops.py` / `tests/test_weights_topology_ops.py` (+2 each): the gate's rule fixtures (both
   entries).
 - `tests/test_gui_menus.py` (+2): the window's default, preview and field without a window; in the window "Mesh" shows
-  "Weld…", the modal opens with the preview, Esc changes nothing, "Weld" welds with the field's value.
+  "Weld…", the modal opens with the preview, Esc changes nothing, "Weld" welds with the field's value; the preview
+  names a W5 point ("1 nur an einem Punkt verbunden").
 - `tests/test_gl_weld.py`: GL frames before / after / Ctrl+Z / Ctrl+Y with SubD level 2 (subd_cube, the +X half
-  detached and attached back, the seam welded shut).
+  detached and attached back, the seam welded shut); one pair welded alone (a W5 point) draws with SubD level 2 without a
+  GL error and Ctrl+Z draws the frame of before.
 
 **Measured** (container, Python 3.13, headless trace store, not the reference PC): the head basemesh with its +X half
 detached and attached back (36 seam pairs = 72 points welded, all 362 points selected): default 0.4 ms, plan 5.5 ms,
@@ -960,6 +972,26 @@ Weld 9.7 ms (incl. its plan), Undo 0.8 ms, Redo 0.5 ms; the man basemesh (44 pai
 - Weld merges selected points only: unselected points within the distance stay, and there is no "Target Weld" (§11).
 - Border values of point layers are averaged (H3); the status line counts the points (W11). A UV seam along the weld
   stays (F10).
+
+### 19.10 W5 changed (Manu, 2026-11-10, practical test P4)
+
+Finding: one point at the open hole of the head and one at the open border of the ear → "point 916 would join 2
+separate fans of faces (a bowtie)". Decision (Manu): **"Change W5, brauchen wir auch, wenn Target Weld hinzukommt (ein
+Punkt auf einen Targetpunkt ziehen der dort automatisch mit dem Targetpunkt verschmilzt für Punkt für Punkt Weld.
+Brauchen also Beide Möglichkeiten"**. As built:
+
+- W5 is no refusal any more: `plan_weld` reports the survivors whose faces form more than one fan (`WeldPlan.bowties`);
+  the window's preview adds ", k nur an einem Punkt verbunden", the status line " - k point(s) join parts at that point
+  only (weld the neighbours to close the seam)". Both ways work: a whole seam at once, or pair by pair — the second
+  pair merges the edge between the two and the parts form one fan again; the end result is identical (tested).
+- W6 needs an edge both sides use, so a part with flipped normals is refused at the **second** pair of a point-by-point
+  seam, not at the first (tested). W2–W4, W7–W11 are unchanged.
+- **Behaviour at a W5 point until the seam is closed** (probed in the app, 2026-11-10): Border select (`B`), SubD
+  level 2 (also GL), Soft, Select Linked (the two parts count as separate islands — they share no edge), Detach and a
+  further Weld work; **Dissolve** of that point is refused by the Core ("anliegende Faces bilden keinen einzelnen Fan",
+  nothing changes); a border walk stops there, so Cap of a border through that point acts on what the walk finds. The
+  Core invariants (`tests/mesh_invariants.py`) allow such a point.
+- Target Weld itself (drag a point onto a target point) stays later (§11); it will use this rule.
 
 ## 20. Praxistest P4: Weld (Deutsch, ca. 15 Minuten)
 
@@ -981,7 +1013,12 @@ ausgewählten Punkte des Edit-Objekts.
 5. Ablehnungen (nichts ändert sich, die Statuszeile sagt warum): zwei Punkte derselben Kante auswählen und den Abstand
    größer als die Kante setzen → „share an edge – that is Collapse“; Modus `2` oder `3` → „press 1“; Symmetrie an
    (`Shift+S`) → „not with symmetry on yet“.
-6. Morph (optional): vor Schritt 1 dem Kopf ein Ziel geben (`Strg+N`, etwas formen, auf 0 % zurück). Nach dem Weld
+6. Punkt für Punkt (dein „Change W5“): nach `Strg+Z` (Naht offen) nur **ein** Paar der Naht auswählen (zwei Punkte
+   übereinander, ggf. Rahmen um die Stelle), **Mesh > Weld…**: Vorschau „1 Gruppen, 2 Punkte, 1 nur an einem Punkt
+   verbunden“; **Weld** – die Statuszeile sagt „join parts at that point only“. Das nächste Paar daneben verschweißen:
+   jetzt ist zwischen beiden eine Kante geschlossen, der Hinweis verschwindet. Ebenso das Ohr an das Loch: Paar für
+   Paar, oder beide Ränder mit `B` und alles auf einmal.
+7. Morph (optional): vor Schritt 1 dem Kopf ein Ziel geben (`Strg+N`, etwas formen, auf 0 % zurück). Nach dem Weld
    sitzt das Ziel an der Naht gemittelt; die Statuszeile zählt die Punkte mit unterschiedlichen Werten („averaged
    differing target / weight values“).
 
@@ -991,7 +1028,8 @@ ausgewählten Punkte des Edit-Objekts.
 | 3 (D10-v: passt der Startwert 0,001 × Diagonale?) | | |
 | 4 | | |
 | 5 | | |
-| 6 | | |
+| 6 (W5) | CHANGE → gebaut: einzelne Paare erlaubt (Manu, 2026-11-10) | §19.10 |
+| 7 | | |
 
 Offen bei dir: **D10-v** – passt der vorläufige Startwert (0,001 × Diagonale der Bounding Box), oder soll er größer /
 kleiner sein? Und: nach dem Weld bleiben die übrigen ausgewählten Punkte ausgewählt (vorläufig).
