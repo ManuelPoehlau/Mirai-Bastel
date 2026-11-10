@@ -375,6 +375,11 @@ targets, Redo recreates them at 0 %.
 - **O-13** ("O-13 ja", Manu 2026-11-10): the GUI places are a "Mesh" menu in the menu bar and the outliner context
   menu.
 
+**Decided (Manu, 2026-11-10, before P4):** the Weld GUI place — "Weld-Fenster passt so": "Mesh > Weld…" opens a small
+window with the threshold as a number field (D10: always visible and editable, the provisional default prefilled), a
+preview of what it would merge ("n Gruppen, m Punkte") and "Weld" / "Abbrechen"; no key, no keymap change. D10-v (the
+approved default value) stays open until the P4 practical test.
+
 **Open (classified for P2 on 2026-11-10; none blocks P2):**
 
 | # | Question | Proposal | P2 |
