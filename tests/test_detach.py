@@ -567,3 +567,37 @@ def test_select_linked_is_not_mirrored_under_symmetry_and_detach_adds_the_mirror
     assert obj.mesh.symmetry_definition is not None and obj.mesh.symmetry_definition.seam_edges == frozenset()
     assert symmetry_state(obj.mesh) is SymmetryState.VALID
     assert symmetry_state(mesh) is SymmetryState.VALID
+
+
+@pytest.mark.parametrize("make", ["detach", "duplicate"])
+@pytest.mark.parametrize("load", ["primitive", "file"])
+def test_a_scene_with_a_group_member_newer_than_its_group_can_be_replaced(make, load, tmp_path):
+    """Practical test P3 (Manu 2026-11-10, "Objekt 21 hat Mitglieder"): Detach - like Duplicate - keeps the source's
+    group, so the group has a member with a higher id than itself; loading another scene removed the old objects in id
+    order and `Scene.remove_object` refused the group. Members now go first (`scene_objects._remove_objects`)."""
+    from core import ObjectState
+
+    app = _app()
+    src = app.scene.edit_object
+    app.dispatch_command(commands.SET_OBJECT_MODE)
+    app.selection.objects = {src.id}
+    assert app.dispatch_command(commands.GROUP_OBJECTS), app.status_message
+    group = next(o for o in app.scene.objects.values() if o.state is ObjectState.GROUP)
+    if make == "detach":
+        _select_faces(app, _cube_faces(app.scene.mesh))
+        obj = _detach(app)
+    else:
+        app.selection.objects = {src.id}
+        objects = set(app.scene.objects)
+        assert app.dispatch_command(commands.DUPLICATE_OBJECTS), app.status_message
+        obj = _new_object(app, objects)
+    assert obj.parent == group.id and int(obj.id) > int(group.id)
+    path = tmp_path / "grouped.mirai.json"
+    assert app.save_scene_file(path)
+    names = sorted((o.name, o.parent is not None) for o in app.scene.objects.values())
+    if load == "primitive":
+        app.load_scene("cube")
+        assert len(app.scene.objects) == 1
+    else:
+        app.load_scene("file", scene_path=path)
+        assert sorted((o.name, o.parent is not None) for o in app.scene.objects.values()) == names

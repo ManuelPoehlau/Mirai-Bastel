@@ -105,14 +105,21 @@ def reset_scene(scene: Scene, mesh: Mesh, name: str, texture: str | None = None)
     obj = scene.add_object(mesh, name=name, texture=texture)
     scene.edit_object_id = obj.id
     _clear_mirror_pairs(scene)
-    for object_id in [oid for oid in scene.objects if oid != obj.id]:
-        scene.remove_object(object_id)
+    _remove_objects(scene, [oid for oid in scene.objects if oid != obj.id])
     # A new scene has none of the old one's subsystems (AD-028: the rig is a real value since 2026-11-02;
     # before, these reserved slots were always None and nothing reset them).
     scene.morph_targets = None
     scene.rig = None
     scene.animation = None
     return obj
+
+
+def _remove_objects(scene: Scene, object_ids: list[ObjectId]) -> None:
+    """Removes the objects, members before their groups (`Scene.remove_object` refuses a group that still has members;
+    a member can have a higher id than its group - Duplicate and Detach keep the source's group - so id order is not
+    enough). Same depth: id order."""
+    for object_id in sorted(object_ids, key=lambda oid: -len(scene.ancestors_of(oid))):
+        scene.remove_object(object_id)
 
 
 def replace_scene(scene: Scene, loaded: Scene) -> SceneObject:
@@ -145,8 +152,7 @@ def replace_scene(scene: Scene, loaded: Scene) -> SceneObject:
     scene.edit_object_id = edit.id
     _clear_mirror_pairs(scene)
     kept = set(new_ids.values())
-    for object_id in [oid for oid in scene.objects if oid not in kept]:
-        scene.remove_object(object_id)
+    _remove_objects(scene, [oid for oid in scene.objects if oid not in kept])
     for pair in loaded.mirror_pairs:
         scene.add_mirror_pair(
             MirrorPair(new_ids[pair.a], new_ids[pair.b], normal=pair.normal, offset=pair.offset)

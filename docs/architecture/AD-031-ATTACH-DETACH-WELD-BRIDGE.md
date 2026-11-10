@@ -786,6 +786,19 @@ guard (`tests/test_symmetry_fail_closed_guard.py`) presses `Detach` on its symme
   view's rebuild that the key path (Ctrl+Z) adds (E23, `_undo_redo`) — the same for Delete; the artist's keys are
   exact (§17.4).
 
+### 17.11 Practical-test finding (Manu, 2026-11-10): loading a scene after Detach in a group
+
+Log: "Scene file 'Gollum_Head_01_Asym.mirai.json' failed: Objekt 21 hat Mitglieder - erst diese entfernen oder
+umhängen". Cause: `scene_objects.replace_scene` / `reset_scene` removed the old objects in id order, and
+`Scene.remove_object` refuses a group that still has members. Detach keeps the source's group (§17.5), as Duplicate
+does, so the group gets a member with a higher id than itself and came first. The same failure existed on P2 with
+Duplicate in a group (verified on `eb04a3f`). Fixed: members are removed before their groups
+(`scene_objects._remove_objects`, the depth order of `delete_selected`); test
+`test_detach.test_a_scene_with_a_group_member_newer_than_its_group_can_be_replaced` (Detach and Duplicate, a primitive
+and a file). **Not changed, stated:** a load that fails inside `replace_scene` is not atomic (the new objects are
+already added, so the old scene is not left unchanged as `SceneFiles.load` promises); with the ordering fixed, no known
+input reaches that path.
+
 ## 18. Praxistest P3: Detach und Select Linked (Deutsch, ca. 15 Minuten)
 
 Start: `python src/main.py`. Detach und Select Linked haben **keine Taste**. Detach steht im Menü **Mesh**; Select
