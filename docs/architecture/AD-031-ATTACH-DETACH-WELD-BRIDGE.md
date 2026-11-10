@@ -1,8 +1,10 @@
 # AD-031 — Attach, Detach, Weld, Bridge: assembling, separating and connecting mesh parts
 
 **Status:** DECIDED (Manu, 2026-11-09): D1–D9 and D11 approved as proposed; D10 decided as a world-space threshold
-with a **provisional** reference default (§4.1), the numeric value is not artist-approved. **NOT IMPLEMENTED** — each
-phase P1–P7 (§11) starts only with its own go. Open points: §10.
+with a **provisional** reference default (§4.1), the numeric value is not artist-approved. **P1 BUILT (2026-11-10):** the
+assembly kernel `src/mirai/mesh_assembly.py` (`append_objects`, `extract_faces`, `look_differences`,
+`derived_symmetry`), tests `tests/test_mesh_assembly.py`; no command, GUI or key yet. P2–P7 (§11) are **not
+implemented**, each starts only with its own go. Open points: §10.
 **Scope:** `src/mirai` and `src/gui` only. **No Core change, no file-format change, no keymap change** (no keys at all).
 **Builds on:** AD-001 (ids), [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (objects, L-1 / L-3),
 [AD-023](AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) (journal), [AD-024](AD-024-OBJECT-MATERIAL-AND-WORKLIGHT-EDITING.md),
@@ -36,7 +38,7 @@ phase P1–P7 (§11) starts only with its own go. Open points: §10.
 1. Commands **Attach**, **Attach – take destination look**, **Detach**, **Separate by Islands**, **Select Linked**,
    **Weld**, **Bridge** — command constants without default keys (precedent `OBJECT_MANAGEMENT_COMMANDS`), reachable
    through a "Mesh" menu, the outliner context menu and `dispatch_command`.
-2. One shared kernel `src/mirai/mesh_assembly.py` (name `PROVISIONAL`): `append_object(dst, src)` and
+2. One shared kernel `src/mirai/mesh_assembly.py` (name `PROVISIONAL`): `append_objects(dst, sources)` and
    `extract_faces(mesh, faces)` over the public Mesh API. Weld = `Mesh.add_edge` + `core.operations.collapse_elements`
    (`src/mirai/topology/weld.py`); Bridge = `Mesh.add_face` over `topology.border` loops (`src/mirai/topology/bridge.py`).
 3. Every operation is **one** `Application._mesh_transaction` (one recording, one `MeshDeltaCommand`) with its object
@@ -327,7 +329,7 @@ targets, Redo recreates them at 0 %.
 
 ## 11. Phases
 
-P1 kernel (`append_object`, `extract_faces`, the look / layer / region / symmetry plans) → P2 Attach (+ variant, D11
+P1 kernel (`append_objects`, `extract_faces`, the look / layer / region / symmetry plans; built 2026-11-10) → P2 Attach (+ variant, D11
 prune) → P3 Detach (+ Select Linked) → P4 Weld → P5 Bridge → P6 symmetric Weld / Bridge → P7 Separate by Islands. Each
 phase: its acceptance tests (§9.3), the doc update in the same commit, a practical test for Manu.
 Later: "Combine targets" (explicit identity of two targets), per-face material, Bridge with unequal counts, Target Weld,
