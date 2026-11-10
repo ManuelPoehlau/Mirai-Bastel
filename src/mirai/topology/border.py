@@ -113,6 +113,11 @@ def _seed_edges(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> set[EdgeId]:
     raise ValueError(f"Border needs a component mode, not {mode!r}")
 
 
+def selection_border_loops(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> list[BorderLoop]:
+    """The whole borders a V/E/F selection touches (Cap's and Bridge's input, AD-031 P5)."""
+    return border_loops(mesh, _seed_edges(mesh, mode, ids))
+
+
 def region_outline(mesh: Mesh, faces: Iterable[FaceId]) -> set[EdgeId]:
     """The edges between the face region and the rest (or the open border): Blender "Select
     Boundary Loop"."""

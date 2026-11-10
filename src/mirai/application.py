@@ -173,6 +173,7 @@ from .topology.contextual_c import CContext, resolve_c_context
 from .topology.border import BORDER_LABEL, CAP_LABEL, CapRefused, apply_cap, border_select
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
+from .topology import bridge as bridge_api
 from .topology import weld as weld_api
 from .topology.knife_preview import KnifeRenderData
 from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
@@ -1154,6 +1155,7 @@ class Application:
         add((commands.DETACH,), plain(lambda command: self.detach_faces()))
         add((commands.SELECT_LINKED,), plain(lambda command: self.select_linked()))
         add((commands.WELD,), plain(lambda command: self.weld_vertices()))
+        add((commands.BRIDGE,), plain(lambda command: self.bridge_borders()))
         add((commands.CONNECT,), plain(lambda command: self._connect_command()))
         add(_REMOVAL_COMMANDS, plain(self._run_removal))
         add((commands.COLLAPSE,), plain(lambda command: self._collapse_command()))
@@ -3647,6 +3649,75 @@ class Application:
                 f" seam)"
             )
         self._set_status(text)
+        return True
+
+    # -- Bridge (AD-031 P5, §5; texts `PROVISIONAL`) ----------------------------------------------------------------
+
+    def bridge_plan(self) -> "bridge_api.BridgePlan":
+        """What Bridge would add now (AD-031 §5), read-only: the quads between the two closed borders the selection
+        touches and the first refusal - an interaction, not point or edge mode, the morph editing view, a symmetry
+        definition (until P6), nothing selected, a posed rig with the mesh bound, the point-layer gate, hidden geometry
+        at either border, and the kernel's (`topology.bridge.plan_bridge`: two closed borders of equal size without a
+        shared point, consistent normals, no rung that already has a face)."""
+        label = bridge_api.LABEL
+        refused = bridge_api.BridgePlan
+        owner = self.interaction_owner
+        if owner is not None:
+            return refused((), (), f"{label}: not while the {owner} interaction runs")
+        selection = self.selection
+        mode = selection.mode
+        if mode not in (SelectionMode.VERTEX, SelectionMode.EDGE):
+            return refused((), (), f"{label}: works on borders - press 1 or 2, select a point or edge of each border")
+        if self._morph.view is not None:
+            return refused((), (), f"{label}: on the base only (Tab returns to it)")
+        obj = self.scene.edit_object
+        mesh = obj.mesh
+        if mesh.symmetry_definition is not None:
+            key = self._skeleton.key_text(commands.SYMMETRY_CYCLE)
+            return refused((), (), f"{label}: not with symmetry on yet - turn it off first ({key})")
+        ids = selection.vertices if mode is SelectionMode.VERTEX else selection.edges
+        if not ids:
+            return refused((), (), f"{label}: select a point or edge of each of the two borders - none selected")
+        if self._skeleton.posed() and self._skeleton.bound(mesh):
+            rest = self._skeleton.key_text(commands.POSE_TOGGLE_REST)
+            return refused((), (), f"{label}: {obj.name!r} is posed - go to the rest pose first ({rest})")
+        text = self._layer_refusal("bridge_borders", [mesh])
+        if text is not None:
+            return refused((), (), text)
+        plan = bridge_api.plan_bridge(mesh, mode, set(ids))
+        hidden = self._hiddens.get(self._hidden_owner)
+        if plan.loops and hidden and touches_hidden(mesh, hidden, [v for loop in plan.loops for v in loop]):
+            return dataclasses.replace(plan, quads=(), refusal=f"{label}: hidden geometry in the way (Alt+H shows all)")
+        return plan
+
+    def bridge_borders(self) -> bool:
+        """Bridge (AD-031 §5): `n` quads between the two closed borders of `n` points the selection touches, paired by
+        the minimal summed squared distance, wound against the neighbour faces (`topology.bridge`) - no new points
+        (layers untouched), no UVs (D8), no region (D9). One Undo step (`_mesh_transaction`); refused with a status
+        line and nothing changed when `bridge_plan` refuses, rolled back exactly when the edges do not end manifold.
+        Afterwards (§5): face mode, the new faces selected."""
+        bridge_plan = self.bridge_plan()
+        if bridge_plan.refusal is not None:
+            self._set_status(bridge_plan.refusal)
+            return False
+
+        def on_applied(faces) -> None:
+            selection = self.selection
+            selection.clear()
+            selection.mode = SelectionMode.FACE
+            selection.add({f for f in faces if self.scene.mesh.is_valid_face(f)})
+            if self.viewport is not None:
+                self.viewport.on_selection_changed()
+
+        n = len(bridge_plan.quads)
+        try:
+            self._mesh_transaction(
+                f"Bridge {n} quads", lambda m: bridge_api.bridge(m, bridge_plan), on_applied=on_applied
+            )
+        except bridge_api.BridgeRefused as exc:
+            self._set_status(str(exc))
+            return False
+        self._set_status(f"{bridge_api.LABEL}: {n} quads between two borders of {n} points (no UVs, no group)")
         return True
 
     def apply_goz_return(self, plan) -> bool:

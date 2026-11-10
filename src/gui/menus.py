@@ -6,7 +6,7 @@ pyglet noch `examples/` kennt.
 
     Datei:  Neu | Öffnen > (Szenen) | Speichern (Strg+S) | Speichern unter... | Importieren > (OBJ) | Exportieren...
     Mesh:   Attach | Attach – Look des Ziels übernehmen (AD-031 P2, O-13) | Detach | (Select Linked: Hinweis) (P3) |
-            Weld… (P4; alle ohne Taste)
+            Weld… (P4) | Bridge (P5; alle ohne Taste)
     SPACE:  Add + > (Grundkörper, Basehead, Baseman) | Select Linked | Textur an/aus | Szene laden (Shift+Klick: als Referenz)
 
 Attach fragt nach, bevor ungewichtete Punkte in ein gebundenes Mesh kommen (O-5): der Dialog nennt die Anzahl, erst
@@ -33,6 +33,7 @@ from typing import Callable
 
 from mirai.attach import LABEL as ATTACH_LABEL, OVERRIDE_LABEL, TAKE_LOOK_LABEL
 from mirai.detach import LABEL as DETACH_LABEL, LINKED_LABEL
+from mirai.topology.bridge import LABEL as BRIDGE_LABEL
 from mirai.topology.weld import LABEL as WELD_LABEL
 
 #: Mesh-Menü (AD-031 P2): Anzeigename -> `take_destination_look` (D1-Variante); die Namen stehen in `mirai.attach`, weil
@@ -121,6 +122,11 @@ class Menus:
         der Grund sichtbar wird)."""
         return self.app.detach_faces()
 
+    def bridge(self) -> bool:
+        """Mesh > Bridge (AD-031 P5): läuft, oder die Ablehnung steht in der Statuszeile (wie Detach bleibt der Eintrag
+        aktiv, damit der Grund sichtbar wird)."""
+        return self.app.bridge_borders()
+
     def open_weld(self) -> None:
         """Mesh > Weld…: das Fenster im nächsten Frame, mit dem vorläufigen Startwert (D10) und seiner Vorschau. Ohne
         Startwert (das Mesh hat keine Ausdehnung) steht 0 im Feld, und die Vorschau bittet um eine Eingabe."""
@@ -201,6 +207,8 @@ class Menus:
                 imgui.separator()
                 if imgui.menu_item(WELD_ENTRY, "", False)[0]:
                     self.open_weld()
+                if imgui.menu_item(BRIDGE_LABEL, "", False)[0]:
+                    self.bridge()
                 imgui.end_menu()
             size = imgui.get_window_size()
             rect = (0.0, 0.0, size.x, size.y)

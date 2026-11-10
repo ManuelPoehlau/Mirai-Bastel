@@ -457,6 +457,13 @@ def test_weld_averages_the_weights_by_the_group_mean(entry):
     assert skin_layer(mesh) is not None and len(groups) == 5
 
 
+@pytest.mark.parametrize("entry", [commands.BRIDGE, "bridge_borders"])
+def test_bridge_keeps_the_weights_unchanged(entry):
+    """AD-031 §5 with weights: Bridge adds faces only, every weights value stays (`bridge_layered`)."""
+    mesh = phase5.bridge_layered(entry, lambda mesh: add_weights(mesh, 19))
+    assert skin_layer(mesh) is not None
+
+
 def _body_state(mesh: Mesh) -> dict:
     return {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")}
 
@@ -469,5 +476,6 @@ def test_every_declared_entry_is_covered_with_weights():
     covered |= {commands.ATTACH, commands.ATTACH_TAKE_LOOK, "attach_objects"}  # test_attach_merges_the_weights_…
     covered |= {commands.DETACH, "detach_faces"}  # test_detach_keeps_the_weights_unchanged
     covered |= {commands.WELD, "weld_vertices"}  # test_weld_averages_the_weights_by_the_group_mean
+    covered |= {commands.BRIDGE, "bridge_borders"}  # test_bridge_keeps_the_weights_unchanged
     assert covered == set(gate.LAYER_SAFE_OPERATIONS)
 

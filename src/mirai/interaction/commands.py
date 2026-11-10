@@ -195,6 +195,11 @@ SELECT_LINKED = "SelectLinked"
 # field and a preview) and `dispatch_command` (with the provisional default distance, AD-031 §4.1).
 WELD = "Weld"
 
+# --- Bridge (AD-031 P5; name `PROVISIONAL`, deliberately WITHOUT a default key) ----
+# Bridge, mode `1` / `2`: quads between the two closed borders the selection touches (same number of points, O-11) -
+# no new points, no UVs, no region; one Undo step. Reached through "Mesh > Bridge" and `dispatch_command`.
+BRIDGE = "Bridge"
+
 # CONNECT (WP-06 B6, AD-017 "Contextual C"): global, nicht Topology-Lab —
 # 1 Edge selektiert → Split; 2+ Edges → Edge Connect (per-face); 2+ Vertices
 # → Vertex Connect (per-face); leere Auswahl → Knife-Session (WP-06 B7).

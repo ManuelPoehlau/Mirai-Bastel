@@ -219,6 +219,8 @@ eigenes Panel, weil dort später Optionen hineinmüssen (was alles gesendet wird
   AD-031 P4 (2026-11-10, „Weld-Fenster passt so“): dazu **Weld…** – ein modales Fenster mit dem Abstand als Zahlenfeld
   (Welt, vorläufiger Startwert), der Vorschau „n Gruppen, m Punkte“ und „Weld“ / „Abbrechen“. Ohne Taste; Einzelheiten
   [AD-031 §19](AD-031-ATTACH-DETACH-WELD-BRIDGE.md).
+  AD-031 P5 (2026-11-10): dazu **Bridge** – direkt ausgeführt wie Detach, eine Ablehnung steht in der Statuszeile. Ohne
+  Taste; Einzelheiten [AD-031 §21](AD-031-ATTACH-DETACH-WELD-BRIDGE.md).
 - **GoZ-Panel** (`gui/goz_panel.py`, Knopf neben „Outliner“): Senden, offene Rückgaben, Eintragen. Die Brücke
   (`ZBrushBridge`) bleibt unverändert; Sende-Optionen kommen später.
 - **Eingabe:** solange ein Popup oder Dialog des Layers offen ist, gehört ihm die ganze Maus (`popup_open`, ein Klick daneben

@@ -15,8 +15,10 @@ Sub-Object Mode)"; one finding fixed, §17.11). **P4 BUILT (2026-11-10):** Weld 
 `weld_vertices` / `weld_default_threshold`, the kernel `src/mirai/topology/weld.py` (W1–W11), command `Weld` without a
 key, "Mesh" > "Weld…" with the threshold field and the preview; refused under a symmetry definition until P6;
 specification as built §19, practical test §20 (W5 changed by Manu on 2026-11-10: single pairs allowed and reported,
-§19.10; D10-v open). P5–P7 (§11) are **not implemented**, each starts
-only with its own go.
+§19.10; D10-v open). **P5 BUILT (2026-11-10):** Bridge — `Application.bridge_plan` / `bridge_borders`, the kernel
+`src/mirai/topology/bridge.py`, command `Bridge` without a key, "Mesh" > "Bridge"; equal point counts (O-11, built as
+proposed, `PROVISIONAL` until the practical test); refused under a symmetry definition until P6; specification as built
+§21, practical test §22 (pending). P6–P7 (§11) are **not implemented**, each starts only with its own go.
 Open points: §10.
 **Scope:** `src/mirai` and `src/gui` only. **No Core change, no file-format change, no keymap change** (no keys at all).
 **Builds on:** AD-001 (ids), [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (objects, L-1 / L-3),
@@ -46,8 +48,10 @@ Open points: §10.
   Punkt, bis die Nachbarn folgen – Fenster und Statuszeile sagen es. Das Fenster zeigt den Abstand
   als Zahl (Weltkoordinaten, änderbar) und die Vorschau „n Gruppen, m Punkte“; der Startwert (0,001 × Diagonale) ist
   vorläufig. Mit Symmetrie noch abgelehnt (bis P6). Ein Undo-Schritt. Praxistest: §20.
-- **Bridge** (zwei Ränder gleicher Punktzahl): Quads dazwischen, keine neuen Punkte → Morphs und Gewichte unberührt;
-  die neuen Flächen haben keine UVs und keine Gruppe.
+- **Bridge** (Modus `1`/`2`, Menü „Mesh > Bridge“; gebaut 2026-11-10): je einen Punkt oder eine Kante zweier
+  geschlossener Ränder gleicher Punktzahl auswählen – Quads dazwischen, gepaart nach dem kürzesten Weg, Normalen wie
+  die Nachbarn; keine neuen Punkte → Morphs und Gewichte unberührt; die neuen Flächen haben keine UVs und keine Gruppe
+  und sind danach in Modus `3` ausgewählt. Mit Symmetrie noch abgelehnt (bis P6). Ein Undo-Schritt. Praxistest: §22.
 - **Attach und Gewichte (O-5):** Geometrie ohne Skin-Gewichte in ein gebundenes Mesh wird abgelehnt; nur über die
   ausdrückliche Übersteuerung, die vorher die Anzahl der betroffenen Punkte zeigt. Es werden keine Gewichte erzeugt;
   diese Punkte folgen dem Rig nicht. Vorhandene Gewichte der Quelle bleiben unverändert.
@@ -354,7 +358,7 @@ order-independent. The order test now checks the values, and the canonical-edge 
 | P2 (tested 2026-11-10 except the reference-PC timing, §15.14) | Viewport and SubD rebuild after a large Attach (GL, reference hardware); the mixed mesh + object Undo step in the real command path; the D11 prune in the morph controller; skinning invariance under a posed rig (randomized); the look refusal and the explicit variant; the O-5 refusal and override; O-7; the D4 "worsen" case — full list §15.12 |
 | P3 (tested 2026-11-10, §17.9) | A detached part **crossing** the plane derives a usable seam (state VALID, symmetric ops, Re-Symmetrize if the seam splits it in two); Select Linked |
 | P4 (tested 2026-11-10, §19.8) | W2–W4 / W6 refusals (chain, connected members, coinciding faces, orientation), W5 allowed and reported (changed, §19.10), W10, the threshold field and its default from the bounding-box diagonal |
-| P5 | Bridge pairing, winding, refusal on conflicting normals; **Re-Symmetrize works again after the islands are bridged** into the head (component count back to 2) |
+| P5 (tested 2026-11-10, §21.8) | Bridge pairing, winding, refusal on conflicting normals; **Re-Symmetrize works again after the islands are bridged** into the head (component count back to 2) |
 | P6 | Symmetric Weld / Bridge, including coincident pre-weld points (AMBIGUOUS correspondence) |
 | P7 | Separate by Islands, the kept island (O-12) |
 
@@ -400,7 +404,7 @@ reported; a seam can be welded at once or point by point (§4.2, §19.10).
 | D10-v | The artist-approved default Weld threshold | after the P4 practical test (§20) | not relevant (P4); P4 built with the provisional 0.001 × diagonal |
 | O-8 | After Detach: stay in component mode on the source, or mode `4` with the new object selected | stay in component mode | **Decided (Manu, 2026-11-10, practical test P3): "O-8 KEEP"** — mode `3`, the source stays the edit object, no component selection, the new object neither selected nor edited (§17.6) |
 | O-14 | Select Linked "under the cursor" from a menu: the pointer over the menu bar has no hover (§17.2) | the SPACE menu remembers the element under the cursor when it opens; the "Mesh" menu shows a disabled hint; a key only by Manu's keymap decision | **Decided (Manu, 2026-11-10): "SPACE reicht vorerst (später Sub-Object Mode)"** — no key now; a later Sub-Object Mode is the place to revisit it |
-| O-11 | Bridge MVP only for loops of equal vertex count | yes | not relevant (P5) |
+| O-11 | Bridge MVP only for loops of equal vertex count | yes | not relevant (P2); **P5 built as proposed** (`PROVISIONAL`, unequal counts refused with both numbers), confirmation in the practical test §22 |
 | O-12 | Separate by Islands: which island keeps the object | the one with the most faces | not relevant (P7) |
 | P6 | How symmetric Weld handles coincident points (AMBIGUOUS) | decided before P6 | not relevant (P6) |
 | O-5b | An **unbound** destination receives weights from a weighted source: §3.2 (decided) creates the `"Skin"` layer, so the destination's own points (and points of other unweighted sources) end up unweighted in a mesh that is now bound. O-5 covers only a destination bound before the Attach | none — new, found in this pass | not blocking: P2 implements the decided rules literally (no O-5 refusal, since the destination was not bound; the status line states the count); Manu may decide otherwise after the practical test |
@@ -412,7 +416,7 @@ region whose object name is taken gets `"<object> · <object>"` by the §3.3 rul
 ## 11. Phases
 
 P1 kernel (`append_objects`, `extract_faces`, the look / layer / region / symmetry plans; built 2026-11-10) → P2 Attach (+ variant, D11
-prune; built 2026-11-10) → P3 Detach (+ Select Linked; built 2026-11-10) → P4 Weld (built 2026-11-10, §19) → P5 Bridge → P6 symmetric Weld / Bridge → P7 Separate by Islands. Each
+prune; built 2026-11-10) → P3 Detach (+ Select Linked; built 2026-11-10) → P4 Weld (built 2026-11-10, §19) → P5 Bridge (built 2026-11-10, §21) → P6 symmetric Weld / Bridge → P7 Separate by Islands. Each
 phase: its acceptance tests (§9.3), the doc update in the same commit, a practical test for Manu.
 Later: "Combine targets" (explicit identity of two targets), per-face material, Bridge with unequal counts, Target Weld,
 weight / morph transfer (AD-025 Phase 7), Boolean (own AD).
@@ -1033,3 +1037,121 @@ ausgewählten Punkte des Edit-Objekts.
 
 Offen bei dir: **D10-v** – passt der vorläufige Startwert (0,001 × Diagonale der Bounding Box), oder soll er größer /
 kleiner sein? Und: nach dem Weld bleiben die übrigen ausgewählten Punkte ausgewählt (vorläufig).
+
+## 21. P5 — Bridge: specification as built (2026-11-10)
+
+Basis: branch `claude/peaceful-brahmagupta-87azlk` @ `58231c8` (P4 with W5 changed). Scope as §11: Bridge in
+`src/mirai` and `src/gui`; no Core, file-format or keymap change, no key.
+
+### 21.1 Command and places
+
+`commands.BRIDGE = "Bridge"`, **no default key**; the handler runs `Application.bridge_borders()`; a held gesture
+refuses it (`GESTURE_REFUSES`). GUI: menu bar **Mesh** > **Bridge** (after "Weld…"), a direct action like Detach — the
+entry stays enabled and a refusal is the status line (`bridge_plan` is the one source of its preconditions).
+
+### 21.2 The kernel `src/mirai/topology/bridge.py`
+
+- **Input** = the borders the selection touches (`border.selection_border_loops`, Cap's rule: a selected point or edge
+  of a border stands for the whole border); exactly two, both closed, the same number of points `n ≥ 3` (O-11).
+- **Canonical order** (independent of the selection): each loop in Cap's winding (against its neighbour faces),
+  started at its smallest `VertexId`; the loop with the smaller first id is the first.
+- **Pairing:** the minimal `Σ |a_i − b_σ(i)|²` over both directions and all `n` rotations (ties: forward, then the
+  smaller rotation); O(n²).
+- **Winding:** quad `i` = `(a_i, a_i+1, b_σ(i+1), b_σ(i))`, reversed when the face already on `a_i–a_i+1` runs that way;
+  every border edge of both loops must ask for the same choice — faces along one border not oriented alike, or the two
+  borders asking for opposite windings ("normals of the two sides disagree - flip one part first") refuse.
+- **Rungs:** a pair already joined by an edge with a face (e.g. the two ends of an open tube) refuses — it would get a
+  third face.
+- `bridge(mesh, plan)` adds the quads with `add_face(…, infer_uvs=False)` (D8: no UVs) and checks that every edge of
+  the bridge ends with exactly two faces; otherwise `BridgeRefused` and the transaction rolls back exactly. No point is
+  created (layers untouched); the region hook gives the new faces nothing (D9, F6).
+
+### 21.3 Read-only checks (`Application.bridge_plan`, in this order)
+
+1. an interaction runs; 2. not point or edge mode → "press 1 or 2" (face and object mode; `PROVISIONAL`); 3. the morph
+editing view; 4. a symmetry definition → "not with symmetry on yet - turn it off first (Shift+S)" (until P6); 5.
+nothing selected; 6. the rig posed with the mesh bound; 7. the point-layer gate (`bridge_borders` DECLARED); 8. the
+kernel (no / one / more than two borders, an open border, unequal counts, orientation, rungs); 9. hidden geometry at
+either border (`touches_hidden` over both loops).
+
+### 21.4 The step
+
+**One** `_mesh_transaction("Bridge n quads", bridge)`: one `MeshDeltaCommand` and one selection-mirror entry.
+Afterwards face mode with exactly the new faces selected (§5). Status: "Bridge: n quads between two borders of n points
+(no UVs, no group)". Undo / Redo exact.
+
+### 21.5 Gate and classification
+
+`layer_declarations`: `Bridge` and `bridge_borders` **DECLARED** as `(bridge, None)` (symmetric entry None: refused
+under a definition until P6), rule fixtures with morph targets
+(`test_layer_topology_ops.test_bridge_leaves_every_layer_value_as_it_is`, plain, and the symmetric refusal) and
+weights (`test_weights_topology_ops.test_bridge_keeps_the_weights_unchanged`); `bridge_plan` non-mesh. The editing
+view refuses it; the posed policy counts it as editing. `symmetry_declarations`: no entry; the fail-closed guard
+presses `Bridge` on its symmetric fixtures. Not in `_TOPOLOGY_COMMANDS` (hidden geometry is checked on the two
+borders, not on the selection).
+
+### 21.6 Literal readings and `PROVISIONAL` choices
+
+Point or edge mode (Cap also takes faces; for Bridge a face selection would be ambiguous); equal counts (O-11);
+pairing by distance only — the winding never chooses the direction (a twisted pairing that would fit the normals is
+not searched; it refuses as "normals disagree"); a border through a W5 point is open and refuses until that seam is
+closed; all texts.
+
+### 21.7 Behaviour seen
+
+UVs: the new faces have none (drawn in the base colour, exported as `f v`, D8); the old faces keep theirs
+(`assert_uv_invariants` holds with mixed faces). Regions: unchanged; the new faces join none (D9).
+
+### 21.8 Tests (production, `tests/`)
+
+- `tests/test_bridge.py` (33): the pairing = the brute-force minimum for four rotations / turns, a closed consistently
+  oriented tube without a new point; the plan independent of the selection (points, all points, edges); no UVs and no
+  region on the new faces, the old ones kept; eight kernel refusals read-only (nothing, one, three borders, 8 vs 6
+  points, an open border, normals, faces not oriented alike, the ends of an open tube) and the same in the app with
+  nothing changed; a step that would not end manifold rolled back; one step with exact Undo / Redo and the new faces
+  selected; the command and edge mode; five app refusals (face / object mode, nothing selected, editing view, hidden);
+  symmetry until P6; the posed rig; a failure after the change rolled back; **the P5 acceptance test** — a symmetric
+  subd_cube with a hole on each side and two mirrored ears as islands: VALID, Re-Symmetrize refused ("Teile"), Bridge
+  refused under the definition; definition off, both ears bridged, definition derived again: VALID, two
+  components, Re-Symmetrize plans.
+- `tests/test_layer_topology_ops.py` / `tests/test_weights_topology_ops.py` (+2 each): the gate's rule fixtures.
+- `tests/test_gui_menus.py` (+1, and "Bridge" drawn in the "Mesh" menu): `Menus.bridge` refuses without a selection
+  and builds with one point of each border.
+- `tests/test_gl_bridge.py`: GL frames before / after / Ctrl+Z / Ctrl+Y with SubD level 2.
+
+**Measured** (container, Python 3.13, headless trace store, not the reference PC; two rings of `n` points): `n` = 32:
+plan 1.3 ms, Bridge 2.0 ms (incl. its plan), Undo 0.4 ms, Redo 0.5 ms; `n` = 128: 14 / 18 / 1.4 / 1.6 ms; `n` = 512:
+127 / 148 / 6 / 8 ms (the O(n²) pairing dominates; an ear border is far below 128).
+
+### 21.9 Limitations (stated)
+
+Refused under a symmetry definition (P6); equal counts only (O-11; unequal counts later, §11); no twist / offset control
+— the pairing is the closest one; no UVs on the bridge (D8); the bridge faces join no group (D9).
+
+## 22. Praxistest P5: Bridge (Deutsch, ca. 10 Minuten)
+
+Start: `python src/main.py`. Bridge hat **keine Taste**; es steht im Menü **Mesh > Bridge**. Es wirkt auf die zwei
+Ränder, an denen in Modus `1` oder `2` ein Punkt bzw. eine Kante ausgewählt ist.
+
+1. Vorbereiten: Leertaste > Add + > **cube** zweimal; den zweiten mit `W` über den ersten schieben (Abstand lassen).
+   Modus `4`, beide auswählen, **Mesh > Attach**. Modus `3`: die obere Fläche des unteren und die untere Fläche des
+   oberen Würfels auswählen, `Entf` – zwei Löcher mit je 4 Punkten.
+2. Modus `1`, je einen Punkt an jedem Loch auswählen, **Mesh > Bridge**: ein Schlauch aus 4 Quads verbindet die
+   Würfel, die neuen Flächen sind in Modus `3` ausgewählt; Statuszeile „Bridge: 4 quads … (no UVs, no group)“.
+3. `Strg+Z` / `Strg+Y`: weg / wieder da. Den oberen Würfel vorher verdrehen (`E`, ein Stück um Y): Bridge paart den
+   nächsten Punkt, der Schlauch ist so wenig verdreht wie möglich.
+4. Ablehnungen: nur ein Loch ausgewählt → „only one border“; ein Würfel-Loch und ein Zylinder-Deckel (Zylinder
+   anhängen, Deckel löschen: 32 Punkte) → „the borders have 4 and 32 points“ (O-11); Symmetrie an → „not with symmetry
+   on yet“.
+5. Kopf und Ohr (falls zur Hand): ein Loch im Kopf, ein Ohr mit gleich vielen Randpunkten daneben, angehängt; je einen
+   Punkt wählen, Bridge. Mit Morph-Ziel: das Ziel bleibt unverändert, die neuen Flächen haben keine Gruppe.
+
+| # | Verdikt (KEEP / CHANGE / DROP) | Notiz |
+|---|---|---|
+| 1–2 | | |
+| 3 | | |
+| 4 (O-11: nur gleiche Punktzahl?) | | |
+| 5 | | |
+
+Offen bei dir: **O-11** – reicht Bridge vorerst nur für Ränder mit gleicher Punktzahl (wie vorgeschlagen), oder brauchst
+du ungleiche Zahlen bald? Und: die neuen Flächen sind danach in Modus `3` ausgewählt (vorläufig).

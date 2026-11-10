@@ -64,6 +64,7 @@ from .topology.extrude import ExtrudeTool
 from .topology.bevel import build_bevel
 from .topology.inset import build_inset
 from .topology.knife_resolve import resolve_cross_face
+from .topology.bridge import bridge
 from .topology.weld import weld
 
 #: Declared operations: key -> (plain implementation, symmetric implementation), exactly the functions
@@ -113,11 +114,15 @@ LAYER_SAFE_OPERATIONS: Mapping[Any, tuple] = MappingProxyType(
         # definition until P6 (`Application.weld_plan`), so there is no symmetric implementation to declare.
         commands.WELD: (weld, None),
         "weld_vertices": (weld, None),
+        # AD-031 P5: Bridge adds faces between existing points only - no vertex is created or removed, so every layer
+        # value stays as it is. Symmetric entry None: refused under a definition until P6 (`Application.bridge_plan`).
+        commands.BRIDGE: (bridge, None),
+        "bridge_borders": (bridge, None),
     }
 )
 
 #: Keys of `LAYER_SAFE_OPERATIONS` that are `Application` methods, not command constants.
-_DECLARED_METHODS = frozenset({"mirror_copy", "attach_objects", "detach_faces", "weld_vertices"})
+_DECLARED_METHODS = frozenset({"mirror_copy", "attach_objects", "detach_faces", "weld_vertices", "bridge_borders"})
 
 NON_MESH = "non-mesh"
 POSITION_ONLY = "position-only"
@@ -262,6 +267,9 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "weld_vertices": DECLARED,
         "weld_plan": "non-mesh",
         "weld_default_threshold": "non-mesh",
+        # AD-031 P5: Bridge on the edit mesh, checked at its own site; the plan reads only
+        "bridge_borders": DECLARED,
+        "bridge_plan": "non-mesh",
         # Outliner: refuses a mesh with point layers at its own site (`ObjectController.duplicate_selected`)
         "duplicate_objects": "non-mesh",
         # AD-030 outliner: a bone's name only (`RigCommand`, no mesh change; the scan sees the name `rename_bone` of the
@@ -297,6 +305,8 @@ _LABELS: Mapping[Any, str] = MappingProxyType(
         "detach_faces": "Detach",
         commands.WELD: "Weld",
         "weld_vertices": "Weld",
+        commands.BRIDGE: "Bridge",
+        "bridge_borders": "Bridge",
     }
 )
 

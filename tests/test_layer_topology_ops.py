@@ -281,7 +281,9 @@ OTHER_FIXTURES = {CContext.KNIFE: "test_knife_cuts_a_layered_mesh_by_its_rule",
                   commands.DETACH: "test_detach_carries_the_layers_by_identity",
                   "detach_faces": "test_detach_carries_the_layers_by_identity",
                   commands.WELD: "test_weld_merges_the_layers_by_the_group_mean",
-                  "weld_vertices": "test_weld_merges_the_layers_by_the_group_mean"}
+                  "weld_vertices": "test_weld_merges_the_layers_by_the_group_mean",
+                  commands.BRIDGE: "test_bridge_leaves_every_layer_value_as_it_is",
+                  "bridge_borders": "test_bridge_leaves_every_layer_value_as_it_is"}
 
 
 def _run(app, command: str, info: dict) -> None:
@@ -674,6 +676,52 @@ def test_weld_merges_the_layers_by_the_group_mean(entry):
     app.dispatch_command(commands.SET_VERTEX_MODE)
     app.selection.vertices = set(mesh.all_vertex_ids())
     ok = app.weld_vertices(10.0) if entry == "weld_vertices" else _press(app, entry)
+    assert ok is False and "symmetry" in app.status_message
+    assert mesh.export_state() == body
+
+
+# -- Bridge (AD-031 P5) -------------------------------------------------------------------------------------------------
+
+
+def bridge_layered(entry: str, add) -> Mesh:
+    """Runs Bridge through `entry` between the inner borders of two rings (`test_bridge._rings`) after `add(mesh)` gave
+    the mesh layers: no point is created or removed and every stored value stays bit for bit; one Undo step restores
+    the mesh exactly. Returns the mesh."""
+    from tests.test_bridge import _app as bridge_app, _rings, _select_points as select_points
+
+    mesh, bottom, top = _rings(turn=0.2)
+    app = bridge_app(mesh)
+    mesh = app.scene.mesh
+    add(mesh)
+    before, body = _layers(mesh), {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")}
+    vertices = set(mesh.all_vertex_ids())
+    select_points(app, {bottom[0], top[0]})
+    history = len(app.history)
+    ok = app.bridge_borders() if entry == "bridge_borders" else _press(app, entry)
+    assert ok, app.status_message
+    assert len(app.history) == history + 1
+    assert set(mesh.all_vertex_ids()) == vertices and _layers(mesh) == before
+    assert_layer_invariants(mesh)
+    assert app.key_press(CTRL_Z)
+    assert {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")} == body
+    return mesh
+
+
+@pytest.mark.parametrize("entry", [commands.BRIDGE, "bridge_borders"])
+def test_bridge_leaves_every_layer_value_as_it_is(entry):
+    """Bridge of a layered mesh (AD-031 §5): only faces are added, so targets stay untouched; the symmetric entry is a
+    refusal (P6), layered or not, and changes nothing."""
+    bridge_layered(entry, lambda mesh: add_layers(mesh, 71))
+    app = make_app("subd_cube")
+    mesh = app.scene.mesh
+    add_layers(mesh, 72)
+    quad = plus_x_quad(mesh, touching_seam=False)
+    corners = mesh.face_vertices(quad)
+    mesh.delete_faces([quad])
+    body = mesh.export_state()
+    app.dispatch_command(commands.SET_VERTEX_MODE)
+    app.selection.vertices = set(corners)
+    ok = app.bridge_borders() if entry == "bridge_borders" else _press(app, entry)
     assert ok is False and "symmetry" in app.status_message
     assert mesh.export_state() == body
 

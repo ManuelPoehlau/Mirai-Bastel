@@ -201,6 +201,26 @@ def test_the_weld_window_shows_the_default_and_its_preview_and_welds_with_the_fi
     assert weld_preview(menus.weld_plan) == "1 Gruppen, 2 Punkte, 1 nur an einem Punkt verbunden"
 
 
+def test_menu_bridge_calls_the_application():
+    """Mesh > Bridge (AD-031 P5): ohne Auswahl abgelehnt (Statuszeile), mit je einem Punkt zweier Ränder gebaut."""
+    from gui.menus import BRIDGE_LABEL, Menus
+    from mirai.interaction import commands
+    from tests.test_bridge import _rings
+
+    assert BRIDGE_LABEL == "Bridge"
+    app = _app()
+    menus = Menus(None, app, None)
+    mesh, bottom, top = _rings()
+    app.scene.mesh.load_state(mesh.export_state())
+    app.viewport.on_topology_changed()
+    app.dispatch_command(commands.SET_VERTEX_MODE)
+    app.selection.clear()
+    assert menus.bridge() is False and "none selected" in app.status_message
+    app.selection.vertices = {bottom[0], top[0]}
+    assert menus.bridge(), app.status_message
+    assert len(app.scene.mesh.all_face_ids()) == 24
+
+
 # -- Fenster ------------------------------------------------------------------------------------------------------
 
 pytest.importorskip("imgui_bundle")
@@ -481,7 +501,7 @@ def test_the_weld_window_opens_from_the_mesh_menu_and_escape_changes_nothing(env
             break
         layer.popup_key()
         _frame(window, 2)
-    assert WELD_ENTRY in drawn
+    assert WELD_ENTRY in drawn and "Bridge" in drawn
     layer.popup_key()
     _frame(window, 2)
     history, state = len(app.history), mesh.export_state()

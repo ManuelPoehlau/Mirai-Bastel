@@ -150,6 +150,7 @@ GESTURE_REFUSES = frozenset(
         commands.DETACH,
         commands.SELECT_LINKED,
         commands.WELD,
+        commands.BRIDGE,
         commands.CONNECT,
         commands.COLLAPSE,
         commands.BORDER_SELECT,
