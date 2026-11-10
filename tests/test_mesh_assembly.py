@@ -21,7 +21,14 @@ import tests._bootstrap  # noqa: F401
 from core import FaceRegion, FaceRegions, LayerKind, Mesh, ObjectMaterial, ObjectTransform, PointLayerInfo, Scene
 from core.mesh import MeshError
 from mirai import mesh_assembly, morph_mix, object_space, skinning
-from mirai.mesh_assembly import AssemblyRefused, append_objects, derived_symmetry, extract_faces, look_differences
+from mirai.mesh_assembly import (
+    AssemblyRefused,
+    append_objects,
+    derived_symmetry,
+    extract_faces,
+    linked_faces,
+    look_differences,
+)
 from mirai.object_mirror import mirror_mesh, mirror_placement
 from mirai.object_space import axis_angle_rotation
 from mirai.regions import slot_index
@@ -715,3 +722,26 @@ def test_derived_symmetry_of_a_mirrored_pair_away_from_the_plane_has_an_empty_se
     assert definition is not None and definition.seam_edges == frozenset()
     pair.symmetry_definition = definition
     assert symmetry_state(pair) is SymmetryState.VALID
+
+
+# -- linked faces (Select Linked, Separate by Islands; AD-031 P3) --------------------------------------------------------
+
+
+def test_linked_faces_follow_shared_edges_only():
+    mesh = create_plane(2.0, 3)
+    cube = create_cube(0.5)
+    ids = {v: mesh.add_vertex(tuple(p + d for p, d in zip(cube.vertex_position(v), (3.0, 0.0, 0.0))))
+           for v in cube.all_vertex_ids()}
+    island = {mesh.add_face([ids[v] for v in cube.face_vertices(f)]) for f in cube.all_face_ids()}
+    plane = set(mesh.all_face_ids()) - island
+    before = mesh.export_state()
+    assert linked_faces(mesh, [min(plane)]) == frozenset(plane)
+    assert linked_faces(mesh, [min(plane), min(island)]) == frozenset(plane | island)
+    assert linked_faces(mesh, []) == frozenset()
+    assert linked_faces(mesh, [type(min(plane))(999)]) == frozenset()  # an invalid seed is ignored
+    assert mesh.export_state() == before  # read-only
+    corner = Mesh()  # two quads touching only at a corner: two islands
+    a = [corner.add_vertex(p) for p in ((0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0))]
+    b = [a[2]] + [corner.add_vertex(p) for p in ((2, 1, 0), (2, 2, 0), (1, 2, 0))]
+    fa, fb = corner.add_face(a), corner.add_face(b)
+    assert linked_faces(corner, [fa]) == frozenset({fa}) and linked_faces(corner, [fb]) == frozenset({fb})

@@ -5,11 +5,16 @@ Die Logik bleibt in den Modulen `SceneFiles`, `ObjFiles` und den Application-Met
 pyglet noch `examples/` kennt.
 
     Datei:  Neu | Öffnen > (Szenen) | Speichern (Strg+S) | Speichern unter... | Importieren > (OBJ) | Exportieren...
-    Mesh:   Attach | Attach – Look des Ziels übernehmen (AD-031 P2, O-13; ohne Taste)
-    SPACE:  Add + > (Grundkörper, Basehead, Baseman) | Textur an/aus | Szene laden (Shift+Klick: als Referenz)
+    Mesh:   Attach | Attach – Look des Ziels übernehmen (AD-031 P2, O-13) | Detach | (Select Linked: Hinweis) (P3; ohne Taste)
+    SPACE:  Add + > (Grundkörper, Basehead, Baseman) | Select Linked | Textur an/aus | Szene laden (Shift+Klick: als Referenz)
 
 Attach fragt nach, bevor ungewichtete Punkte in ein gebundenes Mesh kommen (O-5): der Dialog nennt die Anzahl, erst
 „Trotzdem anhängen“ ruft `Application.attach_objects(accept_unweighted=True)`.
+
+Select Linked wirkt auf das Element unter dem Cursor (AD-031 P3). Über der Menüleiste gibt es keinen Hover mehr (der
+Zeiger über einem Panel ruft `pointer_leave`, und auf dem Weg dorthin überquert er anderes), deshalb steht es im
+Mesh-Menü nur als Hinweis; das SPACE-Menü öffnet am Cursor und merkt sich beim Öffnen das Element darunter
+(`Application.linked_seed`), sein Eintrag wählt dessen Teil aus.
 
 „Speichern“ einer neuen Szene (noch keine Datei) fragt wie „Speichern unter“ nach dem Namen. Während ein Popup offen
 ist, gehört dem Layer die ganze Maus (`popup_open`): ein Klick daneben schließt es, und er erreicht den Viewport nicht.
@@ -21,11 +26,14 @@ from dataclasses import dataclass
 from typing import Callable
 
 from mirai.attach import LABEL as ATTACH_LABEL, OVERRIDE_LABEL, TAKE_LOOK_LABEL
+from mirai.detach import LABEL as DETACH_LABEL, LINKED_LABEL
 
 #: Mesh-Menü (AD-031 P2): Anzeigename -> `take_destination_look` (D1-Variante); die Namen stehen in `mirai.attach`, weil
 #: die Statuszeile sie nennt.
 ATTACH_ENTRIES = ((ATTACH_LABEL, False), (TAKE_LOOK_LABEL, True))
 ATTACH_PROMPT = "Attach – ohne Gewichte"
+#: Mesh-Menü (AD-031 P3): Select Linked braucht den Cursor über dem Teil - dort nur der Hinweis, wo es wirkt.
+LINKED_HINT = "SPACE-Menü am Teil"
 
 
 def attach_request(app, take_look: bool) -> int | None:
@@ -67,14 +75,28 @@ class Menus:
         self._close = False
         #: O-5: (take_look, Anzahl) des Attach, das auf die Bestätigung wartet
         self.attach_pending: tuple[bool, int] | None = None
+        #: AD-031 P3: das Element unter dem Cursor, als SPACE das Menü öffnete (None: keines) - für Select Linked
+        self.linked_seed = None
 
     def close_all(self) -> None:
         self._close = True
 
     # -- Anforderungen (von Tasten und Menüpunkten; geöffnet wird im nächsten Frame an der richtigen Stelle) ------
     def open_space(self, x: float, y: float) -> None:
-        """`x`, `y` in imgui-Koordinaten (oben links)."""
+        """`x`, `y` in imgui-Koordinaten (oben links). Merkt sich das Element unter dem Cursor (Select Linked), bevor
+        der Zeiger das Menü erreicht und der Hover verschwindet."""
         self._space_at, self._request = (x, y), "space"
+        self.linked_seed = self.app.linked_seed()
+
+    def select_linked(self) -> bool:
+        """SPACE > Select Linked: der Teil des gemerkten Elements; ohne eines meldet `Application` die Ablehnung."""
+        seed, self.linked_seed = self.linked_seed, None
+        return self.app.select_linked(seed)
+
+    def detach(self) -> bool:
+        """Mesh > Detach: läuft, oder die Ablehnung steht in der Statuszeile (wie Attach: der Eintrag bleibt aktiv, damit
+        der Grund sichtbar wird)."""
+        return self.app.detach_faces()
 
     def open_save_as(self) -> None:
         self.name_buf, self._focus, self._request = self.sv.files.suggested_name(), True, "save_as"
@@ -132,6 +154,10 @@ class Menus:
                 for label, take_look in ATTACH_ENTRIES:
                     if imgui.menu_item(label, "", False)[0]:
                         self.attach(take_look)
+                imgui.separator()
+                if imgui.menu_item(DETACH_LABEL, "", False)[0]:
+                    self.detach()
+                imgui.menu_item(LINKED_LABEL, LINKED_HINT, False, False)
                 imgui.end_menu()
             size = imgui.get_window_size()
             rect = (0.0, 0.0, size.x, size.y)
@@ -177,6 +203,8 @@ class Menus:
                 if imgui.menu_item(label, "", False)[0]:
                     sv.add_base(asset)
             imgui.end_menu()
+        if imgui.menu_item(LINKED_LABEL, "", False)[0]:
+            self.select_linked()
         shows_texture = any(obj.texture is not None for obj in app.scene.objects.values())
         if shows_texture:
             on = app.display.show_texture

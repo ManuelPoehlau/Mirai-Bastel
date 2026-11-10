@@ -435,6 +435,19 @@ def test_attach_merges_the_weights_unchanged(entry, symmetric):
     assert _body_state(mesh) == state
 
 
+@pytest.mark.parametrize("symmetric", [False, True], ids=["plain", "symmetric"])
+@pytest.mark.parametrize("entry", [commands.DETACH, "detach_faces"])
+def test_detach_keeps_the_weights_unchanged(entry, symmetric):
+    """AD-031 §2.2 with weights: the new object's weights layer holds the extracted points' values unchanged (keys and
+    weights), the source keeps its survivors' values; Undo restores the source exactly (`detach_layered`)."""
+    from tests.test_application_delete_dissolve import _grid_face
+
+    app = make_app("subd_cube") if symmetric else _app(3)
+    face = phase5.plus_x_quad(app.scene.mesh, touching_seam=False) if symmetric else _grid_face(app, 1, 1)
+    _, out = phase5.detach_layered(app, entry, face, lambda mesh: add_weights(mesh, 13))
+    assert skin_layer(out) is not None
+
+
 def _body_state(mesh: Mesh) -> dict:
     return {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")}
 
@@ -445,5 +458,6 @@ def test_every_declared_entry_is_covered_with_weights():
 
     covered = set(phase5.RULE_FIXTURES) | set(h1.RULE_FIXTURES) | {CContext.KNIFE, commands.APPLY_TRANSFORM, "mirror_copy"}
     covered |= {commands.ATTACH, commands.ATTACH_TAKE_LOOK, "attach_objects"}  # test_attach_merges_the_weights_…
+    covered |= {commands.DETACH, "detach_faces"}  # test_detach_keeps_the_weights_unchanged
     assert covered == set(gate.LAYER_SAFE_OPERATIONS)
 

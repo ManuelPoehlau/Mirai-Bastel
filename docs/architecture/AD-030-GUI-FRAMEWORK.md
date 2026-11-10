@@ -213,6 +213,9 @@ eigenes Panel, weil dort später Optionen hineinmüssen (was alles gesendet wird
 - **Leiste „Mesh“** (AD-031 P2, O-13 „ja“, Manu 2026-11-10): Attach und „Attach – Look des Ziels übernehmen“; dieselben
   zwei Einträge im Rechtsklick-Menü einer ausgewählten Outliner-Zeile (nicht dem Edit-Objekt). Der O-5-Dialog „Attach – ohne
   Gewichte“ zeigt die Anzahl vor der Bestätigung. Ohne Taste; Einzelheiten [AD-031 §15.14](AD-031-ATTACH-DETACH-WELD-BRIDGE.md).
+  AD-031 P3 (2026-11-10): dazu **Detach** und **Select Linked**; Select Linked wirkt unter dem Cursor und steht deshalb im
+  SPACE-Menü, das sich beim Öffnen das Element unter dem Cursor merkt (über der Leiste gibt es keinen Hover, im Menü
+  „Mesh“ nur ein inaktiver Hinweis). Ohne Taste; Einzelheiten [AD-031 §17](AD-031-ATTACH-DETACH-WELD-BRIDGE.md).
 - **GoZ-Panel** (`gui/goz_panel.py`, Knopf neben „Outliner“): Senden, offene Rückgaben, Eintragen. Die Brücke
   (`ZBrushBridge`) bleibt unverändert; Sende-Optionen kommen später.
 - **Eingabe:** solange ein Popup oder Dialog des Layers offen ist, gehört ihm die ganze Maus (`popup_open`, ein Klick daneben

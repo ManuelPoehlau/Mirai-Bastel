@@ -147,6 +147,8 @@ GESTURE_REFUSES = frozenset(
         commands.TOGGLE_REFERENCE,
         *commands.OBJECT_MANAGEMENT_COMMANDS,
         *commands.ATTACH_COMMANDS,
+        commands.DETACH,
+        commands.SELECT_LINKED,
         commands.CONNECT,
         commands.COLLAPSE,
         commands.BORDER_SELECT,

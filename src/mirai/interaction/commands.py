@@ -180,6 +180,15 @@ ATTACH = "Attach"
 ATTACH_TAKE_LOOK = "AttachTakeLook"
 ATTACH_COMMANDS = (ATTACH, ATTACH_TAKE_LOOK)
 
+# --- Detach / Select Linked (AD-031 P3; names `PROVISIONAL`, deliberately WITHOUT a default key) ----
+# Detach, mode `3`: the selected faces (with their mirror partners under a symmetry definition) become a new object
+# at the same place, removed from the edit object - one Undo step. Select Linked, modes `1`/`2`/`3`: adds the
+# face-connected part under the cursor (the hovered element) to the selection. Reached through the "Mesh" menu
+# (Detach), the SPACE menu (Select Linked: the element under the cursor when SPACE was pressed) and
+# `dispatch_command`; a key only once Manu binds one in `config/keymap.json`.
+DETACH = "Detach"
+SELECT_LINKED = "SelectLinked"
+
 # CONNECT (WP-06 B6, AD-017 "Contextual C"): global, nicht Topology-Lab —
 # 1 Edge selektiert → Split; 2+ Edges → Edge Connect (per-face); 2+ Vertices
 # → Vertex Connect (per-face); leere Auswahl → Knife-Session (WP-06 B7).

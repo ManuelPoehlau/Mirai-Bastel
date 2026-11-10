@@ -7,8 +7,11 @@ assembly kernel `src/mirai/mesh_assembly.py` (`append_objects`, `extract_faces`,
 decided and D4 made precise (Manu, 2026-11-10; §10); P1 → P2 boundary verified, P2 specification §15. **P2 BUILT
 (2026-11-10, O-13 "ja"):** Attach — `Application.attach_objects` / `attach_plan`, `src/mirai/attach.py`, kernel K1 / K2,
 the D11 prune, commands `Attach` / `AttachTakeLook` without keys, the "Mesh" menu and the outliner context menu with the
-O-5 prompt; practical test §16, pending. P3–P7 (§11) are **not implemented**, each starts only with its own go. Open
-points: §10.
+O-5 prompt; practical test §16, pending. **P3 BUILT (2026-11-10):** Detach and Select Linked —
+`Application.detach_faces` / `detach_plan` / `select_linked` / `linked_seed`, `src/mirai/detach.py`, the kernel's
+`linked_faces`, commands `Detach` / `SelectLinked` without keys, "Mesh" > Detach and SPACE > Select Linked; O-8
+implemented as **PROVISIONAL**; specification as built §17, practical test §18, pending. P4–P7 (§11) are **not
+implemented**, each starts only with its own go. Open points: §10.
 **Scope:** `src/mirai` and `src/gui` only. **No Core change, no file-format change, no keymap change** (no keys at all).
 **Builds on:** AD-001 (ids), [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (objects, L-1 / L-3),
 [AD-023](AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) (journal), [AD-024](AD-024-OBJECT-MATERIAL-AND-WORKLIGHT-EDITING.md),
@@ -23,8 +26,13 @@ points: §10.
 - **Attach** (Modus `4`, Menü „Mesh“ oder Rechtsklick im Outliner; gebaut 2026-11-10): die ausgewählten Objekte werden
   Inseln im Mesh des Edit-Objekts. Die Form bleibt in Weltkoordinaten, nichts wird verschweißt. Ein Undo-Schritt; beim
   Undo kommen die Quellobjekte unverändert zurück. Praxistest: §16.
-- **Detach** (Flächen): die gewählten Flächen werden ein neues Objekt mit derselben Platzierung (bitgenau). Mit
-  Symmetrie wird – wie bei Delete – das Spiegelbild mitgenommen.
+- **Detach** (Modus `3`, Menü „Mesh“; gebaut 2026-11-10): die gewählten Flächen werden ein neues Objekt mit derselben
+  Platzierung (bitgenau), demselben Look, allen Morph-Zielen, Gewichten, UVs und Gruppen. Mit Symmetrie wird – wie bei
+  Delete – das Spiegelbild mitgenommen; das neue Objekt bekommt die Symmetrie, die `Shift+S` ableiten würde, nur wenn
+  sie gültig ist. Ein Undo-Schritt. Danach (vorläufig, O-8): du bleibst in Modus `3` am selben Objekt. Praxistest: §18.
+- **Select Linked** (Modus `1`/`2`/`3`, SPACE-Menü am Teil; gebaut 2026-11-10): wählt den zusammenhängenden Teil unter
+  dem Cursor dazu – z. B. ein ganzes Ohr vor dem Detach. Im Menü „Mesh“ steht es nur als Hinweis: über der Menüleiste
+  gibt es keinen Cursor mehr am Mesh (§17.2, offen O-14).
 - **Weld** (Punkte, Abstand): verschmilzt nur ausgewählte, unverbundene Punkte, exakt auf den Schwerpunkt der Gruppe,
   unabhängig von der Reihenfolge; lehnt alles ab, was unerwartete Topologie ergäbe. Der Abstand ist immer als Zahl
   sichtbar und änderbar; der Startwert (0,001 × Diagonale) ist vorläufig.
@@ -41,7 +49,7 @@ points: §10.
   übernommen.
 - **Grenze:** Re-Symmetrize geht nicht, solange angehängte Inseln unverbunden sind, und nicht an abgetrennten Teilen
   ohne Naht (§3.5).
-- Offen bei dir: §10.
+- Offen bei dir: §10 (neu: O-8 im Praxistest, O-14).
 
 ## 0. Decision in one screen
 
@@ -99,6 +107,7 @@ points: §10.
 ### 2.2 Detach (component mode, faces)
 
 - Input: the selected faces; in vertex / edge mode refused with "press 3" (Select Linked helps to pick an island).
+  As built: §17.
 - **With a symmetry definition:** the selection is expanded by its partner faces (`symmetry_coordination.expand_faces`,
   as symmetric Delete); an unpaired face refuses with the existing `TEXT_UNPAIRED`. The source deletion runs through
   `symmetric_ops.coordinate_delete`.
@@ -108,7 +117,7 @@ points: §10.
 - **Source:** `Mesh.delete_faces` (or the coordinator) leaves open borders; the Core deletes the layer values of removed
   points.
 - One step: `MeshDeltaCommand(source)` + `AddObjectCommand(new)` as the companion. Refused while posed and on the
-  morph editing view. Afterwards: per O-8 (§10).
+  morph editing view. Afterwards: per O-8 (§10; implemented `PROVISIONAL`, §17.6).
 
 ### 2.3 Separate by Islands
 
@@ -333,7 +342,7 @@ order-independent. The order test now checks the values, and the canonical-edge 
 | Phase | Acceptance test |
 |---|---|
 | P2 (tested 2026-11-10 except the reference-PC timing, §15.14) | Viewport and SubD rebuild after a large Attach (GL, reference hardware); the mixed mesh + object Undo step in the real command path; the D11 prune in the morph controller; skinning invariance under a posed rig (randomized); the look refusal and the explicit variant; the O-5 refusal and override; O-7; the D4 "worsen" case — full list §15.12 |
-| P3 | A detached part **crossing** the plane derives a usable seam (state VALID, symmetric ops, Re-Symmetrize if the seam splits it in two); Select Linked |
+| P3 (tested 2026-11-10, §17.9) | A detached part **crossing** the plane derives a usable seam (state VALID, symmetric ops, Re-Symmetrize if the seam splits it in two); Select Linked |
 | P4 | W2–W6 refusals (chain, connected members, bowtie, orientation), W10, the threshold field and its default from the bounding-box diagonal |
 | P5 | Bridge pairing, winding, refusal on conflicting normals; **Re-Symmetrize works again after the islands are bridged** into the head (component count back to 2) |
 | P6 | Symmetric Weld / Bridge, including coincident pre-weld points (AMBIGUOUS correspondence) |
@@ -370,7 +379,8 @@ targets, Redo recreates them at 0 %.
 | # | Question | Proposal | P2 |
 |---|---|---|---|
 | D10-v | The artist-approved default Weld threshold | after the P4 practical test | not relevant (P4) |
-| O-8 | After Detach: stay in component mode on the source, or mode `4` with the new object selected | stay in component mode | not relevant (P3) |
+| O-8 | After Detach: stay in component mode on the source, or mode `4` with the new object selected | stay in component mode | **P3: implemented `PROVISIONAL`** (§17.6): mode `3`, the source stays the edit object, no component selection, the new object neither selected nor edited; Manu's verdict in the practical test §18 |
+| O-14 | Select Linked "under the cursor" from a menu: the pointer over the menu bar has no hover (§17.2) | the SPACE menu remembers the element under the cursor when it opens; the "Mesh" menu shows a disabled hint; a key only by Manu's keymap decision | new in P3, not blocking |
 | O-11 | Bridge MVP only for loops of equal vertex count | yes | not relevant (P5) |
 | O-12 | Separate by Islands: which island keeps the object | the one with the most faces | not relevant (P7) |
 | P6 | How symmetric Weld handles coincident points (AMBIGUOUS) | decided before P6 | not relevant (P6) |
@@ -383,7 +393,7 @@ region whose object name is taken gets `"<object> · <object>"` by the §3.3 rul
 ## 11. Phases
 
 P1 kernel (`append_objects`, `extract_faces`, the look / layer / region / symmetry plans; built 2026-11-10) → P2 Attach (+ variant, D11
-prune) → P3 Detach (+ Select Linked) → P4 Weld → P5 Bridge → P6 symmetric Weld / Bridge → P7 Separate by Islands. Each
+prune; built 2026-11-10) → P3 Detach (+ Select Linked; built 2026-11-10) → P4 Weld → P5 Bridge → P6 symmetric Weld / Bridge → P7 Separate by Islands. Each
 phase: its acceptance tests (§9.3), the doc update in the same commit, a practical test for Manu.
 Later: "Combine targets" (explicit identity of two targets), per-face material, Bridge with unequal counts, Target Weld,
 weight / morph transfer (AD-025 Phase 7), Boolean (own AD).
@@ -634,3 +644,181 @@ ausgewählten Outliner-Zeile. Es wirkt auf die in Modus `4` ausgewählten Objekt
 Offen für dich (keine Blockade): **O-5b** (§10) — ein gewichtetes Teil an ein *ungebundenes* Ziel: heute ohne Rückfrage,
 die eigenen Punkte des Ziels sind danach ungewichtet. Und: eine Gruppe, deren Teile alle angehängt wurden, bleibt als
 leere Gruppe im Outliner (§10, wörtliche Lesart).
+
+## 17. P3 — Detach and Select Linked: specification as built (2026-11-10)
+
+Basis: `main` @ `eb04a3f` (P2). Scope as §11: Detach and Select Linked in `src/mirai` and `src/gui`; no Core,
+file-format or keymap change, no key.
+
+### 17.1 Commands and places
+
+- `commands.DETACH = "Detach"` and `commands.SELECT_LINKED = "SelectLinked"`, **no default key** (§0.1); handlers in the
+  command table run `Application.detach_faces()` / `select_linked()`; a held gesture refuses both (`GESTURE_REFUSES`).
+- GUI (`gui/menus.py`): menu bar **Mesh** = Attach · Attach – Look des Ziels übernehmen · — · **Detach** · **Select
+  Linked** (disabled, hint „SPACE-Menü am Teil“, §17.2); the **SPACE** menu has **Select Linked**.
+- Menu enablement: Detach stays enabled like Attach. `detach_plan()` is the one source of its preconditions and the
+  status line names the refusal; a disabled entry would hide the reason, and a second check in the GUI could drift.
+
+### 17.2 Select Linked under the cursor — verified limitation of the menu bar
+
+The documented behaviour (`docs/future_ideas/SELECTION.md`: "the connected component under the cursor") needs the
+hovered element. Verified in the code and in the window test: the pointer entering the menu bar (any panel) calls
+`Application.pointer_leave()` (`gui/imgui_layer.py` `on_mouse_motion`), which clears the cursor and
+`selection.hovered`; on its way to the bar the cursor crosses other geometry, so "the last hover before the menu" is
+whatever lies at the viewport's top edge, not the part the artist pointed at. **A "Mesh" menu entry cannot act under
+the cursor reliably.** It is not replaced by another selection model (e.g. "linked to the selection"). Instead:
+
+- the command works on the hovered element **now** — from `dispatch_command` and from a key, once Manu binds one;
+- the **SPACE** menu opens at the cursor and is modal (it keeps every key and the mouse): when it opens it remembers
+  the element under the cursor (`Application.linked_seed()` → `detach.LinkedSeed(edit object, mode, element)`), and
+  its entry selects that element's part; a seed whose edit object or mode changed since is refused;
+- the "Mesh" menu shows the entry disabled with the hint. Open for Manu: **O-14** (§10).
+
+### 17.3 Detach: read-only checks (`Application.detach_plan`, in this order)
+
+Each refusal is a status line, `False`, and nothing changes (mesh, scene, history, selection, mode):
+
+1. an interaction runs; 2. not face mode → "press 3, select the faces (Select Linked picks a whole part)" (vertex,
+edge and object mode); 3. the morph editing view is open ("on the base only"); 4. no valid selected face; 5. D3: a dial
+above 0 % on the edit object (`MorphSurfaceProvider.object_weights`), or the rig posed with the mesh bound
+(`SkeletonController.posed` / `bound`, the Attach checks; no automatic dial reset or rest pose); 6. the point-layer
+gate `layer_refusal("detach_faces", [mesh])`; 7. hidden geometry at the selection (`_hidden_refusal`, Delete's
+check; `Detach` is in `_TOPOLOGY_COMMANDS`, so the key path runs it at `can_run` stage 5 too); 8. with a definition:
+an inexact plane → `TEXT_NON_EXACT_PLANE`; `expand_faces(SymmetryIndex(mesh), faces)` with an unpaired face →
+`TEXT_UNPAIRED` (never half a symmetric selection); otherwise the union replaces the selection; 9. the union is every
+face of the mesh → refused ("nothing would stay"; `PROVISIONAL`: an object without faces has no use, Duplicate does
+that job).
+
+### 17.4 The step (one Undo step)
+
+`extract_faces(mesh, faces)` first (read-only, before the deletion); the derived definition (§17.5); the new object
+from `detach.detached_object` (`Scene.add_object`, the placement and look copied, then removed again: the id is handed
+out now — AD-001, never reused, also when the step is refused afterwards — and the not yet applied `AddObjectCommand`
+is the companion). Then **one** `_mesh_transaction("Detach n face(s) of 'A' as 'A.001'", mutate, companion=…)` whose
+`mutate` is Delete's own path: `apply_removal(mesh, FACE, faces)` without a definition, `symmetry_declarations.
+REMOVAL_COORDINATORS[DELETE]` (= `coordinate_delete`, with its seam update and delta check) with one. History: one
+`CompositeCommand([MeshDeltaCommand(source), AddObjectCommand(new)])` plus one selection-mirror entry
+(`mesh_step=True`). Undo: the object leaves the scene, the source mesh is restored exactly, the selected faces and
+the mode return; Redo: the **same instance and id**, both meshes exactly as after the Detach. A refusal inside the
+recording (the coordinator's delta check, a `RemovalRefused`) is rolled back exactly: no object, no history entry,
+selection unchanged; only the id stays consumed. Views: `ObjectController.sync_views()` after the step; Undo / Redo
+through `_apply_undo_redo` (object views synced for a mesh step). GL: the frame after Ctrl+Z equals the frame before
+the Detach pixel for pixel, Ctrl+Y the frame after, with SubD level 2 (`tests/test_gl_detach.py`). **Measured**
+(container, Python 3.13, headless trace store, key-path Undo / Redo — not the reference PC): half of the head basemesh
+(162 of 324 faces) 12 ms, Undo 1 ms, Redo 5 ms; half of the man basemesh (463 of 926) 23 / 7 / 12 ms.
+
+### 17.5 The new object
+
+- **Name** `unique_object_name(scene, source)` (Duplicate's rule: `cube` → `cube.001`); **transform, pivot,
+  material, texture, state, hidden flag and group** copied — the world position is unchanged (same object space,
+  bit-identical positions).
+- **Mesh** = `extract_faces`: every point layer with the same info and the values of the copied points (morph targets
+  and skin weights unchanged), corner UVs copied with `infer_uvs=False`, the regions restricted to the extracted faces
+  with their names; loose edges are not carried (Detach works on faces).
+- **Symmetry:** without a source definition none. With one: `derived_symmetry(new_mesh, current_axis(source))` —
+  Shift+S's rule, set **only when VALID**. Status: "symmetry X on 'A.001'", or "…, no seam (Re-Symmetrize not
+  available there)" for a derived empty seam, or "symmetry off on 'A.001' (not symmetric about X)"; never an invalid
+  definition. No mirror pair (§3.5).
+- Morph dials of the new targets start at 0 % (new `(ObjectId, LayerId)` keys); with a rig the new object is bound at
+  rest like its source.
+
+### 17.6 After Detach — O-8, `PROVISIONAL`
+
+Mode `3` stays; the source stays the edit object (no automatic switch); the component selection is cleared (the
+extracted ids no longer exist; no stale ids remain); the object selection is unchanged — the new object is neither
+selected nor the edit object; the status line ends with "still editing 'A' (4: select 'A.001')". This is the proposal
+of §10 implemented as a provisional default for Manu's practical test (§18), **not** an artist decision.
+
+### 17.7 Select Linked
+
+- **Island** = `mesh_assembly.linked_faces(mesh, seeds)`: faces joined across shared edges; a face touching the part
+  only at a vertex is another island. Same definition as the face components of `symmetry_topology.topological_sides`
+  (Re-Symmetrize's "parts", without the seam) and the one Separate by Islands (P7) will use.
+- **Seed** = the hovered element (or the SPACE menu's `LinkedSeed`): a face itself, an edge its faces, a vertex the
+  faces around it.
+- **Result** by the active mode: faces (`3`), edges (`2`) or points (`1`) of the island, **added** to the selection
+  (like Shift+L), hidden elements left out, no Undo step; **not mirrored** under symmetry (no selection command is —
+  Detach's expansion takes the mirror side).
+- **Refusals** (status, nothing changed): an interaction runs; mode `4`; nothing under the cursor; a loose point or
+  edge (no face); a stale seed.
+
+### 17.8 Gate and classification
+
+`layer_declarations`: `Detach` and `detach_faces` **DECLARED** with `extract_faces` (identity of infos and values; the
+Core deletes the source values of removed points), rule fixtures plain and symmetric with morph targets
+(`test_layer_topology_ops.test_detach_carries_the_layers_by_identity`) and with weights
+(`test_weights_topology_ops.test_detach_keeps_the_weights_unchanged`); the editing view refuses `Detach` (base only);
+the posed policy counts it as editing. `SelectLinked` and the methods `detach_plan`, `linked_seed`, `select_linked`
+are non-mesh. `symmetry_declarations`: no new entry — the source deletion **is** Delete's coordinator; the fail-closed
+guard (`tests/test_symmetry_fail_closed_guard.py`) presses `Detach` on its symmetric fixtures like every command.
+
+### 17.9 Tests (production, `tests/`)
+
+- `tests/test_detach.py` (26): one step, exact Undo / Redo (same instance and id, mode, selection), several faces,
+  `detach_faces` = the command, world placement and look, targets / weights / UVs (never inferred) / regions
+  (restricted, the source keeps its own), the symmetric expansion through Delete's coordinator, the crossing-plane part
+  (VALID, seam, two components, a symmetric Delete on it, Re-Symmetrize through `Alt+M` - preview, execution, one
+  Undo step - mirroring a moved point back), the
+  part without seam (empty seam, Re-Symmetrize refused "keine Seam"), no definition unless VALID, `TEXT_UNPAIRED`,
+  no mirror pair, seven refusals changing nothing (vertex / object mode, nothing, every face, dial, editing view,
+  hidden), the posed rig, a refusal inside the step rolled back, save / load; Select Linked: the island under the
+  real cursor (other islands untouched), then Detach of it, vertex / edge mode, no hover / mode `4`, the remembered and
+  the stale seed, symmetry (not mirrored; Detach takes the mirror island).
+- `tests/test_mesh_assembly.py` (+1): `linked_faces` (shared edges only, corner contact = two islands, read-only,
+  invalid seeds ignored).
+- `tests/test_layer_topology_ops.py` / `tests/test_weights_topology_ops.py` (+4 each): the gate's rule fixtures (both
+  entries, plain and symmetric).
+- `tests/test_gl_detach.py`: GL frames before / after / Ctrl+Z / Ctrl+Y with SubD level 2 on the symmetric subd_cube.
+- `tests/test_gui_menus.py` (+3): `Menus.detach` / `select_linked` / the seed taken by `open_space`; in the window,
+  SPACE over a face remembers it and Select Linked works after the hover is gone; the "Mesh" menu draws Detach
+  (enabled) and Select Linked (disabled, with the hint).
+- The P1 extract tests (`test_extract_*`, `test_derived_symmetry_*`) are reused, not duplicated.
+
+### 17.10 Limitations (stated)
+
+- Re-Symmetrize is unavailable on a detached part without seam edges (§3.5, expected; tested).
+- Select Linked acts under the cursor only through the SPACE menu, the API or a future key (§17.2, O-14).
+- Detach of every face is refused (§17.3 item 9, `PROVISIONAL`).
+- A refusal inside the step leaves the new object's id consumed (AD-001, like Attach's D4 refusal).
+- Hidden faces of an island are not selected by Select Linked, so they are not detached; a selection touching hidden
+  geometry refuses Detach as it refuses Delete.
+- Observed, pre-existing, not changed: Undo through `dispatch_command(UNDO)` (API) runs the step without the edit
+  view's rebuild that the key path (Ctrl+Z) adds (E23, `_undo_redo`) — the same for Delete; the artist's keys are
+  exact (§17.4).
+
+## 18. Praxistest P3: Detach und Select Linked (Deutsch, ca. 15 Minuten)
+
+Start: `python src/main.py`. Detach und Select Linked haben **keine Taste**. Detach steht im Menü **Mesh**; Select
+Linked im **SPACE**-Menü: SPACE über dem Teil drücken, dann „Select Linked“ – es nimmt den Teil, über dem der Cursor
+beim Drücken von SPACE war.
+
+1. Einen Würfel hinzufügen (Leertaste > Add + > Cube), mit `W` neben den Kopf schieben, in Modus `4` beide auswählen,
+   **Mesh > Attach** (P2). Jetzt hat das Edit-Objekt zwei Teile.
+2. Modus `3`, Cursor auf den Würfel, SPACE > **Select Linked**: alle Würfelflächen sind ausgewählt, der Kopf nicht.
+   Ohne Fläche unter dem Cursor: Statuszeile „nothing under the cursor“.
+3. **Mesh > Detach**: der Würfel ist ein eigenes Objekt („….001“), an derselben Stelle, mit demselben Look. Du bleibst
+   in Modus `3` am Kopf (O-8, vorläufig). `4` drücken: den Würfel anklicken und mit `W` wegziehen.
+4. `Strg+Z`: der Würfel ist wieder Teil des Kopfes, die Flächen sind wieder ausgewählt. `Strg+Y`: wieder getrennt.
+5. Modus `1` oder `2`, Detach: abgelehnt „press 3“. Mit eingedrehtem Morph-Ziel: abgelehnt „set it to 0 % first“.
+6. Symmetrie (`Shift+S` am Kopf an): ein Ohr bzw. eine Fläche nur auf einer Seite auswählen, Detach: beide Seiten
+   gehen mit (Statuszeile „with … mirror face(s)“); das neue Objekt hat Symmetrie („symmetry X on …“). Ein Teil, das
+   über die Mitte geht (z. B. ein Streifen über die Nase), bekommt eine Naht: das neue Objekt zum Edit-Objekt machen
+   (in `4` anklicken, dann `1`), einen Punkt einer Seite wählen, `Alt+M` – Re-Symmetrize geht darauf. Zwei Ohren ohne
+   Mitte: „no seam (Re-Symmetrize not available there)“ – erwartet.
+7. Morph / Gruppen: ein Teil mit Morph-Ziel und Gruppen abtrennen – das neue Objekt hat dieselben Ziele (auf 0 %) und
+   die Gruppen seiner Flächen.
+
+| # | Verdikt (KEEP / CHANGE / DROP) | Notiz |
+|---|---|---|
+| 1–2 | | |
+| 3 (O-8: bleiben in `3` am Quellobjekt?) | | |
+| 4 | | |
+| 5 | | |
+| 6 | | |
+| 7 | | |
+
+Offen für dich (keine Blockade): **O-8** – soll es nach Detach so bleiben (Modus `3`, Quelle bleibt Edit-Objekt, das
+neue Objekt nicht ausgewählt), oder lieber Modus `4` mit dem neuen Objekt ausgewählt? **O-14** – Select Linked hat
+keine Taste; im Menü „Mesh“ geht „unter dem Cursor“ nicht (der Cursor ist dann auf dem Menü). Reicht das SPACE-Menü,
+oder möchtest du eine Taste (dann sagst du welche, und sie kommt in `config/keymap.json`)? Detach aller Flächen wird
+abgelehnt (vorläufig).

@@ -17,6 +17,9 @@ AD-031 §10 still leaves open (O-1, O-2, O-5, O-7, …); this module decides non
   read. Loose edges are not carried (Detach works on faces).
 - `look_differences(dst, sources)` (§3.1), `incoming_unweighted(sources)` (§3.2, O-5), `check_append(dst, sources)`
   and `derived_symmetry(mesh, axis)` (§3.5) are the read-only plans the commands consult.
+- `linked_faces(mesh, seeds)` (P3): the face-connected part ("island") of `seeds` - faces joined across a shared
+  edge, the face components `symmetry_topology.topological_sides` counts (without a seam). Select Linked selects it
+  for Detach; Separate by Islands (P7) splits by the same definition.
 
 Data rules (AD-031 §3; never merged by name, never dropped silently):
 
@@ -145,6 +148,21 @@ def derived_symmetry(mesh: Mesh, axis: str | None) -> SymmetryDefinition | None:
     finally:
         mesh.symmetry_definition = previous
     return definition if valid else None
+
+
+def linked_faces(mesh: Mesh, seeds: Iterable[FaceId]) -> frozenset[FaceId]:
+    """The faces connected to `seeds` across shared edges (AD-031 P3, the island definition of Detach and Separate by
+    Islands): a face that touches the part only at a vertex is another island. Read-only; invalid seeds are
+    ignored, so no valid seed gives the empty set."""
+    found = {f for f in seeds if mesh.is_valid_face(f)}
+    todo = list(found)
+    while todo:
+        for edge in mesh.face_edges(todo.pop()):
+            for other in mesh.edge_faces(edge):
+                if other not in found:
+                    found.add(other)
+                    todo.append(other)
+    return frozenset(found)
 
 
 # -- append -----------------------------------------------------------------------------------------------------------

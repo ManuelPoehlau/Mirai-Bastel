@@ -60,6 +60,7 @@ from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig vo
 from viewport.resource_store import ResourceStore, TraceStore
 
 from . import attach as attach_api
+from . import detach as detach_api
 from . import regions as face_regions_api
 from .hidden import HiddenSet, mirrored_faces, touches_hidden
 from .mask import (
@@ -76,7 +77,16 @@ from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .interaction.tools.selection_helpers import selection_pivot
-from .mesh_assembly import AssemblyRefused, append_objects, check_append, incoming_unweighted, look_differences
+from .mesh_assembly import (
+    AssemblyRefused,
+    append_objects,
+    check_append,
+    derived_symmetry,
+    extract_faces,
+    incoming_unweighted,
+    linked_faces,
+    look_differences,
+)
 from .mesh_geometry import mesh_center_and_radius
 from . import object_space
 from . import view_state
@@ -114,8 +124,10 @@ from .symmetry_coordination import (
     canonical_faces,
     canonical_vertices,
     expand_faces,
+    is_exact_plane,
 )
-from .symmetric_ops import SymmetryRefusal, on_residue_sides, residue_sides
+from .symmetric_ops import TEXT_NON_EXACT_PLANE, TEXT_UNPAIRED, SymmetryRefusal, on_residue_sides, residue_sides
+from .symmetry_axis import current_axis
 from .symmetry import mirrored_selection
 from .symmetry_display import SymmetryDisplay
 from .resymmetrize import ResymPlan
@@ -251,6 +263,7 @@ _TOPOLOGY_COMMANDS = frozenset(
         commands.DELETE,
         commands.DISSOLVE,
         commands.DISSOLVE_NO_CLEANUP,
+        commands.DETACH,
     }
 )
 
@@ -1137,6 +1150,8 @@ class Application:
         add(commands.ATTACH_COMMANDS, plain(
             lambda command: self.attach_objects(take_destination_look=command == commands.ATTACH_TAKE_LOOK)
         ))
+        add((commands.DETACH,), plain(lambda command: self.detach_faces()))
+        add((commands.SELECT_LINKED,), plain(lambda command: self.select_linked()))
         add((commands.CONNECT,), plain(lambda command: self._connect_command()))
         add(_REMOVAL_COMMANDS, plain(self._run_removal))
         add((commands.COLLAPSE,), plain(lambda command: self._collapse_command()))
@@ -3349,6 +3364,173 @@ class Application:
             pair_notes,
             weights_note=done.result.unweighted > 0 and skin_layer(dst.mesh) is not None,
         ))
+        return True
+
+    # -- Detach and Select Linked (AD-031 P3, §2.2, §17; texts `PROVISIONAL`) -------------------------------------
+
+    def detach_plan(self) -> "detach_api.DetachPlan":
+        """What Detach would do now (AD-031 §17.3), read-only: the source (the edit object), the faces that leave it and
+        the first refusal - interaction, face mode, the morph editing view, no face, a dial above 0 % or a posed rig
+        with the mesh bound (D3), the point-layer gate, hidden geometry at the selection (as Delete), the symmetry
+        expansion (an inexact plane, an unpaired face: `TEXT_UNPAIRED`) and a selection that would leave no face."""
+        label = detach_api.LABEL
+        plan = detach_api.DetachPlan
+        owner = self.interaction_owner
+        if owner is not None:
+            return plan(None, frozenset(), f"{label}: not while the {owner} interaction runs")
+        selection = self.selection
+        if selection.mode is not SelectionMode.FACE:
+            return plan(None, frozenset(), (
+                f"{label}: works on faces - press 3, select the faces ({detach_api.LINKED_LABEL} picks a whole part),"
+                f" then {label}"
+            ))
+        if self._morph.view is not None:
+            return plan(None, frozenset(), f"{label}: on the base only (Tab returns to it)")
+        src = self.scene.edit_object
+        mesh = src.mesh
+        faces = frozenset(f for f in selection.faces if mesh.is_valid_face(f))
+        if not faces:
+            return plan(src, faces, f"{label}: select the faces to detach (mode 3) - none selected")
+        if self._morph.display.provider.object_weights(src.id):
+            return plan(src, faces, f"{label}: {src.name!r} has a morph target dialled in - set it to 0 % first")
+        if self._skeleton.posed() and self._skeleton.bound(mesh):
+            rest = self._skeleton.key_text(commands.POSE_TOGGLE_REST)
+            return plan(src, faces, f"{label}: {src.name!r} is posed - go to the rest pose first ({rest})")
+        text = self._layer_refusal("detach_faces", [mesh])
+        if text is None:
+            text = self._hidden_refusal(commands.DETACH)
+        if text is not None:
+            return plan(src, faces, text)
+        mirrored = 0
+        definition = mesh.symmetry_definition
+        if definition is not None:
+            # Symmetric Delete's expansion (AD-031 D5): the pair leaves together, an unpaired face refuses.
+            if not is_exact_plane(definition):
+                return plan(src, faces, TEXT_NON_EXACT_PLANE)
+            expansion = expand_faces(SymmetryIndex(mesh), faces)
+            if expansion.unpaired:
+                return plan(src, faces, TEXT_UNPAIRED)
+            union = frozenset(expansion.union)
+            mirrored, faces = len(union - faces), union
+        if len(faces) == len(mesh.all_face_ids()):
+            return plan(src, faces, f"{label}: every face of {src.name!r} is selected - nothing would stay", mirrored)
+        return plan(src, faces, None, mirrored)
+
+    def detach_faces(self) -> bool:
+        """Detach (AD-031 §2.2, §17): the selected faces - with their mirror partners under a symmetry definition - become
+        a new object with the edit object's placement and look (`extract_faces`: positions bit-identical, every point
+        layer, corner UVs, the regions restricted to them; the symmetry definition Shift+S would derive, only when
+        VALID) and leave the edit object (Delete's path: `apply_removal`, or `coordinate_delete` under symmetry) - one
+        Undo step (`_mesh_transaction` with `AddObjectCommand` as its companion). Refused with a status line and nothing
+        changed when `detach_plan` refuses or the symmetric deletion's delta check does. Afterwards (O-8,
+        `PROVISIONAL`): face mode, the same edit object, no component selected."""
+        detach = self.detach_plan()
+        if detach.refusal is not None:
+            self._set_status(detach.refusal)
+            return False
+        scene, src, faces = self.scene, detach.source, detach.faces
+        axis = current_axis(src.mesh)
+        extracted = extract_faces(src.mesh, faces)  # read-only: before the deletion
+        if axis is not None:
+            extracted.mesh.symmetry_definition = derived_symmetry(extracted.mesh, axis)  # None unless VALID
+        obj, companion = detach_api.detached_object(scene, src, extracted.mesh)
+        coordinator = (
+            symmetry_declarations.REMOVAL_COORDINATORS[commands.DELETE] if src.mesh.symmetry_definition is not None
+            else None
+        )
+
+        def mutate(mesh):
+            assert mesh is src.mesh  # the editing view is closed: the transaction's mesh is the source's
+            if coordinator is not None:
+                return coordinator(mesh, SelectionMode.FACE, set(faces))
+            return apply_removal(mesh, SelectionMode.FACE, set(faces), dissolve=False, cleanup=False)
+
+        def on_applied(_result) -> None:
+            selection = self.selection
+            selection.clear()  # the faces are gone; the mode and the object selection stay (O-8)
+            selection.hovered = None
+
+        try:
+            self._mesh_transaction(
+                detach_api.description(src, obj, len(faces)), mutate, companion=companion, on_applied=on_applied
+            )
+        except (RemovalRefused, SymmetryRefusal) as exc:
+            self._set_status(f"{detach_api.LABEL}: {exc}" if isinstance(exc, RemovalRefused) else str(exc))
+            return False
+        self._objects.sync_views()
+        if self.viewport is not None:
+            self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
+        self._refresh_hover()
+        self._set_status(detach_api.result_text(src, obj, detach, axis))
+        return True
+
+    def linked_seed(self) -> "detach_api.LinkedSeed | None":
+        """The element under the cursor now, for Select Linked from a menu: the SPACE menu remembers it when it opens,
+        because the pointer over a menu clears the hover (`pointer_leave`). None in mode `4` or over nothing."""
+        self.flush_hover()
+        hovered = self.selection.hovered
+        if self.selection.mode is SelectionMode.OBJECT or not isinstance(hovered, (VertexId, EdgeId, FaceId)):
+            return None
+        return detach_api.LinkedSeed(self.scene.edit_object_id, self.selection.mode, hovered)
+
+    def select_linked(self, seed: "detach_api.LinkedSeed | None" = None) -> bool:
+        """Select Linked (AD-031 P3, `docs/future_ideas/SELECTION.md`): adds the face-connected part
+        (`mesh_assembly.linked_faces`, the island of Detach and Separate by Islands) of the element under the cursor to
+        the selection - its faces, edges or points by the active mode; hidden ones stay out. `seed`: the element a menu
+        remembered (`linked_seed`), else the hovered one now. A selection change like Shift+L (no Undo step), not
+        mirrored under symmetry (no selection command is; Detach adds the mirror side). Refused with a status line in
+        mode `4`, during an interaction, and without a valid element under the cursor."""
+        label = detach_api.LINKED_LABEL
+        owner = self.interaction_owner
+        if owner is not None:
+            self._set_status(f"{label}: not while the {owner} interaction runs")
+            return False
+        selection = self.selection
+        mode = selection.mode
+        if mode is SelectionMode.OBJECT:
+            self._set_status(f"{label}: works on points, edges or faces - press 1/2/3 and point at the part")
+            return False
+        mesh = self.scene.mesh
+        if seed is None:
+            self.flush_hover()
+            element = selection.hovered
+        elif seed.object_id != self.scene.edit_object_id or seed.mode is not mode:
+            self._set_status(f"{label}: the edit object or the mode changed since - point at the part again")
+            return False
+        else:
+            element = seed.element
+        if isinstance(element, FaceId) and mesh.is_valid_face(element):
+            seeds = {element}
+        elif isinstance(element, EdgeId) and mesh.is_valid_edge(element):
+            seeds = set(mesh.edge_faces(element))
+        elif isinstance(element, VertexId) and mesh.is_valid_vertex(element):
+            seeds = {f for e in mesh.vertex_edges(element) for f in mesh.edge_faces(e)}
+        else:
+            self._set_status(f"{label}: nothing under the cursor - point at a face of the part")
+            return False
+        if not seeds:
+            self._set_status(f"{label}: no face at the element under the cursor (a loose point or edge)")
+            return False
+        island = linked_faces(mesh, seeds)
+        if mode is SelectionMode.FACE:
+            ids, noun = set(island), "face"
+        elif mode is SelectionMode.EDGE:
+            ids, noun = {e for f in island for e in mesh.face_edges(f)}, "edge"
+        else:
+            ids, noun = {v for f in island for v in mesh.face_vertices(f)}, "point"
+        ids = self._drop_hidden(ids)
+        current = {SelectionMode.VERTEX: selection.vertices, SelectionMode.EDGE: selection.edges}.get(
+            mode, selection.faces
+        )
+        added = len(ids - current)
+        selection.add(ids)
+        if self.viewport is not None:
+            self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
+        self._set_status(
+            f"{label}: a part of {len(island)} face(s) - {len(current)} {noun}(s) selected (+{added})"
+        )
         return True
 
     def apply_goz_return(self, plan) -> bool:

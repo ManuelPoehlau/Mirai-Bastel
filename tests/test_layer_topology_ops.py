@@ -277,7 +277,9 @@ OTHER_FIXTURES = {CContext.KNIFE: "test_knife_cuts_a_layered_mesh_by_its_rule",
                   "mirror_copy": "test_mirror_copy_carries_the_layers_through_the_index_map",
                   commands.ATTACH: "test_attach_carries_the_layers_by_its_rule",
                   commands.ATTACH_TAKE_LOOK: "test_attach_carries_the_layers_by_its_rule",
-                  "attach_objects": "test_attach_carries_the_layers_by_its_rule"}
+                  "attach_objects": "test_attach_carries_the_layers_by_its_rule",
+                  commands.DETACH: "test_detach_carries_the_layers_by_identity",
+                  "detach_faces": "test_detach_carries_the_layers_by_identity"}
 
 
 def _run(app, command: str, info: dict) -> None:
@@ -569,6 +571,52 @@ def test_attach_carries_the_layers_by_its_rule(entry, symmetric):
     assert app.key_press(CTRL_Z)
     assert _layers(mesh) == before and set(mesh.all_vertex_ids()) == own
     assert app.scene.objects[part.id] is part and part_mesh.export_state() == source_state
+
+
+# -- Detach (AD-031 P3) ----------------------------------------------------------------------------------------
+
+
+def detach_layered(app, entry: str, face, add) -> tuple:
+    """Runs Detach of `face` (with its mirror face under a definition) on the edit mesh after `add(mesh)` gave it
+    layers, through `entry`; checks the identity rule and the exact Undo; returns the source and new mesh."""
+    mesh = app.scene.mesh
+    add(mesh)
+    before, body = _layers(mesh), {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")}
+    position = {tuple(mesh.vertex_position(v)): v for v in mesh.all_vertex_ids()}
+    objects = set(app.scene.objects)
+    _select(app, F, {face})
+    history = len(app.history)
+    ok = app.detach_faces() if entry == "detach_faces" else _press(app, entry)
+    assert ok, app.status_message
+    assert len(app.history) == history + 1
+    (new_id,) = set(app.scene.objects) - objects
+    out = app.scene.objects[new_id].mesh
+    assert [out.point_layer_info(l) for l in out.point_layer_ids()] == [mesh.point_layer_info(l) for l in mesh.point_layer_ids()]
+    origin = {w: position[tuple(out.vertex_position(w))] for w in out.all_vertex_ids()}  # positions are copies
+    for src_lid, out_lid in zip(mesh.point_layer_ids(), out.point_layer_ids()):
+        assert dict(out.layer_items(out_lid)) == {w: before[src_lid][v] for w, v in origin.items() if v in before[src_lid]}
+    survivors = set(mesh.all_vertex_ids())
+    for lid, values in before.items():
+        assert _layers(mesh)[lid] == {v: x for v, x in values.items() if v in survivors}
+    assert_layer_invariants(mesh)
+    assert_layer_invariants(out)
+    assert app.key_press(CTRL_Z)
+    assert {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")} == body
+    assert new_id not in app.scene.objects
+    return mesh, out
+
+
+@pytest.mark.parametrize("symmetric", [False, True], ids=["plain", "symmetric"])
+@pytest.mark.parametrize("entry", [commands.DETACH, "detach_faces"])
+def test_detach_carries_the_layers_by_identity(entry, symmetric):
+    """Detach of a layered source (AD-031 §2.2): the new object's mesh has the source's layers (same infos, same order)
+    with the extracted points' values bit for bit; the source keeps every value of its surviving points (the Core
+    drops the values of removed points); under symmetry the mirror face leaves too; one Undo step restores the source
+    exactly and removes the object."""
+    app = make_app("subd_cube") if symmetric else _app(3)
+    face = plus_x_quad(app.scene.mesh, touching_seam=False) if symmetric else _grid_face(app, 1, 1)
+    _, out = detach_layered(app, entry, face, lambda mesh: add_layers(mesh, 51))
+    assert len(out.all_face_ids()) == (2 if symmetric else 1)
 
 
 # -- the editing view and the mix follow a base topology edit (AD-025 §15, Phase 5 item 6) ----------------

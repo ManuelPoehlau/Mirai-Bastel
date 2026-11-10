@@ -120,6 +120,36 @@ def test_attach_request_runs_at_once_or_returns_the_unweighted_count():
     assert part.id not in app.scene.objects and len(app.history) == history + 1
 
 
+# -- Mesh > Detach, SPACE > Select Linked (AD-031 P3) -------------------------------------------------------------
+
+
+def test_menu_detach_and_select_linked_call_the_application():
+    """Ohne Fenster: Mesh > Detach ruft `detach_faces` (die Ablehnung steht in der Statuszeile); SPACE merkt sich beim
+    Öffnen das Element unter dem Cursor, und Select Linked nutzt es, auch wenn der Hover danach weg ist."""
+    from gui.menus import DETACH_LABEL, LINKED_HINT, LINKED_LABEL, Menus
+    from mirai.interaction import commands
+
+    assert (DETACH_LABEL, LINKED_LABEL) == ("Detach", "Select Linked") and LINKED_HINT
+    app = _app()
+    menus = Menus(None, app, None)
+    assert menus.detach() is False and "press 3" in app.status_message  # Modus 1: abgelehnt, nichts geändert
+    app.dispatch_command(commands.SET_FACE_MODE)
+    face = sorted(app.scene.mesh.all_face_ids())[0]
+    app.selection.hovered = face
+    menus.open_space(10.0, 10.0)
+    assert menus.linked_seed is not None and menus.linked_seed.element == face
+    app.pointer_leave()  # der Zeiger erreicht das Menü: kein Hover mehr
+    assert menus.select_linked(), app.status_message
+    assert app.selection.faces == set(app.scene.mesh.all_face_ids()) and menus.linked_seed is None
+    objects = set(app.scene.objects)
+    app.selection.faces = {face}
+    assert menus.detach(), app.status_message
+    assert len(app.scene.objects) == len(objects) + 1
+    menus.open_space(10.0, 10.0)  # nichts unter dem Cursor
+    assert menus.linked_seed is None
+    assert menus.select_linked() is False and "nothing under the cursor" in app.status_message
+
+
 # -- Fenster ------------------------------------------------------------------------------------------------------
 
 pytest.importorskip("imgui_bundle")
@@ -281,3 +311,71 @@ def test_mesh_attach_with_unweighted_points_opens_the_prompt_and_escape_changes_
     layer.popup_key()  # Esc
     _frame(window, 3)
     assert not layer.popup_open and len(app.history) == history and part.id in app.scene.objects
+
+
+def test_space_over_a_face_remembers_it_for_select_linked(env):
+    """AD-031 P3: SPACE über einer Fläche öffnet das Menü am Cursor; der Zeiger über dem Menü löscht den Hover
+    (`pointer_leave`), Select Linked wählt trotzdem den Teil unter der Stelle, an der SPACE gedrückt wurde."""
+    from core import FaceId
+    from mirai.interaction import commands
+
+    window, app, layer, files, calls = env
+    app.dispatch_command(commands.SET_FACE_MODE)
+    x, y = window.width // 2, window.height // 2
+    window.dispatch_event("on_mouse_motion", x, y, 0, 0)
+    _frame(window, 2)
+    app.flush_hover()
+    face = app.selection.hovered
+    assert isinstance(face, FaceId)
+    window.dispatch_event("on_key_press", key.SPACE, 0)
+    window.dispatch_event("on_key_release", key.SPACE, 0)
+    _frame(window, 3)
+    assert layer.popup_open and layer.menus.linked_seed.element == face
+    bx, by, bw, bh = layer.panel_rects[0]
+    window.dispatch_event("on_mouse_motion", 20, window.height - bh / 2, 0, 0)  # über ein Panel: der Hover geht
+    window.dispatch_pending_events()
+    assert app.selection.hovered is None
+    assert layer.menus.select_linked(), app.status_message
+    assert app.selection.faces == set(app.scene.mesh.all_face_ids())  # der Würfel ist ein Teil
+    layer.popup_key()
+    _frame(window, 3)
+    assert not layer.popup_open
+
+
+def test_the_mesh_menu_draws_detach_and_the_select_linked_hint(env):
+    """AD-031 P3: die Menüleiste öffnet „Mesh“; darin stehen Attach, Detach (aktiv) und Select Linked (inaktiv, mit dem
+    Hinweis aufs SPACE-Menü - über der Leiste gibt es keinen Hover)."""
+    from gui.menus import DETACH_LABEL, LINKED_HINT, LINKED_LABEL
+
+    window, app, layer, files, calls = env
+    menus = layer.menus
+    real = menus.imgui
+    drawn: list = []
+
+    class Recorder:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def menu_item(self, label, shortcut="", selected=False, enabled=True):
+            drawn.append((label, shortcut, enabled))
+            return real.menu_item(label, shortcut, selected, enabled)
+
+    menus.imgui = Recorder()
+    bx, by, bw, bh = layer.panel_rects[0]
+    y = window.height - bh / 2
+    for x in range(30, 160, 6):  # „Mesh“ steht rechts neben „Datei“
+        window.dispatch_event("on_mouse_motion", x, y, 0, 0)
+        window.dispatch_event("on_mouse_press", x, y, mouse.LEFT, 0)
+        _frame(window, 1)
+        window.dispatch_event("on_mouse_release", x, y, mouse.LEFT, 0)
+        _frame(window, 2)
+        if any(label == DETACH_LABEL for label, _, _ in drawn):
+            break
+        layer.popup_key()
+        _frame(window, 2)
+    menus.imgui = real
+    assert (DETACH_LABEL, "", True) in drawn and (LINKED_LABEL, LINKED_HINT, False) in drawn
+    assert calls["press"] == 0  # die Klicks in die Leiste erreichen den Viewport nicht
+    layer.popup_key()
+    _frame(window, 3)
+    assert not layer.popup_open

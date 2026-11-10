@@ -38,7 +38,7 @@ from core import Mesh
 from core.mesh import LayerKind
 
 from .interaction import commands
-from .mesh_assembly import append_objects
+from .mesh_assembly import append_objects, extract_faces
 from .object_mirror import mirror_mesh
 from .scene_objects import apply_placement
 from .symmetric_extrude import plan_extrude
@@ -102,11 +102,16 @@ LAYER_SAFE_OPERATIONS: Mapping[Any, tuple] = MappingProxyType(
         commands.ATTACH: (append_objects, append_objects),
         commands.ATTACH_TAKE_LOOK: (append_objects, append_objects),
         "attach_objects": (append_objects, append_objects),
+        # AD-031 P3: Detach copies every layer of the extracted points into the new mesh by identity (same infos, same
+        # values) and removes the faces from the source like Delete (the Core deletes the values of removed points);
+        # one function for plain and symmetric sources (the symmetric deletion is Delete's coordinator).
+        commands.DETACH: (extract_faces, extract_faces),
+        "detach_faces": (extract_faces, extract_faces),
     }
 )
 
 #: Keys of `LAYER_SAFE_OPERATIONS` that are `Application` methods, not command constants.
-_DECLARED_METHODS = frozenset({"mirror_copy", "attach_objects"})
+_DECLARED_METHODS = frozenset({"mirror_copy", "attach_objects", "detach_faces"})
 
 NON_MESH = "non-mesh"
 POSITION_ONLY = "position-only"
@@ -123,7 +128,7 @@ _NON_MESH_COMMANDS = (
     commands.UNDO, commands.REDO, commands.CANCEL, commands.CLEAR_SELECTION,
     commands.SELECT, commands.SELECT_ADD, commands.SELECT_REMOVE, commands.SELECT_TOGGLE,
     commands.SELECT_DRAG, commands.SELECT_DRAG_ADD, commands.LASSO_ARM,
-    commands.SELECT_GROW, commands.SELECT_SHRINK, commands.LOOP_GROW, commands.LOOP_SHRINK,
+    commands.SELECT_GROW, commands.SELECT_SHRINK, commands.SELECT_LINKED, commands.LOOP_GROW, commands.LOOP_SHRINK,
     commands.LOOP_NEXT, commands.LOOP_PREVIOUS, commands.EDGE_LOOP, commands.EDGE_RING, commands.BORDER_SELECT,
     commands.CONSTRAIN_AXIS_X, commands.CONSTRAIN_AXIS_Y, commands.CONSTRAIN_AXIS_Z,
     commands.CONSTRAIN_PLANE_XY, commands.CONSTRAIN_PLANE_XZ, commands.CONSTRAIN_PLANE_YZ,
@@ -241,6 +246,12 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "attach_objects": DECLARED,
         # read-only: what Attach would do (the scan sees `key_text`, merged by name with a mutating method)
         "attach_plan": "non-mesh",
+        # AD-031 P3: the edit mesh's faces into a new object, checked at its own site; the plan and the seed read only,
+        # Select Linked changes the selection only
+        "detach_faces": DECLARED,
+        "detach_plan": "non-mesh",
+        "linked_seed": "non-mesh",
+        "select_linked": "non-mesh",
         # Outliner: refuses a mesh with point layers at its own site (`ObjectController.duplicate_selected`)
         "duplicate_objects": "non-mesh",
         # AD-030 outliner: a bone's name only (`RigCommand`, no mesh change; the scan sees the name `rename_bone` of the
@@ -272,6 +283,8 @@ _LABELS: Mapping[Any, str] = MappingProxyType(
         commands.ATTACH: "Attach",
         commands.ATTACH_TAKE_LOOK: "Attach",
         "attach_objects": "Attach",
+        commands.DETACH: "Detach",
+        "detach_faces": "Detach",
     }
 )
 
