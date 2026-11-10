@@ -397,6 +397,16 @@ approved default value) stays open until the P4 practical test.
 hinzukommt … Brauchen also Beide Möglichkeiten": a weld that joins two parts at one point only (a bowtie) is allowed and
 reported; a seam can be welded at once or point by point (§4.2, §19.10).
 
+**Open before P6 (prepared 2026-11-10 from the code of `symmetric_ops`, `symmetry`, `symmetry_coordination`; Manu
+decides, then P6 runs in a fresh session):**
+
+| # | Question | Proposal (agent) | Why / what it changes |
+|---|---|---|---|
+| P6-a | Symmetric Weld and coincident points (AMBIGUOUS, the documented P6 question) | The mirror image of a selected point = **every** point at its exact mirror position (its twin included; a seam point: itself and its twins). The weld groups of selection + image are welded as **whole groups**; the group of a mirror pair is snapped to the exact mirror of the normal side's survivor, a group on / around the plane is projected onto the plane (Collapse's coordinator does the same). Selected points with no point at the mirror position → `TEXT_UNPAIRED`. The result must pass the existing delta check (D-strict), else refused, nothing changed | Correspondence is exact and position-based: before a weld, doubled points are AMBIGUOUS (each has two candidates), so a point-wise partner does not exist. A group-wise image does, and the weld removes the ambiguity. Effect: a seam doubled by Detach + Attach can be welded with symmetry on, and the ears' borders on both sides in one step |
+| P6-b | The seam after a weld on the plane | Edges between welded points that lie exactly on the plane join the seam (Shift+S's rule, only at the welded points); seam ids that died in the weld are dropped (as Collapse) | Without it Re-Symmetrize would have no seam where the halves were welded back together |
+| P6-c | Symmetric Bridge: which cases | (1) both borders on one side → the mirror bridge is built too, as the exact mirror of the quads (not planned again); (2) both borders straddle the plane (each its own mirror image) → one bridge, which must itself be mirror-symmetric, else refused; (3) the two borders are each other's mirror image (e.g. left ear hole ↔ right ear hole across the plane) → **refused for now** (every quad would span the plane, D-strict refuses that); (4) one border its own image, the other not → refused | (1) is the ear case with symmetry on; (3) would need new points on the plane (splitting each quad), which is not Bridge |
+| P6-d | Point-layer values on the mirror side | Each group / face gets the values by the same rule as without symmetry (group mean; Bridge: untouched); not forced to mirrored values | Technical, stated for completeness: the rule fixtures check the mirror side against the mirrored values to 1e-12 |
+
 **Open (classified for P2 on 2026-11-10; none blocks P2):**
 
 | # | Question | Proposal | P2 |
@@ -406,7 +416,7 @@ reported; a seam can be welded at once or point by point (§4.2, §19.10).
 | O-14 | Select Linked "under the cursor" from a menu: the pointer over the menu bar has no hover (§17.2) | the SPACE menu remembers the element under the cursor when it opens; the "Mesh" menu shows a disabled hint; a key only by Manu's keymap decision | **Decided (Manu, 2026-11-10): "SPACE reicht vorerst (später Sub-Object Mode)"** — no key now; a later Sub-Object Mode is the place to revisit it |
 | O-11 | Bridge MVP only for loops of equal vertex count | yes | not relevant (P2); **P5 built as proposed** (`PROVISIONAL`, unequal counts refused with both numbers), confirmation in the practical test §22 |
 | O-12 | Separate by Islands: which island keeps the object | the one with the most faces | not relevant (P7) |
-| P6 | How symmetric Weld handles coincident points (AMBIGUOUS) | decided before P6 | not relevant (P6) |
+| P6 | How symmetric Weld handles coincident points (AMBIGUOUS) | decided before P6 — prepared as P6-a…P6-d above | not relevant (P6) |
 | O-5b | An **unbound** destination receives weights from a weighted source: §3.2 (decided) creates the `"Skin"` layer, so the destination's own points (and points of other unweighted sources) end up unweighted in a mesh that is now bound. O-5 covers only a destination bound before the Attach | none — new, found in this pass | not blocking: P2 implements the decided rules literally (no O-5 refusal, since the destination was not bound; the status line states the count); Manu may decide otherwise after the practical test |
 
 Literal readings P2 applies without a new decision (`PROVISIONAL`, checked in the P2 practical test): a group whose
