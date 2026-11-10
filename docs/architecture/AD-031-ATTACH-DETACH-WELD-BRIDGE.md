@@ -3,9 +3,12 @@
 **Status:** DECIDED (Manu, 2026-11-09): D1–D9 and D11 approved as proposed; D10 decided as a world-space threshold
 with a **provisional** reference default (§4.1), the numeric value is not artist-approved. **P1 BUILT (2026-11-10):** the
 assembly kernel `src/mirai/mesh_assembly.py` (`append_objects`, `extract_faces`, `look_differences`,
-`derived_symmetry`), tests `tests/test_mesh_assembly.py`; no command, GUI or key yet. **P2 readiness pass
-(2026-11-10):** O-1, O-2, O-5, O-7 decided and D4 made precise (Manu, 2026-11-10; §10); P1 → P2 boundary verified and the
-P2 specification written (§15). P2–P7 (§11) are **not implemented**, each starts only with its own go. Open points: §10.
+`derived_symmetry`), tests `tests/test_mesh_assembly.py`. **P2 readiness pass (2026-11-10):** O-1, O-2, O-5, O-7
+decided and D4 made precise (Manu, 2026-11-10; §10); P1 → P2 boundary verified, P2 specification §15. **P2 BUILT
+(2026-11-10, O-13 "ja"):** Attach — `Application.attach_objects` / `attach_plan`, `src/mirai/attach.py`, kernel K1 / K2,
+the D11 prune, commands `Attach` / `AttachTakeLook` without keys, the "Mesh" menu and the outliner context menu with the
+O-5 prompt; practical test §16, pending. P3–P7 (§11) are **not implemented**, each starts only with its own go. Open
+points: §10.
 **Scope:** `src/mirai` and `src/gui` only. **No Core change, no file-format change, no keymap change** (no keys at all).
 **Builds on:** AD-001 (ids), [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (objects, L-1 / L-3),
 [AD-023](AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) (journal), [AD-024](AD-024-OBJECT-MATERIAL-AND-WORKLIGHT-EDITING.md),
@@ -17,8 +20,9 @@ P2 specification written (§15). P2–P7 (§11) are **not implemented**, each st
 
 ## Kurzfassung für Manu (Deutsch)
 
-- **Attach** (Modus `4`): die ausgewählten Objekte werden Inseln im Mesh des Edit-Objekts. Die Form bleibt in Welt-
-  koordinaten, nichts wird verschweißt. Ein Undo-Schritt; beim Undo kommen die Quellobjekte unverändert zurück.
+- **Attach** (Modus `4`, Menü „Mesh“ oder Rechtsklick im Outliner; gebaut 2026-11-10): die ausgewählten Objekte werden
+  Inseln im Mesh des Edit-Objekts. Die Form bleibt in Weltkoordinaten, nichts wird verschweißt. Ein Undo-Schritt; beim
+  Undo kommen die Quellobjekte unverändert zurück. Praxistest: §16.
 - **Detach** (Flächen): die gewählten Flächen werden ein neues Objekt mit derselben Platzierung (bitgenau). Mit
   Symmetrie wird – wie bei Delete – das Spiegelbild mitgenommen.
 - **Weld** (Punkte, Abstand): verschmilzt nur ausgewählte, unverbundene Punkte, exakt auf den Schwerpunkt der Gruppe,
@@ -328,7 +332,7 @@ order-independent. The order test now checks the values, and the canonical-edge 
 
 | Phase | Acceptance test |
 |---|---|
-| P2 | Viewport and SubD rebuild after a large Attach (GL, reference hardware); the mixed mesh + object Undo step in the real command path; the D11 prune in the morph controller; skinning invariance under a posed rig (randomized); the look refusal and the explicit variant; the O-5 refusal and override; O-7; the D4 "worsen" case — full list §15.12 |
+| P2 (tested 2026-11-10 except the reference-PC timing, §15.14) | Viewport and SubD rebuild after a large Attach (GL, reference hardware); the mixed mesh + object Undo step in the real command path; the D11 prune in the morph controller; skinning invariance under a posed rig (randomized); the look refusal and the explicit variant; the O-5 refusal and override; O-7; the D4 "worsen" case — full list §15.12 |
 | P3 | A detached part **crossing** the plane derives a usable seam (state VALID, symmetric ops, Re-Symmetrize if the seam splits it in two); Select Linked |
 | P4 | W2–W6 refusals (chain, connected members, bowtie, orientation), W10, the threshold field and its default from the bounding-box diagonal |
 | P5 | Bridge pairing, winding, refusal on conflicting normals; **Re-Symmetrize works again after the islands are bridged** into the head (component count back to 2) |
@@ -358,8 +362,10 @@ targets, Redo recreates them at 0 %.
 - **O-7:** source region assignments are preserved; ungrouped source faces get a new region named after the source
   object, under the collision-safe naming rule; nothing is overwritten or merged; a renamed region has another tint
   (§3.3).
+- **O-13** ("O-13 ja", Manu 2026-11-10): the GUI places are a "Mesh" menu in the menu bar and the outliner context
+  menu.
 
-**Open — classified for P2 (2026-11-10):**
+**Open (classified for P2 on 2026-11-10; none blocks P2):**
 
 | # | Question | Proposal | P2 |
 |---|---|---|---|
@@ -368,7 +374,6 @@ targets, Redo recreates them at 0 %.
 | O-11 | Bridge MVP only for loops of equal vertex count | yes | not relevant (P5) |
 | O-12 | Separate by Islands: which island keeps the object | the one with the most faces | not relevant (P7) |
 | P6 | How symmetric Weld handles coincident points (AMBIGUOUS) | decided before P6 | not relevant (P6) |
-| O-13 | GUI places: a "Mesh" menu and the outliner context menu | yes | **required for P2's GUI entry and practical test** (Attach, the D1 variant, the O-5 override prompt); not for the command, kernel, history and tests (§15.2) |
 | O-5b | An **unbound** destination receives weights from a weighted source: §3.2 (decided) creates the `"Skin"` layer, so the destination's own points (and points of other unweighted sources) end up unweighted in a mesh that is now bound. O-5 covers only a destination bound before the Attach | none — new, found in this pass | not blocking: P2 implements the decided rules literally (no O-5 refusal, since the destination was not bound; the status line states the count); Manu may decide otherwise after the practical test |
 
 Literal readings P2 applies without a new decision (`PROVISIONAL`, checked in the P2 practical test): a group whose
@@ -569,3 +574,63 @@ unchanged; `AssemblyRefused` becomes a status line, any other exception propagat
 6. The tests of §15.12 pass; `tests/` runs green apart from known, unrelated failures; GL tests green under xvfb.
 7. AD-031 status, the AD-021 addendum and `docs/ATELIER.md` updated in the same change; a practical test for Manu once
    the GUI entry (O-13) exists.
+
+### 15.14 As built (2026-11-10)
+
+- **Kernel:** K1 (`_ambiguity`: candidate counts; a new or a grown count refuses), K2 (`append_objects(…,
+  ungrouped_region=True)`, `AppendResult.ungrouped_regions`), and two read-only plans: `incoming_unweighted` (the O-5
+  pre-count) and `check_append` (the static refusals, so the plan can name them before any prompt).
+- **Command:** the controller-reading checks and the transaction sit in `Application.attach_plan` / `attach_objects`
+  (they read the morph controller, the skeleton controller and the object selection, which no single controller owns);
+  `src/mirai/attach.py` holds the plan type, the texts and the object step. Commands `Attach` / `AttachTakeLook`
+  (`commands.ATTACH_COMMANDS`, no default key) run `attach_objects`; layer gate: DECLARED for both commands and the
+  method, `attach_plan` "non-mesh", `PER_TARGET_COMMANDS`; held gestures refuse them (`GESTURE_REFUSES`).
+- **D11:** `MorphController.note_attached` / `_prune_attached` in `after_history` (scoped to carried targets; cleared
+  on a scene load).
+- **GUI:** menu bar "Mesh" > "Attach" / "Attach – Look des Ziels übernehmen"; the same two entries in the outliner
+  context menu (enabled on a selected row that is not the edit object; they act on the selection); the O-5 dialog
+  "Attach – ohne Gewichte" with the count, "Trotzdem anhängen" / "Abbrechen" (`gui.menus.attach_request`).
+- **Edge:** a source without mesh data changes no destination data; `_mesh_transaction` then pushes the object step
+  alone, and the command still sets the selection to the destination.
+- **Tests:** `tests/test_mesh_assembly.py` (+8: K1, K2, the pre-count), `tests/test_attach.py` (23, the app path of
+  §15.12), `tests/test_layer_topology_ops.py` and `tests/test_weights_topology_ops.py` (the Attach rule fixtures with morph
+  targets and with weights, plain and symmetric, all three entries),
+  `tests/test_gl_attach.py` (GL frames before / after / Undo / Redo with SubD level 2), `tests/test_gui_menus.py`
+  (`attach_request`, the O-5 dialog in the window).
+- **Measured** (container, Python 3.13, headless trace store — not the reference PC): Attach of the head basemesh
+  (324 faces) 12 ms, Undo 10 ms, Redo 4 ms; of the man basemesh (926 faces) 25 / 28 / 10 ms. The GL rebuild and SubD
+  cost of a large Attach on the reference PC is still unmeasured (§13).
+
+## 16. Praxistest P2: Attach (Deutsch, ca. 15 Minuten)
+
+Start: `python src/main.py`. Attach hat **keine Taste**; es steht im Menü **Mesh** und im Rechtsklick-Menü einer
+ausgewählten Outliner-Zeile. Es wirkt auf die in Modus `4` ausgewählten Objekte und hängt sie an das Edit-Objekt.
+
+1. Leertaste > Add + > einen Würfel und eine Kugel hinzufügen, mit `W` neben den Kopf / Würfel schieben. Modus `4`, beide
+   auswählen, **Mesh > Attach**. Erwartet: beide sind Teil des Edit-Objekts, an derselben Stelle; im Outliner weg.
+2. `Strg+Z`: beide Objekte kommen zurück, wie vorher. `Strg+Y`: wieder angehängt.
+3. Einem Objekt eine andere Farbe geben (Material) und Attach: abgelehnt mit Hinweis. Dann **Mesh > Attach – Look des
+   Ziels übernehmen**: angehängt, mit dem Look des Ziels.
+4. Gruppen: die angehängten Teile haben je eine Gruppe mit ihrem Objektnamen (Gruppenfarben einschalten). Hatte ein Teil schon
+   Gruppen, bleiben sie; bei gleichem Namen wird umbenannt (dann andere Farbe).
+5. Morph: ein Teil zum Edit-Objekt machen (in `4` anklicken, dann `1`), `Strg+N` gibt ihm ein Ziel; dann das
+   eigentliche Ziel-Objekt wieder zum Edit-Objekt machen, das Teil auswählen, anhängen. Im Morph-Panel steht es als
+   „<Objekt> · <Ziel>“ auf 0 %. Hochdrehen, `Strg+Z`, `Strg+Y`: das Ziel ist wieder da, auf 0 %.
+6. Symmetrie (`Shift+S` am Ziel an): ein Teil nur auf einer Seite anhängen → angehängt, Statuszeile „symmetry partial“.
+   Ein Teil genau auf vorhandene Punkte legen → abgelehnt („ambiguous“), nichts geändert.
+7. Rig (falls zur Hand, z. B. der Kopf aus dem AD-028-Praxistest mit Gewichten): einen ungewichteten Würfel anhängen →
+   Dialog „Attach – ohne Gewichte“ mit der Anzahl. „Abbrechen“: nichts passiert. „Trotzdem anhängen“: angehängt; in der
+   Pose (`6`) bleibt der Würfel stehen (er folgt dem Rig nicht).
+
+| # | Verdikt (KEEP / CHANGE / DROP) | Notiz |
+|---|---|---|
+| 1–2 | | |
+| 3 | | |
+| 4 | | |
+| 5 | | |
+| 6 | | |
+| 7 | | |
+
+Offen für dich (keine Blockade): **O-5b** (§10) — ein gewichtetes Teil an ein *ungebundenes* Ziel: heute ohne Rückfrage,
+die eigenen Punkte des Ziels sind danach ungewichtet. Und: eine Gruppe, deren Teile alle angehängt wurden, bleibt als
+leere Gruppe im Outliner (§10, wörtliche Lesart).

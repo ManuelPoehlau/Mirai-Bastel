@@ -401,10 +401,49 @@ def test_mirror_copy_of_a_weighted_mesh_is_refused_untouched(symmetric):
     assert source.mesh.export_state() == state
 
 
+@pytest.mark.parametrize("symmetric", [False, True], ids=["plain", "symmetric"])
+@pytest.mark.parametrize("entry", [commands.ATTACH, commands.ATTACH_TAKE_LOOK, "attach_objects"])
+def test_attach_merges_the_weights_unchanged(entry, symmetric):
+    """AD-031 §3.2 with weights: the source's values go into the destination's one weights layer unchanged (keys and
+    weights), the destination's own values stay, no second weights layer; Undo restores both. No rig: not bound, so
+    no O-5 question."""
+    from mirai.scene_factory import create_cube
+
+    app = make_app("subd_cube") if symmetric else _app()
+    dst = app.scene.edit_object
+    lid = add_weights(dst.mesh, 5)
+    own = dict(dst.mesh.layer_items(lid))
+    part_mesh = create_cube(0.5)
+    for v in part_mesh.all_vertex_ids():  # off the destination, X-symmetric in itself
+        x, y, z = part_mesh.vertex_position(v)
+        part_mesh.set_vertex_position(v, (x, y + 5.0, z))
+    src = add_weights(part_mesh, 9)
+    incoming = sorted(part_mesh.layer_value(src, v) for v in part_mesh.all_vertex_ids())
+    part = app.scene.add_object(part_mesh, name="Part")
+    app.key_press(Input("key", "4"))
+    app.selection.objects = {part.id}
+    vertices, state = set(dst.mesh.all_vertex_ids()), _body_state(dst.mesh)
+    ok = app.attach_objects() if entry == "attach_objects" else phase5._press(app, entry)
+    assert ok, app.status_message
+    mesh = dst.mesh
+    assert skin_layer(mesh) == lid and [l for l in mesh.point_layer_ids()] == [lid]
+    new = set(mesh.all_vertex_ids()) - vertices
+    assert {v: mesh.layer_value(lid, v) for v in vertices} == {v: own.get(v, ()) for v in vertices}
+    assert sorted(mesh.layer_value(lid, v) for v in new) == incoming
+    assert_layer_invariants(mesh)
+    assert app.key_press(phase5.CTRL_Z)
+    assert _body_state(mesh) == state
+
+
+def _body_state(mesh: Mesh) -> dict:
+    return {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")}
+
+
 def test_every_declared_entry_is_covered_with_weights():
     """Declaration = tested support, with weights too (AD-028 §8.6): every declared entry has a weights test here."""
     from mirai import layer_declarations as gate
 
     covered = set(phase5.RULE_FIXTURES) | set(h1.RULE_FIXTURES) | {CContext.KNIFE, commands.APPLY_TRANSFORM, "mirror_copy"}
+    covered |= {commands.ATTACH, commands.ATTACH_TAKE_LOOK, "attach_objects"}  # test_attach_merges_the_weights_…
     assert covered == set(gate.LAYER_SAFE_OPERATIONS)
 

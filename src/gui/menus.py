@@ -5,7 +5,11 @@ Die Logik bleibt in den Modulen `SceneFiles`, `ObjFiles` und den Application-Met
 pyglet noch `examples/` kennt.
 
     Datei:  Neu | Öffnen > (Szenen) | Speichern (Strg+S) | Speichern unter... | Importieren > (OBJ) | Exportieren...
+    Mesh:   Attach | Attach – Look des Ziels übernehmen (AD-031 P2, O-13; ohne Taste)
     SPACE:  Add + > (Grundkörper, Basehead, Baseman) | Textur an/aus | Szene laden (Shift+Klick: als Referenz)
+
+Attach fragt nach, bevor ungewichtete Punkte in ein gebundenes Mesh kommen (O-5): der Dialog nennt die Anzahl, erst
+„Trotzdem anhängen“ ruft `Application.attach_objects(accept_unweighted=True)`.
 
 „Speichern“ einer neuen Szene (noch keine Datei) fragt wie „Speichern unter“ nach dem Namen. Während ein Popup offen
 ist, gehört dem Layer die ganze Maus (`popup_open`): ein Klick daneben schließt es, und er erreicht den Viewport nicht.
@@ -15,6 +19,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Callable
+
+from mirai.attach import LABEL as ATTACH_LABEL, OVERRIDE_LABEL, TAKE_LOOK_LABEL
+
+#: Mesh-Menü (AD-031 P2): Anzeigename -> `take_destination_look` (D1-Variante); die Namen stehen in `mirai.attach`, weil
+#: die Statuszeile sie nennt.
+ATTACH_ENTRIES = ((ATTACH_LABEL, False), (TAKE_LOOK_LABEL, True))
+ATTACH_PROMPT = "Attach – ohne Gewichte"
+
+
+def attach_request(app, take_look: bool) -> int | None:
+    """Ein Attach aus dem Menü: läuft (oder meldet seine Ablehnung in der Statuszeile) und gibt None zurück - außer
+    wenn allein ungewichtete Punkte in ein gebundenes Mesh es aufhalten (O-5): dann ändert sich nichts und die Anzahl
+    kommt zurück, damit der Dialog sie vor der Bestätigung zeigt."""
+    plan = app.attach_plan(take_destination_look=take_look)
+    if plan.override_only:
+        return plan.unweighted
+    app.attach_objects(take_destination_look=take_look)
+    return None
+
 
 #: Anzeigename -> Registry-Asset der beiden Basis-Körper im Add-Menü (`examples/loaders/assets.py`).
 BASE_MESHES = (("Basehead", "head_basemesh"), ("Baseman", "man_with_shoes_basemesh"))
@@ -42,6 +65,8 @@ class Menus:
         self.name_buf = ""
         self._focus = False
         self._close = False
+        #: O-5: (take_look, Anzahl) des Attach, das auf die Bestätigung wartet
+        self.attach_pending: tuple[bool, int] | None = None
 
     def close_all(self) -> None:
         self._close = True
@@ -56,6 +81,12 @@ class Menus:
 
     def open_export(self) -> None:
         self.name_buf, self._focus, self._request = self.sv.obj_files.suggested_name(), True, "export"
+
+    def attach(self, take_look: bool) -> None:
+        """Mesh > Attach (und das Outliner-Kontextmenü): sofort, oder der O-5-Dialog im nächsten Frame."""
+        count = attach_request(self.app, take_look)
+        if count is not None:
+            self.attach_pending, self._request = (take_look, count), "attach_unweighted"
 
     def save(self) -> None:
         """Strg+S / Datei > Speichern: in die aktuelle Datei, bei einer neuen Szene mit Namensdialog."""
@@ -97,6 +128,11 @@ class Menus:
                 if imgui.menu_item("Exportieren...", "", False)[0]:
                     self.open_export()
                 imgui.end_menu()
+            if imgui.begin_menu("Mesh"):
+                for label, take_look in ATTACH_ENTRIES:
+                    if imgui.menu_item(label, "", False)[0]:
+                        self.attach(take_look)
+                imgui.end_menu()
             size = imgui.get_window_size()
             rect = (0.0, 0.0, size.x, size.y)
             imgui.end_main_menu_bar()
@@ -115,7 +151,10 @@ class Menus:
             imgui.open_popup("Speichern unter")
         elif request == "export":
             imgui.open_popup("OBJ exportieren")
+        elif request == "attach_unweighted":
+            imgui.open_popup(ATTACH_PROMPT)
         self._space()
+        self._attach_prompt()
         files = self.sv.files
         self._name_dialog("Speichern unter", files.path_for, files.save_as)
         obj = self.sv.obj_files
@@ -148,6 +187,35 @@ class Menus:
         for name in sv.scenes():
             if imgui.menu_item(name, "", False)[0]:
                 (sv.add_reference if imgui.get_io().key_shift else sv.load_scene)(name)
+        imgui.end_popup()
+
+    def _attach_prompt(self) -> None:
+        """O-5: die Anzahl der Punkte ohne Skin-Gewichte vor der Bestätigung; „Trotzdem anhängen“ hängt sie ungewichtet
+        an (es werden keine Gewichte erzeugt), Esc oder Abbrechen ändert nichts."""
+        imgui = self.imgui
+        center = imgui.get_main_viewport().get_center()
+        imgui.set_next_window_pos(center, imgui.Cond_.appearing, imgui.ImVec2(0.5, 0.5))
+        opened = imgui.begin_popup_modal(
+            ATTACH_PROMPT, None, imgui.WindowFlags_.always_auto_resize | imgui.WindowFlags_.no_saved_settings
+        )
+        if not (opened[0] if isinstance(opened, tuple) else opened):
+            return
+        pending = self.attach_pending
+        if pending is None:
+            imgui.close_current_popup()
+            imgui.end_popup()
+            return
+        take_look, count = pending
+        imgui.text(f"{count} Punkte haben keine Skin-Gewichte.")
+        imgui.text_disabled("Sie folgen dem Rig nicht; es werden keine Gewichte erzeugt.")
+        if imgui.button(OVERRIDE_LABEL):
+            self.attach_pending = None
+            self.app.attach_objects(take_destination_look=take_look, accept_unweighted=True)
+            imgui.close_current_popup()
+        imgui.same_line()
+        if imgui.button("Abbrechen") or imgui.is_key_pressed(imgui.Key.escape, False):
+            self.attach_pending = None
+            imgui.close_current_popup()
         imgui.end_popup()
 
     def _name_dialog(self, title: str, path_for, commit) -> None:

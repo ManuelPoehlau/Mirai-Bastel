@@ -1,11 +1,11 @@
-"""AD-031 P1: the assembly kernel `mirai.mesh_assembly` (`append_objects`, `extract_faces`, `look_differences`,
-`derived_symmetry`).
+"""AD-031 P1/P2: the assembly kernel `mirai.mesh_assembly` (`append_objects`, `extract_faces`, `look_differences`,
+`incoming_unweighted`, `derived_symmetry`).
 
 Headless and pure (no `Application`, no pyglet): positions and coordinate frames against an independent matrix oracle,
 morph targets (new prefixed layers, never merged, the world-space mix preserved), skin weights (merged, `BoneId`s
 unchanged, skinning invariant under a posed rig), corner UVs (carried, never inferred), regions (carried, collision-safe
-names, the colour consequence), symmetry (definition untouched, AMBIGUOUS refused and rolled back, PARTIAL reported, the
-mirrored pair), refusals and atomicity (nothing changes on any failure, standalone or inside an outer recording), the
+names, the colour consequence, the O-7 region for ungrouped faces), symmetry (definition untouched, new or worsened
+AMBIGUOUS refused and rolled back, PARTIAL reported, the mirrored pair), the O-5 pre-count, refusals and atomicity (nothing changes on any failure, standalone or inside an outer recording), the
 Core invariants, and the extract side incl. the derived symmetry definition.
 """
 
@@ -268,6 +268,27 @@ def test_unweighted_points_into_a_bound_destination_stay_unbound_and_are_counted
     assert result.unweighted == len(ear.mesh.all_vertex_ids())
 
 
+def test_the_read_only_pre_count_equals_the_appended_unweighted_count():
+    """O-5: `incoming_unweighted` is what the refusal shows before anything changes; it equals the append's count.
+    Zero weights are stored as the empty value, so a point set to all-zero counts like a point without weights."""
+    rng = random.Random(7)
+    scene, dst = _scene(_bound_mesh(rng))
+    bound_part = _bound_mesh(rng)
+    skin = skinning.skin_layer(bound_part)
+    some = sorted(bound_part.all_vertex_ids())[:3]
+    key = next(k for v, value in bound_part.layer_items(skin) for k, _ in value)
+    for v in some:
+        bound_part.set_layer_value(skin, v, ((key, 0.0),))  # all-zero -> stored as ()
+        assert bound_part.layer_value(skin, v) == ()
+    part = _add(scene, bound_part, "Part")
+    ear = _add(scene, _ear(), "Ear")
+    states = [obj.mesh.export_state() for obj in (dst, part, ear)]
+    expected = mesh_assembly.incoming_unweighted([part, ear])
+    assert [obj.mesh.export_state() for obj in (dst, part, ear)] == states  # read-only
+    assert expected >= len(some) + len(ear.mesh.all_vertex_ids())
+    assert append_objects(dst, [part, ear]).unweighted == expected
+
+
 def test_a_taken_skin_name_gets_a_suffix_but_stays_the_skin_layer():
     rng = random.Random(5)
     scene, dst = _scene(create_cube(2.0))
@@ -350,6 +371,65 @@ def test_regions_survive_with_collision_safe_names():
     assert slot_index("Group 2") != slot_index("Group 1")
 
 
+def test_without_the_option_ungrouped_faces_stay_ungrouped():
+    scene, dst = _scene(create_cube(2.0))
+    ear = _add(scene, _ear(), "Ear")
+    result = append_objects(dst, [ear])
+    assert dst.mesh.face_regions is None and result.ungrouped_regions == {}
+
+
+def test_ungrouped_source_faces_get_a_region_named_after_the_source():
+    """O-7 (Manu 2026-11-10): a source's faces in none of its regions join one new region named after the source,
+    after that source's carried regions; grouped faces and every existing assignment stay as they are."""
+    scene, dst = _scene(create_cube(2.0))
+    hf = sorted(dst.mesh.all_face_ids())
+    dst.mesh.face_regions = FaceRegions((FaceRegion("Brow", frozenset(hf[:2])),))
+    own = dst.mesh.face_regions.regions
+    ear = _add(scene, _ear(), "Ear", EAR_PLACEMENT)
+    ef = sorted(ear.mesh.all_face_ids())
+    ear.mesh.face_regions = FaceRegions((FaceRegion("Brow", frozenset(ef[:2])),))  # partly grouped
+    plain = _add(scene, _ear(), "Lobe")  # no regions at all
+
+    result = append_objects(dst, [ear, plain], ungrouped_region=True)
+
+    regions = dst.mesh.face_regions
+    assert [r.name for r in regions.regions] == ["Brow", f"Ear{SEP}Brow", "Ear", "Lobe"]
+    assert regions.regions[:1] == own
+    emap, pmap = result.face_maps[ear.id], result.face_maps[plain.id]
+    assert regions.get(f"Ear{SEP}Brow").faces == {emap[f] for f in ef[:2]}
+    assert regions.get("Ear").faces == {emap[f] for f in ef[2:]}
+    assert regions.get("Lobe").faces == set(pmap.values())
+    assert result.ungrouped_regions == {ear.id: "Ear", plain.id: "Lobe"}
+    appended = set(emap.values()) | set(pmap.values())
+    for face in appended:  # one region per appended face: nothing merged, nothing left out
+        assert sum(face in r.faces for r in regions.regions) == 1
+
+
+def test_a_fully_grouped_or_faceless_source_gets_no_extra_region():
+    scene, dst = _scene(create_cube(2.0))
+    ear = _add(scene, _ear(), "Ear")
+    ear.mesh.face_regions = FaceRegions((FaceRegion("Ear lobe", frozenset(ear.mesh.all_face_ids())),))
+    dot = Mesh()
+    dot.add_vertex((5.0, 0.0, 0.0))
+    point = _add(scene, dot, "Dot")
+    result = append_objects(dst, [ear, point], ungrouped_region=True)
+    assert [r.name for r in dst.mesh.face_regions.regions] == ["Ear lobe"]
+    assert result.ungrouped_regions == {}
+
+
+@pytest.mark.parametrize("taken, expected", [
+    ("Ear", f"Ear{SEP}Ear"),  # any other taken name: prefixed (AD-031 §3.3)
+    ("Group 1", "Group 2"),  # a taken automatic name: renumbered
+])
+def test_the_ungrouped_region_follows_the_collision_rule(taken, expected):
+    scene, dst = _scene(create_cube(2.0))
+    dst.mesh.face_regions = FaceRegions((FaceRegion(taken, frozenset(sorted(dst.mesh.all_face_ids())[:1])),))
+    ear = _add(scene, _ear(), taken)
+    result = append_objects(dst, [ear], ungrouped_region=True)
+    assert result.ungrouped_regions == {ear.id: expected}
+    assert [r.name for r in dst.mesh.face_regions.regions] == [taken, expected]
+
+
 # -- symmetry -----------------------------------------------------------------------------------------------------------
 
 
@@ -411,6 +491,44 @@ def test_existing_ambiguity_alone_is_no_reason_to_refuse():
     assert symmetry_state(dst.mesh) is SymmetryState.AMBIGUOUS
     result = append_objects(dst, list(_mirrored_ears(scene)))
     assert result.symmetry_before is SymmetryState.AMBIGUOUS is result.symmetry_after
+
+
+def test_worsening_an_existing_ambiguity_is_refused_and_rolled_back():
+    """D4 (Manu 2026-11-10): an attached point at the mirror position of an already AMBIGUOUS point adds a candidate
+    - the attached point itself is PAIRED, but the existing ambiguity gets worse: refused, nothing changed."""
+    scene, dst = _scene(_symmetric_plane())
+    mesh = dst.mesh
+    v = next(v for v in sorted(mesh.all_vertex_ids()) if mesh.vertex_position(v)[0] > 0.1)
+    x, y, z = mesh.vertex_position(v)
+    mesh.add_vertex((-x, y, z))  # a second point at v's mirror: v is AMBIGUOUS already
+    assert symmetry_state(mesh) is SymmetryState.AMBIGUOUS
+    dot = Mesh()
+    dot.add_vertex((-x, y, z))  # a third one
+    part = _add(scene, dot, "Dot")
+    before = _body(mesh)
+    with pytest.raises(AssemblyRefused, match="ambiguous"):
+        append_objects(dst, [part])
+    assert _body(mesh) == before
+
+
+def test_points_ambiguous_only_between_two_sources_are_refused():
+    scene, dst = _scene(_symmetric_plane())
+
+    def points(*positions):
+        mesh = Mesh()
+        for p in positions:
+            mesh.add_vertex(p)
+        return mesh
+
+    pair, single = ((0.37, 0.11, 0.0), (-0.37, 0.11, 0.0)), ((0.37, 0.11, 0.0),)
+    for alone in (pair, single):  # each source alone is fine
+        other, target = _scene(_symmetric_plane())
+        append_objects(target, [_add(other, points(*alone), "Part")])
+    a, b = _add(scene, points(*pair), "A"), _add(scene, points(*single), "B")  # together: coincident
+    before = _body(dst.mesh)
+    with pytest.raises(AssemblyRefused, match="ambiguous"):
+        append_objects(dst, [a, b])
+    assert _body(dst.mesh) == before
 
 
 # -- refusals and atomicity -------------------------------------------------------------------------------------------

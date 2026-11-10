@@ -171,6 +171,15 @@ OBJECT_MANAGEMENT_COMMANDS = (
     SELECT_OBJECT_GROUP, COPY_OBJECTS, PASTE_OBJECTS,
 )
 
+# --- Attach (AD-031 P2; names `PROVISIONAL`, deliberately WITHOUT a default key) ----
+# Mode `4`: the selected objects become islands in the edit object's mesh and are removed, one Undo step. Reached
+# through the "Mesh" menu, the outliner context menu (O-13) and `dispatch_command`. "Take destination look" is the
+# explicit variant of D1; the O-5 override (unweighted points into a bound mesh) is `Application.attach_objects`'
+# parameter, asked for by the GUI prompt, never a command of its own.
+ATTACH = "Attach"
+ATTACH_TAKE_LOOK = "AttachTakeLook"
+ATTACH_COMMANDS = (ATTACH, ATTACH_TAKE_LOOK)
+
 # CONNECT (WP-06 B6, AD-017 "Contextual C"): global, nicht Topology-Lab —
 # 1 Edge selektiert → Split; 2+ Edges → Edge Connect (per-face); 2+ Vertices
 # → Vertex Connect (per-face); leere Auswahl → Knife-Session (WP-06 B7).

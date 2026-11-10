@@ -15,6 +15,7 @@ from typing import Callable
 
 from . import outliner_model as om
 from .input_gate import InputGate, rect_hit
+from .menus import ATTACH_ENTRIES, attach_request
 
 #: pyglet-Modifier-Bits (pyglet.window.key.MOD_*), hier lokal, damit der Modul-Import ohne pyglet geht.
 _MOD_SHIFT, _MOD_CTRL, _MOD_ALT = 1, 2, 4
@@ -543,6 +544,12 @@ class ImguiLayer:
         if imgui.begin_popup_context_item("##ctx"):  # Framework-Fähigkeit prüfen (Brief: nicht im Spike)
             imgui.text_disabled(f"{om.group_of(row)}: {row.name}")
             imgui.menu_item("Duplizieren (kommt als Panel-Aktion)", "", False, False)
+            # AD-031 P2 (O-13): Attach wirkt auf die Auswahl, wie Mesh > Attach; nur an einer ausgewählten Zeile, die
+            # nicht das Edit-Objekt ist (keine neue Auswahl-Logik).
+            can_attach = object_mode and row.selected and not row.is_edit
+            for label, take_look in ATTACH_ENTRIES:
+                if imgui.menu_item(label, "", False, can_attach)[0]:
+                    self._attach(take_look)
             imgui.end_popup()
         imgui.pop_id()
 
@@ -568,6 +575,13 @@ class ImguiLayer:
         return pressed
 
     # -- Aktionen: ein Aufruf an Application, das Panel hält keinen Dokumentzustand ---------------------------------
+    def _attach(self, take_look: bool) -> None:
+        if self.menus is not None:
+            self.menus.attach(take_look)  # mit dem O-5-Dialog
+        else:
+            attach_request(self.app, take_look)  # ohne Menüs: die Ablehnung (mit Anzahl) steht in der Statuszeile
+        self.last_note = self.app.status_message
+
     def _click(self, row, mods) -> None:
         _, ids = om.click_selection(self.app.selection.objects, row.object_id, mods)
         self.app.select_objects(ids)  # wie ein Viewport-Klick in Modus 4; das Highlight zieht `update_viewport` nach

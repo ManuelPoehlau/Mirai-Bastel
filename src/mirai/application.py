@@ -59,6 +59,7 @@ from core.serialization import scene_from_dict, scene_to_dict
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
 from viewport.resource_store import ResourceStore, TraceStore
 
+from . import attach as attach_api
 from . import regions as face_regions_api
 from .hidden import HiddenSet, mirrored_faces, touches_hidden
 from .mask import (
@@ -75,6 +76,7 @@ from .interaction.pointer import Click, DragStep, PointerGestures
 from .interaction.routing import tool_for_command
 from .interaction.tools import resolve_selection_vertices
 from .interaction.tools.selection_helpers import selection_pivot
+from .mesh_assembly import AssemblyRefused, append_objects, check_append, incoming_unweighted, look_differences
 from .mesh_geometry import mesh_center_and_radius
 from . import object_space
 from . import view_state
@@ -163,7 +165,7 @@ from .topology.knife_preview import KnifeRenderData
 from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
 from .topology import selection_steps
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
-from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, install_morph_bindings
+from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, install_morph_bindings, morph_target_ids
 from .skinning import SkinDisplay, skin_layer
 from .surface_chain import SurfaceChain
 from .viewport import DisplayMode, DisplayState, OrbitCamera
@@ -732,6 +734,7 @@ class Application:
         self._weight_view_follow()  # the view stays on across a load; the new scene's current bone is shown
         self._morph.ab.clear()
         self._morph.solo_restore.clear()
+        self._morph.attached.clear()
         self._objects.pick_caches = {}
         self._objects.sync_views()
         self._apply_display()
@@ -1131,6 +1134,9 @@ class Application:
         add(PLACEMENT_COMMANDS, plain(objects.placement_command))
         add((commands.TOGGLE_REFERENCE,), plain(lambda command: objects.reference_command()))
         add(commands.OBJECT_MANAGEMENT_COMMANDS, plain(objects.management_command))
+        add(commands.ATTACH_COMMANDS, plain(
+            lambda command: self.attach_objects(take_destination_look=command == commands.ATTACH_TAKE_LOOK)
+        ))
         add((commands.CONNECT,), plain(lambda command: self._connect_command()))
         add(_REMOVAL_COMMANDS, plain(self._run_removal))
         add((commands.COLLAPSE,), plain(lambda command: self._collapse_command()))
@@ -3236,6 +3242,114 @@ class Application:
         return self._mesh_transaction(
             description, lambda _mesh: mutate(), moved_of=lambda moved: moved
         ).changed
+
+    # -- Attach (AD-031 P2, §15; texts `PROVISIONAL`) -------------------------------------------------------------
+
+    def attach_plan(self, *, take_destination_look: bool = False, accept_unweighted: bool = False) -> "attach_api.AttachPlan":
+        """What Attach would do now (AD-031 §15.3), read-only: the destination (the edit object, O-1), the sources (the
+        selected visible objects, a group standing for its leaves, without the destination) and the first refusal in
+        the order of §15.3 - interaction, mode `4`, the morph editing view, no source, a Reference, a dial above 0 % or
+        a posed rig with a bound mesh (D3; the `can_run` posed stage skips mode `4`), the point-layer gate, the
+        kernel's static refusals, the look (D1) and the unweighted points into a bound destination (O-5). The GUI
+        reads it to show the O-5 count before the artist confirms the override."""
+        label = attach_api.LABEL
+        scene = self.scene
+        plan = attach_api.AttachPlan
+        owner = self.interaction_owner
+        if owner is not None:
+            return plan(None, (), f"{label}: not while the {owner} interaction runs")
+        if self.selection.mode is not SelectionMode.OBJECT:
+            return plan(None, (), f"{label}: works on objects - press 4, select the parts, then {label}")
+        if self._morph.view is not None:
+            return plan(None, (), f"{label}: on the base only (Tab returns to it)")
+        dst = scene.edit_object
+        sources = tuple(obj for obj in group_leaves(scene, self.selection.objects) if obj.id != dst.id)
+        if not sources:
+            return plan(dst, (), f"{label}: select the objects to attach to {dst.name!r} (mode 4) - none selected")
+        for src in sources:
+            if src.state is ObjectState.REFERENCE:
+                return plan(dst, sources, f"{label}: {src.name!r} is a Reference - locked (Alt+R makes it Normal)")
+        provider = self._morph.display.provider
+        involved = (dst, *sources)
+        for obj in involved:
+            if provider.object_weights(obj.id):
+                return plan(dst, sources, f"{label}: {obj.name!r} has a morph target dialled in - set it to 0 % first")
+        if self._skeleton.posed():
+            for obj in involved:
+                if self._skeleton.bound(obj.mesh):
+                    rest = self._skeleton.key_text(commands.POSE_TOGGLE_REST)
+                    return plan(dst, sources, f"{label}: {obj.name!r} is posed - go to the rest pose first ({rest})")
+        text = self._layer_refusal("attach_objects", [obj.mesh for obj in involved])
+        if text is not None:
+            return plan(dst, sources, text)
+        try:
+            check_append(dst, sources)
+        except AssemblyRefused as exc:
+            return plan(dst, sources, f"{label}: {exc}")
+        differ = look_differences(dst, sources)
+        unweighted = incoming_unweighted(sources)
+        needs_override = unweighted > 0 and self._skeleton.bound(dst.mesh)
+        full = dict(look_differences=differ, unweighted=unweighted, needs_override=needs_override)
+        if differ and not take_destination_look:
+            src = differ[0]
+            return plan(dst, sources, (
+                f"{label}: {src.name!r} has another {attach_api.look_text(dst, src)} than {dst.name!r} - use"
+                f" '{attach_api.TAKE_LOOK_LABEL}' to give it {dst.name!r}'s look"
+            ), **full)
+        if needs_override and not accept_unweighted:
+            return plan(dst, sources, attach_api.override_refusal(unweighted), override_only=True, **full)
+        return plan(dst, sources, None, **full)
+
+    def attach_objects(self, *, take_destination_look: bool = False, accept_unweighted: bool = False) -> bool:
+        """Attach (AD-031 §2.1, §15): the selected objects become islands in the edit object's mesh (world shape kept,
+        targets, weights, UVs and regions carried, ungrouped faces in a region named after their object, O-7) and are
+        removed - one Undo step (`_mesh_transaction` with the pair breaks and `DeleteObjectsCommand` as its companion).
+        `take_destination_look`: the D1 variant. `accept_unweighted`: the O-5 override. Refused with a status line and
+        nothing changed when `attach_plan` refuses, or when the result would introduce or worsen an AMBIGUOUS symmetry
+        correspondence (D4; rolled back exactly). Afterwards mode `4` with the destination selected."""
+        attach = self.attach_plan(take_destination_look=take_destination_look, accept_unweighted=accept_unweighted)
+        if attach.refusal is not None:
+            self._set_status(attach.refusal)
+            return False
+        scene, dst, sources = self.scene, attach.destination, attach.sources
+        companion, pair_notes = attach_api.attach_companion(scene, dst, sources)
+
+        def mutate(mesh):
+            assert mesh is dst.mesh  # the editing view is closed: the transaction's mesh is the destination's
+            return append_objects(dst, sources, ungrouped_region=True)
+
+        applied = []
+
+        def on_applied(result) -> None:
+            applied.append(True)
+            selection = self.selection
+            selection.objects = {dst.id}
+            selection.hovered = None
+            targets = set(morph_target_ids(dst.mesh))  # the weights layer is not a target: it has no dial
+            carried = [lid for layers in result.layer_maps.values() for lid in layers.values() if lid in targets]
+            self._morph.note_attached(dst.id, carried)
+
+        try:
+            done = self._mesh_transaction(
+                attach_api.description(dst, sources), mutate, companion=companion, on_applied=on_applied
+            )
+        except AssemblyRefused as exc:
+            self._set_status(f"{attach_api.LABEL}: {exc}")
+            return False
+        if not applied:  # sources without mesh data change no mesh: the transaction pushed the object step alone
+            on_applied(done.result)
+        self._objects.sync_views()
+        if self.viewport is not None:
+            self.viewport.on_selection_changed()
+        self._soft_preview_refresh()
+        self._refresh_hover()
+        self._set_status(attach_api.result_text(
+            dst, sources, done.result,
+            attach.look_differences if take_destination_look else (),
+            pair_notes,
+            weights_note=done.result.unweighted > 0 and skin_layer(dst.mesh) is not None,
+        ))
+        return True
 
     def apply_goz_return(self, plan) -> bool:
         """Apply a ZBrush return (AD-029 §6; `interop.goz.bridge.ReturnPlan`, planned right before this call by

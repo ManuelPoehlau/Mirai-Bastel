@@ -104,6 +104,9 @@ class MorphController:
         self.ab: dict[tuple, int] = {}  # (ObjectId, LayerId) -> the weight a tap returns to
         # Morph panel solo (AD-030 §13, view state): ObjectId -> (the solo target, the weights before solo).
         self.solo_restore: dict = {}
+        # AD-031 D11: ObjectId -> the LayerIds an Attach carried into it; their dial state goes when an Undo removes
+        # them (`after_history`), so a Redo shows them at 0 %. Cleared with the other view state on a scene load.
+        self.attached: dict = {}
         self.weight_hold = MorphWeightHold(self)
 
     # -- reads (the public `morph_*` API of `Application`) ---------------------------------------------
@@ -561,8 +564,29 @@ class MorphController:
             services.notify_vertices_moved(moved)
         return kept
 
+    def note_attached(self, object_id, layer_ids) -> None:
+        """An Attach carried the targets `layer_ids` into `object_id` (AD-031 D11)."""
+        if layer_ids:
+            self.attached.setdefault(object_id, set()).update(layer_ids)
+
+    def _prune_attached(self) -> None:
+        """D11: the dial state of a carried target whose layer is gone (the Attach was undone) is dropped - only for
+        carried targets; any other dead layer keeps its hidden value as before (F13). An object that is not in the
+        scene is left alone (its layers are not gone, the object is)."""
+        provider = self.display.provider
+        objects = self.services.scene.objects
+        for oid, lids in self.attached.items():
+            obj = objects.get(oid)
+            if obj is None:
+                continue
+            for lid in lids - set(morph_target_ids(obj.mesh)):
+                provider.set_weight(oid, MORPH_MIN_WEIGHT, lid)
+                self.ab.pop((oid, lid), None)
+
     def after_history(self) -> None:
-        """After Undo / Redo: the open view follows its base's offsets (or closes with its target)."""
+        """After Undo / Redo: the dial state of undone carried targets goes (D11); the open view follows its base's
+        offsets (or closes with its target)."""
+        self._prune_attached()
         services = self.services
         view = self.view
         if view is None:

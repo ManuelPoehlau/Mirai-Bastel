@@ -38,6 +38,7 @@ from core import Mesh
 from core.mesh import LayerKind
 
 from .interaction import commands
+from .mesh_assembly import append_objects
 from .object_mirror import mirror_mesh
 from .scene_objects import apply_placement
 from .symmetric_extrude import plan_extrude
@@ -95,11 +96,17 @@ LAYER_SAFE_OPERATIONS: Mapping[Any, tuple] = MappingProxyType(
         # A frame change (AD-025 §4.3): positions p -> to_world(p), vector values v -> s·R·v; one
         # function for plain and symmetric meshes (the symmetry plane moves with `axis`).
         commands.APPLY_TRANSFORM: (apply_placement, apply_placement),
+        # AD-031 P2: Attach appends whole meshes; every source layer becomes a new layer (targets mapped by the
+        # placements' linear part, weights merged unchanged), the destination's targets get the default for the new
+        # points; one function for plain and symmetric destinations (the definition is never edited, D4).
+        commands.ATTACH: (append_objects, append_objects),
+        commands.ATTACH_TAKE_LOOK: (append_objects, append_objects),
+        "attach_objects": (append_objects, append_objects),
     }
 )
 
 #: Keys of `LAYER_SAFE_OPERATIONS` that are `Application` methods, not command constants.
-_DECLARED_METHODS = frozenset({"mirror_copy"})
+_DECLARED_METHODS = frozenset({"mirror_copy", "attach_objects"})
 
 NON_MESH = "non-mesh"
 POSITION_ONLY = "position-only"
@@ -174,8 +181,9 @@ _MORPH_COMMANDS = (
 )
 
 #: Commands whose target meshes are not the edit mesh: checked at their own site with every mesh
-#: they change (Apply transform bakes every placed object of the selection, F-7), not at dispatch.
-PER_TARGET_COMMANDS = frozenset({commands.APPLY_TRANSFORM})
+#: they change (Apply transform bakes every placed object of the selection, F-7; Attach writes the edit mesh from
+#: every selected source, AD-031), not at dispatch.
+PER_TARGET_COMMANDS = frozenset({commands.APPLY_TRANSFORM, *commands.ATTACH_COMMANDS})
 
 #: Command constant -> class. Declared commands are the command keys of `LAYER_SAFE_OPERATIONS`.
 COMMAND_CLASSES: Mapping[str, str] = MappingProxyType(
@@ -229,6 +237,10 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "break_mirror_pairs": "non-mesh",
         "resync_mirror_pairs": "non-mesh",
         "mirror_copy": DECLARED,
+        # AD-031 P2: the destination and every source mesh, checked at its own site
+        "attach_objects": DECLARED,
+        # read-only: what Attach would do (the scan sees `key_text`, merged by name with a mutating method)
+        "attach_plan": "non-mesh",
         # Outliner: refuses a mesh with point layers at its own site (`ObjectController.duplicate_selected`)
         "duplicate_objects": "non-mesh",
         # AD-030 outliner: a bone's name only (`RigCommand`, no mesh change; the scan sees the name `rename_bone` of the
@@ -257,6 +269,9 @@ _LABELS: Mapping[Any, str] = MappingProxyType(
         commands.COLLAPSE: "Collapse",
         commands.LOOP_INSERT: "Loop Insert",
         "mirror_copy": "Mirror copy",
+        commands.ATTACH: "Attach",
+        commands.ATTACH_TAKE_LOOK: "Attach",
+        "attach_objects": "Attach",
     }
 )
 

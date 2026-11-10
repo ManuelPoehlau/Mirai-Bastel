@@ -9,12 +9,14 @@ AD-031 §10 still leaves open (O-1, O-2, O-5, O-7, …); this module decides non
   edges, point layers and regions become new elements of `dst.mesh`, placed so the world shape is unchanged. The
   destination's own elements, layers, regions and symmetry definition are not touched. Atomic: all checks run before
   the first write, the writes run inside a nested change recording (the `core.operations.collapse_elements` pattern)
-  that is rolled back exactly on any failure — standalone or inside a caller's `_mesh_transaction`.
+  that is rolled back exactly on any failure — standalone or inside a caller's `_mesh_transaction`. The one check that
+  needs the result (symmetry, D4) runs inside that recording; a refusal there leaves only the id counters forward
+  (AD-001).
 - `extract_faces(mesh, faces)` (AD-031 §2.2): a new, independent mesh of those faces in the same object space
   (positions bit-identical), with every point layer, the corner UVs and the regions restricted to them. `mesh` is only
   read. Loose edges are not carried (Detach works on faces).
-- `look_differences(dst, sources)` (§3.1) and `derived_symmetry(mesh, axis)` (§3.5) are the read-only plans the
-  commands consult.
+- `look_differences(dst, sources)` (§3.1), `incoming_unweighted(sources)` (§3.2, O-5), `check_append(dst, sources)`
+  and `derived_symmetry(mesh, axis)` (§3.5) are the read-only plans the commands consult.
 
 Data rules (AD-031 §3; never merged by name, never dropped silently):
 
@@ -26,20 +28,26 @@ Data rules (AD-031 §3; never merged by name, never dropped silently):
 - **Skin weights (`WEIGHTS`):** merged into the destination's one weights layer (created as `"Skin"` if absent),
   values unchanged — keys are the scene rig's `BoneId`s and skinning is placement-invariant (AD-028 §3.2). A mesh with
   more than one weights layer → refused. New points of a source without weights stay unbound; the count is reported
-  (`AppendResult.unweighted`), whether that is acceptable is P2's decision (O-5).
+  (`AppendResult.unweighted`); whether that is acceptable is the command's decision (O-5: refused for a bound
+  destination unless the artist overrides it).
 - **Regions:** every source region is carried with its live faces, in source order; a free name stays, a taken
   `Group N` is renumbered with `regions.new_group_name`, any other taken name becomes `"<source object> · <name>"`
   (then `" 2"` …). The tint follows the name (`regions.slot_index`), so a renamed region changes colour (§3.3). Dead
-  ids are not carried; a region without live faces is carried empty, so no name is lost.
+  ids are not carried; a region without live faces is carried empty, so no name is lost. With `ungrouped_region`
+  (O-7, the command's choice) a source's live faces in none of its regions become one more region named after the
+  source object, by the same naming rule, after that source's regions.
 - **Symmetry:** the destination's definition is never edited; source definitions are dropped. With a definition set,
-  the append is refused (and rolled back) when it makes any vertex AMBIGUOUS that was not AMBIGUOUS before (D4: an
-  ambiguous correspondence would silently switch mirroring off for those points); PARTIAL is reported, not refused.
+  the append is refused (and rolled back) when it introduces or worsens an AMBIGUOUS correspondence (D4: a vertex
+  AMBIGUOUS afterwards that was not before, or an already AMBIGUOUS vertex with more candidates than before - an
+  ambiguous correspondence silently switches mirroring off for those points); an unrelated pre-existing AMBIGUOUS
+  vertex is no reason to refuse; PARTIAL is reported, not refused.
 - **Order:** sources in `ObjectId` order, elements in ascending id order — the result is deterministic.
 """
 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
@@ -49,7 +57,7 @@ from core.mesh import LayerKind, PointLayerInfo
 from . import object_space
 from .morph_targets import MAX_TARGETS
 from .regions import new_group_name
-from .symmetry import CorrespondenceState, SymmetryState, symmetry_state, vertex_correspondence
+from .symmetry import CorrespondenceState, SymmetryState, mirror_position, symmetry_state, vertex_correspondence
 from .symmetry_axis import definition_for_axis
 
 #: Joins a source object's name and a carried target / region name (AD-031 D2, D2b).
@@ -67,9 +75,11 @@ class AssemblyRefused(ValueError):
 @dataclass(frozen=True)
 class AppendResult:
     """What `append_objects` did, per source `ObjectId`: the vertex, face and point-layer id maps (source -> destination)
-    and the region names (source name -> name in the destination). `unweighted`: appended points without a weight in
-    a destination that has a weights layer afterwards (0 without one). `symmetry_before` / `_after`: the destination's
-    state (`SymmetryState.OFF` without a definition)."""
+    and the region names (source name -> name in the destination); `ungrouped_regions`: source -> the name of the
+    region made for its ungrouped faces (only with `ungrouped_region`, only for a source that has such faces).
+    `unweighted`: appended points without a weight (the empty value `()`) in a destination that has a weights layer
+    afterwards (0 without one; the destination's own points are never counted). `symmetry_before` / `_after`: the
+    destination's state (`SymmetryState.OFF` without a definition)."""
 
     vertex_maps: Mapping[ObjectId, Mapping[VertexId, VertexId]]
     face_maps: Mapping[ObjectId, Mapping[FaceId, FaceId]]
@@ -78,6 +88,7 @@ class AppendResult:
     unweighted: int
     symmetry_before: SymmetryState
     symmetry_after: SymmetryState
+    ungrouped_regions: Mapping[ObjectId, str]
 
 
 @dataclass(frozen=True)
@@ -104,6 +115,22 @@ def look_differences(dst: SceneObject, sources: Iterable[SceneObject]) -> tuple[
     return tuple(sorted((s for s in sources if look_of(s) != look), key=lambda s: int(s.id)))
 
 
+def incoming_unweighted(sources: Iterable[SceneObject]) -> int:
+    """How many points of `sources` would arrive without a skin weight (AD-031 §3.2, O-5): all points of a source
+    without a weights layer, else its points with the empty value `()` (the Core stores an all-zero value as `()`, so
+    missing and zero weights are one case; a partial value counts as weighted). Read-only; for a destination that
+    has a weights layer it equals `AppendResult.unweighted` of the append."""
+    count = 0
+    for src in sources:
+        mesh = src.mesh
+        layers = _weights_layers(mesh)
+        if not layers:
+            count += len(mesh.all_vertex_ids())
+        else:
+            count += sum(1 for v in mesh.all_vertex_ids() if not mesh.layer_value(layers[0], v))
+    return count
+
+
 def derived_symmetry(mesh: Mesh, axis: str | None) -> SymmetryDefinition | None:
     """The definition a detached mesh gets (AD-031 §3.5, D5): Shift+S's own rule for `axis`
     (`symmetry_axis.definition_for_axis`, seam = the edges exactly on the plane) when the mesh is VALID under it,
@@ -123,26 +150,31 @@ def derived_symmetry(mesh: Mesh, axis: str | None) -> SymmetryDefinition | None:
 # -- append -----------------------------------------------------------------------------------------------------------
 
 
-def append_objects(dst: SceneObject, sources: Sequence[SceneObject]) -> AppendResult:
-    """Appends every source's mesh to `dst.mesh` (module docstring). Sources are only read. Raises `AssemblyRefused`
+def append_objects(
+    dst: SceneObject, sources: Sequence[SceneObject], *, ungrouped_region: bool = False
+) -> AppendResult:
+    """Appends every source's mesh to `dst.mesh` (module docstring). Sources are only read. `ungrouped_region`: a
+    source's faces in none of its regions join a new region named after the source (O-7). Raises `AssemblyRefused`
     with `dst.mesh` unchanged; any other failure during the writes is rolled back exactly and re-raised."""
     ordered = _checked_sources(dst, sources)
     mesh = dst.mesh
     layer_plan = _plan_layers(mesh, ordered)
-    region_plan = _plan_regions(mesh, ordered)
+    region_plan, ungrouped_plan = _plan_regions(mesh, ordered, ungrouped_region)
     has_definition = mesh.symmetry_definition is not None
     before = symmetry_state(mesh)
-    ambiguous_before = _ambiguous(mesh) if has_definition else frozenset()
+    ambiguity_before = _ambiguity(mesh) if has_definition else {}
 
     change = mesh.begin_change()
     try:
-        result = _append(dst, ordered, layer_plan, region_plan)
+        result = _append(dst, ordered, layer_plan, region_plan, ungrouped_plan)
         after = symmetry_state(mesh)
         if has_definition:
-            newly = _ambiguous(mesh) - ambiguous_before
-            if newly:
+            ambiguity = _ambiguity(mesh)
+            newly = [v for v in ambiguity if v not in ambiguity_before]
+            worse = [v for v, n in ambiguity.items() if v in ambiguity_before and n > ambiguity_before[v]]
+            if newly or worse:
                 raise AssemblyRefused(
-                    f"{len(newly)} point(s) would make the symmetry ambiguous (coincident points) - "
+                    f"{len(newly) + len(worse)} point(s) would make the symmetry ambiguous (coincident points) - "
                     "move the part or switch symmetry off (Shift+S)"
                 )
     except BaseException:
@@ -158,7 +190,14 @@ def append_objects(dst: SceneObject, sources: Sequence[SceneObject]) -> AppendRe
         unweighted=unweighted,
         symmetry_before=before,
         symmetry_after=after,
+        ungrouped_regions={oid: name for oid, (name, _) in ungrouped_plan.items()},
     )
+
+
+def check_append(dst: SceneObject, sources: Sequence[SceneObject]) -> None:
+    """Raises the `AssemblyRefused` that `append_objects(dst, sources)` would raise before its first write (input,
+    weights layers, `MAX_TARGETS`, layer kinds); read-only. The symmetry check (D4) needs the result and is not here."""
+    _plan_layers(dst.mesh, _checked_sources(dst, sources))
 
 
 def _checked_sources(dst: SceneObject, sources: Sequence[SceneObject]) -> list[SceneObject]:
@@ -232,30 +271,56 @@ def _plan_layers(mesh: Mesh, sources: list[SceneObject]) -> _LayerPlan:
     return _LayerPlan(skin, new_skin, per_source)
 
 
-def _plan_regions(mesh: Mesh, sources: list[SceneObject]) -> dict[ObjectId, dict[str, str]]:
-    """Per source: region name -> its collision-free name in the destination (AD-031 §3.3, D2b)."""
+def _region_name(name: str, names: list[str], src: SceneObject) -> str:
+    """The collision-free name of a carried region (AD-031 §3.3, D2b): a free name stays, a taken `Group N` is
+    renumbered, any other taken name becomes `"<source object> · <name>"` (then `" 2"` …)."""
+    if name not in names:
+        return name
+    if _GROUP_NAME.match(name):
+        return new_group_name(FaceRegions(tuple(FaceRegion(n) for n in names)))
+    return _free(f"{src.name}{NAME_SEPARATOR}{name}", set(names))
+
+
+def _plan_regions(
+    mesh: Mesh, sources: list[SceneObject], ungrouped_region: bool
+) -> tuple[dict[ObjectId, dict[str, str]], dict[ObjectId, tuple[str, list[FaceId]]]]:
+    """Per source: region name -> its collision-free name in the destination (AD-031 §3.3, D2b); and, with
+    `ungrouped_region`, per source with ungrouped live faces: (the new region's name, those faces) (O-7)."""
     names = [r.name for r in mesh.face_regions.regions] if mesh.face_regions is not None else []
     plan: dict[ObjectId, dict[str, str]] = {}
+    ungrouped: dict[ObjectId, tuple[str, list[FaceId]]] = {}
     for src in sources:
         renamed: dict[str, str] = {}
         regions = src.mesh.face_regions
         for region in regions.regions if regions is not None else ():
-            if region.name not in names:
-                name = region.name
-            elif _GROUP_NAME.match(region.name):
-                name = new_group_name(FaceRegions(tuple(FaceRegion(n) for n in names)))
-            else:
-                name = _free(f"{src.name}{NAME_SEPARATOR}{region.name}", set(names))
+            name = _region_name(region.name, names, src)
             names.append(name)
             renamed[region.name] = name
         plan[src.id] = renamed
-    return plan
+        if ungrouped_region:
+            grouped = set().union(*(r.faces for r in regions.regions)) if regions is not None else set()
+            faces = [f for f in sorted(src.mesh.all_face_ids(), key=int) if f not in grouped]
+            if faces:
+                name = _region_name(src.name, names, src)
+                names.append(name)
+                ungrouped[src.id] = (name, faces)
+    return plan, ungrouped
 
 
-def _ambiguous(mesh: Mesh) -> frozenset[VertexId]:
-    return frozenset(
-        v for v, corr in vertex_correspondence(mesh).items() if corr.state is CorrespondenceState.AMBIGUOUS
-    )
+def _ambiguity(mesh: Mesh) -> dict[VertexId, int]:
+    """The AMBIGUOUS vertices and their candidate counts (`symmetry.vertex_correspondence`'s rule: the other points
+    exactly at the mirrored position). A count that grows is a worsened ambiguity (D4)."""
+    ambiguous = [v for v, c in vertex_correspondence(mesh).items() if c.state is CorrespondenceState.AMBIGUOUS]
+    if not ambiguous:
+        return {}
+    definition = mesh.symmetry_definition
+    at = Counter(mesh.vertex_position(v) for v in mesh.all_vertex_ids())
+    out = {}
+    for v in ambiguous:
+        position = mesh.vertex_position(v)
+        mirrored = mirror_position(position, definition.plane_point, definition.plane_normal)
+        out[v] = at[mirrored] - (1 if mirrored == position else 0)
+    return out
 
 
 def _point_map(dst: SceneObject, src: SceneObject):
@@ -270,7 +335,9 @@ def _vector_map(dst: SceneObject, src: SceneObject):
     return lambda v: object_space.delta_to_object(dst, object_space.delta_to_world(src, v))
 
 
-def _append(dst: SceneObject, sources: list[SceneObject], layers: _LayerPlan, regions: dict) -> tuple:
+def _append(
+    dst: SceneObject, sources: list[SceneObject], layers: _LayerPlan, regions: dict, ungrouped: dict
+) -> tuple:
     mesh = dst.mesh
     skin = layers.skin if layers.new_skin is None else mesh.add_point_layer(layers.new_skin)
     layer_maps: dict[ObjectId, dict[LayerId, LayerId]] = {}
@@ -303,6 +370,9 @@ def _append(dst: SceneObject, sources: list[SceneObject], layers: _LayerPlan, re
             names = regions[src.id]
             for region in source.face_regions.regions:
                 carried.append(FaceRegion(names[region.name], frozenset(fmap[f] for f in region.faces if f in fmap)))
+        if src.id in ungrouped:
+            name, faces = ungrouped[src.id]
+            carried.append(FaceRegion(name, frozenset(fmap[f] for f in faces)))
         vertex_maps[src.id], face_maps[src.id] = vmap, fmap
     if carried:
         own = mesh.face_regions.regions if mesh.face_regions is not None else ()

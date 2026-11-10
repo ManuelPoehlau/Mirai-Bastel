@@ -274,7 +274,10 @@ RULE_FIXTURES = {
 #: Declared entries whose rule test runs through other fixtures here: the Knife (real picks, below)
 #: and mirror copy (a new mesh, below).
 OTHER_FIXTURES = {CContext.KNIFE: "test_knife_cuts_a_layered_mesh_by_its_rule",
-                  "mirror_copy": "test_mirror_copy_carries_the_layers_through_the_index_map"}
+                  "mirror_copy": "test_mirror_copy_carries_the_layers_through_the_index_map",
+                  commands.ATTACH: "test_attach_carries_the_layers_by_its_rule",
+                  commands.ATTACH_TAKE_LOOK: "test_attach_carries_the_layers_by_its_rule",
+                  "attach_objects": "test_attach_carries_the_layers_by_its_rule"}
 
 
 def _run(app, command: str, info: dict) -> None:
@@ -518,6 +521,54 @@ def test_mirror_copy_carries_the_layers_through_the_index_map(symmetric):
     assert_layer_invariants(dst)
     assert app.key_press(CTRL_Z)
     assert copy.id not in app.scene.objects
+
+
+# -- Attach (AD-031 P2) ----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("symmetric", [False, True], ids=["plain", "symmetric"])
+@pytest.mark.parametrize("entry", [commands.ATTACH, commands.ATTACH_TAKE_LOOK, "attach_objects"])
+def test_attach_carries_the_layers_by_its_rule(entry, symmetric):
+    """Attach on a layered destination (AD-031 §3.2): the destination's layers keep every value of its own points and
+    give the new points the default; each source target becomes a new layer `"<object> · <target>"` with the source's
+    values at the copies (equal placements: bit-identical); one Undo step restores both meshes' layers."""
+    from mirai.mesh_assembly import NAME_SEPARATOR
+    from mirai.scene_factory import create_cube
+
+    app = make_app("subd_cube") if symmetric else _app()
+    dst = app.scene.edit_object
+    add_layers(dst.mesh, 41)
+    part_mesh = create_cube(0.5)
+    for v in part_mesh.all_vertex_ids():  # off the destination and X-symmetric in itself: no AMBIGUOUS point
+        x, y, z = part_mesh.vertex_position(v)
+        part_mesh.set_vertex_position(v, (x, y + 5.0, z))
+    wiggle = part_mesh.add_point_layer(PointLayerInfo("Wiggle"))
+    for v in part_mesh.all_vertex_ids():
+        x, y, z = part_mesh.vertex_position(v)
+        part_mesh.set_layer_value(wiggle, v, (x, 0.25, 0.5))  # an X-mirror field
+    part = app.scene.add_object(part_mesh, name="Part")
+    before, own = _layers(dst.mesh), set(dst.mesh.all_vertex_ids())
+    source_state = part_mesh.export_state()
+    app.key_press(Input("key", "4"))
+    app.selection.objects = {part.id}
+    history = len(app.history)
+    ok = app.attach_objects() if entry == "attach_objects" else _press(app, entry)
+    assert ok, app.status_message
+    assert len(app.history) == history + 1 and part.id not in app.scene.objects
+    mesh = dst.mesh
+    new = set(mesh.all_vertex_ids()) - own
+    for lid, values in before.items():
+        assert _layers(mesh)[lid] == values  # own values kept; new points at the default (not stored)
+    carried = [lid for lid in mesh.point_layer_ids() if lid not in before]
+    assert [mesh.point_layer_info(lid).name for lid in carried] == [f"Part{NAME_SEPARATOR}Wiggle"]
+    assert sorted(v for v, _ in mesh.layer_items(carried[0])) == sorted(new)
+    assert sorted(mesh.layer_value(carried[0], v) for v in new) == sorted(
+        part_mesh.layer_value(wiggle, v) for v in part_mesh.all_vertex_ids()
+    )
+    assert_layer_invariants(mesh)
+    assert app.key_press(CTRL_Z)
+    assert _layers(mesh) == before and set(mesh.all_vertex_ids()) == own
+    assert app.scene.objects[part.id] is part and part_mesh.export_state() == source_state
 
 
 # -- the editing view and the mix follow a base topology edit (AD-025 §15, Phase 5 item 6) ----------------

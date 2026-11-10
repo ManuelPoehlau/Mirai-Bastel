@@ -84,6 +84,42 @@ def test_add_asset_object_adds_an_editable_object():
     assert not add_asset_object(app, "gibt_es_nicht")
 
 
+# -- Mesh > Attach (AD-031 P2, O-13) -----------------------------------------------------------------------------
+
+
+def _bound_with_part(app):
+    """Das Edit-Objekt an ein Rig gebunden (AD-028 §7.1), daneben ein ungewichteter Würfel, in Modus 4 ausgewählt."""
+    from core import LayerKind, ObjectTransform, PointLayerInfo
+    from mirai.interaction import commands
+    from mirai.scene_factory import create_cube
+    from tests.test_skinning import _rig
+
+    app.scene.rig = _rig()
+    bone = app.scene.rig.bone_ids()[0]
+    mesh = app.scene.mesh
+    skin = mesh.add_point_layer(PointLayerInfo("Skin", LayerKind.WEIGHTS))
+    for v in mesh.all_vertex_ids():
+        mesh.set_layer_value(skin, v, ((int(bone), 1.0),))
+    part = app.scene.add_object(create_cube(0.5), name="Part")
+    part.transform = ObjectTransform(translation=(3.0, 0.0, 0.0))
+    app.dispatch_command(commands.SET_OBJECT_MODE)
+    app.selection.objects = {part.id}
+    return part
+
+
+def test_attach_request_runs_at_once_or_returns_the_unweighted_count():
+    from gui.menus import attach_request
+
+    app = _app()
+    part = _bound_with_part(app)
+    history = len(app.history)
+    assert attach_request(app, False) == len(part.mesh.all_vertex_ids())  # O-5: nothing changed, the count
+    assert len(app.history) == history and part.id in app.scene.objects
+    app.scene.rig = None  # not bound any more: Attach runs at once
+    assert attach_request(app, False) is None
+    assert part.id not in app.scene.objects and len(app.history) == history + 1
+
+
 # -- Fenster ------------------------------------------------------------------------------------------------------
 
 pytest.importorskip("imgui_bundle")
@@ -233,3 +269,15 @@ def test_menu_bar_click_opens_the_file_menu_and_the_empty_scene_renders(env):
 def test_goz_panel_lists_send_and_survives_frames(env):
     window, app, layer, files, calls = env
     assert layer.goz is None  # ohne Brücke in den Services kein GoZ-Knopf
+
+
+def test_mesh_attach_with_unweighted_points_opens_the_prompt_and_escape_changes_nothing(env):
+    window, app, layer, files, calls = env
+    part = _bound_with_part(app)
+    history = len(app.history)
+    layer.menus.attach(False)
+    _frame(window, 3)
+    assert layer.popup_open and layer.menus.attach_pending == (False, len(part.mesh.all_vertex_ids()))
+    layer.popup_key()  # Esc
+    _frame(window, 3)
+    assert not layer.popup_open and len(app.history) == history and part.id in app.scene.objects
