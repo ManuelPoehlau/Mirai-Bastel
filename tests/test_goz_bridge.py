@@ -16,6 +16,7 @@ from tests._bootstrap import _REPO_ROOT
 from tests.test_goz_format import BANDS, E2_REGROUPED, E2_UNCHANGED, band_regions, e2, fixture, flipped
 
 from core import PointLayerInfo, SelectionMode
+from core.mesh import Mesh
 from core.serialization import scene_to_dict
 from interop.goz import helper
 from interop.goz import install as goz_install
@@ -1054,3 +1055,64 @@ def test_with_targets_nothing_is_sent_until_the_script_is_loaded_in_zbrush(env):
     os.utime(zsc, (txt.stat().st_mtime - 5, txt.stat().st_mtime - 5))
     assert not env["bridge"].activate(SEND_LABEL) and "once more" in app.status_message
     assert not list(paths.project_dir().glob("*.GoZ"))
+
+
+# -- GoZ-Namen zurücksetzen (Manu 2026-11-10: ZBrush cache cleared, names reset, Gollum went as `Gollum_5`) --------------
+
+
+def test_reset_names_gives_the_plain_names_back_although_old_goz_files_lie_in_the_project(env):
+    """The `.GoZ` files of the earlier sends stay in GoZProjects\\Default (clearing ZBrush's cache does not remove them).
+    The first reset deleted the manifests, so those files became foreign and the next send counted past all of them.
+    Now the reset reserves the plain names: the next send is `head_basemesh` again, the targets too."""
+    app = env["app"]
+    env["scene_file"]["path"] = env["tmp"] / "gollum.mirai.json"
+    _bump_target(app)
+    project = env["paths"].project_dir()
+    for stem in ("head_basemesh", "head_basemesh_2", "head_basemesh_3", "head_basemesh_Bump"):
+        (project / f"{stem}.GoZ").write_bytes(b"old send, manifest gone")
+    send(env)
+    assert [Path(i).name for i in env["paths"].read_object_list()] == ["head_basemesh_4", "head_basemesh_Bump_2"]
+    assert RESET_NAMES_LABEL in env["bridge"].entries()
+    assert env["bridge"].activate(RESET_NAMES_LABEL), app.status_message
+    assert "'head_basemesh', 'head_basemesh_Bump'" in app.status_message
+    send(env)
+    assert _sent_names(env) == ["head_basemesh", "head_basemesh_Bump"]
+    assert "sent as" not in app.status_message
+    restart_mirai(env)
+    send(env)
+    assert _sent_names(env) == ["head_basemesh", "head_basemesh_Bump"]  # stable again after a restart
+
+
+def test_reset_names_is_offered_when_only_an_old_file_holds_the_plain_name(env):
+    (env["paths"].project_dir() / "head_basemesh.GoZ").write_bytes(b"old send")
+    assert RESET_NAMES_LABEL in env["bridge"].entries()
+    assert env["bridge"].activate(RESET_NAMES_LABEL), env["app"].status_message
+    assert Path(send(env)).name == "head_basemesh"
+
+
+def test_reset_names_takes_the_name_from_another_scene_file(env):
+    app = env["app"]
+    env["scene_file"]["path"] = env["tmp"] / "other.mirai.json"
+    send(env)  # an object of the same name in another scene file holds `head_basemesh`
+    app.load_scene("obj", obj_path=HEAD, store_type=TraceStore, symmetry_overlay_type=GLSymmetryOverlay)
+    env["scene_file"]["path"] = env["tmp"] / "gollum.mirai.json"
+    assert Path(send(env)).name == "head_basemesh_2"
+    assert env["bridge"].activate(RESET_NAMES_LABEL), app.status_message
+    assert Path(send(env)).name == "head_basemesh"
+
+
+def test_reset_names_leaves_the_name_of_a_live_object_of_this_scene(env):
+    """Two objects of one name in one scene: the other one keeps its Tool, the reset object still gets `_2`."""
+    from interop.goz.names import NameEntry
+
+    app = env["app"]
+    edited = app.scene.edit_object
+    twin = app.scene.add_object(Mesh.from_state(edited.mesh.export_state()), name=edited.name)
+    bridge = env["bridge"]
+    bridge.names.entries.append(NameEntry(stem="head_basemesh", title="head_basemesh", scene=None,
+                                          session=bridge.session_id, object_id=int(twin.id), layer=None))
+    bridge.names.save()
+    (env["paths"].project_dir() / "head_basemesh.GoZ").write_bytes(b"the twin's send")
+    assert bridge.activate(RESET_NAMES_LABEL), app.status_message
+    assert "'head_basemesh' gehört einem anderen Objekt dieser Szene" in app.status_message
+    assert Path(send(env)).name == "head_basemesh_2"

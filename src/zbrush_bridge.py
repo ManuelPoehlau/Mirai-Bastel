@@ -52,7 +52,7 @@ from interop.goz.bridge import (
 from interop.goz.files import GozPaths, GozSetupError, find_root, same_identifier
 from interop.goz.format import GozMesh
 from interop.goz.manifest import Manifest
-from interop.goz.names import REGISTRY_FILE, NameEntry, NameRegistry, scene_key, stem_of, with_stem
+from interop.goz.names import REGISTRY_FILE, NameEntry, NameRegistry, fold, scene_key, stem_of, with_stem
 from interop.goz.transfer import (
     Inbox,
     default_runner,
@@ -183,7 +183,7 @@ class ZBrushBridge:
         except GozSetupError:
             pass
         edit_obj = self.app.scene.edit_object
-        if edit_obj is not None and self._obj_stems(edit_obj):
+        if edit_obj is not None and self._reset_offered(edit_obj):
             rows += (RESET_NAMES_LABEL,)
         return rows
 
@@ -619,49 +619,79 @@ class ZBrushBridge:
                 if e.object_id == obj_id
                 and (e.session == self.session_id or (scene is not None and e.scene == scene))]
 
+    @staticmethod
+    def _wish_stems(obj: SceneObject) -> list[tuple[Optional[int], str]]:
+        """(target layer or None, plain name) for the base and each morph target, as `send` names them."""
+        from mirai.morph_targets import morph_target_ids
+
+        return [(None, short_name(obj.name))] + [
+            (int(layer), short_name(f"{obj.name}_{obj.mesh.point_layer_info(layer).name}"))
+            for layer in morph_target_ids(obj.mesh)]
+
+    def _reset_offered(self, obj: SceneObject) -> bool:
+        if self._obj_stems(obj):
+            return True
+        try:
+            return (self.paths().project_dir() / f"{short_name(obj.name)}.GoZ").exists()
+        except (GozSetupError, OSError):
+            return False
+
     def reset_names(self) -> bool:
-        """Remove all GoZ name registry entries and manifests for the current object so the next send
-        allocates clean names (no `_2` suffix). Covers all sessions and scene variants that share these stems."""
+        """The artist's explicit "this object is called by its plain name in ZBrush" (Manu, 2026-11-10): the object's
+        entries are replaced by entries for its plain names (base `Gollum`, targets `Gollum_<target>`), so the next
+        send writes `Gollum.GoZ` even though such a file lies in the project folder.
+
+        The first version deleted the object's entries and manifests: that made the `.GoZ` files of its earlier names
+        foreign (no entry, no manifest), so the next send counted past all of them (`Gollum_5`). Only a plain name a
+        live other object or target of this scene holds is left to it; that one still gets `_2` on the send."""
         obj = self.pick_object()
         if obj is None:
             return False
         self.names.reload()
-        stems = self._obj_stems(obj)
-        if not stems:
-            self.app.set_status(f"ZBrush: {obj.name!r} hat keine registrierten GoZ-Namen")
-            return False
-        # Collect former aliases so renamed Tools are cleared too
-        stem_set = set(stems)
-        for e in self.names.entries:
-            if e.stem in stem_set:
-                stem_set.update(e.former)
-        # Remove all registry entries that use any of these stems (any session / scene)
-        removed = sum(1 for e in self.names.entries if e.stem in stem_set)
-        self.names.entries = [e for e in self.names.entries if e.stem not in stem_set]
-        # Delete manifest files and clear in-memory cache
-        deleted = 0
+        scene = scene_key(self._scene_path())
+        oid = int(obj.id)
+        here = lambda e: e.session == self.session_id or (scene is not None and e.scene == scene)  # noqa: E731
+        mine = [e for e in self.names.entries if e.object_id == oid and here(e)]
+        released = {fold(s) for e in mine for s in (e.stem, *e.former)}
+        entries = [e for e in self.names.entries if not any(e is m for m in mine)]
+        now = time.time()
+        claimed: list[str] = []
+        kept: list[str] = []
+        for layer, wish in self._wish_stems(obj):
+            owner = next((e for e in entries if e.owns(wish)), None)
+            if owner is not None and here(owner) and not self._is_dead(owner, scene):
+                kept.append(wish)  # another live object or target of this scene: its Tool stays its own
+                continue
+            if owner is not None:  # an object of another scene / an earlier session, or one that is gone
+                if fold(owner.stem) == fold(wish):
+                    entries = [e for e in entries if e is not owner]
+                else:
+                    owner.former = [s for s in owner.former if fold(s) != fold(wish)]
+            entries.append(NameEntry(stem=wish, title=wish, scene=scene, session=self.session_id, object_id=oid,
+                                     layer=layer, updated=now))
+            claimed.append(wish)
+        self.names.entries = entries
+        # the manifests of the names given up: their ZBrush Tools are no longer this object's
+        released -= {fold(s) for s in claimed}
         try:
             project = self.paths().project_dir()
-            for stem in stem_set:
-                p = manifest_path(self.manifest_dir, str(project / stem))
-                if p.is_file():
-                    p.unlink()
-                    deleted += 1
-                self._manifests.pop(_key(str(project / stem)), None)
+            for e in mine:
+                for stem in (e.stem, *e.former):
+                    if fold(stem) in released:
+                        manifest_path(self.manifest_dir, str(project / stem)).unlink(missing_ok=True)
+                        self._manifests.pop(_key(str(project / stem)), None)
         except (GozSetupError, OSError):
             pass
-        # Drop any waiting returns that are linked to this object
         before_w = len(self.waiting)
         self.waiting = [w for w in self.waiting if w.plan.object_id != obj.id]
         dropped = before_w - len(self.waiting)
         self.names.save()
-        parts = [f"{removed} Namenseintr{'ag' if removed == 1 else 'äge'}"]
-        if deleted:
-            parts.append(f"{deleted} Manifest{'e' if deleted != 1 else ''}")
+        text = f"ZBrush: Namen für {obj.name!r} zurückgesetzt — nächstes Senden als {', '.join(map(repr, claimed))}"
+        if kept:
+            text += f"; {', '.join(map(repr, kept))} gehört einem anderen Objekt dieser Szene (bekommt _2)"
         if dropped:
-            parts.append(f"{dropped} offene Rückgabe{'n' if dropped > 1 else ''} verworfen")
-        self.app.set_status(f"ZBrush: Namen für {obj.name!r} zurückgesetzt "
-                            f"({', '.join(parts)}) — nächstes Senden vergibt neue Namen")
+            text += f"; {dropped} offene Rückgabe{'n' if dropped > 1 else ''} verworfen"
+        self.app.set_status(text)
         return True
 
     def _forget(self, w: Waiting) -> None:

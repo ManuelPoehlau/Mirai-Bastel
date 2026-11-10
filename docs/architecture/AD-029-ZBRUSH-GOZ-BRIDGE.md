@@ -155,6 +155,14 @@ Now Mirai names its SubTools itself, without `GoZMakeObjectPath` (and no longer 
   resends showed both forms are taken).
 - **Earlier sends:** a Mirai manifest on disk for `<project>\<stem>` (from before the registry) makes that stem Mirai's
   for the manifest's object, so a saved scene keeps its Tool after the update.
+- **„GoZ-Namen zurücksetzen“ (GoZ panel; Manu 2026-11-10: ZBrush cache cleared, names reset, `Gollum` went as
+  `Gollum_5`):** the artist's explicit decision that the object is called by its plain names in ZBrush. The
+  object's entries are replaced by entries for `short_name(<object>)` and `short_name(<object>_<target>)`; the next
+  send writes those `.GoZ` even though files of that name lie in the project folder (the one exception to the
+  foreign-file rule). The first version deleted the entries and manifests instead: the `.GoZ` of the earlier sends
+  stay in GoZProjects (ZBrush's cache does not hold them), became foreign and the next send counted past all of
+  them. A plain name a live other object or target of this scene holds stays with it (that one still gets `_2`).
+  The row shows when the object has names or `<plain name>.GoZ` lies in the project folder.
 - **Following ZBrush:** when a return under another name links by topology (§5), the entry takes ZBrush's name; the
   next send updates that Tool. The old name stays Mirai's (`former`).
 - **Resolved (T11b, 2026-11-06): ZBrush always groups multiple GoZ_ObjectList entries into one Tool with SubTools
