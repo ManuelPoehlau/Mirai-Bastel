@@ -189,6 +189,12 @@ ATTACH_COMMANDS = (ATTACH, ATTACH_TAKE_LOOK)
 DETACH = "Detach"
 SELECT_LINKED = "SelectLinked"
 
+# --- Weld (AD-031 P4; name `PROVISIONAL`, deliberately WITHOUT a default key) ----
+# Weld, mode `1`: the selected, unconnected points within a world-space distance fall into one point per group (the
+# group's centroid, W1-W11) - one Undo step. Reached through "Mesh > Weld…" (a window with the distance as a number
+# field and a preview) and `dispatch_command` (with the provisional default distance, AD-031 §4.1).
+WELD = "Weld"
+
 # CONNECT (WP-06 B6, AD-017 "Contextual C"): global, nicht Topology-Lab —
 # 1 Edge selektiert → Split; 2+ Edges → Edge Connect (per-face); 2+ Vertices
 # → Vertex Connect (per-face); leere Auswahl → Knife-Session (WP-06 B7).

@@ -64,6 +64,7 @@ from .topology.extrude import ExtrudeTool
 from .topology.bevel import build_bevel
 from .topology.inset import build_inset
 from .topology.knife_resolve import resolve_cross_face
+from .topology.weld import weld
 
 #: Declared operations: key -> (plain implementation, symmetric implementation), exactly the functions
 #: `Application` runs for that key. The H1 "allowed" rows create no vertex (Vertex Connect, Cap) or only
@@ -107,11 +108,16 @@ LAYER_SAFE_OPERATIONS: Mapping[Any, tuple] = MappingProxyType(
         # one function for plain and symmetric sources (the symmetric deletion is Delete's coordinator).
         commands.DETACH: (extract_faces, extract_faces),
         "detach_faces": (extract_faces, extract_faces),
+        # AD-031 P4: Weld merges selected points through `collapse_elements`, whose group rule writes the per-layer
+        # group mean (W7, H3); no vertex is created. The symmetric entry is None: Weld is refused under a symmetry
+        # definition until P6 (`Application.weld_plan`), so there is no symmetric implementation to declare.
+        commands.WELD: (weld, None),
+        "weld_vertices": (weld, None),
     }
 )
 
 #: Keys of `LAYER_SAFE_OPERATIONS` that are `Application` methods, not command constants.
-_DECLARED_METHODS = frozenset({"mirror_copy", "attach_objects", "detach_faces"})
+_DECLARED_METHODS = frozenset({"mirror_copy", "attach_objects", "detach_faces", "weld_vertices"})
 
 NON_MESH = "non-mesh"
 POSITION_ONLY = "position-only"
@@ -252,6 +258,10 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "detach_plan": "non-mesh",
         "linked_seed": "non-mesh",
         "select_linked": "non-mesh",
+        # AD-031 P4: Weld on the edit mesh, checked at its own site; the plan and the default distance read only
+        "weld_vertices": DECLARED,
+        "weld_plan": "non-mesh",
+        "weld_default_threshold": "non-mesh",
         # Outliner: refuses a mesh with point layers at its own site (`ObjectController.duplicate_selected`)
         "duplicate_objects": "non-mesh",
         # AD-030 outliner: a bone's name only (`RigCommand`, no mesh change; the scan sees the name `rename_bone` of the
@@ -285,6 +295,8 @@ _LABELS: Mapping[Any, str] = MappingProxyType(
         "attach_objects": "Attach",
         commands.DETACH: "Detach",
         "detach_faces": "Detach",
+        commands.WELD: "Weld",
+        "weld_vertices": "Weld",
     }
 )
 

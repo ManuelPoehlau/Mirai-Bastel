@@ -150,6 +150,49 @@ def test_menu_detach_and_select_linked_call_the_application():
     assert menus.select_linked() is False and "nothing under the cursor" in app.status_message
 
 
+# -- Mesh > Weld… (AD-031 P4) ---------------------------------------------------------------------------------------
+
+
+def _weld_app():
+    """Zwei Quads nebeneinander, die Naht-Punkte doppelt (0,0003 auseinander), Modus 1, alles ausgewählt."""
+    from core import Mesh
+    from mirai.interaction import commands
+
+    mesh = Mesh()
+    for x0 in (0.0, 1.0003):
+        ids = [mesh.add_vertex((x0 + dx, y, 0.0)) for dx, y in ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))]
+        mesh.add_face(ids)
+    app = _app()
+    app.scene.mesh.load_state(mesh.export_state())
+    app.viewport.on_topology_changed()
+    app.dispatch_command(commands.SET_VERTEX_MODE)
+    app.selection.vertices = set(app.scene.mesh.all_vertex_ids())
+    return app
+
+
+def test_the_weld_window_shows_the_default_and_its_preview_and_welds_with_the_field():
+    """Ohne Fenster: Öffnen setzt den vorläufigen Startwert (0,001 × Diagonale, D10) ins Feld und rechnet die Vorschau
+    („n Gruppen, m Punkte“ oder der Grund); eine Änderung des Felds rechnet sie neu; „Weld“ nutzt den Wert im Feld."""
+    from gui.menus import WELD_ENTRY, WELD_LABEL, Menus, weld_preview
+
+    assert (WELD_ENTRY, WELD_LABEL) == ("Weld…", "Weld")
+    app = _weld_app()
+    menus = Menus(None, app, None)
+    history = len(app.history)
+    menus.open_weld()
+    assert menus.weld_threshold == app.weld_default_threshold() > 0.0
+    assert weld_preview(menus.weld_plan) == "2 Gruppen, 4 Punkte"
+    menus.set_weld_threshold(0.0001)  # kleiner als die Naht: nichts zu verschweißen
+    assert "nothing to weld" in weld_preview(menus.weld_plan) and len(app.history) == history
+    menus.set_weld_threshold(0.0)
+    assert "above 0" in weld_preview(menus.weld_plan)
+    menus.set_weld_threshold(0.0005)
+    assert weld_preview(menus.weld_plan) == "2 Gruppen, 4 Punkte"
+    assert menus.weld(), app.status_message
+    assert "(distance 0.0005)" in app.status_message and len(app.history) == history + 1
+    assert len(app.scene.mesh.all_vertex_ids()) == 6
+
+
 # -- Fenster ------------------------------------------------------------------------------------------------------
 
 pytest.importorskip("imgui_bundle")
@@ -379,3 +422,75 @@ def test_the_mesh_menu_draws_detach_and_the_select_linked_hint(env):
     layer.popup_key()
     _frame(window, 3)
     assert not layer.popup_open
+
+
+def test_the_weld_window_opens_from_the_mesh_menu_and_escape_changes_nothing(env):
+    """AD-031 P4 („Weld-Fenster passt so“): „Mesh“ zeigt „Weld…“; das Fenster ist modal (die Maus gehört dem Layer),
+    zeigt Feld und Vorschau; Esc schließt ohne Änderung, „Weld“ verschweißt mit dem Wert im Feld."""
+    from gui.menus import WELD_ENTRY, WELD_LABEL, WELD_TITLE
+    from mirai.interaction import commands
+
+    window, app, layer, files, calls = env
+    menus = layer.menus
+    mesh = app.scene.mesh
+    for x0 in (2.0, 3.0003):  # zwei unverbundene Quads neben dem Würfel
+        ids = [mesh.add_vertex((x0 + dx, y, 0.0)) for dx, y in ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))]
+        mesh.add_face(ids)
+    app.viewport.on_topology_changed()
+    app.dispatch_command(commands.SET_VERTEX_MODE)
+    app.selection.vertices = {v for v in mesh.all_vertex_ids() if mesh.vertex_position(v)[0] > 1.5}
+    real = menus.imgui
+    drawn: list = []
+    press: set = set()
+
+    class Recorder:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def menu_item(self, label, shortcut="", selected=False, enabled=True):
+            drawn.append(label)
+            return real.menu_item(label, shortcut, selected, enabled)
+
+        def button(self, label, *args):
+            return real.button(label, *args) or label in press
+
+        def begin_popup_modal(self, name, *args):
+            opened = real.begin_popup_modal(name, *args)
+            if (opened[0] if isinstance(opened, tuple) else opened) and name == WELD_TITLE:
+                drawn.append(name)
+            return opened
+
+    menus.imgui = Recorder()
+    bx, by, bw, bh = layer.panel_rects[0]
+    y = window.height - bh / 2
+    for x in range(30, 160, 6):  # „Mesh“ öffnen
+        window.dispatch_event("on_mouse_motion", x, y, 0, 0)
+        window.dispatch_event("on_mouse_press", x, y, mouse.LEFT, 0)
+        _frame(window, 1)
+        window.dispatch_event("on_mouse_release", x, y, mouse.LEFT, 0)
+        _frame(window, 2)
+        if WELD_ENTRY in drawn:
+            break
+        layer.popup_key()
+        _frame(window, 2)
+    assert WELD_ENTRY in drawn
+    layer.popup_key()
+    _frame(window, 2)
+    history, state = len(app.history), mesh.export_state()
+    menus.open_weld()
+    _frame(window, 3)
+    assert layer.popup_open and WELD_TITLE in drawn
+    assert menus.weld_plan is not None and menus.weld_plan.refusal is None and menus.weld_plan.points == 4
+    layer.popup_key()  # Esc
+    _frame(window, 3)
+    assert not layer.popup_open and len(app.history) == history and mesh.export_state() == state
+    menus.open_weld()
+    _frame(window, 2)
+    press.add(WELD_LABEL)
+    _frame(window, 1)
+    press.clear()
+    _frame(window, 2)
+    menus.imgui = real
+    assert not layer.popup_open, app.status_message
+    assert len(app.history) == history + 1 and app.status_message.startswith("Weld: 4 points into 2")
+    assert calls["press"] == 0

@@ -448,6 +448,15 @@ def test_detach_keeps_the_weights_unchanged(entry, symmetric):
     assert skin_layer(out) is not None
 
 
+@pytest.mark.parametrize("entry", [commands.WELD, "weld_vertices"])
+def test_weld_averages_the_weights_by_the_group_mean(entry):
+    """AD-031 §4 W7 with weights: every survivor holds the convex per-key group mean (`combine_values(WEIGHTS, …,
+    "mean")`), the other points keep theirs; Undo restores the mesh exactly (`weld_layered`). Under a symmetry
+    definition Weld is refused (P6) - covered with morph targets in `test_weld_merges_the_layers_by_the_group_mean`."""
+    mesh, groups = phase5.weld_layered(entry, lambda mesh: add_weights(mesh, 17))
+    assert skin_layer(mesh) is not None and len(groups) == 5
+
+
 def _body_state(mesh: Mesh) -> dict:
     return {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")}
 
@@ -459,5 +468,6 @@ def test_every_declared_entry_is_covered_with_weights():
     covered = set(phase5.RULE_FIXTURES) | set(h1.RULE_FIXTURES) | {CContext.KNIFE, commands.APPLY_TRANSFORM, "mirror_copy"}
     covered |= {commands.ATTACH, commands.ATTACH_TAKE_LOOK, "attach_objects"}  # test_attach_merges_the_weights_…
     covered |= {commands.DETACH, "detach_faces"}  # test_detach_keeps_the_weights_unchanged
+    covered |= {commands.WELD, "weld_vertices"}  # test_weld_averages_the_weights_by_the_group_mean
     assert covered == set(gate.LAYER_SAFE_OPERATIONS)
 

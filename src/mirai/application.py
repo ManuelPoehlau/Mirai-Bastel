@@ -173,6 +173,7 @@ from .topology.contextual_c import CContext, resolve_c_context
 from .topology.border import BORDER_LABEL, CAP_LABEL, CapRefused, apply_cap, border_select
 from .topology.collapse import COLLAPSE_LABEL, apply_collapse
 from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_label
+from .topology import weld as weld_api
 from .topology.knife_preview import KnifeRenderData
 from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
 from .topology import selection_steps
@@ -1152,6 +1153,7 @@ class Application:
         ))
         add((commands.DETACH,), plain(lambda command: self.detach_faces()))
         add((commands.SELECT_LINKED,), plain(lambda command: self.select_linked()))
+        add((commands.WELD,), plain(lambda command: self.weld_vertices()))
         add((commands.CONNECT,), plain(lambda command: self._connect_command()))
         add(_REMOVAL_COMMANDS, plain(self._run_removal))
         add((commands.COLLAPSE,), plain(lambda command: self._collapse_command()))
@@ -3531,6 +3533,114 @@ class Application:
         self._set_status(
             f"{label}: a part of {len(island)} face(s) - {len(current)} {noun}(s) selected (+{added})"
         )
+        return True
+
+    # -- Weld (AD-031 P4, §4; texts `PROVISIONAL`) ------------------------------------------------------------------
+
+    def weld_default_threshold(self) -> float | None:
+        """D10 (AD-031 §4.1, provisional reference, not artist-approved): 0.001 × the diagonal of the edit object's
+        world-space axis-aligned bounding box; None for an empty or flat-to-a-point mesh (the field waits for an
+        entry)."""
+        obj = self.scene.edit_object
+        mesh = obj.mesh
+        lo = [math.inf] * 3
+        hi = [-math.inf] * 3
+        for v in mesh.all_vertex_ids():
+            p = object_space.to_world(obj, mesh.vertex_position(v))
+            for i in range(3):
+                lo[i] = min(lo[i], p[i])
+                hi[i] = max(hi[i], p[i])
+        if lo[0] > hi[0]:
+            return None
+        return weld_api.world_threshold_default(math.dist(lo, hi))
+
+    def weld_plan(self, threshold: float | None = None) -> "weld_api.WeldPlan":
+        """What Weld would merge now (AD-031 §4), read-only: the groups of the selected points within the world-space
+        `threshold` (None: `weld_default_threshold`) and the first refusal - an interaction, not point mode, the morph
+        editing view, a symmetry definition (until P6), no distance, nothing selected, a posed rig with the mesh bound,
+        the point-layer gate, no two points within the distance, a group touching hidden geometry (W10), and the
+        kernel's W2-W6 (`topology.weld.plan_weld`). The preview of "Mesh > Weld…" shows its groups and points."""
+        label = weld_api.LABEL
+        plan = weld_api.WeldPlan
+        owner = self.interaction_owner
+        if owner is not None:
+            return plan((), f"{label}: not while the {owner} interaction runs", threshold=threshold)
+        selection = self.selection
+        if selection.mode is not SelectionMode.VERTEX:
+            return plan((), f"{label}: works on points - press 1, select the points to weld, then {label}",
+                        threshold=threshold)
+        if self._morph.view is not None:
+            return plan((), f"{label}: on the base only (Tab returns to it)", threshold=threshold)
+        obj = self.scene.edit_object
+        mesh = obj.mesh
+        if mesh.symmetry_definition is not None:
+            key = self._skeleton.key_text(commands.SYMMETRY_CYCLE)
+            return plan((), f"{label}: not with symmetry on yet - turn it off first ({key})", threshold=threshold)
+        if threshold is None:
+            threshold = self.weld_default_threshold()
+            if threshold is None:
+                return plan((), f"{label}: enter a distance (the mesh has no extent for a default)")
+        vertices = {v for v in selection.vertices if mesh.is_valid_vertex(v)}
+        if not vertices:
+            return plan((), f"{label}: select the points to weld (mode 1) - none selected", threshold=threshold)
+        if self._skeleton.posed() and self._skeleton.bound(mesh):
+            rest = self._skeleton.key_text(commands.POSE_TOGGLE_REST)
+            return plan((), f"{label}: {obj.name!r} is posed - go to the rest pose first ({rest})", threshold=threshold)
+        text = self._layer_refusal("weld_vertices", [mesh])
+        if text is not None:
+            return plan((), text, threshold=threshold)
+        # World threshold -> object space (uniform scale, AD-021 Q-4); a non-number stays a refusal of the kernel.
+        valid = isinstance(threshold, (int, float)) and math.isfinite(threshold) and threshold > 0.0
+        kernel = weld_api.plan_weld(mesh, vertices, threshold / obj.transform.scale if valid else threshold)
+        kernel = dataclasses.replace(kernel, threshold=threshold)
+        if kernel.refusal is None and not kernel.groups:
+            return dataclasses.replace(kernel, refusal=(
+                f"{label}: no two selected points within {threshold:.6g} - nothing to weld (raise the distance)"
+            ))
+        hidden = self._hiddens.get(self._hidden_owner)
+        if hidden and any(touches_hidden(mesh, hidden, g) for g in kernel.groups):
+            return dataclasses.replace(kernel, refusal=f"{label}: hidden geometry in the way (Alt+H shows all)")
+        return kernel
+
+    def weld_vertices(self, threshold: float | None = None) -> bool:
+        """Weld (AD-031 §4, W1-W11): the selected, unconnected points within the world-space `threshold` (None:
+        the provisional default, `weld_default_threshold`) fall into one point per group - the group's smallest
+        `VertexId` survives at the centroid of the original positions with the per-layer group mean
+        (`topology.weld.weld`), whatever the selection order; UVs per face and regions stay. One Undo step
+        (`_mesh_transaction`); refused with a status line and nothing changed when `weld_plan` refuses, and rolled back
+        exactly when the result fails W4-W6 after the change. Afterwards: point mode, the selected points that remain
+        stay selected (the survivors among them). The status line names the groups, the points, the distance used and
+        how many points averaged differing layer values (W11)."""
+        weld_plan = self.weld_plan(threshold)
+        if weld_plan.refusal is not None:
+            self._set_status(weld_plan.refusal)
+            return False
+        mesh = self.scene.mesh
+        groups = weld_plan.groups
+        differing = weld_api.differing_points(mesh, groups)
+        kept = set(self.selection.vertices)
+
+        def on_applied(_survivors) -> None:
+            selection = self.selection
+            remaining = {v for v in kept if mesh.is_valid_vertex(v)}
+            selection.clear()
+            selection.add(remaining)
+            if self.viewport is not None:
+                self.viewport.on_selection_changed()
+
+        description = f"Weld {weld_plan.points} points into {len(groups)}"
+        try:
+            self._mesh_transaction(description, lambda m: weld_api.weld(m, weld_plan), on_applied=on_applied)
+        except (weld_api.WeldRefused, CollapseRefused) as exc:
+            text = str(exc)
+            self._set_status(text if text.startswith(weld_api.LABEL) else f"{weld_api.LABEL}: {text}")
+            return False
+        text = (
+            f"{weld_api.LABEL}: {weld_plan.points} points into {len(groups)} (distance {weld_plan.threshold:.6g})"
+        )
+        if differing:
+            text += f" - {differing} point(s) averaged differing target / weight values"
+        self._set_status(text)
         return True
 
     def apply_goz_return(self, plan) -> bool:

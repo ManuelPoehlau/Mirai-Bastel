@@ -5,7 +5,8 @@ Die Logik bleibt in den Modulen `SceneFiles`, `ObjFiles` und den Application-Met
 pyglet noch `examples/` kennt.
 
     Datei:  Neu | Öffnen > (Szenen) | Speichern (Strg+S) | Speichern unter... | Importieren > (OBJ) | Exportieren...
-    Mesh:   Attach | Attach – Look des Ziels übernehmen (AD-031 P2, O-13) | Detach | (Select Linked: Hinweis) (P3; ohne Taste)
+    Mesh:   Attach | Attach – Look des Ziels übernehmen (AD-031 P2, O-13) | Detach | (Select Linked: Hinweis) (P3) |
+            Weld… (P4; alle ohne Taste)
     SPACE:  Add + > (Grundkörper, Basehead, Baseman) | Select Linked | Textur an/aus | Szene laden (Shift+Klick: als Referenz)
 
 Attach fragt nach, bevor ungewichtete Punkte in ein gebundenes Mesh kommen (O-5): der Dialog nennt die Anzahl, erst
@@ -15,6 +16,11 @@ Select Linked wirkt auf das Element unter dem Cursor (AD-031 P3). Über der Men�
 Zeiger über einem Panel ruft `pointer_leave`, und auf dem Weg dorthin überquert er anderes), deshalb steht es im
 Mesh-Menü nur als Hinweis; das SPACE-Menü öffnet am Cursor und merkt sich beim Öffnen das Element darunter
 (`Application.linked_seed`), sein Eintrag wählt dessen Teil aus.
+
+„Mesh > Weld…“ (AD-031 P4, Manu 2026-11-10: „Weld-Fenster passt so“) öffnet ein kleines Fenster: der Abstand als
+Zahlenfeld in Weltkoordinaten (D10: immer sichtbar und änderbar, mit dem vorläufigen Startwert 0,001 × Diagonale), darunter
+die Vorschau aus `Application.weld_plan` („n Gruppen, m Punkte“ oder der Grund der Ablehnung) und „Weld“ / „Abbrechen“.
+Die Vorschau wird nur neu gerechnet, wenn sich der Abstand ändert (das Fenster ist modal: Auswahl und Mesh bleiben).
 
 „Speichern“ einer neuen Szene (noch keine Datei) fragt wie „Speichern unter“ nach dem Namen. Während ein Popup offen
 ist, gehört dem Layer die ganze Maus (`popup_open`): ein Klick daneben schließt es, und er erreicht den Viewport nicht.
@@ -27,6 +33,7 @@ from typing import Callable
 
 from mirai.attach import LABEL as ATTACH_LABEL, OVERRIDE_LABEL, TAKE_LOOK_LABEL
 from mirai.detach import LABEL as DETACH_LABEL, LINKED_LABEL
+from mirai.topology.weld import LABEL as WELD_LABEL
 
 #: Mesh-Menü (AD-031 P2): Anzeigename -> `take_destination_look` (D1-Variante); die Namen stehen in `mirai.attach`, weil
 #: die Statuszeile sie nennt.
@@ -34,6 +41,16 @@ ATTACH_ENTRIES = ((ATTACH_LABEL, False), (TAKE_LOOK_LABEL, True))
 ATTACH_PROMPT = "Attach – ohne Gewichte"
 #: Mesh-Menü (AD-031 P3): Select Linked braucht den Cursor über dem Teil - dort nur der Hinweis, wo es wirkt.
 LINKED_HINT = "SPACE-Menü am Teil"
+#: Mesh-Menü (AD-031 P4): der Eintrag öffnet das Weld-Fenster (Titel = Popup-Id).
+WELD_ENTRY = f"{WELD_LABEL}…"
+WELD_TITLE = WELD_LABEL
+
+
+def weld_preview(plan) -> str:
+    """Die Vorschau im Weld-Fenster aus einem `WeldPlan`: was es verschmelzen würde, oder warum nicht."""
+    if plan.refusal is not None:
+        return plan.refusal
+    return f"{len(plan.groups)} Gruppen, {plan.points} Punkte"
 
 
 def attach_request(app, take_look: bool) -> int | None:
@@ -77,6 +94,9 @@ class Menus:
         self.attach_pending: tuple[bool, int] | None = None
         #: AD-031 P3: das Element unter dem Cursor, als SPACE das Menü öffnete (None: keines) - für Select Linked
         self.linked_seed = None
+        #: AD-031 P4: der Abstand im Weld-Fenster (Welt) und der Plan dazu (die Vorschau)
+        self.weld_threshold = 0.0
+        self.weld_plan = None
 
     def close_all(self) -> None:
         self._close = True
@@ -97,6 +117,23 @@ class Menus:
         """Mesh > Detach: läuft, oder die Ablehnung steht in der Statuszeile (wie Attach: der Eintrag bleibt aktiv, damit
         der Grund sichtbar wird)."""
         return self.app.detach_faces()
+
+    def open_weld(self) -> None:
+        """Mesh > Weld…: das Fenster im nächsten Frame, mit dem vorläufigen Startwert (D10) und seiner Vorschau. Ohne
+        Startwert (das Mesh hat keine Ausdehnung) steht 0 im Feld, und die Vorschau bittet um eine Eingabe."""
+        default = self.app.weld_default_threshold()
+        self.set_weld_threshold(0.0 if default is None else default)
+        self._focus, self._request = True, "weld"
+
+    def set_weld_threshold(self, value: float) -> None:
+        """Der Abstand im Feld; rechnet die Vorschau neu (read-only)."""
+        self.weld_threshold = float(value)
+        self.weld_plan = self.app.weld_plan(self.weld_threshold)
+
+    def weld(self) -> bool:
+        """„Weld“ im Fenster: mit dem Abstand im Feld; die Statuszeile nennt das Ergebnis oder die Ablehnung."""
+        self.weld_plan = None
+        return self.app.weld_vertices(self.weld_threshold)
 
     def open_save_as(self) -> None:
         self.name_buf, self._focus, self._request = self.sv.files.suggested_name(), True, "save_as"
@@ -158,6 +195,9 @@ class Menus:
                 if imgui.menu_item(DETACH_LABEL, "", False)[0]:
                     self.detach()
                 imgui.menu_item(LINKED_LABEL, LINKED_HINT, False, False)
+                imgui.separator()
+                if imgui.menu_item(WELD_ENTRY, "", False)[0]:
+                    self.open_weld()
                 imgui.end_menu()
             size = imgui.get_window_size()
             rect = (0.0, 0.0, size.x, size.y)
@@ -179,8 +219,11 @@ class Menus:
             imgui.open_popup("OBJ exportieren")
         elif request == "attach_unweighted":
             imgui.open_popup(ATTACH_PROMPT)
+        elif request == "weld":
+            imgui.open_popup(WELD_TITLE)
         self._space()
         self._attach_prompt()
+        self._weld_window()
         files = self.sv.files
         self._name_dialog("Speichern unter", files.path_for, files.save_as)
         obj = self.sv.obj_files
@@ -243,6 +286,45 @@ class Menus:
         imgui.same_line()
         if imgui.button("Abbrechen") or imgui.is_key_pressed(imgui.Key.escape, False):
             self.attach_pending = None
+            imgui.close_current_popup()
+        imgui.end_popup()
+
+    def _weld_window(self) -> None:
+        """AD-031 P4: der Abstand (Welt, D10) als Zahlenfeld, die Vorschau, „Weld“ (aktiv nur ohne Ablehnung) und
+        „Abbrechen“ / Esc."""
+        imgui = self.imgui
+        center = imgui.get_main_viewport().get_center()
+        imgui.set_next_window_pos(center, imgui.Cond_.appearing, imgui.ImVec2(0.5, 0.5))
+        opened = imgui.begin_popup_modal(
+            WELD_TITLE, None, imgui.WindowFlags_.always_auto_resize | imgui.WindowFlags_.no_saved_settings
+        )
+        if not (opened[0] if isinstance(opened, tuple) else opened):
+            return
+        if self.weld_plan is None:
+            self.set_weld_threshold(self.weld_threshold)
+        if self._focus:
+            imgui.set_keyboard_focus_here()
+            self._focus = False
+        imgui.text("Abstand (Welt)")
+        imgui.set_next_item_width(180)
+        changed, value = imgui.input_double("##weld_threshold", self.weld_threshold, 0.0, 0.0, "%.6g")
+        if changed:
+            self.set_weld_threshold(value)
+        plan = self.weld_plan
+        text = weld_preview(plan)
+        if plan.refusal is None:
+            imgui.text(text)
+        else:
+            imgui.text_colored(imgui.ImVec4(1.0, 0.8, 0.43, 1.0), text)
+        imgui.text_disabled("Startwert: 0,001 × Diagonale (vorläufig)")
+        imgui.begin_disabled(plan.refusal is not None)
+        if imgui.button(WELD_LABEL):
+            self.weld()
+            imgui.close_current_popup()
+        imgui.end_disabled()
+        imgui.same_line()
+        if imgui.button("Abbrechen") or imgui.is_key_pressed(imgui.Key.escape, False):
+            self.weld_plan = None
             imgui.close_current_popup()
         imgui.end_popup()
 

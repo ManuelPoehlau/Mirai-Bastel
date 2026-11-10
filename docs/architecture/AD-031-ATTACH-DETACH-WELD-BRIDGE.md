@@ -11,7 +11,11 @@ O-5 prompt; practical test §16, pending. **P3 BUILT (2026-11-10):** Detach and 
 `Application.detach_faces` / `detach_plan` / `select_linked` / `linked_seed`, `src/mirai/detach.py`, the kernel's
 `linked_faces`, commands `Detach` / `SelectLinked` without keys, "Mesh" > Detach and SPACE > Select Linked;
 specification as built §17, practical test §18 (Manu, 2026-11-10: **O-8 KEEP**, **O-14** "SPACE reicht vorerst (später
-Sub-Object Mode)"; one finding fixed, §17.11). P4–P7 (§11) are **not implemented**, each starts only with its own go.
+Sub-Object Mode)"; one finding fixed, §17.11). **P4 BUILT (2026-11-10):** Weld — `Application.weld_plan` /
+`weld_vertices` / `weld_default_threshold`, the kernel `src/mirai/topology/weld.py` (W1–W11), command `Weld` without a
+key, "Mesh" > "Weld…" with the threshold field and the preview; refused under a symmetry definition until P6;
+specification as built §19, practical test §20 (pending; D10-v open). P5–P7 (§11) are **not implemented**, each starts
+only with its own go.
 Open points: §10.
 **Scope:** `src/mirai` and `src/gui` only. **No Core change, no file-format change, no keymap change** (no keys at all).
 **Builds on:** AD-001 (ids), [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (objects, L-1 / L-3),
@@ -34,9 +38,11 @@ Open points: §10.
 - **Select Linked** (Modus `1`/`2`/`3`, SPACE-Menü am Teil; gebaut 2026-11-10): wählt den zusammenhängenden Teil unter
   dem Cursor dazu – z. B. ein ganzes Ohr vor dem Detach. Im Menü „Mesh“ steht es nur als Hinweis: über der Menüleiste
   gibt es keinen Cursor mehr am Mesh (§17.2; O-14: „SPACE reicht vorerst (später Sub-Object Mode)“).
-- **Weld** (Punkte, Abstand): verschmilzt nur ausgewählte, unverbundene Punkte, exakt auf den Schwerpunkt der Gruppe,
-  unabhängig von der Reihenfolge; lehnt alles ab, was unerwartete Topologie ergäbe. Der Abstand ist immer als Zahl
-  sichtbar und änderbar; der Startwert (0,001 × Diagonale) ist vorläufig.
+- **Weld** (Modus `1`, Menü „Mesh > Weld…“; gebaut 2026-11-10): verschmilzt nur ausgewählte, unverbundene Punkte,
+  exakt auf den Schwerpunkt der Gruppe, unabhängig von der Reihenfolge; lehnt alles ab, was unerwartete Topologie
+  ergäbe (Kette, verbundene Punkte, Bowtie, gegenläufige Normalen, verdeckte Geometrie). Das Fenster zeigt den Abstand
+  als Zahl (Weltkoordinaten, änderbar) und die Vorschau „n Gruppen, m Punkte“; der Startwert (0,001 × Diagonale) ist
+  vorläufig. Mit Symmetrie noch abgelehnt (bis P6). Ein Undo-Schritt. Praxistest: §20.
 - **Bridge** (zwei Ränder gleicher Punktzahl): Quads dazwischen, keine neuen Punkte → Morphs und Gewichte unberührt;
   die neuen Flächen haben keine UVs und keine Gruppe.
 - **Attach und Gewichte (O-5):** Geometrie ohne Skin-Gewichte in ein gebundenes Mesh wird abgelehnt; nur über die
@@ -344,7 +350,7 @@ order-independent. The order test now checks the values, and the canonical-edge 
 |---|---|
 | P2 (tested 2026-11-10 except the reference-PC timing, §15.14) | Viewport and SubD rebuild after a large Attach (GL, reference hardware); the mixed mesh + object Undo step in the real command path; the D11 prune in the morph controller; skinning invariance under a posed rig (randomized); the look refusal and the explicit variant; the O-5 refusal and override; O-7; the D4 "worsen" case — full list §15.12 |
 | P3 (tested 2026-11-10, §17.9) | A detached part **crossing** the plane derives a usable seam (state VALID, symmetric ops, Re-Symmetrize if the seam splits it in two); Select Linked |
-| P4 | W2–W6 refusals (chain, connected members, bowtie, orientation), W10, the threshold field and its default from the bounding-box diagonal |
+| P4 (tested 2026-11-10, §19.8) | W2–W6 refusals (chain, connected members, bowtie, orientation), W10, the threshold field and its default from the bounding-box diagonal |
 | P5 | Bridge pairing, winding, refusal on conflicting normals; **Re-Symmetrize works again after the islands are bridged** into the head (component count back to 2) |
 | P6 | Symmetric Weld / Bridge, including coincident pre-weld points (AMBIGUOUS correspondence) |
 | P7 | Separate by Islands, the kept island (O-12) |
@@ -384,7 +390,7 @@ approved default value) stays open until the P4 practical test.
 
 | # | Question | Proposal | P2 |
 |---|---|---|---|
-| D10-v | The artist-approved default Weld threshold | after the P4 practical test | not relevant (P4) |
+| D10-v | The artist-approved default Weld threshold | after the P4 practical test (§20) | not relevant (P4); P4 built with the provisional 0.001 × diagonal |
 | O-8 | After Detach: stay in component mode on the source, or mode `4` with the new object selected | stay in component mode | **Decided (Manu, 2026-11-10, practical test P3): "O-8 KEEP"** — mode `3`, the source stays the edit object, no component selection, the new object neither selected nor edited (§17.6) |
 | O-14 | Select Linked "under the cursor" from a menu: the pointer over the menu bar has no hover (§17.2) | the SPACE menu remembers the element under the cursor when it opens; the "Mesh" menu shows a disabled hint; a key only by Manu's keymap decision | **Decided (Manu, 2026-11-10): "SPACE reicht vorerst (später Sub-Object Mode)"** — no key now; a later Sub-Object Mode is the place to revisit it |
 | O-11 | Bridge MVP only for loops of equal vertex count | yes | not relevant (P5) |
@@ -399,7 +405,7 @@ region whose object name is taken gets `"<object> · <object>"` by the §3.3 rul
 ## 11. Phases
 
 P1 kernel (`append_objects`, `extract_faces`, the look / layer / region / symmetry plans; built 2026-11-10) → P2 Attach (+ variant, D11
-prune; built 2026-11-10) → P3 Detach (+ Select Linked; built 2026-11-10) → P4 Weld → P5 Bridge → P6 symmetric Weld / Bridge → P7 Separate by Islands. Each
+prune; built 2026-11-10) → P3 Detach (+ Select Linked; built 2026-11-10) → P4 Weld (built 2026-11-10, §19) → P5 Bridge → P6 symmetric Weld / Bridge → P7 Separate by Islands. Each
 phase: its acceptance tests (§9.3), the doc update in the same commit, a practical test for Manu.
 Later: "Combine targets" (explicit identity of two targets), per-face material, Bridge with unequal counts, Target Weld,
 weight / morph transfer (AD-025 Phase 7), Boolean (own AD).
@@ -844,3 +850,148 @@ neue Objekt nicht ausgewählt), oder lieber Modus `4` mit dem neuen Objekt ausge
 keine Taste; im Menü „Mesh“ geht „unter dem Cursor“ nicht (der Cursor ist dann auf dem Menü). Reicht das SPACE-Menü,
 oder möchtest du eine Taste (dann sagst du welche, und sie kommt in `config/keymap.json`)? Detach aller Flächen wird
 abgelehnt (vorläufig).
+
+## 19. P4 — Weld: specification as built (2026-11-10)
+
+Basis: `main` @ `b66ae84` (P3 and the Weld window decision, §10). Scope as §11: Weld in `src/mirai` and `src/gui`; no
+Core, file-format or keymap change, no key.
+
+### 19.1 Command and places
+
+- `commands.WELD = "Weld"`, **no default key** (§0.1); the handler runs `Application.weld_vertices()` with the
+  provisional default distance; a held gesture refuses it (`GESTURE_REFUSES`).
+- GUI (`gui/menus.py`, decided "Weld-Fenster passt so", §10): menu bar **Mesh** > **Weld…** opens the modal window
+  "Weld": the distance as a number field in world units (`input_double`, format `%.6g`; D10: always visible and
+  editable, the provisional default prefilled), the preview from `Application.weld_plan` ("n Gruppen, m Punkte", or the
+  refusal in amber), the note "Startwert: 0,001 × Diagonale (vorläufig)", **Weld** (disabled while the preview refuses)
+  and **Abbrechen** / Esc. The preview is recomputed only when the field changes (the window is modal, so selection and
+  mesh cannot change while it is open). Without a default (an empty or point-sized mesh) the field shows 0 and the
+  preview asks for a distance.
+
+### 19.2 The kernel `src/mirai/topology/weld.py`
+
+- `plan_weld(mesh, vertices, distance)` (read-only, object space): valid ids, sorted (W1); pairs through a spatial hash
+  with cell `distance` (each point checks the 27 cells around it; "within" = `|p − q| ≤ distance`); groups = connected
+  components of size ≥ 2, each sorted by id, ordered by their first id; then per group W2 (every pair within the
+  distance) and W3 (no shared edge or face); then W4–W6 **predicted** on the face boundaries around the welded points
+  with every member replaced by its group's smallest id: two faces on the same corners or an edge with more than two
+  faces (W4), more than one fan of faces around a survivor (W5, bowtie), a *merged* edge (two original edges landing on
+  one pair) used twice in the same direction (W6). Returns `WeldPlan(groups, refusal, merged_edges, threshold)`.
+- `weld(mesh, plan)` (inside a recording): per group `add_edge(min, v)` for the other members in ascending order (W8),
+  then one `core.operations.collapse_elements(mesh, members, helpers)`: its group rule writes the centroid of the
+  original positions (summed in ascending-id order) and the per-layer group mean over the chain's pairwise results (W7,
+  F9). The survivors must be the groups' smallest ids, and W4–W6 are checked again on the real boundaries around the
+  survivors (the same function as the prediction); a failure raises `WeldRefused` and the caller's transaction rolls
+  back exactly.
+- `differing_points(mesh, groups)` (W11) and `world_threshold_default(diagonal)` (D10: `0.001 × diagonal`, None for 0).
+
+### 19.3 Read-only checks (`Application.weld_plan(threshold)`, in this order)
+
+Each refusal is a status line, `False`, and nothing changes: 1. an interaction runs; 2. not point mode → "press 1,
+select the points to weld" (edge, face and object mode; `PROVISIONAL`); 3. the morph editing view ("on the base only");
+4. a symmetry definition → "not with symmetry on yet - turn it off first (Shift+S)" (until P6); 5. no distance: the
+default is used, and without one "enter a distance"; 6. no valid selected point; 7. the rig posed with the mesh bound;
+8. the point-layer gate (`weld_vertices` is DECLARED); 9. the kernel with `t / s` (uniform scale, AD-021 Q-4) — a
+distance not above 0 is refused there; 10. no group → "no two selected points within t - nothing to weld"; 11. a group
+touching hidden geometry (W10: `hidden.touches_hidden` per group — a selected point outside every group does not
+block); 12. the kernel's W2–W6.
+
+### 19.4 The step (one Undo step)
+
+**One** `_mesh_transaction("Weld n points into k", weld)`; history: one `MeshDeltaCommand` and one selection-mirror
+entry. Afterwards point mode stays, and the previously selected points that still exist stay selected (the survivors
+among them; `PROVISIONAL`). Status: "Weld: n points into k (distance t)" plus " - m point(s) averaged differing target
+/ weight values" when W11 counts any. Undo restores the mesh and the selection exactly; Redo the welded state. A
+failure inside the step (W4–W6 after the change, an unexpected survivor, a `CollapseRefused`) is rolled back: no
+history entry, selection unchanged. W9: face ids stay, so corner UVs per face (F10) and regions stay unchanged.
+
+### 19.5 Threshold (D10)
+
+World space; compared in object space as `t / s`. The default is `0.001 ×` the diagonal of the edit object's
+world-space axis-aligned bounding box (`Application.weld_default_threshold`, every point through `object_space.to_world`),
+**provisional, not artist-approved (D10-v open)**; the status line repeats the value used; `dispatch_command(WELD)`
+uses the default.
+
+### 19.6 Gate and classification
+
+`layer_declarations`: `Weld` and `weld_vertices` **DECLARED** as `(weld, None)` — the symmetric entry is None because
+Weld is refused under a definition until P6; rule fixtures with morph targets
+(`test_layer_topology_ops.test_weld_merges_the_layers_by_the_group_mean`, plain, and the symmetric refusal) and with
+weights (`test_weights_topology_ops.test_weld_averages_the_weights_by_the_group_mean`); `weld_plan` and
+`weld_default_threshold` are non-mesh. The editing view refuses `Weld`; the posed policy counts it as editing.
+`symmetry_declarations`: no entry (undeclared → refused under a definition); the fail-closed guard presses `Weld` on
+its symmetric fixtures. `Weld` is **not** in `_TOPOLOGY_COMMANDS`: that `can_run` stage would refuse when *any*
+selected point touches hidden geometry, W10 asks per group, so `weld_plan` checks it itself.
+
+### 19.7 Literal readings and `PROVISIONAL` choices
+
+Point mode only (the selection of edges or faces is not converted); "within" includes the distance itself; a member
+that already was a bowtie point refuses (W5 counts the fans after the weld, not their change); W6 checks merged edges
+only (an unrelated flipped face elsewhere is not Weld's business); "nothing to weld" is a refusal (no step); the
+selection afterwards; all texts.
+
+### 19.8 Tests (production, `tests/`)
+
+- `tests/test_weld.py` (41): the group centroid and layer means for all 6 / 24 helper-edge orders of `collapse_elements`
+  (bit-exact, vector and weights layers) and the survivor varying with them (W8's reason), Weld's survivor = smallest
+  id for every input order; the soup of four quads welds into the shared grid (invariants, UVs); selection only, any
+  order; the spatial hash across cell borders and at the distance; a distance not above 0; W2, W3 (edge, face), W4
+  (twin faces, three faces on an edge), W5, W6 predicted read-only and refused in the app with nothing changed; W9 UVs
+  and regions; W11; the default formula; one step with exact Undo / Redo; the command with the default; world-space
+  threshold on a rotated, scaled, moved object and the default from its world box; no pair within the distance; five
+  refusals changing nothing (edge / object mode, nothing selected, editing view, W10 hidden); symmetry until P6; the
+  posed rig; a failure after the change rolled back exactly; the W11 status; save / load; the artist's case — a column
+  of a plane detached, attached back and welded with the default gives the plane's counts again.
+- `tests/test_layer_topology_ops.py` / `tests/test_weights_topology_ops.py` (+2 each): the gate's rule fixtures (both
+  entries).
+- `tests/test_gui_menus.py` (+2): the window's default, preview and field without a window; in the window "Mesh" shows
+  "Weld…", the modal opens with the preview, Esc changes nothing, "Weld" welds with the field's value.
+- `tests/test_gl_weld.py`: GL frames before / after / Ctrl+Z / Ctrl+Y with SubD level 2 (subd_cube, the +X half
+  detached and attached back, the seam welded shut).
+
+**Measured** (container, Python 3.13, headless trace store, not the reference PC): the head basemesh with its +X half
+detached and attached back (36 seam pairs = 72 points welded, all 362 points selected): default 0.4 ms, plan 5.5 ms,
+Weld 9.7 ms (incl. its plan), Undo 0.8 ms, Redo 0.5 ms; the man basemesh (44 pairs, 972 points selected): 1.0 / 11.0 /
+9.8 / 0.8 / 0.5 ms.
+
+### 19.9 Limitations (stated)
+
+- Refused under a symmetry definition (P6); D10-v (the approved default) is open until the practical test.
+- Weld merges selected points only: unselected points within the distance stay, and there is no "Target Weld" (§11).
+- Border values of point layers are averaged (H3); the status line counts the points (W11). A UV seam along the weld
+  stays (F10).
+
+## 20. Praxistest P4: Weld (Deutsch, ca. 15 Minuten)
+
+Start: `python src/main.py`. Weld hat **keine Taste**; es steht im Menü **Mesh > Weld…**. Es wirkt auf die in Modus `1`
+ausgewählten Punkte des Edit-Objekts.
+
+1. Vorbereiten: Leertaste > Add + > **Basehead** (oder der Kopf aus einer Szene), Symmetrie aus (`Shift+S`, bis die
+   Statuszeile „off“ zeigt). Modus `3`, die Flächen einer Hälfte auswählen (Rahmen ziehen), **Mesh > Detach**; Modus
+   `4`, das neue Objekt („….001“) anklicken, **Mesh > Attach**. Jetzt ist der Kopf wieder ganz, aber die Mitte ist
+   offen: die Punkte der Naht gibt es doppelt (SubD `Strg+2` zeigt den Riss).
+2. Modus `1`, nichts ausgewählt, Cursor **neben** das Modell (nicht darauf), `B`: alle Ränder sind ausgewählt (über
+   der Naht nähme `B` nur den Rand einer Seite). **Mesh > Weld…**: das Fenster
+   zeigt den Abstand (Startwert) und „n Gruppen, m Punkte“ – erwartet: so viele Gruppen wie Punkte auf der Naht, doppelt
+   so viele Punkte. Ränder ohne Partner (z. B. der Hals) zählen nicht mit.
+3. Den Abstand sehr klein machen (z. B. `0.000001`): die Vorschau sagt „nothing to weld“, der Knopf **Weld** ist grau.
+   Zurück zum Startwert oder größer, **Weld**: die Naht ist geschlossen (mit SubD kein Riss), die Statuszeile nennt
+   „Weld: … (distance …)“.
+4. `Strg+Z`: die Naht ist wieder offen, die Auswahl wie vorher. `Strg+Y`: wieder geschlossen.
+5. Ablehnungen (nichts ändert sich, die Statuszeile sagt warum): zwei Punkte derselben Kante auswählen und den Abstand
+   größer als die Kante setzen → „share an edge – that is Collapse“; Modus `2` oder `3` → „press 1“; Symmetrie an
+   (`Shift+S`) → „not with symmetry on yet“.
+6. Morph (optional): vor Schritt 1 dem Kopf ein Ziel geben (`Strg+N`, etwas formen, auf 0 % zurück). Nach dem Weld
+   sitzt das Ziel an der Naht gemittelt; die Statuszeile zählt die Punkte mit unterschiedlichen Werten („averaged
+   differing target / weight values“).
+
+| # | Verdikt (KEEP / CHANGE / DROP) | Notiz |
+|---|---|---|
+| 1–2 | | |
+| 3 (D10-v: passt der Startwert 0,001 × Diagonale?) | | |
+| 4 | | |
+| 5 | | |
+| 6 | | |
+
+Offen bei dir: **D10-v** – passt der vorläufige Startwert (0,001 × Diagonale der Bounding Box), oder soll er größer /
+kleiner sein? Und: nach dem Weld bleiben die übrigen ausgewählten Punkte ausgewählt (vorläufig).

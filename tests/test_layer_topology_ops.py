@@ -279,7 +279,9 @@ OTHER_FIXTURES = {CContext.KNIFE: "test_knife_cuts_a_layered_mesh_by_its_rule",
                   commands.ATTACH_TAKE_LOOK: "test_attach_carries_the_layers_by_its_rule",
                   "attach_objects": "test_attach_carries_the_layers_by_its_rule",
                   commands.DETACH: "test_detach_carries_the_layers_by_identity",
-                  "detach_faces": "test_detach_carries_the_layers_by_identity"}
+                  "detach_faces": "test_detach_carries_the_layers_by_identity",
+                  commands.WELD: "test_weld_merges_the_layers_by_the_group_mean",
+                  "weld_vertices": "test_weld_merges_the_layers_by_the_group_mean"}
 
 
 def _run(app, command: str, info: dict) -> None:
@@ -617,6 +619,63 @@ def test_detach_carries_the_layers_by_identity(entry, symmetric):
     face = plus_x_quad(app.scene.mesh, touching_seam=False) if symmetric else _grid_face(app, 1, 1)
     _, out = detach_layered(app, entry, face, lambda mesh: add_layers(mesh, 51))
     assert len(out.all_face_ids()) == (2 if symmetric else 1)
+
+
+# -- Weld (AD-031 P4) --------------------------------------------------------------------------------------------------
+
+
+def weld_layered(entry: str, add) -> tuple:
+    """Runs Weld through `entry` on a soup of four quads (a 2x2 grid with its points unshared, jittered within the
+    distance) after `add(mesh)` gave it layers: every survivor holds the Core's group mean of its group's original
+    values (W7, `combine_values(kind, …, "mean")`, bit-exact), every other point keeps its value, no point is created;
+    one Undo step restores the mesh exactly. Returns the mesh and the plan's groups."""
+    from core.mesh import combine_values
+    from tests.test_weld import _app as weld_app, _grid4, _select_points, _soup
+
+    app = weld_app(_soup(_grid4()))
+    mesh = app.scene.mesh
+    add(mesh)
+    body = {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")}
+    values = {lid: {v: mesh.layer_value(lid, v) for v in mesh.all_vertex_ids()} for lid in mesh.point_layer_ids()}
+    _select_points(app)
+    groups = app.weld_plan(0.001).groups
+    means = {
+        g[0]: {lid: combine_values(mesh.point_layer_info(lid).kind,
+                                   [(mesh.layer_value(lid, v), 1.0 / len(g)) for v in g], "mean")
+               for lid in mesh.point_layer_ids()}
+        for g in groups
+    }
+    vertices = set(mesh.all_vertex_ids())
+    history = len(app.history)
+    ok = app.weld_vertices(0.001) if entry == "weld_vertices" else _press(app, entry)
+    assert ok, app.status_message
+    assert len(app.history) == history + 1
+    assert set(mesh.all_vertex_ids()) <= vertices
+    for v in mesh.all_vertex_ids():
+        for lid in mesh.point_layer_ids():
+            expected = means[v][lid] if v in means else values[lid][v]
+            assert mesh.layer_value(lid, v) == expected, (v, lid)
+    assert_layer_invariants(mesh)
+    assert app.key_press(CTRL_Z)
+    assert {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")} == body
+    return mesh, groups
+
+
+@pytest.mark.parametrize("entry", [commands.WELD, "weld_vertices"])
+def test_weld_merges_the_layers_by_the_group_mean(entry):
+    """Weld of a layered mesh (AD-031 §4, W7): the survivors hold the group mean of every layer; the symmetric entry is
+    a refusal - Weld does not run under a definition until P6, layered or not, and changes nothing."""
+    _, groups = weld_layered(entry, lambda mesh: add_layers(mesh, 61))
+    assert len(groups) == 5
+    app = make_app("subd_cube")
+    mesh = app.scene.mesh
+    add_layers(mesh, 62)
+    body = mesh.export_state()
+    app.dispatch_command(commands.SET_VERTEX_MODE)
+    app.selection.vertices = set(mesh.all_vertex_ids())
+    ok = app.weld_vertices(10.0) if entry == "weld_vertices" else _press(app, entry)
+    assert ok is False and "symmetry" in app.status_message
+    assert mesh.export_state() == body
 
 
 # -- the editing view and the mix follow a base topology edit (AD-025 §15, Phase 5 item 6) ----------------
