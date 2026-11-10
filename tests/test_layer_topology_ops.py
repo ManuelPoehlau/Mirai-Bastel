@@ -623,20 +623,32 @@ def test_detach_carries_the_layers_by_identity(entry, symmetric):
     assert len(out.all_face_ids()) == (2 if symmetric else 1)
 
 
-# -- Weld (AD-031 P4) --------------------------------------------------------------------------------------------------
+# -- Weld (AD-031 P4; symmetric P6) ------------------------------------------------------------------------------------
 
 
-def weld_layered(entry: str, add) -> tuple:
-    """Runs Weld through `entry` on a soup of four quads (a 2x2 grid with its points unshared, jittered within the
-    distance) after `add(mesh)` gave it layers: every survivor holds the Core's group mean of its group's original
-    values (W7, `combine_values(kind, …, "mean")`, bit-exact), every other point keeps its value, no point is created;
-    one Undo step restores the mesh exactly. Returns the mesh and the plan's groups."""
+def weld_layered(entry: str, add, *, symmetric: bool = False, mirrored: bool = True) -> tuple:
+    """Runs Weld through `entry` after `add(mesh)` gave the mesh layers: plain, on a soup of four quads (a 2x2 grid with
+    its points unshared, jittered within the distance); `symmetric`, on the X-symmetric soup of
+    `test_symmetric_weld_bridge.sym_soup` with its definition, all points selected (P6-a). Every survivor holds the
+    Core's group mean of its group's original values (W7, `combine_values(kind, …, "mean")`, bit-exact; P6-d: the same
+    rule on both sides), every other point keeps its value, no point is created; under symmetry (and `mirrored` layer
+    values) each moved +X point has a partner at the mirror position with the mirrored values (1e-12); one Undo step
+    restores the mesh exactly. Returns the mesh and the plan's groups."""
     from core.mesh import combine_values
     from tests.test_weld import _app as weld_app, _grid4, _select_points, _soup
 
-    app = weld_app(_soup(_grid4()))
+    if symmetric:
+        from mirai.symmetry_axis import definition_for_axis
+        from tests.test_symmetric_weld_bridge import sym_soup
+
+        app = weld_app(sym_soup())
+        app.scene.mesh.symmetry_definition = definition_for_axis(app.scene.mesh, "X")
+    else:
+        app = weld_app(_soup(_grid4()))
     mesh = app.scene.mesh
     add(mesh)
+    ref = Mesh()
+    ref.load_state(mesh.export_state())
     body = {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")}
     values = {lid: {v: mesh.layer_value(lid, v) for v in mesh.all_vertex_ids()} for lid in mesh.point_layer_ids()}
     _select_points(app)
@@ -657,49 +669,57 @@ def weld_layered(entry: str, add) -> tuple:
         for lid in mesh.point_layer_ids():
             expected = means[v][lid] if v in means else values[lid][v]
             assert mesh.layer_value(lid, v) == expected, (v, lid)
+    if symmetric and mirrored:
+        assert _check_mirror(ref, mesh) > 0
     assert_layer_invariants(mesh)
     assert app.key_press(CTRL_Z)
     assert {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")} == body
     return mesh, groups
 
 
+@pytest.mark.parametrize("symmetric", [False, True], ids=["plain", "symmetric"])
 @pytest.mark.parametrize("entry", [commands.WELD, "weld_vertices"])
-def test_weld_merges_the_layers_by_the_group_mean(entry):
-    """Weld of a layered mesh (AD-031 §4, W7): the survivors hold the group mean of every layer; the symmetric entry is
-    a refusal - Weld does not run under a definition until P6, layered or not, and changes nothing."""
-    _, groups = weld_layered(entry, lambda mesh: add_layers(mesh, 61))
-    assert len(groups) == 5
-    app = make_app("subd_cube")
-    mesh = app.scene.mesh
-    add_layers(mesh, 62)
-    body = mesh.export_state()
-    app.dispatch_command(commands.SET_VERTEX_MODE)
-    app.selection.vertices = set(mesh.all_vertex_ids())
-    ok = app.weld_vertices(10.0) if entry == "weld_vertices" else _press(app, entry)
-    assert ok is False and "symmetry" in app.status_message
-    assert mesh.export_state() == body
+def test_weld_merges_the_layers_by_the_group_mean(entry, symmetric):
+    """Weld of a layered mesh (AD-031 §4, W7): the survivors hold the group mean of every layer; under a symmetry
+    definition (P6-d) the mirror side's groups by the same rule, which gives the mirrored values (to 1e-12)."""
+    _, groups = weld_layered(entry, lambda mesh: add_layers(mesh, 61), symmetric=symmetric)
+    assert len(groups) == (8 + 3 if symmetric else 5)
 
 
-# -- Bridge (AD-031 P5) -------------------------------------------------------------------------------------------------
+# -- Bridge (AD-031 P5; symmetric P6) -----------------------------------------------------------------------------------
 
 
-def bridge_layered(entry: str, add) -> Mesh:
-    """Runs Bridge through `entry` between the inner borders of two rings (`test_bridge._rings`) after `add(mesh)` gave
-    the mesh layers: no point is created or removed and every stored value stays bit for bit; one Undo step restores
-    the mesh exactly. Returns the mesh."""
-    from tests.test_bridge import _app as bridge_app, _rings, _select_points as select_points
+def bridge_layered(entry: str, add, *, symmetric: bool = False) -> Mesh:
+    """Runs Bridge through `entry` after `add(mesh)` gave the mesh layers: plain, between the inner borders of two rings
+    (`test_bridge._rings`); `symmetric`, the ears of the P5 acceptance scene with the X definition, bridged with their
+    mirror image (P6-c). No point is created or removed and every stored value stays bit for bit; one Undo step
+    restores the mesh exactly. Returns the mesh."""
+    from tests.test_bridge import _app as bridge_app, _ear, _rings, _select_points as select_points
 
-    mesh, bottom, top = _rings(turn=0.2)
-    app = bridge_app(mesh)
-    mesh = app.scene.mesh
+    if symmetric:
+        from mirai.symmetry_axis import definition_for_axis
+        from tests.test_symmetric_weld_bridge import _cube_with_two_holes
+
+        app, hole, _ = _cube_with_two_holes()
+        mesh = app.scene.mesh
+        right = _ear(mesh, hole, mirror=False)
+        _ear(mesh, hole, mirror=True)
+        mesh.symmetry_definition = definition_for_axis(mesh, "X")
+        selected = {hole[0], right[0]}
+    else:
+        mesh, bottom, top = _rings(turn=0.2)
+        app = bridge_app(mesh)
+        mesh = app.scene.mesh
+        selected = {bottom[0], top[0]}
     add(mesh)
     before, body = _layers(mesh), {k: v for k, v in mesh.export_state().items() if not k.endswith("_counter")}
-    vertices = set(mesh.all_vertex_ids())
-    select_points(app, {bottom[0], top[0]})
+    vertices, faces = set(mesh.all_vertex_ids()), set(mesh.all_face_ids())
+    select_points(app, selected)
     history = len(app.history)
     ok = app.bridge_borders() if entry == "bridge_borders" else _press(app, entry)
     assert ok, app.status_message
     assert len(app.history) == history + 1
+    assert len(set(mesh.all_face_ids()) - faces) == 8  # symmetric: 4 quads per ear
     assert set(mesh.all_vertex_ids()) == vertices and _layers(mesh) == before
     assert_layer_invariants(mesh)
     assert app.key_press(CTRL_Z)
@@ -707,23 +727,12 @@ def bridge_layered(entry: str, add) -> Mesh:
     return mesh
 
 
+@pytest.mark.parametrize("symmetric", [False, True], ids=["plain", "symmetric"])
 @pytest.mark.parametrize("entry", [commands.BRIDGE, "bridge_borders"])
-def test_bridge_leaves_every_layer_value_as_it_is(entry):
-    """Bridge of a layered mesh (AD-031 §5): only faces are added, so targets stay untouched; the symmetric entry is a
-    refusal (P6), layered or not, and changes nothing."""
-    bridge_layered(entry, lambda mesh: add_layers(mesh, 71))
-    app = make_app("subd_cube")
-    mesh = app.scene.mesh
-    add_layers(mesh, 72)
-    quad = plus_x_quad(mesh, touching_seam=False)
-    corners = mesh.face_vertices(quad)
-    mesh.delete_faces([quad])
-    body = mesh.export_state()
-    app.dispatch_command(commands.SET_VERTEX_MODE)
-    app.selection.vertices = set(corners)
-    ok = app.bridge_borders() if entry == "bridge_borders" else _press(app, entry)
-    assert ok is False and "symmetry" in app.status_message
-    assert mesh.export_state() == body
+def test_bridge_leaves_every_layer_value_as_it_is(entry, symmetric):
+    """Bridge of a layered mesh (AD-031 §5): only faces are added, so targets stay untouched - under a symmetry
+    definition too, where the mirror quads are added in the same step (P6-c/d)."""
+    bridge_layered(entry, lambda mesh: add_layers(mesh, 71), symmetric=symmetric)
 
 
 # -- the editing view and the mix follow a base topology edit (AD-025 §15, Phase 5 item 6) ----------------

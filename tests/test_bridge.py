@@ -7,10 +7,11 @@ borders is selected, the winding against the neighbour faces (every edge of the 
 point, no UVs on the new faces (the old ones kept), no region; refusals: no / one / three borders, unequal sizes (O-11),
 an open border, normals that disagree, faces along a border not oriented alike, a rung that already has faces (the
 ends of an open tube). App: one Undo step with exact Undo / Redo, the new faces selected in face mode, every refusal
-changing nothing (mode, editing view, symmetry until P6, nothing selected, posed rig, hidden geometry), a failure after
+changing nothing (mode, editing view, nothing selected, posed rig, hidden geometry), a failure after
 the change rolled back exactly, and the P5 acceptance test (§9.3): two ears as islands next to a symmetric head block
 Re-Symmetrize; bridged into the head, the seam splits the mesh into two parts again and Re-Symmetrize runs. The layer
-rules are `test_layer_topology_ops.py` / `test_weights_topology_ops.py`; the GL frames `test_gl_bridge.py`."""
+rules are `test_layer_topology_ops.py` / `test_weights_topology_ops.py`; the GL frames `test_gl_bridge.py`; Bridge under a
+symmetry definition (AD-031 P6) is `test_symmetric_weld_bridge.py`."""
 
 from __future__ import annotations
 
@@ -371,18 +372,6 @@ def test_the_kernel_refusals_change_nothing_in_the_app(name, make, text):
     assert _snapshot(app) == before
 
 
-def test_bridge_is_refused_under_a_symmetry_definition():
-    app = make_app("subd_cube")
-    mesh = app.scene.mesh
-    quad = plus_x_quad(mesh, touching_seam=False)
-    corners = mesh.face_vertices(quad)
-    mesh.delete_faces([quad])
-    _select_points(app, corners[:1])
-    before = _snapshot(app)
-    assert app.bridge_borders() is False and "symmetry" in app.status_message
-    assert _snapshot(app) == before
-
-
 def test_posed_rig_with_a_bound_mesh_is_refused():
     app, bottom, top = _rings_app()
     rig = _rig()
@@ -464,9 +453,7 @@ def test_re_symmetrize_works_again_after_the_ears_are_bridged_into_the_head():
     assert symmetry_state(mesh) is SymmetryState.VALID
     with pytest.raises(ResymmetrizeRejected, match="Teile"):  # the ears are extra parts (§3.5)
         plan_resymmetrize(mesh, hole[0])
-    _select_points(app, {hole[0], right[0]})
-    assert app.bridge_borders() is False and "symmetry" in app.status_message  # until P6
-    mesh.symmetry_definition = None
+    mesh.symmetry_definition = None  # P5 path; the same with symmetry on (P6): test_symmetric_weld_bridge.py
     on_border = {v for v in mesh.all_vertex_ids() if any(len(mesh.edge_faces(e)) == 1 for e in mesh.vertex_edges(v))}
     for ear in (right, left):
         head_side = min((v for v in on_border if v not in ear), key=lambda v: sum(

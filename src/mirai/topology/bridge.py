@@ -22,7 +22,7 @@ hidden geometry and the one `_mesh_transaction`.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from core import FaceId, Mesh, SelectionMode, VertexId
 from core.mesh import MeshError
@@ -32,6 +32,11 @@ from .border import BorderLoop, cap_winding, selection_border_loops
 LABEL = "Bridge"
 
 Quad = tuple[VertexId, VertexId, VertexId, VertexId]
+#: `accept(first, partner)`: whether the pairing `first[i]` ↔ `partner[i]` may be used (P6, symmetric Bridge).
+Accept = Callable[[list[VertexId], list[VertexId]], bool]
+
+#: The refusal when `accept` takes no pairing (the symmetric planner replaces it with its own text).
+TEXT_NO_PAIRING = f"{LABEL}: no allowed pairing of the two borders"
 
 
 class BridgeRefused(MeshError):
@@ -43,7 +48,8 @@ class BridgePlan:
     """What a bridge would add, read-only. `loops`: the two borders in canonical order (see the module text); `quads`:
     the new faces, wound against the neighbour faces, quad `i` between `loops[0][i]`, `loops[0][i+1]` and their
     partners; `refusal`: the first reason it cannot run (None = it can); `reversed_` / `offset`: the chosen pairing
-    (`loops[0][i]` ↔ `loops[1][(offset ± i) mod n]`)."""
+    (`loops[0][i]` ↔ `loops[1][(offset ± i) mod n]`). A symmetric plan (`symmetric_ops.plan_symmetric_bridge`, AD-031
+    P6) that mirrors the bridge appends the two mirror borders to `loops` and the mirror quads to `quads`."""
 
     loops: tuple[tuple[VertexId, ...], ...]
     quads: tuple[Quad, ...]
@@ -58,7 +64,13 @@ class BridgePlan:
 
 def plan_bridge(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> BridgePlan:
     """The bridge between the two borders the selection touches, or the first refusal. Read-only."""
-    loops = selection_border_loops(mesh, mode, ids)
+    return plan_bridge_loops(mesh, selection_border_loops(mesh, mode, ids))
+
+
+def plan_bridge_loops(mesh: Mesh, loops: list[BorderLoop], accept: Accept | None = None) -> BridgePlan:
+    """The bridge between `loops` (the borders to join; exactly two are needed), or the first refusal. Read-only.
+    `accept(first, partner)` (AD-031 P6, the symmetric planner) restricts the pairing to the ones it accepts - the
+    closest accepted one is taken; none accepted refuses with `TEXT_NO_PAIRING`."""
     if not loops:
         return _refused(f"{LABEL}: select points or edges of two open borders (B selects a whole border)")
     if len(loops) == 1:
@@ -73,7 +85,10 @@ def plan_bridge(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> BridgePlan:
     if a < 3:
         return _refused(f"{LABEL}: a border has fewer than three points")
     first, second = sorted((_canonical(mesh, loop) for loop in loops), key=lambda vs: int(vs[0]))
-    reversed_, offset = _pairing(mesh, first, second)
+    pairing = _pairing(mesh, first, second, accept)
+    if pairing is None:
+        return BridgePlan((tuple(first), tuple(second)), (), TEXT_NO_PAIRING)
+    reversed_, offset = pairing
     n = len(first)
     partner = [second[(offset - i) % n] if reversed_ else second[(offset + i) % n] for i in range(n)]
     base = [(first[i], first[(i + 1) % n], partner[(i + 1) % n], partner[i]) for i in range(n)]
@@ -127,15 +142,22 @@ def _canonical(mesh: Mesh, loop: BorderLoop) -> list[VertexId]:
     return ordered[k:] + ordered[:k]
 
 
-def _pairing(mesh: Mesh, first: list[VertexId], second: list[VertexId]) -> tuple[bool, int]:
+def _pairing(
+    mesh: Mesh, first: list[VertexId], second: list[VertexId], accept: Accept | None = None
+) -> tuple[bool, int] | None:
     """(reversed, offset) with the minimal Σ|a_i − b_σ(i)|² over both directions and every rotation (ties: forward,
-    then the smaller offset). O(n²) for loops of `n` points."""
+    then the smaller offset), among the pairings `accept` takes (all without it; None when it takes none). O(n²) for
+    loops of `n` points."""
     pa = [mesh.vertex_position(v) for v in first]
     pb = [mesh.vertex_position(v) for v in second]
     n = len(pa)
     best: tuple[float, int, int] | None = None
     for direction in (0, 1):
         for k in range(n):
+            if accept is not None and not accept(
+                first, [second[(k - i) % n if direction else (k + i) % n] for i in range(n)]
+            ):
+                continue
             cost = 0.0
             for i in range(n):
                 p, q = pa[i], pb[(k - i) % n if direction else (k + i) % n]
@@ -143,7 +165,8 @@ def _pairing(mesh: Mesh, first: list[VertexId], second: list[VertexId]) -> tuple
             key = (cost, direction, k)
             if best is None or key < best:
                 best = key
-    assert best is not None
+    if best is None:
+        return None
     return bool(best[1]), best[2]
 
 

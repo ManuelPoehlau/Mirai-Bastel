@@ -6,11 +6,12 @@ centroid and per-layer group mean for every merge order (W7) and the canonical s
 the W2-W4 / W6 refusals predicted read-only, W5 allowed and reported (Manu 2026-11-10, "Change W5": a seam welded point
 by point), UVs per face and regions kept (W9), the W11 count. App: one Undo step with
 exact Undo / Redo, the threshold in world space (scaled object) and its default from the world bounding box (D10), the
-command with the default, every refusal changing nothing (mode, editing view, symmetry until P6, nothing selected, a
+command with the default, every refusal changing nothing (mode, editing view, nothing selected, a
 posed rig, no pair within the distance, W2-W4 / W6, W10 hidden), the check after the change rolled back exactly, save /
 load, and the artist's case: a part detached and attached back is zipped shut again. Headless (`Application` with its
 trace viewport). The layer rules with morph targets and weights are `test_layer_topology_ops.py` /
-`test_weights_topology_ops.py`; the window is `test_gui_menus.py`, the GL frames `test_gl_weld.py`."""
+`test_weights_topology_ops.py`; the window is `test_gui_menus.py`, the GL frames `test_gl_weld.py`; Weld under a symmetry
+definition (AD-031 P6) is `test_symmetric_weld_bridge.py`."""
 
 from __future__ import annotations
 
@@ -34,7 +35,6 @@ from mirai.topology import weld as weld_api
 from mirai.topology.weld import differing_points, plan_weld, weld, world_threshold_default
 from tests.mesh_invariants import assert_layer_invariants, assert_mesh_invariants, assert_uv_invariants
 from tests.test_skinning import _random_pose, _rig
-from tests.test_symmetric_ops import make_app
 
 V = SelectionMode.VERTEX
 WIDTH, HEIGHT = 800, 600
@@ -473,16 +473,6 @@ def test_the_topology_refusals_change_nothing_in_the_app(name, make, text):
     assert app.weld_vertices(T) is False
     assert text in app.status_message, app.status_message
     assert _snapshot(app) == before
-
-
-def test_weld_is_refused_under_a_symmetry_definition():
-    """AD-031 §3.5: Weld is refused while a definition is set (symmetric Weld is P6)."""
-    app = make_app("subd_cube")
-    _select_points(app)
-    before = _snapshot(app)
-    assert app.weld_vertices(10.0) is False
-    assert "symmetry" in app.status_message and _snapshot(app) == before
-    assert app.dispatch_command(commands.WELD) is False and _snapshot(app) == before
 
 
 def test_posed_rig_with_a_bound_mesh_is_refused():

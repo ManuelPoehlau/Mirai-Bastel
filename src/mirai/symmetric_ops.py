@@ -1,6 +1,6 @@
 """Symmetric topology coordinators (AD-SYM-03 §3, slices 3b/3c/4): Edge Connect, Vertex Connect,
 Split, the removal commands Delete, Dissolve and Dissolve (no cleanup), Collapse (WP Toolbox
-Gaps B1) and Cap (2026-10-25).
+Gaps B1), Cap (2026-10-25), Weld and Bridge (AD-031 P6, 2026-11-10).
 
 A coordinator is a pure mutation `coordinate_*(mesh, selection[, mode]) -> result` for the
 unchanged `apply_*` function of `mirai.topology`: expand the (already canonical, one-sided)
@@ -21,6 +21,7 @@ never `application`. `mirai.symmetry_declarations` maps `CContext` and the remov
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Callable, Iterable
 
 from core import EdgeId, FaceId, SelectionMode, VertexId
@@ -44,9 +45,11 @@ from .symmetry_coordination import (
 )
 from .topology.connect_per_face import EdgeConnectResult, apply_connect_edges
 from .topology.connect_vertices_per_face import apply_connect_vertices
-from .topology.border import border_loop, cap_loops, cap_winding, check_cappable
+from .topology.border import BorderLoop, border_loop, cap_loops, cap_winding, check_cappable, selection_border_loops
+from .topology.bridge import TEXT_NO_PAIRING, BridgePlan, bridge, plan_bridge_loops
 from .topology.collapse import collapse_input
 from .topology.delete_dissolve import apply_removal
+from .topology.weld import WeldPlan, plan_weld, weld
 
 #: Refusal texts (visible status line, each says what to do). The Lab README lists them.
 TEXT_NON_EXACT_PLANE = (
@@ -72,6 +75,23 @@ TEXT_CAP_PLANE = (
 TEXT_SEAM_DISSOLVE = (
     "Symmetrie: Auflösen an der Seam wird noch nicht unterstützt (Seam-Kante oder -Vertex würde "
     "aufgelöst) — nichts geändert; abseits der Seam arbeiten oder Symmetrie ausschalten (Shift+S)"
+)
+# AD-031 P6-c (Bridge under a definition); texts `PROVISIONAL`.
+TEXT_BRIDGE_ACROSS = (
+    "Symmetrie: die beiden Ränder liegen auf verschiedenen Seiten der Ebene — jede neue Fläche würde die Ebene "
+    "überspannen; nichts geändert; zwei Ränder auf einer Seite wählen oder Symmetrie ausschalten (Shift+S)"
+)
+TEXT_BRIDGE_MIXED = (
+    "Symmetrie: ein Rand liegt über der Ebene, der andere nicht — nicht spiegelbar; nichts geändert; "
+    "Symmetrie ausschalten (Shift+S)"
+)
+TEXT_BRIDGE_NOT_MIRRORED = (
+    "Symmetrie: die beiden Ränder über der Ebene lassen sich nicht spiegelbildlich verbinden — nichts geändert; "
+    "Symmetrie ausschalten (Shift+S)"
+)
+TEXT_BRIDGE_IMAGE_CLOSED = (
+    "Symmetrie: das Spiegelbild eines Randes ist kein offener Rand — nichts geändert; an einer Stelle mit Partner "
+    "arbeiten oder Symmetrie ausschalten (Shift+S)"
 )
 
 
@@ -399,3 +419,212 @@ def coordinate_cap(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> list[FaceI
         )
     _check_delta(before, mesh)
     return new_faces
+
+
+# ---------------------------------------------------------------------------------------------
+# Weld and Bridge (AD-031 P6, decided P6-a…P6-d, Manu 2026-11-10)
+# ---------------------------------------------------------------------------------------------
+
+
+def _on_plane(mesh: Mesh, definition: SymmetryDefinition, vertex: VertexId) -> bool:
+    position = mesh.vertex_position(vertex)
+    return sum((p - o) * n for p, o, n in zip(position, definition.plane_point, definition.plane_normal)) == 0.0
+
+
+def _seam_with_plane_edges(mesh: Mesh, definition: SymmetryDefinition, edges: Iterable[EdgeId]) -> SymmetryDefinition:
+    """The seam without dead ids (as Collapse), plus those of `edges` whose two ends lie exactly on the plane (Shift+S's
+    rule, `symmetry_axis.definition_for_axis`, applied only where the operation joined something)."""
+    seam = {e for e in definition.seam_edges if mesh.is_valid_edge(e)}
+    for edge in edges:
+        if mesh.is_valid_edge(edge) and all(_on_plane(mesh, definition, v) for v in mesh.edge_vertices(edge)):
+            seam.add(edge)
+    return SymmetryDefinition(definition.plane_point, definition.plane_normal, frozenset(seam))
+
+
+def _weld_images(mesh: Mesh, definition: SymmetryDefinition, groups) -> list[int] | None:
+    """For each weld group the index of its mirror image group (itself for a group on / around the plane), read from the
+    current positions; None when an image is no group of the plan (the plan is not mirror-closed)."""
+    group_at: dict = {}
+    for i, group in enumerate(groups):
+        for v in group:
+            group_at.setdefault(mesh.vertex_position(v), set()).add(i)
+    images = []
+    for group in groups:
+        found: set[int] = set()
+        for v in group:
+            image = group_at.get(mirror_position(mesh.vertex_position(v), definition.plane_point, definition.plane_normal))
+            if image is None:
+                return None
+            found |= image
+        if len(found) != 1:
+            return None
+        (j,) = found
+        if len(groups[j]) != len(group):
+            return None
+        images.append(j)
+    return images
+
+
+def plan_symmetric_weld(mesh: Mesh, vertices: Iterable[VertexId], distance: float) -> WeldPlan:
+    """The Weld plan under a definition (P6-a), read-only: the mirror image of a selected point is **every** point at its
+    exact mirror position (a point on the plane: itself and the points on it); the union of the selection and its image
+    is closed under the image - the image of an image point is the selected point and every point coinciding with it -
+    so doubled (AMBIGUOUS) points weld on both sides alike. Its groups are `topology.weld.plan_weld`'s over that union,
+    welded as whole groups. Refusals (in `WeldPlan.refusal`): the plane not exact, a selected point with no point at its
+    mirror position (`TEXT_UNPAIRED`), the kernel's W2-W4 / W6, and a plan whose groups are not each other's mirror
+    images (`TEXT_DELTA`; cannot happen on an exact plane, kept as the guard)."""
+    definition = _require_definition(mesh)
+    if not is_exact_plane(definition):
+        return WeldPlan((), TEXT_NON_EXACT_PLANE)
+    by_position: dict = {}
+    for v in mesh.all_vertex_ids():
+        by_position.setdefault(mesh.vertex_position(v), []).append(v)
+    union: set[VertexId] = set()
+    for v in vertices:
+        if not mesh.is_valid_vertex(v):
+            continue
+        position = mesh.vertex_position(v)
+        image = by_position.get(mirror_position(position, definition.plane_point, definition.plane_normal))
+        if not image:
+            return WeldPlan((), TEXT_UNPAIRED)
+        union.update(image)
+        union.update(by_position[position])
+    plan = plan_weld(mesh, union, distance)
+    if plan.refusal is None and _weld_images(mesh, definition, plan.groups) is None:
+        return WeldPlan(plan.groups, TEXT_DELTA)
+    return plan
+
+
+def coordinate_weld(mesh: Mesh, plan: WeldPlan) -> list[VertexId]:
+    """Weld of a `plan_symmetric_weld` plan in one mutation (P6-a/b/d); returns the survivors in group order. The groups
+    weld at once (`topology.weld.weld`: the centroid and the group mean of every layer, P6-d - the values are not forced
+    to mirror each other); then, as Collapse's coordinator does, a mirror pair of groups gets the exact mirror of the
+    normal side's survivor and a group on / around the plane is projected onto it, so the pairs stay exact. Seam
+    (P6-b): ids that died in the weld are dropped, and every edge at a survivor whose two ends lie exactly on the plane
+    joins it. The delta check (D-strict) is the guard; `WeldRefused` / `CollapseRefused` propagate unchanged."""
+    definition = _require_definition(mesh)
+    if not is_exact_plane(definition):
+        raise SymmetryRefusal(TEXT_NON_EXACT_PLANE)
+    images = _weld_images(mesh, definition, plan.groups)
+    if images is None:
+        raise SymmetryRefusal(TEXT_DELTA)
+    before = completeness_report(mesh)
+
+    survivors = weld(mesh, plan)
+
+    normal = definition.plane_normal
+    for i, j in enumerate(images):
+        position = mesh.vertex_position(survivors[i])
+        if j == i:
+            distance = sum((p - o) * n for p, o, n in zip(position, definition.plane_point, normal))
+            mesh.set_vertex_position(survivors[i], tuple(p - distance * n for p, n in zip(position, normal)))
+        elif j > i:
+            source, image = (i, j) if element_side(mesh, definition, [survivors[i]]) >= 0 else (j, i)
+            mirrored = mirror_position(mesh.vertex_position(survivors[source]), definition.plane_point, normal)
+            mesh.set_vertex_position(survivors[image], mirrored)
+
+    at_survivors = {e for s in survivors if _on_plane(mesh, definition, s) for e in mesh.vertex_edges(s)}
+    mesh.symmetry_definition = _seam_with_plane_edges(mesh, definition, at_survivors)
+    _check_delta(before, mesh)
+    return survivors
+
+
+def _loop_image(mesh: Mesh, index: SymmetryIndex, loop: BorderLoop) -> BorderLoop | None:
+    """The border that is `loop`'s mirror image; None when an edge has no partner. `SymmetryRefusal` when the image
+    edges are no single open border."""
+    images = [index.edge_partner(e) for e in loop.edges]
+    if any(image is None for image in images):
+        return None
+    if frozenset(images) == frozenset(loop.edges):
+        return loop
+    if not all(len(mesh.edge_faces(e)) == 1 for e in images):
+        raise SymmetryRefusal(TEXT_BRIDGE_IMAGE_CLOSED)
+    image_loop = border_loop(mesh, images[0])
+    if frozenset(image_loop.edges) != frozenset(images):
+        raise SymmetryRefusal(TEXT_BRIDGE_IMAGE_CLOSED)
+    return image_loop
+
+
+def plan_symmetric_bridge(mesh: Mesh, mode: SelectionMode, ids: Iterable) -> BridgePlan:
+    """The Bridge plan under a definition (P6-c), read-only; refusals in `BridgePlan.refusal`. The borders the selection
+    touches count a mirror pair once (the normal's side is kept, as `canonical_*`); then
+
+    1. both borders on one side → the closest bridge between them (`topology.bridge.plan_bridge_loops`) and its exact
+       mirror: each quad's partner points in reverse order (the mirror flips the winding) - not planned again; the two
+       mirror borders are appended to `loops`, the mirror quads to `quads`;
+    2. both borders their own mirror image (each straddles the plane) → one bridge, the closest of the pairings that
+       map mirror points to mirror points; none → `TEXT_BRIDGE_NOT_MIRRORED`;
+    3. the two borders each other's image, or on opposite sides → refused (`TEXT_BRIDGE_ACROSS`: every quad would span
+       the plane);
+    4. one border its own image, the other not → refused (`TEXT_BRIDGE_MIXED`).
+
+    A border edge without a partner refuses with `TEXT_UNPAIRED`; the kernel's refusals (counts, closed, normals,
+    rungs) stay as they are."""
+    definition = _require_definition(mesh)
+    if not is_exact_plane(definition):
+        return BridgePlan((), (), TEXT_NON_EXACT_PLANE)
+    index = SymmetryIndex(mesh)
+    raw = selection_border_loops(mesh, mode, ids)
+    try:
+        images = [_loop_image(mesh, index, loop) for loop in raw]
+    except SymmetryRefusal as exc:
+        return BridgePlan((), (), str(exc))
+    if any(image is None for image in images):
+        return BridgePlan((), (), TEXT_UNPAIRED)
+    keys = [frozenset(loop.edges) for loop in raw]
+    image_keys = [frozenset(image.edges) for image in images]  # type: ignore[union-attr]
+    if len(raw) == 2 and image_keys[0] == keys[1] and keys[0] != keys[1]:
+        return BridgePlan((), (), TEXT_BRIDGE_ACROSS)  # case 3: the two borders are each other's mirror image
+    kept, kept_images = [], []
+    for loop, key, image, image_key in zip(raw, keys, images, image_keys):
+        if image_key != key and image_key in keys and element_side(mesh, definition, loop.vertices) < 0:
+            continue  # its image is selected too: a mirror pair counts once ("explicit wins", the normal's side)
+        kept.append(loop)
+        kept_images.append(image)
+    if len(kept) != 2:
+        return plan_bridge_loops(mesh, kept)  # the kernel's refusals (none, one, more than two borders)
+    self_image = [frozenset(image.edges) == frozenset(loop.edges) for loop, image in zip(kept, kept_images)]
+    if self_image[0] != self_image[1]:
+        return BridgePlan((), (), TEXT_BRIDGE_MIXED)
+    if self_image[0]:
+
+        def mirrored(first: list[VertexId], partner: list[VertexId]) -> bool:
+            at = {v: i for i, v in enumerate(first)}
+            for i, a in enumerate(first):
+                j = at.get(index.vertex_partner(a))
+                if j is None or index.vertex_partner(partner[i]) != partner[j]:
+                    return False
+            return True
+
+        plan = plan_bridge_loops(mesh, kept, accept=mirrored)
+        if plan.refusal == TEXT_NO_PAIRING:
+            return BridgePlan(plan.loops, (), TEXT_BRIDGE_NOT_MIRRORED)
+        return plan
+    sides = {element_side(mesh, definition, loop.vertices) for loop in kept}
+    if len(sides) != 1 or 0 in sides:
+        return BridgePlan((), (), TEXT_BRIDGE_ACROSS)
+    plan = plan_bridge_loops(mesh, kept)
+    if plan.refusal is not None:
+        return plan
+    partner = index.vertex_partner
+    mirror_loops = tuple(tuple(partner(v) for v in loop) for loop in plan.loops)
+    mirror_quads = tuple(tuple(partner(v) for v in reversed(q)) for q in plan.quads)
+    if any(v is None for q in mirror_quads for v in q):
+        return BridgePlan((), (), TEXT_UNPAIRED)
+    return dataclasses.replace(plan, loops=plan.loops + mirror_loops, quads=plan.quads + mirror_quads)
+
+
+def coordinate_bridge(mesh: Mesh, plan: BridgePlan) -> list[FaceId]:
+    """Bridge of a `plan_symmetric_bridge` plan in one mutation (P6-c/d); returns the new faces in quad order. Adds the
+    quads (`topology.bridge.bridge`: no new points, no UVs, no region; the layers stay untouched, P6-d); a new edge whose
+    two ends lie exactly on the plane (a rung between the seam points of two borders across the plane) joins the seam,
+    as Cap's split edge does. The delta check (D-strict) is the guard; `BridgeRefused` propagates unchanged."""
+    definition = _require_definition(mesh)
+    if not is_exact_plane(definition):
+        raise SymmetryRefusal(TEXT_NON_EXACT_PLANE)
+    before = completeness_report(mesh)
+    faces = bridge(mesh, plan)
+    created = {e for f in faces for e in mesh.face_edges(f)} - before.edges
+    mesh.symmetry_definition = _seam_with_plane_edges(mesh, definition, created)
+    _check_delta(before, mesh)
+    return faces

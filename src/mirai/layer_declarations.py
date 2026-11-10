@@ -45,6 +45,7 @@ from .symmetric_extrude import plan_extrude
 from .symmetric_offset import plan_bevel as plan_symmetric_bevel, plan_inset as plan_symmetric_inset
 from .symmetric_knife import coordinate_knife
 from .symmetric_ops import (
+    coordinate_bridge,
     coordinate_cap,
     coordinate_collapse,
     coordinate_delete,
@@ -53,6 +54,7 @@ from .symmetric_ops import (
     coordinate_edge_connect,
     coordinate_split,
     coordinate_vertex_connect,
+    coordinate_weld,
 )
 from .topology.border import apply_cap
 from .topology.collapse import apply_collapse
@@ -110,14 +112,14 @@ LAYER_SAFE_OPERATIONS: Mapping[Any, tuple] = MappingProxyType(
         commands.DETACH: (extract_faces, extract_faces),
         "detach_faces": (extract_faces, extract_faces),
         # AD-031 P4: Weld merges selected points through `collapse_elements`, whose group rule writes the per-layer
-        # group mean (W7, H3); no vertex is created. The symmetric entry is None: Weld is refused under a symmetry
-        # definition until P6 (`Application.weld_plan`), so there is no symmetric implementation to declare.
-        commands.WELD: (weld, None),
-        "weld_vertices": (weld, None),
+        # group mean (W7, H3); no vertex is created. P6 (P6-a/d): under a definition the coordinator welds the
+        # selection and its image as whole groups with the same rule (the snap moves positions only).
+        commands.WELD: (weld, coordinate_weld),
+        "weld_vertices": (weld, coordinate_weld),
         # AD-031 P5: Bridge adds faces between existing points only - no vertex is created or removed, so every layer
-        # value stays as it is. Symmetric entry None: refused under a definition until P6 (`Application.bridge_plan`).
-        commands.BRIDGE: (bridge, None),
-        "bridge_borders": (bridge, None),
+        # value stays as it is; P6-c/d: the symmetric coordinator adds the mirror quads the same way.
+        commands.BRIDGE: (bridge, coordinate_bridge),
+        "bridge_borders": (bridge, coordinate_bridge),
     }
 )
 

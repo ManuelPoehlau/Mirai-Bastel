@@ -224,6 +224,13 @@ def test_declared_entries_are_the_implementations_the_app_runs():
         gestures_module.build_bevel, symmetry_declarations.OFFSET_COORDINATORS[commands.BEVEL]
     )
     assert ops["mirror_copy"] == (objects_module.mirror_mesh,) * 2
+    # AD-031 P6: Weld and Bridge, plain kernel and symmetric coordinator
+    from mirai.topology import bridge as bridge_module, weld as weld_module
+
+    for key in (commands.WELD, "weld_vertices"):
+        assert ops[key] == (weld_module.weld, symmetry_declarations.WELD_COORDINATORS[commands.WELD])
+    for key in (commands.BRIDGE, "bridge_borders"):
+        assert ops[key] == (bridge_module.bridge, symmetry_declarations.BRIDGE_COORDINATORS[commands.BRIDGE])
 
 
 def test_unknown_keys_are_refused():

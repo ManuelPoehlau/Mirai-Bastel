@@ -448,19 +448,24 @@ def test_detach_keeps_the_weights_unchanged(entry, symmetric):
     assert skin_layer(out) is not None
 
 
+@pytest.mark.parametrize("symmetric", [False, True], ids=["plain", "symmetric"])
 @pytest.mark.parametrize("entry", [commands.WELD, "weld_vertices"])
-def test_weld_averages_the_weights_by_the_group_mean(entry):
+def test_weld_averages_the_weights_by_the_group_mean(entry, symmetric):
     """AD-031 §4 W7 with weights: every survivor holds the convex per-key group mean (`combine_values(WEIGHTS, …,
     "mean")`), the other points keep theirs; Undo restores the mesh exactly (`weld_layered`). Under a symmetry
-    definition Weld is refused (P6) - covered with morph targets in `test_weld_merges_the_layers_by_the_group_mean`."""
-    mesh, groups = phase5.weld_layered(entry, lambda mesh: add_weights(mesh, 17))
-    assert skin_layer(mesh) is not None and len(groups) == 5
+    definition (P6-d) both sides by the same rule; weights are not mirrored (their keys are bones), so no mirror check."""
+    mesh, groups = phase5.weld_layered(
+        entry, lambda mesh: add_weights(mesh, 17), symmetric=symmetric, mirrored=False
+    )
+    assert skin_layer(mesh) is not None and len(groups) == (11 if symmetric else 5)
 
 
+@pytest.mark.parametrize("symmetric", [False, True], ids=["plain", "symmetric"])
 @pytest.mark.parametrize("entry", [commands.BRIDGE, "bridge_borders"])
-def test_bridge_keeps_the_weights_unchanged(entry):
-    """AD-031 §5 with weights: Bridge adds faces only, every weights value stays (`bridge_layered`)."""
-    mesh = phase5.bridge_layered(entry, lambda mesh: add_weights(mesh, 19))
+def test_bridge_keeps_the_weights_unchanged(entry, symmetric):
+    """AD-031 §5 with weights: Bridge adds faces only, every weights value stays (`bridge_layered`; P6-c/d under a
+    symmetry definition)."""
+    mesh = phase5.bridge_layered(entry, lambda mesh: add_weights(mesh, 19), symmetric=symmetric)
     assert skin_layer(mesh) is not None
 
 

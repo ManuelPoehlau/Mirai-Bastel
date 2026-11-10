@@ -13,6 +13,9 @@ and cannot drift from it. Four keys exist today:
   *planner* `(mesh, faces) -> plan` that `Application` runs at `begin` and hands to the unchanged tool;
 - the width gestures (`commands.INSET`, `commands.BEVEL`, 2026-10-29): a planner `(mesh, ids) -> (union, coordinator)` that
   `Application` runs at the press (`mirai.symmetric_offset`).
+- Weld and Bridge (`commands.WELD`, `commands.BRIDGE`, AD-031 P6): the coordinator `(mesh, plan) -> result` that runs a
+  plan of `symmetric_ops.plan_symmetric_weld` / `plan_symmetric_bridge` (read-only, also the Weld window's preview) inside
+  the caller's one transaction; without the entry `Application` refuses the command under a definition.
 
 Transforms keep `Operation.supports_symmetry`; there the Operation itself mirrors.
 
@@ -38,6 +41,7 @@ from .symmetric_extrude import plan_extrude
 from .symmetric_offset import plan_bevel, plan_inset
 from .symmetric_knife import coordinate_knife
 from .symmetric_ops import (
+    coordinate_bridge,
     coordinate_cap,
     coordinate_collapse,
     coordinate_delete,
@@ -46,6 +50,7 @@ from .symmetric_ops import (
     coordinate_edge_connect,
     coordinate_split,
     coordinate_vertex_connect,
+    coordinate_weld,
 )
 from .topology.contextual_c import CContext
 
@@ -114,6 +119,23 @@ OFFSET_COORDINATORS: Mapping[str, Any] = MappingProxyType(
 )
 
 
+#: Weld command constant -> coordinator `(mesh, WeldPlan) -> survivors` (`mirai.symmetric_ops.coordinate_weld`, AD-031 P6-a/b):
+#: the plan is `symmetric_ops.plan_symmetric_weld`'s. The entry is the switch (D-b).
+WELD_COORDINATORS: Mapping[str, Any] = MappingProxyType(
+    {
+        commands.WELD: coordinate_weld,
+    }
+)
+
+#: Bridge command constant -> coordinator `(mesh, BridgePlan) -> new faces` (`mirai.symmetric_ops.coordinate_bridge`,
+#: AD-031 P6-c): the plan is `symmetric_ops.plan_symmetric_bridge`'s. The entry is the switch (D-b).
+BRIDGE_COORDINATORS: Mapping[str, Any] = MappingProxyType(
+    {
+        commands.BRIDGE: coordinate_bridge,
+    }
+)
+
+
 def declared_c_contexts() -> frozenset[CContext]:
     """The `C` contexts that have a coordinator (read on every call, never cached)."""
     return frozenset(C_CONTEXT_COORDINATORS)
@@ -142,3 +164,13 @@ def declared_offset_commands() -> frozenset[str]:
 def declared_extrude_commands() -> frozenset[str]:
     """The Extrude commands that have a planner (read on every call, never cached)."""
     return frozenset(EXTRUDE_COORDINATORS)
+
+
+def declared_weld_commands() -> frozenset[str]:
+    """The Weld commands that have a coordinator (read on every call, never cached)."""
+    return frozenset(WELD_COORDINATORS)
+
+
+def declared_bridge_commands() -> frozenset[str]:
+    """The Bridge commands that have a coordinator (read on every call, never cached)."""
+    return frozenset(BRIDGE_COORDINATORS)

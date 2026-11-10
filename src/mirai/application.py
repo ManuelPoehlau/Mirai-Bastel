@@ -126,7 +126,15 @@ from .symmetry_coordination import (
     expand_faces,
     is_exact_plane,
 )
-from .symmetric_ops import TEXT_NON_EXACT_PLANE, TEXT_UNPAIRED, SymmetryRefusal, on_residue_sides, residue_sides
+from .symmetric_ops import (
+    TEXT_NON_EXACT_PLANE,
+    TEXT_UNPAIRED,
+    SymmetryRefusal,
+    on_residue_sides,
+    plan_symmetric_bridge,
+    plan_symmetric_weld,
+    residue_sides,
+)
 from .symmetry_axis import current_axis
 from .symmetry import mirrored_selection
 from .symmetry_display import SymmetryDisplay
@@ -3559,9 +3567,12 @@ class Application:
     def weld_plan(self, threshold: float | None = None) -> "weld_api.WeldPlan":
         """What Weld would merge now (AD-031 §4), read-only: the groups of the selected points within the world-space
         `threshold` (None: `weld_default_threshold`) and the first refusal - an interaction, not point mode, the morph
-        editing view, a symmetry definition (until P6), no distance, nothing selected, a posed rig with the mesh bound,
-        the point-layer gate, no two points within the distance, a group touching hidden geometry (W10), and the
-        kernel's W2-W4 / W6 (`topology.weld.plan_weld`). The preview of "Mesh > Weld…" shows its groups and points."""
+        editing view, a symmetry definition without a declared coordinator, no distance, nothing selected, a posed rig
+        with the mesh bound, the point-layer gate, no two points within the distance, a group touching hidden geometry
+        (W10), and the kernel's W2-W4 / W6 (`topology.weld.plan_weld`). Under a definition (AD-031 P6-a) the plan is
+        `symmetric_ops.plan_symmetric_weld`'s: the selection and its mirror image (every point at the mirror position)
+        as whole groups; its refusals (plane not exact, a point without an image) come in the kernel's place. The
+        preview of "Mesh > Weld…" shows its groups and points."""
         label = weld_api.LABEL
         plan = weld_api.WeldPlan
         owner = self.interaction_owner
@@ -3575,9 +3586,10 @@ class Application:
             return plan((), f"{label}: on the base only (Tab returns to it)", threshold=threshold)
         obj = self.scene.edit_object
         mesh = obj.mesh
-        if mesh.symmetry_definition is not None:
+        symmetric = mesh.symmetry_definition is not None
+        if symmetric and commands.WELD not in symmetry_declarations.declared_weld_commands():
             key = self._skeleton.key_text(commands.SYMMETRY_CYCLE)
-            return plan((), f"{label}: not with symmetry on yet - turn it off first ({key})", threshold=threshold)
+            return plan((), f"{label}: not with symmetry on - turn it off first ({key})", threshold=threshold)
         if threshold is None:
             threshold = self.weld_default_threshold()
             if threshold is None:
@@ -3593,7 +3605,11 @@ class Application:
             return plan((), text, threshold=threshold)
         # World threshold -> object space (uniform scale, AD-021 Q-4); a non-number stays a refusal of the kernel.
         valid = isinstance(threshold, (int, float)) and math.isfinite(threshold) and threshold > 0.0
-        kernel = weld_api.plan_weld(mesh, vertices, threshold / obj.transform.scale if valid else threshold)
+        distance = threshold / obj.transform.scale if valid else threshold
+        if symmetric and valid:
+            kernel = plan_symmetric_weld(mesh, vertices, distance)
+        else:
+            kernel = weld_api.plan_weld(mesh, vertices, distance)
         kernel = dataclasses.replace(kernel, threshold=threshold)
         if kernel.refusal is None and not kernel.groups:
             return dataclasses.replace(kernel, refusal=(
@@ -3613,7 +3629,10 @@ class Application:
         exactly when the result fails W4 or W6 after the change. Afterwards: point mode, the selected points that remain
         stay selected (the survivors among them). The status line names the groups, the points, the distance used and
         how many points averaged differing layer values (W11), and the points where two parts touch at one point only
-        (W5: allowed since Manu's "Change W5", 2026-11-10 - a seam may be welded point by point)."""
+        (W5: allowed since Manu's "Change W5", 2026-11-10 - a seam may be welded point by point). Under a symmetry
+        definition (AD-031 P6) the declared coordinator (`symmetry_declarations.WELD_COORDINATORS`) welds the plan's
+        groups on both sides in the same step, keeps the pairs exact and extends the seam (P6-a/b); a `SymmetryRefusal`
+        rolls back like the kernel's."""
         weld_plan = self.weld_plan(threshold)
         if weld_plan.refusal is not None:
             self._set_status(weld_plan.refusal)
@@ -3631,15 +3650,29 @@ class Application:
             if self.viewport is not None:
                 self.viewport.on_selection_changed()
 
+        coordinator = (
+            symmetry_declarations.WELD_COORDINATORS.get(commands.WELD) if mesh.symmetry_definition is not None else None
+        )
+
+        def mutate(m):
+            if coordinator is not None:
+                return coordinator(m, weld_plan)
+            return weld_api.weld(m, weld_plan)
+
         description = f"Weld {weld_plan.points} points into {len(groups)}"
         try:
-            self._mesh_transaction(description, lambda m: weld_api.weld(m, weld_plan), on_applied=on_applied)
+            self._mesh_transaction(description, mutate, on_applied=on_applied)
+        except SymmetryRefusal as exc:
+            self._set_status(str(exc))
+            return False
         except (weld_api.WeldRefused, CollapseRefused) as exc:
             text = str(exc)
             self._set_status(text if text.startswith(weld_api.LABEL) else f"{weld_api.LABEL}: {text}")
             return False
+        mirrored = ", mirrored" if coordinator is not None else ""
         text = (
-            f"{weld_api.LABEL}: {weld_plan.points} points into {len(groups)} (distance {weld_plan.threshold:.6g})"
+            f"{weld_api.LABEL}: {weld_plan.points} points into {len(groups)}"
+            f" (distance {weld_plan.threshold:.6g}{mirrored})"
         )
         if differing:
             text += f" - {differing} point(s) averaged differing target / weight values"
@@ -3656,9 +3689,11 @@ class Application:
     def bridge_plan(self) -> "bridge_api.BridgePlan":
         """What Bridge would add now (AD-031 §5), read-only: the quads between the two closed borders the selection
         touches and the first refusal - an interaction, not point or edge mode, the morph editing view, a symmetry
-        definition (until P6), nothing selected, a posed rig with the mesh bound, the point-layer gate, hidden geometry
-        at either border, and the kernel's (`topology.bridge.plan_bridge`: two closed borders of equal size without a
-        shared point, consistent normals, no rung that already has a face)."""
+        definition without a declared coordinator, nothing selected, a posed rig with the mesh bound, the point-layer
+        gate, hidden geometry at a border, and the kernel's (`topology.bridge.plan_bridge`: two closed borders of equal
+        size without a shared point, consistent normals, no rung that already has a face). Under a definition (AD-031
+        P6-c) the plan is `symmetric_ops.plan_symmetric_bridge`'s: two borders on one side are bridged together with
+        their mirror image, two borders across the plane by one mirror-symmetric bridge; the other cases refuse."""
         label = bridge_api.LABEL
         refused = bridge_api.BridgePlan
         owner = self.interaction_owner
@@ -3672,9 +3707,10 @@ class Application:
             return refused((), (), f"{label}: on the base only (Tab returns to it)")
         obj = self.scene.edit_object
         mesh = obj.mesh
-        if mesh.symmetry_definition is not None:
+        symmetric = mesh.symmetry_definition is not None
+        if symmetric and commands.BRIDGE not in symmetry_declarations.declared_bridge_commands():
             key = self._skeleton.key_text(commands.SYMMETRY_CYCLE)
-            return refused((), (), f"{label}: not with symmetry on yet - turn it off first ({key})")
+            return refused((), (), f"{label}: not with symmetry on - turn it off first ({key})")
         ids = selection.vertices if mode is SelectionMode.VERTEX else selection.edges
         if not ids:
             return refused((), (), f"{label}: select a point or edge of each of the two borders - none selected")
@@ -3684,7 +3720,7 @@ class Application:
         text = self._layer_refusal("bridge_borders", [mesh])
         if text is not None:
             return refused((), (), text)
-        plan = bridge_api.plan_bridge(mesh, mode, set(ids))
+        plan = (plan_symmetric_bridge if symmetric else bridge_api.plan_bridge)(mesh, mode, set(ids))
         hidden = self._hiddens.get(self._hidden_owner)
         if plan.loops and hidden and touches_hidden(mesh, hidden, [v for loop in plan.loops for v in loop]):
             return dataclasses.replace(plan, quads=(), refusal=f"{label}: hidden geometry in the way (Alt+H shows all)")
@@ -3695,29 +3731,58 @@ class Application:
         the minimal summed squared distance, wound against the neighbour faces (`topology.bridge`) - no new points
         (layers untouched), no UVs (D8), no region (D9). One Undo step (`_mesh_transaction`); refused with a status
         line and nothing changed when `bridge_plan` refuses, rolled back exactly when the edges do not end manifold.
-        Afterwards (§5): face mode, the new faces selected."""
+        Afterwards (§5): face mode, the new faces selected - under a symmetry definition (AD-031 P6-c, the declared
+        coordinator `symmetry_declarations.BRIDGE_COORDINATORS` adds the mirror quads in the same step) those on the
+        selection's side, as Cap's residue (`residue_sides`)."""
         bridge_plan = self.bridge_plan()
         if bridge_plan.refusal is not None:
             self._set_status(bridge_plan.refusal)
             return False
+        mesh = self.scene.mesh
+        coordinator = (
+            symmetry_declarations.BRIDGE_COORDINATORS.get(commands.BRIDGE)
+            if mesh.symmetry_definition is not None
+            else None
+        )
+        sides = None
+        if coordinator is not None:
+            selection = self.selection
+            if selection.mode is SelectionMode.VERTEX:
+                sides = residue_sides(mesh, selection.vertices, lambda v: (v,))
+            else:
+                sides = residue_sides(mesh, selection.edges, mesh.edge_vertices)
+
+        def mutate(m):
+            if coordinator is not None:
+                return coordinator(m, bridge_plan)
+            return bridge_api.bridge(m, bridge_plan)
 
         def on_applied(faces) -> None:
             selection = self.selection
+            kept = {f for f in faces if mesh.is_valid_face(f)}
+            if sides is not None:
+                kept = on_residue_sides(mesh, kept, sides, mesh.face_vertices)
             selection.clear()
             selection.mode = SelectionMode.FACE
-            selection.add({f for f in faces if self.scene.mesh.is_valid_face(f)})
+            selection.add(kept)
             if self.viewport is not None:
                 self.viewport.on_selection_changed()
 
         n = len(bridge_plan.quads)
         try:
-            self._mesh_transaction(
-                f"Bridge {n} quads", lambda m: bridge_api.bridge(m, bridge_plan), on_applied=on_applied
-            )
+            self._mesh_transaction(f"Bridge {n} quads", mutate, on_applied=on_applied)
+        except SymmetryRefusal as exc:
+            self._set_status(str(exc))
+            return False
         except bridge_api.BridgeRefused as exc:
             self._set_status(str(exc))
             return False
-        self._set_status(f"{bridge_api.LABEL}: {n} quads between two borders of {n} points (no UVs, no group)")
+        points = len(bridge_plan.loops[0])
+        if len(bridge_plan.loops) > 2:
+            text = f"{n} quads (mirrored) between two borders of {points} points on each side"
+        else:
+            text = f"{n} quads between two borders of {points} points"
+        self._set_status(f"{bridge_api.LABEL}: {text} (no UVs, no group)")
         return True
 
     def apply_goz_return(self, plan) -> bool:
