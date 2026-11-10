@@ -9,9 +9,10 @@ decided and D4 made precise (Manu, 2026-11-10; §10); P1 → P2 boundary verifie
 the D11 prune, commands `Attach` / `AttachTakeLook` without keys, the "Mesh" menu and the outliner context menu with the
 O-5 prompt; practical test §16, pending. **P3 BUILT (2026-11-10):** Detach and Select Linked —
 `Application.detach_faces` / `detach_plan` / `select_linked` / `linked_seed`, `src/mirai/detach.py`, the kernel's
-`linked_faces`, commands `Detach` / `SelectLinked` without keys, "Mesh" > Detach and SPACE > Select Linked; O-8
-implemented as **PROVISIONAL**; specification as built §17, practical test §18, pending. P4–P7 (§11) are **not
-implemented**, each starts only with its own go. Open points: §10.
+`linked_faces`, commands `Detach` / `SelectLinked` without keys, "Mesh" > Detach and SPACE > Select Linked;
+specification as built §17, practical test §18 (Manu, 2026-11-10: **O-8 KEEP**, **O-14** "SPACE reicht vorerst (später
+Sub-Object Mode)"; one finding fixed, §17.11). P4–P7 (§11) are **not implemented**, each starts only with its own go.
+Open points: §10.
 **Scope:** `src/mirai` and `src/gui` only. **No Core change, no file-format change, no keymap change** (no keys at all).
 **Builds on:** AD-001 (ids), [AD-021](AD-021-OBJECT-COMPONENT-MODEL.md) (objects, L-1 / L-3),
 [AD-023](AD-023-INCREMENTAL-TOPOLOGY-SYNC-AND-HISTORY.md) (journal), [AD-024](AD-024-OBJECT-MATERIAL-AND-WORKLIGHT-EDITING.md),
@@ -29,10 +30,10 @@ implemented**, each starts only with its own go. Open points: §10.
 - **Detach** (Modus `3`, Menü „Mesh“; gebaut 2026-11-10): die gewählten Flächen werden ein neues Objekt mit derselben
   Platzierung (bitgenau), demselben Look, allen Morph-Zielen, Gewichten, UVs und Gruppen. Mit Symmetrie wird – wie bei
   Delete – das Spiegelbild mitgenommen; das neue Objekt bekommt die Symmetrie, die `Shift+S` ableiten würde, nur wenn
-  sie gültig ist. Ein Undo-Schritt. Danach (vorläufig, O-8): du bleibst in Modus `3` am selben Objekt. Praxistest: §18.
+  sie gültig ist. Ein Undo-Schritt. Danach bleibst du in Modus `3` am selben Objekt (O-8, von dir bestätigt: KEEP). Praxistest: §18.
 - **Select Linked** (Modus `1`/`2`/`3`, SPACE-Menü am Teil; gebaut 2026-11-10): wählt den zusammenhängenden Teil unter
   dem Cursor dazu – z. B. ein ganzes Ohr vor dem Detach. Im Menü „Mesh“ steht es nur als Hinweis: über der Menüleiste
-  gibt es keinen Cursor mehr am Mesh (§17.2, offen O-14).
+  gibt es keinen Cursor mehr am Mesh (§17.2; O-14: „SPACE reicht vorerst (später Sub-Object Mode)“).
 - **Weld** (Punkte, Abstand): verschmilzt nur ausgewählte, unverbundene Punkte, exakt auf den Schwerpunkt der Gruppe,
   unabhängig von der Reihenfolge; lehnt alles ab, was unerwartete Topologie ergäbe. Der Abstand ist immer als Zahl
   sichtbar und änderbar; der Startwert (0,001 × Diagonale) ist vorläufig.
@@ -49,7 +50,7 @@ implemented**, each starts only with its own go. Open points: §10.
   übernommen.
 - **Grenze:** Re-Symmetrize geht nicht, solange angehängte Inseln unverbunden sind, und nicht an abgetrennten Teilen
   ohne Naht (§3.5).
-- Offen bei dir: §10 (neu: O-8 im Praxistest, O-14).
+- Offen bei dir: §10.
 
 ## 0. Decision in one screen
 
@@ -117,7 +118,7 @@ implemented**, each starts only with its own go. Open points: §10.
 - **Source:** `Mesh.delete_faces` (or the coordinator) leaves open borders; the Core deletes the layer values of removed
   points.
 - One step: `MeshDeltaCommand(source)` + `AddObjectCommand(new)` as the companion. Refused while posed and on the
-  morph editing view. Afterwards: per O-8 (§10; implemented `PROVISIONAL`, §17.6).
+  morph editing view. Afterwards: per O-8 (§10, decided KEEP; §17.6).
 
 ### 2.3 Separate by Islands
 
@@ -379,8 +380,8 @@ targets, Redo recreates them at 0 %.
 | # | Question | Proposal | P2 |
 |---|---|---|---|
 | D10-v | The artist-approved default Weld threshold | after the P4 practical test | not relevant (P4) |
-| O-8 | After Detach: stay in component mode on the source, or mode `4` with the new object selected | stay in component mode | **P3: implemented `PROVISIONAL`** (§17.6): mode `3`, the source stays the edit object, no component selection, the new object neither selected nor edited; Manu's verdict in the practical test §18 |
-| O-14 | Select Linked "under the cursor" from a menu: the pointer over the menu bar has no hover (§17.2) | the SPACE menu remembers the element under the cursor when it opens; the "Mesh" menu shows a disabled hint; a key only by Manu's keymap decision | new in P3, not blocking |
+| O-8 | After Detach: stay in component mode on the source, or mode `4` with the new object selected | stay in component mode | **Decided (Manu, 2026-11-10, practical test P3): "O-8 KEEP"** — mode `3`, the source stays the edit object, no component selection, the new object neither selected nor edited (§17.6) |
+| O-14 | Select Linked "under the cursor" from a menu: the pointer over the menu bar has no hover (§17.2) | the SPACE menu remembers the element under the cursor when it opens; the "Mesh" menu shows a disabled hint; a key only by Manu's keymap decision | **Decided (Manu, 2026-11-10): "SPACE reicht vorerst (später Sub-Object Mode)"** — no key now; a later Sub-Object Mode is the place to revisit it |
 | O-11 | Bridge MVP only for loops of equal vertex count | yes | not relevant (P5) |
 | O-12 | Separate by Islands: which island keeps the object | the one with the most faces | not relevant (P7) |
 | P6 | How symmetric Weld handles coincident points (AMBIGUOUS) | decided before P6 | not relevant (P6) |
@@ -672,7 +673,8 @@ the cursor reliably.** It is not replaced by another selection model (e.g. "link
 - the **SPACE** menu opens at the cursor and is modal (it keeps every key and the mouse): when it opens it remembers
   the element under the cursor (`Application.linked_seed()` → `detach.LinkedSeed(edit object, mode, element)`), and
   its entry selects that element's part; a seed whose edit object or mode changed since is refused;
-- the "Mesh" menu shows the entry disabled with the hint. Open for Manu: **O-14** (§10).
+- the "Mesh" menu shows the entry disabled with the hint. **O-14** decided (Manu, 2026-11-10): "SPACE reicht vorerst
+  (später Sub-Object Mode)".
 
 ### 17.3 Detach: read-only checks (`Application.detach_plan`, in this order)
 
@@ -722,12 +724,12 @@ the Detach pixel for pixel, Ctrl+Y the frame after, with SubD level 2 (`tests/te
 - Morph dials of the new targets start at 0 % (new `(ObjectId, LayerId)` keys); with a rig the new object is bound at
   rest like its source.
 
-### 17.6 After Detach — O-8, `PROVISIONAL`
+### 17.6 After Detach — O-8, decided KEEP (Manu, 2026-11-10)
 
 Mode `3` stays; the source stays the edit object (no automatic switch); the component selection is cleared (the
 extracted ids no longer exist; no stale ids remain); the object selection is unchanged — the new object is neither
-selected nor the edit object; the status line ends with "still editing 'A' (4: select 'A.001')". This is the proposal
-of §10 implemented as a provisional default for Manu's practical test (§18), **not** an artist decision.
+selected nor the edit object; the status line ends with "still editing 'A' (4: select 'A.001')". Built as the proposal
+of §10 and confirmed in the practical test: **"O-8 KEEP"** (Manu, 2026-11-10).
 
 ### 17.7 Select Linked
 
@@ -777,7 +779,8 @@ guard (`tests/test_symmetry_fail_closed_guard.py`) presses `Detach` on its symme
 ### 17.10 Limitations (stated)
 
 - Re-Symmetrize is unavailable on a detached part without seam edges (§3.5, expected; tested).
-- Select Linked acts under the cursor only through the SPACE menu, the API or a future key (§17.2, O-14).
+- Select Linked acts under the cursor only through the SPACE menu or the API (§17.2; O-14: "SPACE reicht vorerst
+  (später Sub-Object Mode)").
 - Detach of every face is refused (§17.3 item 9, `PROVISIONAL`).
 - A refusal inside the step leaves the new object's id consumed (AD-001, like Attach's D4 refusal).
 - Hidden faces of an island are not selected by Select Linked, so they are not detached; a selection touching hidden
@@ -810,7 +813,7 @@ beim Drücken von SPACE war.
 2. Modus `3`, Cursor auf den Würfel, SPACE > **Select Linked**: alle Würfelflächen sind ausgewählt, der Kopf nicht.
    Ohne Fläche unter dem Cursor: Statuszeile „nothing under the cursor“.
 3. **Mesh > Detach**: der Würfel ist ein eigenes Objekt („….001“), an derselben Stelle, mit demselben Look. Du bleibst
-   in Modus `3` am Kopf (O-8, vorläufig). `4` drücken: den Würfel anklicken und mit `W` wegziehen.
+   in Modus `3` am Kopf (O-8). `4` drücken: den Würfel anklicken und mit `W` wegziehen.
 4. `Strg+Z`: der Würfel ist wieder Teil des Kopfes, die Flächen sind wieder ausgewählt. `Strg+Y`: wieder getrennt.
 5. Modus `1` oder `2`, Detach: abgelehnt „press 3“. Mit eingedrehtem Morph-Ziel: abgelehnt „set it to 0 % first“.
 6. Symmetrie (`Shift+S` am Kopf an): ein Ohr bzw. eine Fläche nur auf einer Seite auswählen, Detach: beide Seiten
@@ -824,13 +827,14 @@ beim Drücken von SPACE war.
 | # | Verdikt (KEEP / CHANGE / DROP) | Notiz |
 |---|---|---|
 | 1–2 | | |
-| 3 (O-8: bleiben in `3` am Quellobjekt?) | | |
+| 3 (O-8: bleiben in `3` am Quellobjekt?) | KEEP (Manu, 2026-11-10) | |
 | 4 | | |
 | 5 | | |
 | 6 | | |
 | 7 | | |
 
-Offen für dich (keine Blockade): **O-8** – soll es nach Detach so bleiben (Modus `3`, Quelle bleibt Edit-Objekt, das
+Entschieden (Manu, 2026-11-10): **O-8** „KEEP“; **O-14** „SPACE reicht vorerst (später Sub-Object Mode)“. Die Fragen
+waren: **O-8** – soll es nach Detach so bleiben (Modus `3`, Quelle bleibt Edit-Objekt, das
 neue Objekt nicht ausgewählt), oder lieber Modus `4` mit dem neuen Objekt ausgewählt? **O-14** – Select Linked hat
 keine Taste; im Menü „Mesh“ geht „unter dem Cursor“ nicht (der Cursor ist dann auf dem Menü). Reicht das SPACE-Menü,
 oder möchtest du eine Taste (dann sagst du welche, und sie kommt in `config/keymap.json`)? Detach aller Flächen wird
