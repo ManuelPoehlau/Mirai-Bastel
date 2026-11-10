@@ -3422,8 +3422,8 @@ class Application:
         layer, corner UVs, the regions restricted to them; the symmetry definition Shift+S would derive, only when
         VALID) and leave the edit object (Delete's path: `apply_removal`, or `coordinate_delete` under symmetry) - one
         Undo step (`_mesh_transaction` with `AddObjectCommand` as its companion). Refused with a status line and nothing
-        changed when `detach_plan` refuses or the symmetric deletion's delta check does. Afterwards (O-8,
-        `PROVISIONAL`): face mode, the same edit object, no component selected."""
+        changed when `detach_plan` refuses or the symmetric deletion's delta check does. Afterwards (O-8, Manu
+        2026-11-10 "KEEP"): face mode, the same edit object, no component selected."""
         detach = self.detach_plan()
         if detach.refusal is not None:
             self._set_status(detach.refusal)

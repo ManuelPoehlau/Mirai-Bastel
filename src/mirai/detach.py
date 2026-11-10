@@ -60,7 +60,7 @@ def description(src: SceneObject, obj: SceneObject, count: int) -> str:
 
 def result_text(src: SceneObject, obj: SceneObject, plan: DetachPlan, axis: str | None) -> str:
     """The status line after a Detach: what left, the mirror side (D5), the new object's symmetry (§3.5: set only when
-    VALID, else said here), and where the artist is (O-8, `PROVISIONAL`)."""
+    VALID, else said here), and where the artist is (O-8, Manu 2026-11-10: "KEEP")."""
     text = f"Detached {len(plan.faces)} face(s) of {src.name!r} as {obj.name!r}"
     if plan.mirrored:
         text += f" (with {plan.mirrored} mirror face(s))"
