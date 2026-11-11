@@ -185,3 +185,43 @@ GL_RENDERER: GeForce 9800 GTX/9800 GTX+/PCIe/SSE2
   draw + glFinish                                   21.54
   bytes handed to the store per step             14700000  (168 per weighted vertex)
 ```
+
+## Hover split, after `d4dc0d8` (one projector, one face read per pick)
+
+Manu's run on the same PC. `[GPU]` p50 ms, before → after: vertex first pick 11.00 → **8.58**, edge first pick
+12.62 → **9.31** (2026-10-21: 6.94 / 8.23); vertex hover 6.49 → **4.46**, edge hover 7.65 → **4.17** (2026-10-21:
+2.15 / 2.72). Of a hover, the two ID reads take 0.96 / 0.92 ms, so ~3.3–3.5 ms are CPU (candidates of the ID window,
+exact projection, occlusion ray tests). Face hover 0.54 ms, of it 0.32 ms the one read. GL test file: 37 passed.
+
+`python -m pytest tests/test_gl_gpu_picking.py -q`: 37 passed, 4 warnings (pyglet `DeprecationWarning` under Python 3.14).
+
+`python experiments/drag_cost/probe_picking_app.py`:
+
+```
+gollum_20k.obj: 21875 V / 21875 F, 1024x768, GL (3, 3) GeForce 9800 GTX/9800 GTX+/PCIe/SSE2
+[CPU]
+  vertex first pick            n= 15  p50   200.05  max   390.18
+  vertex hover                 n= 15  p50    13.34  max    72.12
+  vertex box 300px             n=  5  p50  2637.44  max  2665.43
+  edge first pick              n= 15  p50   201.86  max   210.57
+  edge hover                   n= 15  p50    34.71  max    84.94
+  edge box 300px               n=  5  p50  5133.35  max  5229.07
+  face first pick              n= 15  p50   154.71  max   172.34
+  face hover                   n= 15  p50     6.54  max     8.28
+  face box 300px               n=  5  p50  2996.72  max  3014.56
+  delete 1 face + re-pick      n= 15  p50     7.08  max     8.66
+[GPU]
+  vertex first pick            n= 15  p50     8.58  max    14.28
+  vertex hover                 n= 15  p50     4.46  max     5.96
+    of it: ID reads (2.0/hover) n= 15  p50     0.96  max     1.68
+  vertex box 300px             n=  5  p50   363.85  max   373.76
+  edge first pick              n= 15  p50     9.31  max    14.93
+  edge hover                   n= 15  p50     4.17  max     6.75
+    of it: ID reads (2.0/hover) n= 15  p50     0.92  max     1.41
+  edge box 300px               n=  5  p50   485.14  max   494.83
+  face first pick              n= 15  p50     3.59  max     9.74
+  face hover                   n= 15  p50     0.54  max     0.76
+    of it: ID reads (1.0/hover) n= 15  p50     0.32  max     0.46
+  face box 300px               n=  5  p50   447.46  max   534.39
+  delete 1 face + re-pick      n= 15  p50     4.42  max    10.87
+```

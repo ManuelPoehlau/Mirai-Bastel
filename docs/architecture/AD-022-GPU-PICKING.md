@@ -401,7 +401,10 @@ mode and every headless path keep the CPU picker (slice 3 not done). Engineering
   occlusion tests of one pick share one face-ID read of the cursor's window (`GpuPicker.face_window`) instead of one
   `glReadPixels` (a GPU sync) per tested candidate: 3.0 / 4.1 → 2 reads per vertex / edge hover. **Measured [C]**
   (`probe_picking_app.py`, which now prints the reads per hover and their time): hover vertex / edge 1.09–1.11 /
-  2.17–2.24 → 0.54–0.71 / 0.72–1.05 ms; first pick unchanged within noise. Reference PC: open.
+  2.17–2.24 → 0.54–0.71 / 0.72–1.05 ms; first pick unchanged within noise. **Reference PC [RPC]** (Manu,
+  2026-11-11, `RESULTS_O0_REFERENCE_PC_2026-11-11.md`): hover vertex / edge 6.49 / 7.65 → **4.46 / 4.17 ms**, of it
+  the two ID reads 0.96 / 0.92 ms (the rest, ~3.3–3.5 ms, is CPU); first pick 11.00 / 12.62 → **8.58 / 9.31 ms**
+  (2026-10-21, before the Ngon rule: 6.94 / 8.23 and hover 2.15 / 2.72). GL tests 37/37 there.
 - **Open:** the Box silhouette rule (re-check later, Manu); the Knife
   (picker and planner) still projects the whole mesh per camera change; object picking (mode `4`) is CPU; the Box
   still projects every vertex once per gesture; H7 surfaces: the ID pass draws the cage — since 2026-11-03 the *shown* cage: the morph mix while a target is dialled

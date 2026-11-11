@@ -679,5 +679,6 @@ after those commits, raw output and comparison table:
   *Follow-up 2026-11-11:* profiled in the container: ~70 % of the hover's CPU was the per-candidate camera basis in
   `project_to_screen` (~200 candidates per vertex hover); plus one ID read per tested candidate. Fixed (AD-022 §11
   "Hover split"): hover vertex / edge 1.1 / 2.2 → 0.5–0.7 / 0.7–1.05 ms **[C]**, 2 reads per hover; the probe now
-  prints the read share for the reference-PC run.
+  prints the read share for the reference-PC run. Reference PC **[RPC]**: hover 6.49 / 7.65 → 4.46 / 4.17 ms (reads
+  ~0.95 ms of it), first pick 8.58 / 9.31 ms; both well inside one frame. Not pursued further now (see AD-022 §11).
 
