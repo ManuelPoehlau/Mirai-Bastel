@@ -675,6 +675,8 @@ and the face normal only; the shader reads corner positions and normals from the
   copy no update touches, 9 ms without face data — not the overlap of updates and buffer-texture views, but the
   face-data fetches. Round 2: the same frame costs 11 or 43 ms of GPU time depending on the GPU's power state (a
   CPU-bound frame leaves the GPU idle, the driver lowers its clocks, the memory-bound fetches slow down most); the
-  O2 fetch cost is therefore +2 ms at the orbit's clock and up to ≈ +34 ms at the lowest. Confirmation with the
-  power state pinned is open (round 3 in the results file).
+  power state is confirmed (round 3, clocks pinned: stable ≈ 11.3 ms). At full clock the face-data shading costs
+  ≈ 9.4 ms per full pass at 87.5k / 1024×768 (1.9 ms without face data); the orbit's +2 ms understated it because the
+  navigation probe drew without clearing the depth buffer. Open: O2's share over the pre-O2 layout and an RGBA32F
+  variant of the vertex fetches (`probe_shading_gpu.py`).
 

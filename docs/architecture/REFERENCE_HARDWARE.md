@@ -49,7 +49,9 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
   Treiber nicht an (`False`, GL 3.3.0). **GPU-Taktstufen (2026-11-11, [H]):** derselbe D3-Frame kostet die GPU ≈ 11 oder
   ≈ 43 ms, je nachdem, ob sie gerade hoch- oder heruntergetaktet ist (PowerMizer: ein CPU-gebundener Frame lässt sie
   ≈ 300 ms untätig). GPU-Zeiten auf diesem PC nur mit „Energieverwaltungsmodus: Maximale Leistung bevorzugen“
-  vergleichen; Bestätigung offen (Runde 3 in der Ergebnisdatei).
+  vergleichen — bestätigt in Runde 3 (mit maximaler Leistung stabil ≈ 11,3 ms). Bei vollem Takt kostet das
+  Face-Daten-Shading ≈ 9,4 ms GPU pro vollem Durchgang (87,5k, 1024×768); die Orbit-Werte der Navigations-Probe lagen
+  zu niedrig, weil sie den Tiefenpuffer nicht löschte (seit 2026-11-11 behoben).
 - Reale Frame- und Hover-Zeiten in den echten Fenstern (`src/main.py`, Playground) auf diesem PC.
   Messsonde für die Drag-Kosten im GL-Pfad (hidden pyglet-Fenster, gibt auch `GL_VERSION` / `GL_RENDERER` aus):
   `python experiments/drag_cost/probe_drag_gl.py`, Doku und Container-Vorher/Nachher in

@@ -456,6 +456,16 @@ def _gpu_query():
 # -- rig ----------------------------------------------------------------------
 
 
+def clear_like_on_draw() -> None:
+    """Colour and depth cleared before the draw, as the window's `on_draw` does (`src/main.py`). Until 2026-11-11 the
+    probes drew over the previous frame's depth: the depth test then dropped most fragments before shading, so the
+    `draw` / `gpu` columns measured only part of a shaded pass (found with the O2 GPU diagnosis, reference PC)."""
+    from pyglet import gl
+
+    gl.glClearColor(0.1, 0.1, 0.11, 1.0)
+    gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+
+
 @dataclass
 class NavRig:
     drag_rig: drag.Rig
@@ -486,6 +496,7 @@ class NavRig:
         self.viewport.sync()
         after_sync = time.perf_counter()
         Instruments.upload_bytes = 0
+        clear_like_on_draw()
         inst.gpu_begin()
         self.viewport.render()
         gpu = inst.gpu_end_ms()
@@ -511,6 +522,7 @@ class NavRig:
     def settle(self) -> None:
         """An unmeasured frame (after set-up steps)."""
         self.viewport.sync()
+        clear_like_on_draw()
         self.viewport.render()
 
 

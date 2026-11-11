@@ -785,6 +785,11 @@ Raw output and comparison:
   rows: 11 ms, frame 322 ms; on their own: 43 ms) — the GPU's power management, which drops the clocks while a
   CPU-bound frame leaves it idle; the memory-bound O2 fetches suffer most **[H, round 3 with "prefer maximum
   performance" open]**. In the window (no `glFinish`) that GPU time overlaps the next frame's ≈ 300 ms of CPU work.
+  Round 3 (clocks pinned to maximum performance) confirms it: the mesh draw is stable at ≈ 11.3 ms — and shows that
+  the face-data shading costs ≈ 9.4 ms per full pass at full clock (1.9 ms without face data). The orbit's "+2 ms"
+  understated it: the navigation probe did not clear the depth buffer, so most fragments were never shaded (fixed in
+  three probes). Open: O2's share of the 9.4 ms over the pre-O2 layout and whether RGBA32F vertex fetches reduce it —
+  `probe_shading_gpu.py`.
 - **HUD during a weight drag [RPC]: 24.5 ms per frame** (pose: 1.1 ms), gizmo / bones 6.9 ms (pose: 1.0) — the weight
   read-out changes every frame. Size-independent, outside O2.
 

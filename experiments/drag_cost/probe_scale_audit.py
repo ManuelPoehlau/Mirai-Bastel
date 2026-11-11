@@ -261,6 +261,10 @@ def split_rows(path: Path, share: int, steps: int) -> list[str]:
                 app.pointer_motion(560, 296, 0.0, dy)
                 app.update_viewport(0.0)
                 synced = time.perf_counter()
+                # Cleared as the window's `on_draw` does (since 2026-11-11; before, the previous frame's depth made the
+                # depth test drop most fragments, so `draw + glFinish` was only part of a shaded pass).
+                gl.glClearColor(0.1, 0.1, 0.11, 1.0)
+                gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
                 app.viewport.render()
                 gl.glFinish()
                 done = time.perf_counter()
