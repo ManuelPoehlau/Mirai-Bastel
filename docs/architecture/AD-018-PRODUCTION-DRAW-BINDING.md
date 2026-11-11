@@ -533,7 +533,10 @@ The store still draws exactly one group; it is only read. `edge_segments` stays 
 buffers (headless tests, traces) and for a cage under a derived surface (its RenderMesh is synced only for picks);
 `Viewport.edge_segments` is computed on read otherwise. Measured **[C]** (container, `probe_scale_audit.py --only
 split`, gollum_20k, pose step p50): wire segments 36 / 28 ms per step → 0; wire on / off 29.7 / 26.4 ms (15 %
-region) and 218 / 227 ms (100 %), i.e. equal within the run's noise.
+region) and 218 / 227 ms (100 %), i.e. equal within the run's noise. **Reference PC [RPC]** (Manu, 2026-11-11,
+`experiments/drag_cost/RESULTS_O0_REFERENCE_PC_2026-11-11.md`), wire off / on: 20k 15 % 93.99 / 95.18 ms (before
+96.37 / 181.77), 87.5k 15 % 391.73 / 398.76 ms (before 399.20 / 728.70); the edge pass is exact on the 9800 GTX
+(`test_gl_line_overlay.py` passes there).
 
 *Extension 2026-09-27 (WP-06 Slice B5b, component modes):* the precedent now
 covers the **edge and face highlight** — `GLLineOverlay` gains `hover` /

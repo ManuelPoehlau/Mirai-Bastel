@@ -659,3 +659,21 @@ Full command output:
 The reference-PC results confirm the location of the deformation and wireframe costs, and establish that NumPy 2.2.6 can execute the isolated packed-array kernels on the target CPU under Python 3.12.10. They strengthen the case for the staged O0–O3 direction; they do **not** yet prove end-to-end application performance after integration or O2 shader equivalence. O4 remains conditional on later integrated measurements.
 
 The raw run does not include a repository commit SHA or working-tree status. Record those on the next baseline run so future comparisons can identify the exact source revision.
+
+## Addendum — O0 on the reference PC (Manu, 2026-11-11)
+
+§I.1–§I.3 were fixed in `5a739c0`, `d1b370a`, `57f3177` (status lines in §I). Manu's run on the Q9550 / 9800 GTX
+after those commits, raw output and comparison table:
+[`experiments/drag_cost/RESULTS_O0_REFERENCE_PC_2026-11-11.md`](../../../experiments/drag_cost/RESULTS_O0_REFERENCE_PC_2026-11-11.md).
+
+- **Gate §H step 1, GL tests:** `test_gl_gpu_picking.py` + `test_gl_line_overlay.py` 39 passed on this driver.
+- **Gate, wire:** wire-on rows equal the wire-off rows **[RPC]**: 20k 15 % 93.99 / 95.18 ms (before 96.37 / 181.77),
+  20k 100 % 639.83 / 644.37 (681.28 / 762.83), 87.5k 15 % 391.73 / 398.76 (399.20 / 728.70), 87.5k 100 %
+  2,737.65 / 2,742.38 (2,815.70 / 3,142.96); "wire segments" 0 ms in every row; the GPU line draw adds 1.7–3 ms to
+  `draw + glFinish`.
+- **Gate, picking:** `[GPU]` vertex / edge first pick **[RPC]** 167.10 / 164.84 → **11.00 / 12.62 ms**: below one frame
+  (AD-022 §9 abort criterion 1), but above the 6.94 / 8.23 ms of 2026-10-21. Face first pick 3.30 ms (unchanged).
+- **Open, not O0:** `[GPU]` vertex / edge hover is 6.49 / 7.65 ms (6.25 / 6.97 before O0, 2.15 / 2.72 on 2026-10-21;
+  the maxima fell from 52 / 74 to 10 / 13 ms). The rise is older than O0 and coincides with the CPU occlusion rule of
+  the Ngon fix (2026-10-22); its split on this PC (ID-buffer reads vs. ray tests) is not measured.
+

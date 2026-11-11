@@ -933,7 +933,9 @@ here (probe code only): `probe_picking_app.py` and the `direct` scenario of `pro
 `app._pointer_tools.paint_at`). The picking probe's `[GPU] vertex / edge first pick` rows are 77 / 104 ms
 in the container at HEAD against 16 / 21 ms in
 [`RESULTS_PICKING_APP_CONTAINER_2026-10-21.md`](RESULTS_PICKING_APP_CONTAINER_2026-10-21.md) (audit §I.1); a
-reference-PC run of that probe is open.
+reference-PC run of that probe is open. *2026-11-11:* audit §I.1–§I.3 fixed (O0); the reference-PC run after the fixes
+(picking probe, `--only split`, GL tests) is in
+[`RESULTS_O0_REFERENCE_PC_2026-11-11.md`](RESULTS_O0_REFERENCE_PC_2026-11-11.md).
 
 ```
 python experiments/drag_cost/probe_scale_audit.py                 # split + one-time costs, gollum_20k and the 87.5k mesh

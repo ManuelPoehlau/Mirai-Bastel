@@ -391,7 +391,10 @@ mode and every headless path keep the CPU picker (slice 3 not done). Engineering
   unless a nearer face covers it, which is then tested instead. When one of the element's own faces lies in front of it
   (the Ngon case: the window cannot see behind it) the whole-mesh CPU test answers, as before. **Measured [C]**
   (container, llvmpipe, `probe_picking_app.py`, gollum_20k, GPU first pick vertex / edge, p50 ms): 91 / 73 →
-  **12–17 / 17–26** over three runs (face, untouched: 9–12.8).
+  **12–17 / 17–26** over three runs (face, untouched: 9–12.8). **Reference PC [RPC]** (Manu, 2026-11-11,
+  [`RESULTS_O0_REFERENCE_PC_2026-11-11.md`](../../experiments/drag_cost/RESULTS_O0_REFERENCE_PC_2026-11-11.md)):
+  167.10 / 164.84 → **11.00 / 12.62** (2026-10-21: 6.94 / 8.23; §9 abort criterion 1 clear), face 3.30; hover
+  6.49 / 7.65 (unchanged by this step; 2.15 / 2.72 on 2026-10-21, open). GL tests 39/39 on the 9800 GTX.
 - **Open:** the Box silhouette rule (re-check later, Manu); the Knife
   (picker and planner) still projects the whole mesh per camera change; object picking (mode `4`) is CPU; the Box
   still projects every vertex once per gesture; H7 surfaces: the ID pass draws the cage — since 2026-11-03 the *shown* cage: the morph mix while a target is dialled
