@@ -660,8 +660,9 @@ and the face normal only; the shader reads corner positions and normals from the
 - **Measured (container, llvmpipe; not the reference PC):**
   [`RESULTS_O2_CONTAINER_2026-11-11.md`](../../experiments/drag_cost/RESULTS_O2_CONTAINER_2026-11-11.md). D3 frame
   (87.5k, 15 % jaw region, Morph + Skin, `probe_d3_acceptance.py`): face data to the store per frame 1.97 MB → 0.22 MB,
-  176 → 42 bytes per region vertex in total; its time 36 → 10 ms p50; the whole frame stays far over the D3 bar (O1 /
-  O3 are next). Draw time on llvmpipe unchanged.
+  176 → 42 bytes per region vertex in total; its time 36–49 → 10–14 ms p50 (two before / after pairs); the frame
+  25–40 ms p50 faster and still far over the D3 bar (O1 / O3 are next). The audit's pose-step split (skin only):
+  189 → 137 ms p50. Draw time on llvmpipe unchanged (old and new shader drawn alternately in one process).
 - **Open, reference PC only:** the fragment cost of the dependent fetches on the GeForce 9800 GTX (a Smooth-quad
   fragment now makes 27 texel fetches — 24 of them single `R32F` texels from two buffers — instead of 10 `RGBA32F`
   fetches, most from one row) — the `gpu` column of

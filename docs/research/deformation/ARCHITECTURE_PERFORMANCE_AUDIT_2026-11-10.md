@@ -724,3 +724,41 @@ separate from O1/O2.
   in `resolve_symmetry()` and `MoveTool.begin()` (both derived twice per gesture begin; now once, passed to
   `mirrored_selection(correspondence=...)`), 122–153 → 44–82 ms at 20k **[C]**.
 
+## Addendum — O2 in the container (2026-11-11)
+
+§H step 4, first half (O2; Manu's decisions above: O2 before O1, no NumPy). Implemented in `58f7052`, decision record
+[AD-018 addendum 2026-11-11](../../architecture/AD-018-PRODUCTION-DRAW-BINDING.md); the acceptance probe of D3 came first
+(`23faef5`, `experiments/drag_cost/probe_d3_acceptance.py`). Raw outputs and the reference-PC commands:
+[`experiments/drag_cost/RESULTS_O2_CONTAINER_2026-11-11.md`](../../../experiments/drag_cost/RESULTS_O2_CONTAINER_2026-11-11.md).
+
+- **What changed.** The 36-float face row of §E.3 is gone. Per face: one vec4 (Newell normal, corner count) — the only
+  face data a deformation writes — and two vec4 of topology (corner slots, region tint). The fragment shader reads the
+  corners' positions and normals from the VertexList's own vertex buffers (bound as buffer textures). No NumPy, no
+  Core change, no change to evaluation stages.
+- **Gate: shading pixel-identical to the old path [C, test-verified].** `tests/test_gl_face_data_layout.py` (16 scenes
+  against the pre-O2 shader frozen as an oracle; byte-identical) and a one-time cross-check against the `bc0f0b2`
+  tree (16 scenes on `head_basemesh` / `gollum_20k`, deformed; byte-identical).
+- **Gate: GL tests [C].** `tests/test_gl_*.py` in its own process: 165 passed. `tests/`: 6,907 passed, 1 failed (the
+  pre-existing §I.7 file), 8 skipped (GL modules in the combined run).
+- **Gate: bytes and time per step [C], 87.5k, 15 % region:**
+
+| | before | after |
+|---|---:|---:|
+| bytes to the GL store per deformation frame | 2,304,924 (176 per region vertex) | **556,940 (42)** |
+| of it face data | 1,969,344 | **221,360** |
+| face data → store, p50 ms (D3 probe, two pairs) | 36–49 | **10–14** |
+| D3 frame, pose, wire off / on, p50 (pair 2) | 225.9 / 269.1 | **198.9 / 234.6** |
+| D3 frame, pose, wire off / on, p95 (pair 2) | 289.8 / 357.9 | **245.1 / 271.3** |
+| D3 frame, weight, wire off / on, p50 (pair 2) | 264.5 / 317.1 | **261.7 / 298.3** |
+| pose-step split (skin only, §E.3 scenario), step p50, wire off | 189.4 | **137.5** |
+| face data share of that step | 24.6 % | **6.6 %** |
+| draw, old vs new shader alternately in one process (llvmpipe), Smooth / Flat | 49.6 / 37.3 | 49.4 / 38.0 |
+
+- **D3 verdict [C]: OVER** (33.3 ms p95) in every row, before and after — as §G.2 predicted for O2 alone. What remains
+  per frame is per-vertex Python work O2 does not touch (stage evaluation, face and vertex normals, neighbourhood sets,
+  position / normal mirrors: ≈ 130 of the ≈ 150 ms tick in the pose row) and, in the container, the software draw. The
+  next steps stay O1, then O3 (§H).
+- **Open, reference PC:** the D3 probe before / after, the GL tests (pixel identity on that driver) and the shaded
+  pass's GPU time with the new texel fetches (a Smooth-quad fragment makes 27 fetches, 24 of them single floats,
+  instead of 10). D5's `MAX_DERIVED_FACES` assessment, due "after O2", is not part of this step.
+
