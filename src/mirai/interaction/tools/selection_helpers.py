@@ -71,8 +71,8 @@ def resolve_symmetry(
     definition = mesh.symmetry_definition
     if definition is None:
         return set(vertex_ids), None
-    mirrored = mirrored_selection(mesh, vertex_ids)
-    correspondence = vertex_correspondence(mesh)
+    correspondence = vertex_correspondence(mesh)  # once: `mirrored_selection` takes it (audit §I.8)
+    mirrored = mirrored_selection(mesh, vertex_ids, correspondence)
     seam = {
         vid
         for vid in vertex_ids

@@ -496,3 +496,45 @@ class ProductionUnchangedTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# -- one correspondence per gesture begin (audit 2026-11-10 §I.8, Manu D6 2026-11-11) ---------------------------
+
+
+def _count_derivations(monkeypatch) -> list:
+    import mirai.interaction.tools.move as move_module
+    import mirai.interaction.tools.selection_helpers as helpers_module
+    import mirai.symmetry as symmetry_module
+
+    calls = []
+    original = symmetry_module.vertex_correspondence
+
+    def spy(mesh):
+        calls.append(mesh)
+        return original(mesh)
+
+    for module in (symmetry_module, helpers_module, move_module):
+        monkeypatch.setattr(module, "vertex_correspondence", spy)
+    return calls
+
+
+def test_resolve_symmetry_derives_the_correspondence_once(monkeypatch):
+    """`mirrored_selection` takes the correspondence the caller already derived (before: derived twice per call).
+    Still cache-free (AR-1): a second call derives again."""
+    mesh, ids, seam_ids = _mesh(seam=True)
+    selected = {ids[0][0], ids[1][1], seam_ids[0]}
+    expected = resolve_symmetry(mesh, selected)
+    calls = _count_derivations(monkeypatch)
+    assert resolve_symmetry(mesh, selected) == expected
+    assert len(calls) == 1
+    resolve_symmetry(mesh, selected)
+    assert len(calls) == 2
+
+
+def test_symmetric_move_begin_derives_the_correspondence_once(monkeypatch):
+    from mirai.interaction.tools.move import MoveTool
+
+    mesh, ids, seam_ids = _mesh(seam=True)
+    calls = _count_derivations(monkeypatch)
+    tool, _scene = _begin_tool(MoveTool, mesh, {ids[0][0], seam_ids[0]})
+    assert len(calls) == 1

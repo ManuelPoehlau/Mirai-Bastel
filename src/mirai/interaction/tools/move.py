@@ -269,8 +269,8 @@ class MoveTool(Tool):
             if field.in_plane_only:
                 self._in_plane_normal = definition.plane_normal
         elif definition is not None:
-            mirrored_vertex_ids = mirrored_selection(mesh, vertex_ids)
-            correspondence = vertex_correspondence(mesh)
+            correspondence = vertex_correspondence(mesh)  # once: `mirrored_selection` takes it (audit §I.8)
+            mirrored_vertex_ids = mirrored_selection(mesh, vertex_ids, correspondence)
             seam_vertex_ids = {
                 vid
                 for vid in vertex_ids
