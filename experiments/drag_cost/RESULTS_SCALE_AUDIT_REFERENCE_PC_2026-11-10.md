@@ -346,7 +346,7 @@ Run: hidden 1024x768 window; up to 40 events per row (at least 5, budget 8 s); f
 ### Findings supported by these runs
 
 - **Pose-step split reproduces the audit's central diagnosis on the reference PC.** At 87.5k and a 15 % region, the step is 399.20 ms p50; skin evaluation is 68.43 ms (17.1 %) and `RenderMesh._sync_geometry` is 321.59 ms (80.6 %).
-- **The whole-mesh wire rebuild is a separate, large cost.** At 87.5k / 15 %, wire-on adds 329.02 ms to the measured step compared with wire-off. At 20k / 15 %, it adds 85.40 ms. This is consistent with the probe's `wire segments (whole mesh)` row.
+- **The whole-mesh wire rebuild is a separate, large cost.** At 87.5k / 15 %, the wire-segment rebuild itself takes 329.02 ms; the complete measured step rises from 399.20 to 728.70 ms (+329.50 ms). At 20k / 15 %, the complete step rises from 96.37 to 181.77 ms (+85.40 ms).
 - **Whole-mesh deformation is far from interactive in the current path.** At 87.5k, 100 % pose is 2,815.70 ms p50 without wire and 3,142.96 ms with wire.
 - **The packed-array NumPy kernels run on the Q9550 under Python 3.12.10.** At 87.5k / 15 %, the CPU-only NumPy timings are 30.711 ms for visible-data preparation, 11.723 ms for skin and 0.891 ms for one target's morph evaluation. These are isolated kernels, not an integrated Mirai frame.
 - **The measured numerical outputs match the production reference closely.** Skin and morph max differences are 0.0; normal differences are around 10^-14; SubD stencil evaluation differs by 3.3e-16.
