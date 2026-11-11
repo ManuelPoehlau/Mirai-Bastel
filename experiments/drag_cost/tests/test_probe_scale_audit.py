@@ -39,6 +39,8 @@ def test_the_dense_asset_is_one_catmull_clark_step_of_gollum_20k(tmp_path):
     faces = [line for line in lines if line.startswith("f ")]
     assert len(vertices) == 87_500 and len(faces) == 87_500
     assert all(len(line.split()) == 5 for line in faces)  # quads
+    # Manu D5 (2026-11-11): the committed fixture is exactly what the generator writes (provenance: fixtures/README.md)
+    assert target.read_bytes() == probe.DENSE.read_bytes()
 
 
 def test_process_memory_is_a_number_or_none():
@@ -52,7 +54,7 @@ def test_imports_only_src_examples_and_its_own_folder(module):
     modules = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
     modules |= {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     assert modules <= {
-        "__future__", "argparse", "array", "ctypes", "gc", "math", "os", "platform", "shutil", "statistics",
+        "__future__", "argparse", "array", "ctypes", "gc", "hashlib", "math", "os", "platform", "shutil", "statistics",
         "subprocess", "sys", "tempfile", "time", "pathlib",
         "drag_cost", "loaders", "pyglet", "numpy", "mirai", "core", "viewport",
     }

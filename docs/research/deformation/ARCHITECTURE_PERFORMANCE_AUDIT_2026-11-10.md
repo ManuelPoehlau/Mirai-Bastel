@@ -566,6 +566,8 @@ non-symmetric counterparts at 20k+ (not measured); that 100k faces with all stag
    `app._pointer_tools.paint_at`). Fixed in this commit (probe code only); both run again.
 5. **The dense asset is gone.** `examples/meshes/gollum.obj` == `gollum_20k.obj` (§D). `probe_scale_audit.py
    --make-dense` regenerates an 87.5k mesh locally (not committed, D5).
+   **Settled 2026-11-11 (D5):** committed as `experiments/drag_cost/fixtures/gollum_87k.obj` with its provenance;
+   `--verify-dense` regenerates it byte for byte.
 6. **Undo of a deletion re-sorts a whole element table** (`mesh.py:2652-2659`): about 7 ms at 87.5k **[C]**, harmless
    today, listed because it is the one O(mesh) step left in the Core's undo path.
 7. **A temporary local test is in git and fails:** `tests/test_scene_menu_local_tmp.py` ("wird gelöscht, nicht
@@ -681,4 +683,44 @@ after those commits, raw output and comparison table:
   "Hover split"): hover vertex / edge 1.1 / 2.2 → 0.5–0.7 / 0.7–1.05 ms **[C]**, 2 reads per hover; the probe now
   prints the read share for the reference-PC run. Reference PC **[RPC]**: hover 6.49 / 7.65 → 4.46 / 4.17 ms (reads
   ~0.95 ms of it), first pick 8.58 / 9.31 ms; both well inside one frame. Not pursued further now (see AD-022 §11).
+
+## Decisions (Manu, 2026-11-11)
+
+Recorded as given; they settle §H "Decisions needed from Manu". The plan order of §H stays: O2, then O1, then O3; D6
+separate from O1/O2.
+
+- **D1 — NumPy as a production dependency: YES**, for O3. Initially pinned `numpy==2.2.6`; Python 3.12.10 is the
+  verified runtime on the reference PC; keep compatibility with the Q9550 (no x86-64-v2 requirement). Do not pull NumPy
+  into O1/O2 prematurely — it becomes relevant for O3 (so it enters `requirements.txt` with the first O3 stage, not
+  before). Verify the actual production import and execution on the reference PC.
+- **D2** — unchanged: O4 only if O3 leaves the D3 bar unmet on the reference PC.
+- **D3 — "fluid" at ~100k base faces.** Minimum acceptance **p95 ≤ 33.3 ms** (30 FPS); preferred target **p95 ≤ 16.7 ms**
+  (60 FPS). Primary acceptance scenario: ~100k base faces, a jaw-sized deformation region of ~15 % of the vertices,
+  Morph and Skin active together, the complete interaction frame (evaluation, viewport synchronisation, overlays,
+  drawing), measured with the wireframe ON and OFF. A whole-mesh deformation (100 %) remains a stress benchmark on the
+  reference PC, not a mandatory 60 FPS requirement.
+- **D4 — SubD on a 100k-face cage: NO for the reference PC.** Intended workflow: SubD preview on a lower-resolution
+  working cage; dense base meshes are edited without live SubD. Higher-density SubD on future hardware is not
+  permanently ruled out.
+- **D5 — Reproducibility and `MAX_DERIVED_FACES`: YES.** The generated 87.5k benchmark mesh is committed under
+  `experiments/drag_cost/` as a reproducible test fixture (not a production example asset), with its provenance and
+  generation method (`experiments/drag_cost/fixtures/README.md`). `MAX_DERIVED_FACES` is measured on the actual
+  reference PC; the limit is not raised on assumptions. The final threshold assessment comes **after O2**, since the
+  viewport representation and shader path will have changed.
+- **D6 — journal-maintained symmetry correspondence: YES, with strict conditions.** Investigate and implement a
+  transient, journal-maintained derived correspondence cache above the Core:
+  1. The Core remains authoritative. No symmetry correspondence is persisted or serialized.
+  2. The existing cache-free `vertex_correspondence()` remains the reference implementation and test oracle.
+  3. The cache must correctly handle position changes, topology changes, seam changes, symmetry-definition changes,
+     Undo/Redo and scene load/replacement.
+  4. Unknown or unsupported change events invalidate the cache and trigger a fresh derivation. Never use potentially
+     stale correspondence.
+  5. Randomized equivalence tests compare the cached result against the fresh reference implementation, including
+     ambiguous and unpaired vertices.
+  6. The cache stays outside `src/core/mesh.py`.
+
+  This is an explicit, reviewed evolution of AR-1/INV-3, not permission to introduce arbitrary caches. It needs its own
+  design review and acceptance gate, separate from O1/O2. Done already, cache-free (`733ab55`): the duplicate derivation
+  in `resolve_symmetry()` and `MoveTool.begin()` (both derived twice per gesture begin; now once, passed to
+  `mirrored_selection(correspondence=...)`), 122–153 → 44–82 ms at 20k **[C]**.
 

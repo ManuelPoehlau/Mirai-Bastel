@@ -4,7 +4,8 @@ Usage (from the repo root, Windows and Linux alike; opens a hidden pyglet window
     python experiments/drag_cost/probe_scale_audit.py
     python experiments/drag_cost/probe_scale_audit.py --assets examples/meshes/gollum_20k.obj --regions 5 15
     python experiments/drag_cost/probe_scale_audit.py --only split
-    python experiments/drag_cost/probe_scale_audit.py --make-dense      # only writes the dense asset, no window
+    python experiments/drag_cost/probe_scale_audit.py --verify-dense    # regenerates the dense fixture, compares bytes
+    python experiments/drag_cost/probe_scale_audit.py --make-dense      # rewrites the dense fixture, no window
 
 Headless container: prefix with `xvfb-run -a`.
 
@@ -20,8 +21,9 @@ window's own chain (`Application` -> `Viewport` -> `GLRenderStore`, the `GL_TYPE
            first pose step (builds the skin surface), each with the process memory after it, and whether the SubD
            preview accepts the mesh.
 
-The dense asset (`_generated/gollum_87k.obj`, 87 500 V / 87 500 quads, not in git) is `gollum_20k.obj` after one
-Catmull-Clark step of the production evaluator; `--make-dense` writes it, the default run writes it when missing.
+The dense asset (`fixtures/gollum_87k.obj`, 87 500 V / 87 500 quads) is `gollum_20k.obj` after one Catmull-Clark step
+of the production evaluator, committed as a test fixture since 2026-11-11 (Manu D5; provenance in `fixtures/README.md`).
+`--verify-dense` regenerates it in a temporary file and compares the bytes; `--make-dense` rewrites it.
 
 Numbers from a container must be labelled as such (`docs/architecture/REFERENCE_HARDWARE.md` §4); the reference PC
 decides. Output is plain ASCII so it pastes cleanly from a Windows console.
@@ -47,7 +49,7 @@ from drag_cost._paths import EXPERIMENT_DIR, REPO_ROOT, ensure_paths  # noqa: E4
 ensure_paths()
 
 GOLLUM_20K = "examples/meshes/gollum_20k.obj"
-DENSE = EXPERIMENT_DIR / "_generated" / "gollum_87k.obj"
+DENSE = EXPERIMENT_DIR / "fixtures" / "gollum_87k.obj"
 DENSE_NAME = "dense"
 DEFAULT_ASSETS = (GOLLUM_20K, DENSE_NAME)
 DEFAULT_REGIONS = (15, 100)
@@ -76,7 +78,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="weighted share of the points in percent, per split row")
     parser.add_argument("--steps", type=int, default=DEFAULT_STEPS, help="pose steps per split row")
     parser.add_argument("--only", choices=BLOCKS, help="run one block only")
-    parser.add_argument("--make-dense", action="store_true", help="write the dense asset and stop")
+    parser.add_argument("--make-dense", action="store_true", help="rewrite the dense fixture and stop")
+    parser.add_argument("--verify-dense", action="store_true",
+                        help="regenerate the dense fixture in a temporary file, compare it with the committed one, stop")
     return parser
 
 
@@ -92,12 +96,28 @@ def make_dense(target: Path = DENSE) -> Path:
     level = surface.level(1)
     positions = level.apply_full([mesh.vertex_position(v) for v in surface.topology.vertex_ids])
     target.parent.mkdir(parents=True, exist_ok=True)
-    with open(target, "w", encoding="ascii") as fh:
+    # "\n" on every platform: the fixture's bytes (and sha256) must not depend on where it was generated.
+    with open(target, "w", encoding="ascii", newline="\n") as fh:
         for p in positions:
             fh.write(f"v {p[0]:.6f} {p[1]:.6f} {p[2]:.6f}\n")
         for face in level.faces:
             fh.write("f " + " ".join(str(i + 1) for i in face) + "\n")
     return target
+
+
+def verify_dense() -> int:
+    """Regenerates the dense fixture into a temporary file and compares it byte for byte with `DENSE` (D5
+    reproducibility): 0 = identical."""
+    import hashlib
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fresh = make_dense(Path(tmp) / DENSE.name).read_bytes()
+    committed = DENSE.read_bytes() if DENSE.is_file() else b""
+    for label, data in (("committed", committed), ("regenerated", fresh)):
+        print(f"{label:<12} {hashlib.sha256(data).hexdigest()}  {len(data)} bytes")
+    same = fresh == committed
+    print("identical" if same else "DIFFERENT")
+    return 0 if same else 1
 
 
 def resolve_asset(name: str) -> Path:
@@ -357,6 +377,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.make_dense:
         print(f"wrote {make_dense()}")
         return 0
+    if args.verify_dense:
+        return verify_dense()
     import pyglet
 
     from drag_cost.probe_drag_gl import machine_info

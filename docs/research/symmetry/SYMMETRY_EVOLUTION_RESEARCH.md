@@ -284,6 +284,12 @@ Jeweils: scheinbar einfache V1-Entscheidung → warum sie später teuer wird →
 | **AR-11** | Re-Symmetrize per „Hälfte löschen + spiegeln" als Standard | Wird zur Gewohnheit, bevor es Character-Daten gibt → später Datenverlust | §8.6 |
 | **AR-12** | Nur ein globaler Symmetrie-Schalter ohne Geltungsbereich | Mehrere Objekte/Inseln/Characters später nicht ausdrückbar | C4D: eine Loop pro Insel (R2 §3.4) |
 
+*AR-1, Entscheidung D6 (Manu, 2026-11-11, `docs/research/deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md`
+„Decisions“):* ein **flüchtiger**, aus dem Änderungs-Journal nachgeführter Korrespondenz-Cache oberhalb des Core ist
+erlaubt — nichts wird gespeichert oder serialisiert, `vertex_correspondence()` bleibt Referenz und Test-Orakel,
+unbekannte Änderungen verwerfen den Cache, randomisierte Äquivalenztests, außerhalb von `src/core/mesh.py`. Eigene
+Design-Review und eigenes Gate; bis dahin gilt AR-1 im Code unverändert („kein Cache“).
+
 ---
 
 ## 12. Open Questions

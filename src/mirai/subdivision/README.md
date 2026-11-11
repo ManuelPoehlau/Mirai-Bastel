@@ -70,6 +70,9 @@ Undo), ist die Fläche wieder da.
 - **Limits** (`PROVISIONAL`): levels 1–3, `MAX_DERIVED_FACES = 25 000`. Face counts: `subd_cube` (24 quads)
   96 / 384 / 1 536; `head_basemesh` 1 296 / 5 184 / 20 736; `man_with_shoes_basemesh` 3 704 / 14 816 / 59 264
   (level 3 refused). A topology change that pushes the shown level over the limit falls back to the highest allowed level.
+  *Manu D4 / D5, 2026-11-11 (audit 2026-11-10 "Decisions"):* SubD on a 100k-face cage is not a goal on the reference
+  PC (SubD preview on a lower-resolution working cage; dense bases are edited without live SubD). The limit is not
+  raised on assumptions: it is measured on the reference PC, with the final assessment after O2.
 - **Lines** (`SubdLinePresentation`, sink `gl_lines.GLSubdLineOverlay`): layers `subd_iso`, `subd_cage`,
   `subd_iso_hover`, `subd_iso_selected`, `subd_cage_hover`, `subd_cage_selected`, in that draw order, all drawn *under*
   the app's own wire / face / edge highlights (`DRAW_UNDER_HIGHLIGHTS`). Hierarchy: view `cage` = cage α 1, no isolines

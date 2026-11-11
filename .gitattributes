@@ -1,0 +1,2 @@
+# Benchmark fixtures: byte-exact (sha256 in experiments/drag_cost/fixtures/README.md), no CRLF conversion.
+experiments/drag_cost/fixtures/*.obj -text
