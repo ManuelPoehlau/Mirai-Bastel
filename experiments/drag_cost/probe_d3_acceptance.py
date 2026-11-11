@@ -30,6 +30,12 @@ gizmo / bones, HUD, triad, panels, the rest incl. the GPU wait in `glFinish`; ad
 run showed `on_draw` at 35-64 ms) and the bytes handed to the GL store per frame by resource group. No `flip` (hidden
 window, no vsync wait).
 
+GPU side (added 2026-11-11 after the reference-PC D3 run showed the GPU wait in `on_draw` rising with O2):
+GL_TIME_ELAPSED around each `GLRenderStore.draw`, split into the commit of the vertex buffers and the draw itself, and
+`--vertex-textures live|copy|off` to tell the cost of the O2 fetches (`copy`: same fetches from a snapshot that the
+per-frame updates do not touch; the image goes stale, the timing stays valid) from the cost of reading buffers that
+are updated in the same frame (`live`) and from no face data at all (`off`).
+
 The output names the commit and whether the working tree had changes (audit addendum 2026-11-10: "record those on
 the next baseline run"). Numbers from a container are not reference-PC numbers (`REFERENCE_HARDWARE.md` §4); llvmpipe
 draws on the CPU. Plain ASCII.
@@ -93,6 +99,10 @@ DRAW_ROWS = {
     "draw_panels": "panels",
 }
 VERTEX_RESOURCES = frozenset({"positions", "normals", "indices"})
+VERTEX_TEXTURE_MODES = ("live", "copy", "off")
+#: GPU timer rows (GL_TIME_ELAPSED around each `GLRenderStore.draw`): the commit of the VertexList domain's buffers
+#: (pyglet uploads what changed), then the draw itself (face-data upload, texture binds, the shaded pass).
+GPU_ROWS = {"gpu_upload": "gpu: vertex-buffer upload", "gpu_draw": "gpu: mesh draw (face data + shaded pass)"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -103,6 +113,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--steps", type=int, default=DEFAULT_STEPS, help="measured frames per row")
     parser.add_argument("--interactions", nargs="+", choices=INTERACTIONS, default=list(INTERACTIONS))
     parser.add_argument("--no-panels", action="store_true", help="draw without the panel layer (imgui)")
+    parser.add_argument("--vertex-textures", choices=VERTEX_TEXTURE_MODES, default="live",
+                        help="diagnosis of the O2 fetches: 'live' = production; 'copy' = the buffer textures view a "
+                             "one-time copy of the vertex buffers (same fetches, no overlap with the per-frame "
+                             "updates; the image goes stale); 'off' = no face data (per-triangle shading)")
     return parser
 
 
@@ -233,6 +247,132 @@ def jaw_morph(app, share: int) -> int:
     return len(region)
 
 
+class GpuTimer:
+    """GL_TIME_ELAPSED queries around labelled sections (they must not nest), summed per label at `collect()` after
+    the frame's `glFinish`. `ok` is False where the driver has no timer query (then every value is NaN)."""
+
+    def __init__(self) -> None:
+        self._free: list[int] = []
+        self._pending: list[tuple[str, int]] = []
+        self.ok = True
+
+    def begin(self, label: str) -> None:
+        import ctypes
+
+        from pyglet import gl
+
+        if not self.ok:
+            return
+        try:
+            if self._free:
+                query = self._free.pop()
+            else:
+                name = gl.GLuint()
+                gl.glGenQueries(1, ctypes.byref(name))
+                query = name.value
+            gl.glBeginQuery(gl.GL_TIME_ELAPSED, query)
+        except Exception:  # noqa: BLE001 - a driver without timer queries reports n/a
+            self.ok = False
+            return
+        self._pending.append((label, query))
+
+    def end(self) -> None:
+        from pyglet import gl
+
+        if self.ok and self._pending:
+            gl.glEndQuery(gl.GL_TIME_ELAPSED)
+
+    def collect(self) -> dict[str, float]:
+        import ctypes
+
+        from pyglet import gl
+
+        out: dict[str, float] = {}
+        for label, query in self._pending:
+            value = ctypes.c_uint64()
+            gl.glGetQueryObjectui64v(query, gl.GL_QUERY_RESULT, ctypes.byref(value))
+            out[label] = out.get(label, 0.0) + value.value / 1e6
+            self._free.append(query)
+        self._pending.clear()
+        return out if self.ok else {label: float("nan") for label in GPU_ROWS}
+
+
+def instrument_draws(timer: GpuTimer, mode: str) -> list:
+    """Puts the GPU timer around every `GLRenderStore.draw` (the domain's buffers are committed first, in their own
+    section) and applies the `--vertex-textures` mode. Returns the undo list (class, name, original)."""
+    import ctypes
+
+    from pyglet import gl
+
+    from viewport.gl_render_store import GLRenderStore
+
+    undo = [(GLRenderStore, "draw", GLRenderStore.draw)]
+    original_draw = GLRenderStore.draw
+
+    def draw(store, group="mesh"):
+        vlist = store.vertex_list(group)
+        if vlist is None:
+            return original_draw(store, group)
+        domain = vlist.domain
+        timer.begin("gpu_upload")
+        for buffer, _attribute in domain.buffer_attributes:
+            buffer.commit()  # what `vlist.draw` would commit first; there it is then a no-op
+        index = getattr(domain, "index_buffer", None)
+        if index is not None:
+            index.commit()
+        timer.end()
+        timer.begin("gpu_draw")
+        try:
+            return original_draw(store, group)
+        finally:
+            timer.end()
+
+    GLRenderStore.draw = draw
+    if mode == "off":
+        undo.append((GLRenderStore, "_flush_face_data", GLRenderStore._flush_face_data))
+        GLRenderStore._flush_face_data = lambda store: False
+    elif mode == "copy":
+        if not hasattr(GLRenderStore, "_bind_vertex_textures"):
+            raise SystemExit("--vertex-textures copy needs the O2 code (GLRenderStore._bind_vertex_textures)")
+        from viewport.gl_render_store import _VERTEX_TEXTURES
+
+        snapshots: dict[tuple[int, str], tuple[int, int]] = {}
+        undo.append((GLRenderStore, "_bind_vertex_textures", GLRenderStore._bind_vertex_textures))
+
+        def bind_copy(store, vlist) -> bool:
+            buffers = {attribute.name: buffer for buffer, attribute in vlist.domain.buffer_attributes}
+            for name, (unit, _uniform) in _VERTEX_TEXTURES.items():
+                source = buffers[name]
+                source.commit()
+                key = (id(vlist.domain), name)
+                snapshot = snapshots.get(key)
+                if snapshot is None or snapshot[1] != source.size:
+                    target = gl.GLuint()
+                    gl.glGenBuffers(1, ctypes.byref(target))
+                    gl.glBindBuffer(gl.GL_COPY_READ_BUFFER, source.id)
+                    gl.glBindBuffer(gl.GL_COPY_WRITE_BUFFER, target.value)
+                    gl.glBufferData(gl.GL_COPY_WRITE_BUFFER, source.size, None, gl.GL_STATIC_DRAW)
+                    gl.glCopyBufferSubData(gl.GL_COPY_READ_BUFFER, gl.GL_COPY_WRITE_BUFFER, 0, 0, source.size)
+                    gl.glBindBuffer(gl.GL_COPY_READ_BUFFER, 0)
+                    gl.glBindBuffer(gl.GL_COPY_WRITE_BUFFER, 0)
+                    snapshot = snapshots[key] = (target.value, source.size)
+                texture_id, attached = store._vertex_textures.get(name, (0, None))
+                if not texture_id:
+                    texture = gl.GLuint()
+                    gl.glGenTextures(1, ctypes.byref(texture))
+                    texture_id = texture.value
+                gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
+                gl.glBindTexture(gl.GL_TEXTURE_BUFFER, texture_id)
+                if attached != snapshot:
+                    gl.glTexBuffer(gl.GL_TEXTURE_BUFFER, gl.GL_R32F, snapshot[0])
+                store._vertex_textures[name] = (texture_id, snapshot)
+            gl.glActiveTexture(gl.GL_TEXTURE0)
+            return True
+
+        GLRenderStore._bind_vertex_textures = bind_copy
+    return undo
+
+
 class Frame:
     """One window frame as `src/main.py` runs it: input, tick, `on_draw`, `glFinish`."""
 
@@ -275,10 +415,12 @@ def build(path: Path, share: int, panels: bool):
     return window, app, frame, weighted, morphed, gui is not None
 
 
-def run_rows(path: Path, share: int, steps: int, interactions, panels: bool) -> list[str]:
+def run_rows(path: Path, share: int, steps: int, interactions, panels: bool, mode: str = "live") -> list[str]:
     from drag_cost.probe_morph_gl import _key
     from mirai.morph_targets import DRAG_PIXELS_PER_PERCENT
 
+    timer = GpuTimer()
+    undo = instrument_draws(timer, mode)  # before `Meter`, so its wrappers see the mode's methods
     meter = Meter()
     lines: list[str] = []
     try:
@@ -287,7 +429,7 @@ def run_rows(path: Path, share: int, steps: int, interactions, panels: bool) -> 
         lines.append(
             f"[{path.stem}] {len(mesh.all_vertex_ids())} V / {len(mesh.all_face_ids())} F; region {share} %: "
             f"{weighted} V weighted, {morphed} V in the morph target at {app.morph_weight} %; "
-            f"panels {'on' if panels_on else 'off'}"
+            f"panels {'on' if panels_on else 'off'}; vertex textures {mode}"
         )
         lines.append("  timed: " + ", ".join(sorted(meter.present)))
         e, n = _key("e"), _key("n")
@@ -319,10 +461,14 @@ def run_rows(path: Path, share: int, steps: int, interactions, panels: bool) -> 
                 frame(None)
                 for i in range(WARMUP_STEPS):  # the first frames after a build run slower (caches, allocator)
                     frame(motion(i))
+                timer.collect()
                 totals, parts, rows, sent = [], [], {}, {}
                 for i in range(steps):
                     meter.reset()
                     inp, tick, draw = frame(motion(WARMUP_STEPS + i))
+                    gpu = timer.collect()
+                    for row in GPU_ROWS:
+                        rows.setdefault(row, []).append(gpu.get(row, 0.0))
                     totals.append(inp + tick + draw)
                     parts.append((inp, tick, draw))
                     for row in ("eval", "sync_geometry", "face_data", "wire", "face_flush", *DRAW_ROWS):
@@ -340,6 +486,8 @@ def run_rows(path: Path, share: int, steps: int, interactions, panels: bool) -> 
         window.close()
     finally:
         meter.remove()
+        for cls, name, original in reversed(undo):
+            setattr(cls, name, original)
     return lines
 
 
@@ -364,6 +512,7 @@ def report(interaction, wire, totals, parts, rows, sent, weighted) -> list[str]:
         if row == "draw_viewport":
             labels["face_flush"] = "    of it: face-data upload"
     labels["draw_rest"] = "  draw: rest (clear, sync, GPU wait)"
+    labels.update({row: "  " + label for row, label in GPU_ROWS.items()})
     for row, label in labels.items():
         values = rows.get(row, [])
         if not values or (row in ("wire", *DRAW_ROWS) and not any(values)):
@@ -399,7 +548,7 @@ def main(argv: list[str] | None = None) -> int:
         f"bar (D3): p95 <= {BAR_MIN_P95_MS} ms minimum, <= {BAR_PREFERRED_P95_MS} ms preferred"
     )
     print()
-    for line in run_rows(path, args.region, args.steps, args.interactions, not args.no_panels):
+    for line in run_rows(path, args.region, args.steps, args.interactions, not args.no_panels, args.vertex_textures):
         print(line)
     return 0
 

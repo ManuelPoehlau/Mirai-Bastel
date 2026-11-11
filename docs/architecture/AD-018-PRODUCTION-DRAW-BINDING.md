@@ -668,7 +668,10 @@ and the face normal only; the shader reads corner positions and normals from the
   pixel identity holds on the GeForce 9800 GTX driver (GL tests 165 passed, incl. `test_gl_face_data_layout.py`); the
   pose step at 87.5k / 15 % went 391.73 → 299.17 ms p50 (face data 106 → 22 ms). The dependent fetches cost GPU time:
   a Smooth-quad fragment now makes 27 texel fetches (24 single `R32F`) instead of 10 `RGBA32F`, and the shaded pass at
-  87.5k / 1024×768 went 0.76 → 2.76 ms (orbit frame 1.73 → 4.08 ms p50). Accepted: a deformation step's CPU part is
-  about 100 times that. If it ever limits a frame, `RGB32F` buffer textures (`GL_ARB_texture_buffer_object_rgb32`, GL
-  4.0 core) would cut the vertex fetches to a third where the driver offers them.
+  87.5k / 1024×768 went 0.76 → 2.76 ms (orbit frame 1.73 → 4.08 ms p50); `RGB32F` buffer textures, which would cut
+  the vertex fetches to a third, are not offered by that driver (`GL_ARB_texture_buffer_object_rgb32`: no). **Open:**
+  in the complete D3 frame (Morph + Skin, a deformation every frame) the GPU wait in `glFinish` rose from ≈ 28 to
+  ≈ 44 ms (pose, 87.5k / 15 %), more than the fetches explain; suspected is the overlap of the per-frame vertex-buffer
+  updates with their buffer-texture views. `probe_d3_acceptance.py --vertex-textures live|copy|off` decides it on
+  the reference PC (results file above).
 

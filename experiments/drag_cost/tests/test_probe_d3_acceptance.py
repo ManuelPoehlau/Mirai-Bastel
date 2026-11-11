@@ -17,6 +17,10 @@ def test_defaults_are_the_dense_fixture_a_15_percent_region_and_both_interaction
     assert probe.resolve_asset(args.asset) == probe.DENSE
     assert args.region == 15 and args.steps == probe.DEFAULT_STEPS
     assert args.interactions == ["pose", "weight"] and args.no_panels is False
+    assert args.vertex_textures == "live"
+    assert probe.build_parser().parse_args(["--vertex-textures", "copy"]).vertex_textures == "copy"
+    with pytest.raises(SystemExit):
+        probe.build_parser().parse_args(["--vertex-textures", "none"])
 
 
 def test_an_unknown_mesh_exits():
@@ -56,6 +60,6 @@ def test_imports_only_src_examples_and_its_own_folder():
     modules = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
     modules |= {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     assert modules <= {
-        "__future__", "argparse", "importlib", "math", "statistics", "subprocess", "sys", "time", "pathlib",
+        "__future__", "argparse", "ctypes", "importlib", "math", "statistics", "subprocess", "sys", "time", "pathlib",
         "drag_cost", "pyglet", "main", "hud", "mirai", "viewport",
     }

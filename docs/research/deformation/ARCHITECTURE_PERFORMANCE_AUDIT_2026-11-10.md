@@ -772,10 +772,16 @@ Raw output and comparison:
 - **Deformation step [RPC]** (the §E.3 split, 87.5k, 15 %): 391.73 → **299.17 ms** p50 wire off, 398.76 → **294.02 ms**
   wire on; face data → store 106.39 → **22.34 ms**, bytes 2.30 → **0.56 MB**; every other part unchanged.
 - **GPU cost of the new fetches [RPC]:** shaded pass 0.76 → **2.76 ms** GPU timer, orbit frame 1.73 → 4.08 ms p50 (0 of
-  40 frames over 16.7 ms), 1024×768. Accepted for now (the deformation step's CPU part is about 100 times that); the
-  lever if it ever limits a frame is `RGB32F` buffer textures (three times fewer fetches) where the driver offers them.
-- **D3 [RPC], pre-O2 only:** pose 426.37 / 433.35, weight 506.38 / 516.11 ms p50 / p95 (wire off), panels off (Python
-  3.14.2 has no `imgui-bundle`). The run of the probe on the O2 code is still open. `on_draw` takes 35 / 64 ms there;
-  the probe now splits it — in the container the HUD alone costs 10.9 ms per weight-drag frame (0.5 ms per pose
-  frame), a size-independent cost outside O2.
+  40 frames over 16.7 ms), 1024×768. The driver has no `GL_ARB_texture_buffer_object_rgb32`, so `RGB32F` buffer
+  textures are not a lever on this PC.
+- **D3 [RPC]** (panels off: Python 3.14.2 has no `imgui-bundle`), p50 (p95), wire off: pose 426.37 (433.35) →
+  **352.98 (360.14)**, weight 506.38 (516.11) → **431.05 (440.80)**; wire on 441.46 → **366.33**, 514.13 → **424.99**.
+  Still 10–13× over the bar. The tick fell by ≈ 89 ms (face data 107.58 → 22.34), **`on_draw` rose by ≈ 15 ms** (pose
+  34.90 → 50.11): its CPU parts are small (viewport render 3.6, gizmo 1.0, HUD 1.1, triad 0.4 ms), the rest is the GPU
+  wait in `glFinish` — ≈ 44 ms after O2 against ≈ 28 ms before. Unexplained (the split probe's draw got faster, the
+  orbit only +2 ms); suspected: the vertex buffers are rewritten every frame while attached to the new buffer
+  textures. The D3 probe now has GPU timers and `--vertex-textures live|copy|off` to decide it on that PC; until then
+  this is an open O2 item.
+- **HUD during a weight drag [RPC]: 24.5 ms per frame** (pose: 1.1 ms), gizmo / bones 6.9 ms (pose: 1.0) — the weight
+  read-out changes every frame. Size-independent, outside O2.
 
