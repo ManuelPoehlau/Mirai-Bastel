@@ -34,7 +34,7 @@ from viewport.light_rig import (  # noqa: E402
     shade,
 )
 from viewport.material import DEFAULT_FINISH, MATTE_FINISH, Material, SurfaceFinish  # noqa: E402
-from viewport.render_mesh import RenderMesh  # noqa: E402
+from viewport.render_mesh import FACE_CORNERS, FACE_NORMALS, RenderMesh  # noqa: E402
 
 SIZE = 160
 BACKGROUND = (0.0, 0.0, 0.0)
@@ -243,7 +243,8 @@ def test_moving_a_vertex_patches_the_face_data(gl_window):
     mesh.set_vertex_position(centre, (0.0, 0.0, 0.35))
     rm.mark_vertices_dirty({centre})
     rm.sync()
-    assert rm.store._face_dirty["face_shading"]  # row ranges, not a full re-upload
+    assert rm.store._face_dirty[FACE_NORMALS]  # row ranges, not a full re-upload
+    assert FACE_CORNERS not in rm.store._face_dirty  # a move leaves the corner slots alone (O2)
     patched = _draw(gl_window, rm, camera)
     rm.store.release()
 

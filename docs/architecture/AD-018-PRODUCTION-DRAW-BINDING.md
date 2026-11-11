@@ -576,7 +576,9 @@ Tests: `tests/test_object_space.py`, `tests/test_reference_display.py`, `tests/t
 *Addendum 2026-10-15 (B5a.1 per-polygon Flat, Smooth without the diagonal, worklight — Manu's request
 "Dreiecke sollen nicht sichtbar sein; Lighting/Shading aus dem Lab in die App"):* the vertex group (§5) is
 unchanged; `RenderMesh` adds two **face-data resources** next to it, named to the store by a fifth optional
-contract method `declare_face_data(data, triangle_map, row_texels)` (no-op default): `triangle_faces` (per
+contract method `declare_face_data(data, triangle_map, row_texels)` (no-op default; *the row layout and this
+signature were replaced on 2026-11-11 by O2, addendum below — the shading described here is unchanged*):
+`triangle_faces` (per
 triangle in index-buffer order: its face row; structural only) and `face_shading` (per face one row of 9 vec4:
 Newell normal + corner count, four corner positions, four corner vertex normals; a move patches the rows of
 every face around a vertex whose normal changed, counter `face_data_uploads`). `GLRenderStore` keeps them as
@@ -618,3 +620,51 @@ key and no material editor. "Heute" reproduces the old formula with `MATTE_FINIS
 polygon, no diagonal in Smooth, finish change = material update only). Cost, container only (Xvfb + llvmpipe, not the reference
 PC): `head_basemesh` at 1280×800, median frame `sync + render + glFinish` 3.3–3.5 ms matte vs. 3.6–3.7 ms with
 the default finish (two alternating runs, within run-to-run noise); the reference PC is not measured.
+
+*Addendum 2026-11-11 (O2 — face data without per-face vertex copies; audit
+[`ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md`](../research/deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md)
+§E.3, §G.3, §H step 4; Manu's decisions D1–D6 of 2026-11-11, O2 first):* the 36-float `face_shading` row per face
+(Newell normal + count, four corner positions, four corner normals) duplicated every vertex's position and normal once
+per adjacent face; a deformation rewrote it for every face around every vertex whose normal changed — 23–26 % of a pose
+step and 86 % of its bytes **[C]**, 80 % of the step in `_sync_geometry` on the reference PC **[RPC]**. **Decision
+(agent, within D1–D6; the look is the Artist's KEEP of 2026-10-15 and must not change):** the face data holds topology
+and the face normal only; the shader reads corner positions and normals from the vertex group's own buffers.
+
+- **Layout.** `declare_face_data(normals, corners, triangle_map)` (contract change, the only caller is `RenderMesh`;
+  `TraceStore` keeps the no-op default): `face_normals` — per face row one vec4 (Newell normal, corner count), the only
+  face data a deformation writes; `face_corners` — per face row two vec4 (the vertex slots of the first four corners;
+  region tint rgb), written by topology patches, full rebuilds and `set_face_tints` only; `triangle_faces` unchanged.
+  The Newell normal stays a CPU value (double precision, `derived.face_normals`, then float32): computing it in the
+  shader would round differently and needs all corners of an n-gon.
+- **Shader.** `GLRenderStore` binds the VertexList's own `position` and `normal` attribute buffers (pyglet's
+  `domain.buffer_attributes`, the buffers the wire and the GPU picker already draw from) as `GL_R32F` buffer textures
+  (`u_positions`, `u_normals`, units 6 / 7; GL 3.3 has no `RGB32F` buffer texture, so three texels per vertex) and
+  passes the VertexList's first vertex in its pyglet domain (`u_vertex_base = vlist.start`: all `GLRenderStore`
+  VertexLists of one program share one domain). A buffer texture is re-attached when pyglet's buffer name or size
+  changes. pyglet commits the attribute buffers inside `vlist.draw()` before the draw call, so the fragment shader reads
+  the same values as the vertex stage. `quad_normal`, Flat, tints and the textured variant use the same arithmetic on
+  the same float32 values as before; only the fetch changed.
+- **What a deformation sends.** Positions of the moved vertices and normals of their 1-ring (12 bytes each, as before)
+  plus one vec4 per face around a moved vertex, through a float32 CPU mirror in merged ranges like the vertex mirror —
+  no corner data. `RenderMesh._upload_face_normals` / `_upload_face_corners` replace `_upload_rows`;
+  `face_data_uploads` counts rows of either resource.
+- **Equivalence (test-verified, container).** `tests/test_gl_face_data_layout.py` draws 16 scenes with the production
+  path and with the pre-O2 path frozen as an oracle (`tests/gl_pre_o2_shading.py`: the old fragment shader verbatim
+  from `bc0f0b2` and the old row builder, through the same `GLRenderStore.draw`) and demands byte-identical pixels:
+  Smooth and Flat, perspective and ortho, quads / triangles / n-gons, region tints, a placement with specular, after
+  moves, after topology patches (free rows, non-compact slots), hidden faces, a VertexList behind another in the same
+  domain. Two mutations of the new shader (a wrong corner normal, `u_vertex_base` dropped) fail it. A one-time cross
+  check against the real `bc0f0b2` tree (16 scenes on `head_basemesh` and `gollum_20k`, deformed through the patch
+  path, 640×480): byte-identical. Headless: `test_render_mesh_face_data.py`, `test_render_mesh_incremental.py`
+  (patch == rebuild per element, corner slots compared through the vertices they address), `test_region_tint.py`.
+- **Measured (container, llvmpipe; not the reference PC):**
+  [`RESULTS_O2_CONTAINER_2026-11-11.md`](../../experiments/drag_cost/RESULTS_O2_CONTAINER_2026-11-11.md). D3 frame
+  (87.5k, 15 % jaw region, Morph + Skin, `probe_d3_acceptance.py`): face data to the store per frame 1.97 MB → 0.22 MB,
+  176 → 42 bytes per region vertex in total; its time 36 → 10 ms p50; the whole frame stays far over the D3 bar (O1 /
+  O3 are next). Draw time on llvmpipe unchanged.
+- **Open, reference PC only:** the fragment cost of the dependent fetches on the GeForce 9800 GTX (a Smooth-quad
+  fragment now makes 27 texel fetches — 24 of them single `R32F` texels from two buffers — instead of 10 `RGBA32F`
+  fetches, most from one row) — the `gpu` column of
+  `probe_navigation_gl.py` on the 87.5k fixture against 0.76 ms of 2026-11-10; pixel identity on that driver —
+  `tests/test_gl_face_data_layout.py` is part of the GL test run.
+

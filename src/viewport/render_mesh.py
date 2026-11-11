@@ -60,15 +60,17 @@ folgern. WAS berechnet wird und WANN `sync()` dispatcht, ist dadurch
 unverändert - nur wie der Store über die Ressourcen-Struktur informiert
 wird, ist neu.
 
-Face-Daten (AD-018 Nachtrag 2026-10-15, B5a.1 + Smooth ohne Dreiecks-Diagonale): neben der
-Gruppe legt `RenderMesh` zwei Daten-Ressourcen an, die der Fragment-Shader über die
-Dreiecksnummer (`gl_PrimitiveID`) liest - `triangle_faces` (je Dreieck in Indexbuffer-
-Reihenfolge die Zeile seiner Face) und `face_shading` (je Face eine Zeile, `FACE_ROW_FLOATS`:
-Newell-Normale + Eckenzahl, vier Eck-Positionen, vier Eck-Normalen). Damit schattiert Flat eine
-Normale pro Polygon statt pro Dreieck, und Smooth interpoliert die Normalen über ein Quad
-bilinear statt pro Dreieck linear. Die Vertex-Gruppe bleibt unverändert. `triangle_faces` ändert
-sich nur strukturell; `face_shading` wird beim Verschieben zeilenweise gepatcht (die Faces um
-alle Vertices, deren Normale sich geändert hat).
+Face-Daten (AD-018 Nachtrag 2026-10-15, B5a.1 + Smooth ohne Dreiecks-Diagonale; Layout seit O2, Nachtrag
+2026-11-11): neben der Gruppe legt `RenderMesh` drei Daten-Ressourcen an, die der Fragment-Shader über die
+Dreiecksnummer (`gl_PrimitiveID`) liest - `triangle_faces` (je Dreieck in Indexbuffer-Reihenfolge die Zeile seiner
+Face), `face_normals` (je Face-Zeile ein vec4: Newell-Normale + Eckenzahl) und `face_corners` (je Face-Zeile zwei
+vec4: die Vertex-Slots der ersten vier Ecken, die Regionsfarbe). Die Positionen und Normalen der Ecken liest der
+Shader aus den Buffern der Vertex-Gruppe selbst (`GLRenderStore`: als Buffer-Texturen), nicht aus Kopien je Face.
+Damit schattiert Flat eine Normale pro Polygon statt pro Dreieck, und Smooth interpoliert die Normalen über ein Quad
+bilinear statt pro Dreieck linear. Die Vertex-Gruppe bleibt unverändert. `triangle_faces` und `face_corners` ändern
+sich nur strukturell (und `face_corners` mit der Regionsfarbe); eine Verformung schreibt nur die `face_normals` der
+Faces um bewegte Vertices (4 Floats je Face; bis O2 waren es 36 Floats je Face um jeden Vertex mit neuer Normale:
+Normale, vier Eck-Positionen, vier Eck-Normalen - Audit 2026-11-10 §E.3).
 
 Textur (AD-026, 2026-10-29): hat die Mesh Face-Ecken-UVs und das gebundene Material eine Textur
 (`material.texture`), legt `RenderMesh` eine dritte Daten-Ressource an, `triangle_uvs`: je
@@ -107,7 +109,13 @@ MESH_GROUP_ATTRIBUTES: dict[str, tuple[str, int]] = {
 }
 MESH_GROUP_INDEX = "indices"
 
-FACE_DATA = "face_shading"
+#: Face data (module docstring): one vec4 per face row (Newell normal, corner count) - the only face data a deformation
+#: rewrites - and two vec4 per face row (vertex slots of the first four corners; region tint rgb, 0) - topology and tint.
+FACE_NORMALS = "face_normals"
+FACE_NORMAL_FLOATS = 4
+FACE_CORNERS = "face_corners"
+FACE_CORNER_TEXELS = 2
+FACE_CORNER_FLOATS = FACE_CORNER_TEXELS * 4
 TRIANGLE_FACES = "triangle_faces"
 #: AD-026: je Dreiecks-Slot die UVs seiner drei Ecken (nur mit Textur, Modul-Docstring).
 TRIANGLE_UVS = "triangle_uvs"
@@ -115,11 +123,11 @@ TRIANGLE_UV_FLOATS = 6
 #: u einer Ecke ohne UVs (der Shader zeigt dort die Grundfarbe); endlich in float32.
 UNMAPPED_U = -1.0e30
 _UNMAPPED_TRIANGLE = (UNMAPPED_U, 0.0) * 3
-#: Texel (vec4) je Face-Zeile: (Normale, Eckenzahl), 4 Eck-Positionen, 4 Eck-Normalen.
-FACE_ROW_TEXELS = 9
-FACE_ROW_FLOATS = FACE_ROW_TEXELS * 4
-#: Ecken, für die der Shader bilinear interpoliert (nur Quads; Dreiecke sind schon linear exakt).
+#: Ecken, deren Slots eine Face-Zeile trägt: der Shader interpoliert bilinear nur über Quads (Dreiecke sind schon
+#: linear exakt, n-Gone behalten die interpolierte Vertex-Normale).
 _FACE_ROW_CORNERS = 4
+_DEAD_NORMAL_ROW = (0.0,) * FACE_NORMAL_FLOATS
+_DEAD_CORNER_ROW = (0.0,) * FACE_CORNER_FLOATS
 
 _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
@@ -196,7 +204,7 @@ class RenderMesh:
         # AD-021 M2-1 (E-9): Objekt -> Welt. Erst beim ersten `set_model_matrix` geschrieben, so
         # dass ein nie platziertes Objekt genau die bisherigen Ressourcen hat.
         self.store.declare_uniform("model_uniforms")
-        self.store.declare_face_data(FACE_DATA, TRIANGLE_FACES, FACE_ROW_TEXELS)
+        self.store.declare_face_data(FACE_NORMALS, FACE_CORNERS, TRIANGLE_FACES)
         declare_uvs = getattr(self.store, "declare_triangle_uvs", None)
         if declare_uvs is not None:
             declare_uvs(TRIANGLE_UVS)
@@ -447,7 +455,7 @@ class RenderMesh:
         changed = {f for f in old.keys() | tints.keys() if old.get(f) != tints.get(f)}
         rows = {self._face_row[f] for f in changed if f in self._face_row}
         if rows:
-            self._upload_rows(rows)
+            self._upload_face_corners(rows)
 
     def is_vertex_hidden(self, vertex_id: VertexId) -> bool:
         return vertex_id in self._hidden or vertex_id in self._resolved.vertices
@@ -583,57 +591,47 @@ class RenderMesh:
         if set_texture is not None:
             set_texture(getattr(self.material, "texture", None) if self._uv_active else None)
 
-    def _face_row_data(self, face_id: FaceId) -> list[float]:
-        return self._face_rows_data((face_id,))
-
-    def _face_rows_data(self, face_ids) -> list[float]:
-        """The face-data rows of `face_ids`, concatenated in that order (one call per batch: this
-        runs for thousands of faces per W-drag move on a dense mesh)."""
-        face_vertices = self.mesh.face_vertices
-        position = self.mesh.vertex_position
-        normals = self.derived.vertex_normals
+    def _face_normal_values(self, face_ids) -> list[float]:
+        """The `face_normals` rows of `face_ids` (Newell normal, corner count), concatenated in that order."""
         face_normals = self.derived.face_normals
+        boundary = self._face_boundary
         out: list[float] = []
-        append_row = out.extend
-        tints = self._tints
+        extend = out.extend
         for face_id in face_ids:
-            boundary = face_vertices(face_id)
-            n = len(boundary)
             nx, ny, nz = face_normals[face_id]
-            tr, tg, tb = tints.get(face_id, _NO_TINT) if tints else _NO_TINT
-            if n == 4:
-                a, b, c, d = boundary
-                pa, pb, pc, pd = position(a), position(b), position(c), position(d)
-                na, nb, nc, nd = normals[a], normals[b], normals[c], normals[d]
-                append_row((
-                    nx, ny, nz, 4.0,
-                    pa[0], pa[1], pa[2], tr, pb[0], pb[1], pb[2], tg,
-                    pc[0], pc[1], pc[2], tb, pd[0], pd[1], pd[2], 0.0,
-                    na[0], na[1], na[2], 0.0, nb[0], nb[1], nb[2], 0.0,
-                    nc[0], nc[1], nc[2], 0.0, nd[0], nd[1], nd[2], 0.0,
-                ))
-                continue
-            corners = boundary[:_FACE_ROW_CORNERS]
-            padding = [0.0] * (4 * (_FACE_ROW_CORNERS - len(corners)))
-            row = [nx, ny, nz, float(n)]
-            for v in corners:
-                x, y, z = position(v)
-                row += (x, y, z, 0.0)
-            row += padding
-            for v in corners:
-                x, y, z = normals[v]
-                row += (x, y, z, 0.0)
-            row += padding
-            if tr or tg or tb:
-                row[7], row[11], row[15] = tr, tg, tb
-            append_row(row)
+            extend((nx, ny, nz, float(len(boundary[face_id]))))
         return out
 
-    def _face_data_flat(self) -> list[float]:
-        dead = [0.0] * FACE_ROW_FLOATS
+    def _face_corner_values(self, face_ids) -> list[float]:
+        """The `face_corners` rows of `face_ids` (vertex slots of the first four corners, unused ones 0; region tint),
+        concatenated in that order."""
+        index = self._vertex_index
+        boundary = self._face_boundary
+        tints = self._tints
+        out: list[float] = []
+        extend = out.extend
+        for face_id in face_ids:
+            b = boundary[face_id]
+            tr, tg, tb = tints.get(face_id, _NO_TINT) if tints else _NO_TINT
+            if len(b) >= _FACE_ROW_CORNERS:
+                extend((float(index[b[0]]), float(index[b[1]]), float(index[b[2]]), float(index[b[3]]),
+                        tr, tg, tb, 0.0))
+            else:
+                extend((float(index[b[0]]), float(index[b[1]]), float(index[b[2]]), 0.0, tr, tg, tb, 0.0))
+        return out
+
+    def _face_rows_flat(self, values, dead) -> list[float]:
+        """One face resource over all rows: `values(faces)` for live rows, `dead` for free ones."""
         flat: list[float] = []
+        batch: list[FaceId] = []
         for face_id in self._row_face:
-            flat += dead if face_id is None else self._face_row_data(face_id)
+            if face_id is None:
+                flat += values(batch)
+                batch = []
+                flat += dead
+            else:
+                batch.append(face_id)
+        flat += values(batch)
         return flat
 
     def _rebuild_resources(self) -> None:
@@ -657,7 +655,10 @@ class RenderMesh:
         self.store.end_rebuild(MESH_GROUP)
 
         put(TRIANGLE_FACES, [float(row) for row in self._triangle_face_rows])
-        put(FACE_DATA, self._face_data_flat())
+        face_normals = self._face_rows_flat(self._face_normal_values, _DEAD_NORMAL_ROW)
+        self._mirror[FACE_NORMALS] = array("f", face_normals)
+        put(FACE_NORMALS, face_normals)
+        put(FACE_CORNERS, self._face_rows_flat(self._face_corner_values, _DEAD_CORNER_ROW))
         self._uv_active = self._uv_wanted()
         if self._uv_active:
             put(TRIANGLE_UVS, self._triangle_uvs_flat())
@@ -851,7 +852,10 @@ class RenderMesh:
         pos_slots: dict[int, tuple] = {}
         normal_slots: dict[int, tuple] = {}
         tri_slots: dict[int, tuple] = {}
-        row_slots: set[int] = set()
+        # Face rows whose Newell normal (`normal_rows`) or corner slots (`corner_rows`) changed; the corners' positions
+        # and normals are read from the vertex buffers (O2), so a face around a moved vertex needs no other row.
+        normal_rows: set[int] = set()
+        corner_rows: set[int] = set()
 
         # Adjazenz: alte Boundaries austragen, neue eintragen.
         for f in (*removed_f, *changed_f):
@@ -881,7 +885,8 @@ class RenderMesh:
             row = face_row.pop(f)
             self._row_face[row] = None
             self._free_rows.append(row)
-            row_slots.add(row)
+            normal_rows.add(row)
+            corner_rows.add(row)
             del face_boundary[f]
             fnormals.pop(f, None)
         for f in changed_f:
@@ -956,11 +961,13 @@ class RenderMesh:
                 self._triangle_indices[t] = tri
                 self._triangle_face_rows[t] = row
                 tri_slots[t] = self._triangle_values(t, tri)
-            row_slots.add(row)
+            normal_rows.add(row)
+            if f in new_boundary:
+                corner_rows.add(row)
             dirty_vertices.update(b)
 
         # Vertex-Normalen um alles, was sich geändert hat (wie `full_recompute`: ein Vertex ohne
-        # Faces bekommt (0, 0, 0) und keinen Adjazenz-Eintrag); die Face-Zeilen um diese Vertices.
+        # Faces bekommt (0, 0, 0) und keinen Adjazenz-Eintrag).
         for v in dirty_vertices:
             slot = index.get(v)
             if slot is None:
@@ -973,8 +980,6 @@ class RenderMesh:
                     sx += n[0]
                     sy += n[1]
                     sz += n[2]
-                for f in faces_of:
-                    row_slots.add(face_row[f])
             elif faces_of is not None:
                 del v2f[v]
             normal = vnormals[v] = _normalize((sx, sy, sz))
@@ -992,7 +997,8 @@ class RenderMesh:
             data = [float(self._triangle_face_rows[t]) for t in run]
             self.store.update(TRIANGLE_FACES, run[0], data, len(data) * FLOAT_BYTES)
         self._upload_triangle_uvs(tri_slots)
-        self._upload_rows(row_slots)
+        self._upload_face_normals(normal_rows)
+        self._upload_face_corners(corner_rows)
         self.content_revision += 1
         if self._hidden or self._hidden_faces:
             # A face added or removed beside hidden ones can change whether an edge or corner is hidden.
@@ -1017,19 +1023,38 @@ class RenderMesh:
             self.store.update(name, lo * COMPONENTS_PER_VERTEX, data, len(data) * FLOAT_BYTES)
             self.stats.count("partial_updates")
 
-    def _upload_rows(self, rows) -> None:
-        """Face-data rows, one upload per run of consecutive rows."""
+    def _upload_face_normals(self, rows) -> None:
+        """`face_normals` rows (freed rows as zeros) through the CPU mirror, uploaded in merged ranges like
+        `_upload_vec3`: a deformation rewrites these rows only, and they lie scattered over the buffer."""
+        if not rows:
+            return
+        mirror = self._mirror[FACE_NORMALS]
         row_face = self._row_face
-        dead_row = [0.0] * FACE_ROW_FLOATS
+        face_normals = self.derived.face_normals
+        boundary = self._face_boundary
+        for row in rows:
+            face_id = row_face[row]
+            i = row * FACE_NORMAL_FLOATS
+            if face_id is None:
+                mirror[i] = mirror[i + 1] = mirror[i + 2] = mirror[i + 3] = 0.0
+                continue
+            mirror[i], mirror[i + 1], mirror[i + 2] = face_normals[face_id]
+            mirror[i + 3] = len(boundary[face_id])
+        for lo, hi in _ranges(rows, _UPLOAD_GAP):
+            data = mirror[lo * FACE_NORMAL_FLOATS:hi * FACE_NORMAL_FLOATS].tolist()
+            self.store.update(FACE_NORMALS, lo * FACE_NORMAL_FLOATS, data, len(data) * FLOAT_BYTES)
+        self.stats.count("face_data_uploads", len(rows))
+
+    def _upload_face_corners(self, rows) -> None:
+        """`face_corners` rows (freed rows as zeros), one upload per run of consecutive rows (topology and tint
+        changes only)."""
+        row_face = self._row_face
         for run in _runs(rows):
-            faces = [row_face[row] for row in run]
-            if None in faces:
-                data: list[float] = []
-                for face_id in faces:
-                    data += dead_row if face_id is None else self._face_row_data(face_id)
-            else:
-                data = self._face_rows_data(faces)
-            self.store.update(FACE_DATA, run[0] * FACE_ROW_FLOATS, data, len(data) * FLOAT_BYTES)
+            data: list[float] = []
+            for row in run:
+                face_id = row_face[row]
+                data += _DEAD_CORNER_ROW if face_id is None else self._face_corner_values((face_id,))
+            self.store.update(FACE_CORNERS, run[0] * FACE_CORNER_FLOATS, data, len(data) * FLOAT_BYTES)
             self.stats.count("face_data_uploads", len(run))
 
     def _sync_geometry(self) -> None:
@@ -1061,13 +1086,10 @@ class RenderMesh:
         self._upload_vec3("normals", {index[v]: normals[v] for v in affected_vertices})
         self.stats.count("geometry_uploads", len(moved) + len(affected_vertices))
 
-        # Face-Daten: jede Face, die einen Vertex mit neuer Position oder neuer Normale hat.
-        faces: set[FaceId] = set()
-        v2f = self.derived.vertex_to_faces
-        for vertex_id in affected_vertices:
-            faces.update(v2f.get(vertex_id, ()))
+        # Face-Daten (O2): nur die Newell-Normalen der Faces um bewegte Vertices; Positionen und Normalen ihrer Ecken
+        # liest der Shader aus den eben hochgeladenen Vertex-Buffern, die Eck-Slots ändern sich nicht.
         face_row = self._face_row
-        self._upload_rows({face_row[face_id] for face_id in faces})
+        self._upload_face_normals({face_row[face_id] for face_id in affected_faces})
 
     def _sync_selection(self) -> None:
         # Nichts im Mesh-Buffer hängt an der Auswahl: Punkte, Kanten und Faces der Auswahl zeichnen die Overlays

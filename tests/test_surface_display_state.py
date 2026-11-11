@@ -174,12 +174,12 @@ def test_the_colour_switch_reaches_the_mix_as_draw_state_only():
     _group(app, _faces(app, 0))
     _target(app, 50)
     rm = app.viewport.surface_render_mesh
-    rows = list(rm.store.data("face_shading"))
+    rows = list(rm.store.data("face_corners"))
     assert app.key_press(TINT_TOGGLE)
     _sync(app)
     assert not app.viewport.region_tint
     assert getattr(rm.store, "region_tint", False) is False
-    assert list(rm.store.data("face_shading")) == rows  # nothing re-uploaded
+    assert list(rm.store.data("face_corners")) == rows  # nothing re-uploaded
     assert app.key_press(TINT_TOGGLE)
     _sync(app)
     assert app.viewport.region_tint

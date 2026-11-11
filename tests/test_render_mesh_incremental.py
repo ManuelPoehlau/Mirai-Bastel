@@ -5,7 +5,8 @@ Oracle: a new `RenderMesh` on the same mesh (the full-rebuild path). Compared pe
 because the patched layout keeps slots (dead slots, spare capacity) while the fresh one is compact:
 positions and normals per vertex (normals within 1e-9: a vertex normal is a sum over a set of
 faces whose iteration order may differ), the triangles of every face in order and their face row,
-the face-data row, `triangle_faces`, highlight flags, adjacency; every other triangle slot is
+the face-data rows (`face_normals`; `face_corners` through the vertices its slots address), `triangle_faces`,
+adjacency; every other triangle slot is
 degenerate and every free vertex slot holds `DEAD_POSITION`. Sequences mix every topology
 operation with Undo / Redo through `MeshDeltaCommand` and positions-only moves between syncs.
 """
@@ -24,7 +25,7 @@ from core.mesh import Mesh, MeshError
 from core.operations import MeshDeltaCommand, record_mesh_change
 from viewport.overlay import SelectionOverlay
 from viewport.render_mesh import (
-    DEAD_POSITION, FACE_DATA, FACE_ROW_FLOATS, TRIANGLE_FACES, RenderMesh,
+    DEAD_POSITION, FACE_CORNER_FLOATS, FACE_CORNERS, FACE_NORMAL_FLOATS, FACE_NORMALS, TRIANGLE_FACES, RenderMesh,
 )
 from viewport.resource_store import TraceStore
 
@@ -70,7 +71,8 @@ def assert_equivalent(rm: RenderMesh) -> None:
     assert rm.derived.vertex_to_faces == fresh.derived.vertex_to_faces
     assert set(rm._face_row) == set(mesh.all_face_ids())
     rows, ref_rows = data(TRIANGLE_FACES), ref(TRIANGLE_FACES)
-    face_data, ref_face_data = data(FACE_DATA), ref(FACE_DATA)
+    face_normals, ref_face_normals = data(FACE_NORMALS), ref(FACE_NORMALS)
+    corners, ref_corners = data(FACE_CORNERS), ref(FACE_CORNERS)
     live_slots = set()
     for f in mesh.all_face_ids():
         mine = [rm._triangle_indices[t] for t in rm._face_triangles[f]]
@@ -82,10 +84,13 @@ def assert_equivalent(rm: RenderMesh) -> None:
             assert int(rows[t]) == row
             tri = rm._triangle_indices[t]
             assert indices[3 * t:3 * t + 3] == [float(rm.vertex_index_of(v)) for v in tri]
-        assert _close(
-            face_data[row * FACE_ROW_FLOATS:(row + 1) * FACE_ROW_FLOATS],
-            ref_face_data[ref_row * FACE_ROW_FLOATS:(ref_row + 1) * FACE_ROW_FLOATS], 1e-6,
-        ), f
+        n, m = FACE_NORMAL_FLOATS, FACE_CORNER_FLOATS
+        assert _close(face_normals[row * n:(row + 1) * n], ref_face_normals[ref_row * n:(ref_row + 1) * n], 1e-6), f
+        # Corner slots differ between the patched and the compact layout: compare the vertices they address.
+        mine_c, theirs_c = corners[row * m:(row + 1) * m], ref_corners[ref_row * m:(ref_row + 1) * m]
+        k = min(len(mesh.face_vertices(f)), 4)
+        assert [rm._slot_vertex[int(x)] for x in mine_c[:k]] == [fresh._slot_vertex[int(x)] for x in theirs_c[:k]], f
+        assert mine_c[k:4] == theirs_c[k:4] and mine_c[4:] == theirs_c[4:], f
         assert _close(rm.derived.face_normals[f], fresh.derived.face_normals[f])
     for t in range(len(indices) // 3):
         if t not in live_slots:

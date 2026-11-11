@@ -16,7 +16,8 @@ window's own chain (`Application` -> `Viewport` -> `GLRenderStore`, the `GL_TYPE
            `probe_morph_gl.rig_region`), first with the wire overlay off, then on, split by wrapping functions from
            the outside (nothing under `src/` is changed): the skin evaluation, the parts of
            `RenderMesh._sync_geometry` (neighbourhood sets, face normals, vertex normals, positions + normals,
-           face rows), the whole-mesh wire rebuild, and the bytes handed to the store per step.
+           face data - the 36-float rows before O2, the face normals after, 2026-11-11), the whole-mesh wire
+           rebuild, and the bytes handed to the store per step.
 - `chain`  what happens once: load + first frame, save, parse, the first weight step (builds the mix surface), the
            first pose step (builds the skin surface), each with the process memory after it, and whether the SubD
            preview accepts the mesh.
@@ -64,7 +65,7 @@ SPLIT_ROWS = (
     "2b  face normals",
     "2c  vertex normals",
     "2d  positions + normals -> mirror -> store",
-    "2e  face rows (36 floats per face) -> store",
+    "2e  face data -> store (O2: face normals)",
     "3 wire segments (whole mesh)",
     "4 face-data glBufferSubData at draw",
 )
@@ -184,7 +185,9 @@ class _Wrappers:
             (derived.DerivedGeometry, "update_face_normals", rows[3]),
             (derived.DerivedGeometry, "update_vertex_normals", rows[4]),
             (render_mesh.RenderMesh, "_upload_vec3", rows[5]),
+            # Before O2 (2026-11-11) the 36-float rows; since O2 only the face normals (the method that exists runs).
             (render_mesh.RenderMesh, "_upload_rows", rows[6]),
+            (render_mesh.RenderMesh, "_upload_face_normals", rows[6]),
             (viewport.Viewport, "_sync_edges", rows[7]),
             (gl_store.GLRenderStore, "_flush_face_data", rows[8]),
         ):
@@ -199,7 +202,9 @@ class _Wrappers:
         self._undo.append((gl_store.GLRenderStore, "update", original))
 
     def _time(self, cls, name: str, label: str) -> None:
-        original = getattr(cls, name)
+        original = getattr(cls, name, None)
+        if original is None:
+            return  # not in this checkout (e.g. the face-data method of the other layout)
         acc = self.acc
 
         def timed(*args, **kwargs):

@@ -1,5 +1,6 @@
 """Region colours (Manu 2026-10-25): a distinct, desaturated colour per saved region, written into the face rows
-(free `.w` of corner texels 1-3), patched like any face data, shown or hidden by one draw-state switch."""
+(since O2, 2026-11-11: the second texel of the face's `face_corners` row; before, the free `.w` of corner texels 1-3
+of the 36-float row), patched like any face data, shown or hidden by one draw-state switch."""
 
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ from core.mesh import Mesh
 from mirai import regions as api
 from mirai.application import Application
 from mirai.interaction.input import Input
-from viewport.render_mesh import FACE_ROW_FLOATS, RenderMesh
+from viewport.render_mesh import FACE_CORNER_FLOATS, FACE_CORNERS, RenderMesh
 from viewport.resource_store import TraceStore
 
 WIDTH, HEIGHT = 800, 600
@@ -38,9 +39,10 @@ def _grid(n: int = 3) -> Mesh:
 
 
 def _row(rm: RenderMesh, face) -> list[float]:
-    data = rm.store.data("face_shading")
+    """The face's `face_corners` row: four corner slots, then the tint (r, g, b, 0)."""
+    data = rm.store.data(FACE_CORNERS)
     r = rm._face_row[face]
-    return list(data[r * FACE_ROW_FLOATS:(r + 1) * FACE_ROW_FLOATS])
+    return list(data[r * FACE_CORNER_FLOATS:(r + 1) * FACE_CORNER_FLOATS])
 
 
 # -- palette ----------------------------------------------------------------------------
@@ -83,10 +85,8 @@ def test_tinted_rows_carry_the_colour_and_untinted_rows_do_not_change():
     before = {f: _row(rm, f) for f in faces}
     rm.set_face_tints({faces[1]: (0.5, 0.25, 0.75)})
     row = _row(rm, faces[1])
-    assert (row[7], row[11], row[15]) == (0.5, 0.25, 0.75)
-    assert [v for i, v in enumerate(row) if i not in (7, 11, 15)] == [
-        v for i, v in enumerate(before[faces[1]]) if i not in (7, 11, 15)
-    ]
+    assert row[4:] == [0.5, 0.25, 0.75, 0.0]
+    assert row[:4] == before[faces[1]][:4] and before[faces[1]][4:] == [0.0] * 4
     for f in faces:
         if f != faces[1]:
             assert _row(rm, f) == before[f]

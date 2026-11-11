@@ -73,6 +73,15 @@ void main() {
 # Normals (AD-018 addendum 2026-10-15, B5a.1): the fragment looks up its face
 # row via `gl_PrimitiveID` (= triangle number in index-buffer order; pyglet
 # draws one VertexList with one glDrawElements, so the count starts at 0).
+# Face data since O2 (AD-018 addendum 2026-11-11): per face row one texel of
+# `u_face_normals` (Newell normal, corner count) and two of `u_face_corners`
+# (the vertex slots of the first four corners; region tint). The corners'
+# positions and normals come from the VertexList's own `position` / `normal`
+# buffers, bound as R32F buffer textures (`u_positions`, `u_normals`; GL 3.3 has
+# no RGB32F buffer texture, so three texels per vertex), at the VertexList's
+# first vertex `u_vertex_base`. The values are the same float32 the old
+# per-face copies held, and the arithmetic below is unchanged, so the image is
+# the same pixel for pixel (`tests/test_gl_face_data_layout.py`).
 # - Flat: the face's Newell normal - one normal per polygon, no triangulation
 #   diagonal (Artist REJECT of per-triangle flat, 2026-09-27).
 # - Smooth on a quad: the four corner normals blended bilinearly at the
@@ -112,8 +121,12 @@ uniform int u_flat;
 uniform int u_region_tint;
 uniform float u_alpha;
 uniform int u_has_face_data;
-uniform samplerBuffer u_face_data;
+uniform samplerBuffer u_face_normals;
+uniform samplerBuffer u_face_corners;
 uniform samplerBuffer u_triangle_faces;
+uniform samplerBuffer u_positions;
+uniform samplerBuffer u_normals;
+uniform int u_vertex_base;
 
 uniform vec3 u_key_dir;
 uniform vec3 u_key_color;
@@ -138,7 +151,7 @@ out vec4 out_color;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
-const int ROW_TEXELS = 9;
+const int CORNER_TEXELS = 2;
 
 float cross2(vec2 a, vec2 b) { return a.x * b.y - a.y * b.x; }
 
@@ -175,7 +188,15 @@ vec2 inv_bilinear(vec2 p, vec2 a, vec2 b, vec2 c, vec2 d) {
     return vec2(bilinear_u(h, e, f, g, v), v);
 }
 
-vec3 face_corner(int row, int k) { return (u_model * vec4(texelFetch(u_face_data, row + k).xyz, 1.0)).xyz; }
+// One vec3 of the VertexList's buffer `values` (three R32F texels per vertex) at vertex slot `slot`.
+vec3 vertex_value(samplerBuffer values, int slot) {
+    int i = (u_vertex_base + slot) * 3;
+    return vec3(texelFetch(values, i).r, texelFetch(values, i + 1).r, texelFetch(values, i + 2).r);
+}
+
+ivec4 corner_slots(int face) { return ivec4(texelFetch(u_face_corners, face * CORNER_TEXELS) + 0.5); }
+
+vec3 face_corner(int slot) { return (u_model * vec4(vertex_value(u_positions, slot), 1.0)).xyz; }
 
 // Ray / bilinear patch P(u, v) = mix(mix(q00, q10, u), mix(q01, q11, u), v), after Reshetov,
 // "Cool Patches" (Ray Tracing Gems II, ch. 8). Nearest hit with (u, v) in the patch (small
@@ -242,11 +263,12 @@ vec2 projected_uv(vec3 n, vec3 p0, vec3 p1, vec3 p2, vec3 p3) {
         vec2(dot(p3 - p0, ax), dot(p3 - p0, ay)));
 }
 
-vec3 quad_normal(int row, vec3 face_n, vec3 fallback) {
-    vec3 p0 = face_corner(row, 1);
-    vec3 p1 = face_corner(row, 2);
-    vec3 p2 = face_corner(row, 3);
-    vec3 p3 = face_corner(row, 4);
+vec3 quad_normal(int face, vec3 face_n, vec3 fallback) {
+    ivec4 s = corner_slots(face);
+    vec3 p0 = face_corner(s.x);
+    vec3 p1 = face_corner(s.y);
+    vec3 p2 = face_corner(s.z);
+    vec3 p3 = face_corner(s.w);
     vec3 eye = -transpose(mat3(u_view)) * u_view[3].xyz;
     vec3 ray_o = eye;
     vec3 ray_d = normalize(v_world_pos - eye);
@@ -262,10 +284,10 @@ vec3 quad_normal(int row, vec3 face_n, vec3 fallback) {
         if (!inside(uv)) return fallback;
     }
     uv = clamp(uv, 0.0, 1.0);
-    vec3 n0 = texelFetch(u_face_data, row + 5).xyz;
-    vec3 n1 = texelFetch(u_face_data, row + 6).xyz;
-    vec3 n2 = texelFetch(u_face_data, row + 7).xyz;
-    vec3 n3 = texelFetch(u_face_data, row + 8).xyz;
+    vec3 n0 = vertex_value(u_normals, s.x);
+    vec3 n1 = vertex_value(u_normals, s.y);
+    vec3 n2 = vertex_value(u_normals, s.z);
+    vec3 n3 = vertex_value(u_normals, s.w);
     vec3 n = mix(mix(n0, n1, uv.x), mix(n3, n2, uv.x), uv.y);
     if (dot(n, n) < 1e-20) return fallback;
     return normalize(mat3(u_model) * n);
@@ -295,19 +317,18 @@ void main() {
     }
 #endif
     if (u_has_face_data != 0) {
-        int row = int(texelFetch(u_triangle_faces, gl_PrimitiveID).r + 0.5) * ROW_TEXELS;
-        vec4 head = texelFetch(u_face_data, row);
+        int face = int(texelFetch(u_triangle_faces, gl_PrimitiveID).r + 0.5);
+        vec4 head = texelFetch(u_face_normals, face);
         if (u_region_tint != 0) {
-            // Saved regions: the colour rides in the free .w of corner texels 1-3; black = no region.
-            vec3 tint = vec3(texelFetch(u_face_data, row + 1).w, texelFetch(u_face_data, row + 2).w,
-                             texelFetch(u_face_data, row + 3).w);
+            // Saved regions: the colour is the second corner texel's rgb; black = no region.
+            vec3 tint = texelFetch(u_face_corners, face * CORNER_TEXELS + 1).rgb;
             if (dot(tint, tint) > 0.0) albedo = mix(albedo, tint, 0.85);
         }
         vec3 face_n = normalize(head.xyz);
         if (u_flat != 0) {
             n = normalize(mat3(u_model) * face_n);
         } else if (head.w == 4.0) {
-            n = quad_normal(row, face_n, n);
+            n = quad_normal(face, face_n, n);
         }
     } else if (u_flat != 0) {
         n = screen_flat_n;
@@ -386,11 +407,17 @@ _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 
 DEFAULT_LIGHT_UNIFORMS = resolve(PRESETS[PRESET_HEUTE])
 LIGHT_UNIFORM_NAMES = tuple(DEFAULT_LIGHT_UNIFORMS)
 #: Texture units of the face data; unit 0 stays free for pyglet's own textures (text, HUD).
-_FACE_DATA_UNIT = 1
+_FACE_NORMALS_UNIT = 1
 _TRIANGLE_FACES_UNIT = 2
 #: AD-026: the triangle UVs (buffer texture) and the image (2D texture) of the textured program.
 _TRIANGLE_UVS_UNIT = 3
 _TEXTURE_UNIT = 4
+#: O2 (AD-018 addendum 2026-11-11): the corner slots, and the VertexList's position / normal buffers as textures.
+_FACE_CORNERS_UNIT = 5
+_POSITIONS_UNIT = 6
+_NORMALS_UNIT = 7
+#: VertexList attribute -> (texture unit, sampler uniform) of the vertex buffers the fragment shader reads.
+_VERTEX_TEXTURES = {"position": (_POSITIONS_UNIT, "u_positions"), "normal": (_NORMALS_UNIT, "u_normals")}
 #: Dirty face-data ranges closer than this (floats; 1024 = 4 KiB) are uploaded as one.
 _FACE_MERGE_GAP = 1024
 
@@ -503,6 +530,8 @@ class GLRenderStore(ResourceStore):
         # triangle UVs exist only while a texture shows), and the texture path to show.
         self._optional_face_buffers: set[str] = set()
         self._texture_path: str | None = None
+        # O2: VertexList attribute -> (buffer texture, (buffer name, size) it was attached to).
+        self._vertex_textures: dict[str, tuple[int, tuple[int, int] | None]] = {}
 
     @classmethod
     def program(cls):
@@ -543,8 +572,9 @@ class GLRenderStore(ResourceStore):
     def declare_uniform(self, name: str) -> None:
         self._uniforms.add(name)
 
-    def declare_face_data(self, data: str, triangle_map: str, row_texels: int) -> None:
-        self._face_buffers[data] = ("GL_RGBA32F", _FACE_DATA_UNIT, "u_face_data")
+    def declare_face_data(self, normals: str, corners: str, triangle_map: str) -> None:
+        self._face_buffers[normals] = ("GL_RGBA32F", _FACE_NORMALS_UNIT, "u_face_normals")
+        self._face_buffers[corners] = ("GL_RGBA32F", _FACE_CORNERS_UNIT, "u_face_corners")
         self._face_buffers[triangle_map] = ("GL_R32F", _TRIANGLE_FACES_UNIT, "u_triangle_faces")
 
     def declare_triangle_uvs(self, name: str) -> None:
@@ -682,10 +712,49 @@ class GLRenderStore(ResourceStore):
         gl.glActiveTexture(gl.GL_TEXTURE0)
         return ready
 
+    def _bind_vertex_textures(self, vlist) -> bool:
+        """O2: binds the VertexList's own `position` and `normal` buffers as R32F buffer textures (units
+        `_VERTEX_TEXTURES`), so the fragment shader reads a face's corners where the vertex stage reads them - one
+        copy, patched by `_patch_attribute`, committed by pyglet before the draw. Re-attached when pyglet's buffer
+        changes (another domain, a resize). False = an attribute is missing (optimized out): no face data."""
+        import ctypes
+
+        from pyglet import gl
+
+        buffers = {attribute.name: buffer for buffer, attribute in vlist.domain.buffer_attributes}
+        if any(name not in buffers for name in _VERTEX_TEXTURES):
+            return False
+        for name, (unit, _uniform) in _VERTEX_TEXTURES.items():
+            buffer = buffers[name]
+            texture_id, attached = self._vertex_textures.get(name, (0, None))
+            if not texture_id:
+                texture = gl.GLuint()
+                gl.glGenTextures(1, ctypes.byref(texture))
+                texture_id = texture.value
+            gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
+            gl.glBindTexture(gl.GL_TEXTURE_BUFFER, texture_id)
+            key = (buffer.id, buffer.size)
+            if attached != key:
+                gl.glTexBuffer(gl.GL_TEXTURE_BUFFER, gl.GL_R32F, buffer.id)
+            self._vertex_textures[name] = (texture_id, key)
+        gl.glActiveTexture(gl.GL_TEXTURE0)
+        return True
+
+    def _set_face_samplers(self, program, textured: bool, vlist) -> None:
+        """The sampler units of the face data and the vertex textures, and the VertexList's first vertex."""
+        for name, (_fmt, unit, uniform) in self._face_buffers.items():
+            if name not in self._optional_face_buffers or textured:
+                program[uniform] = unit
+        for unit, uniform in _VERTEX_TEXTURES.values():
+            program[uniform] = unit
+        program["u_vertex_base"] = int(vlist.start)
+
     def _unbind_face_data(self) -> None:
         from pyglet import gl
 
-        for _fmt, unit, _uniform in self._face_buffers.values():
+        units = [unit for _fmt, unit, _uniform in self._face_buffers.values()]
+        units += [unit for unit, _uniform in _VERTEX_TEXTURES.values()]
+        for unit in units:
             gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
             gl.glBindTexture(gl.GL_TEXTURE_BUFFER, 0)
         gl.glActiveTexture(gl.GL_TEXTURE0)
@@ -700,7 +769,7 @@ class GLRenderStore(ResourceStore):
         return self.texture(self._texture_path) is not None
 
     def _release_face_data(self) -> None:
-        if self._face_gl:
+        if self._face_gl or self._vertex_textures:
             import ctypes
 
             from pyglet import gl
@@ -708,6 +777,10 @@ class GLRenderStore(ResourceStore):
             for buffer_id, texture_id, _size in self._face_gl.values():
                 gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(texture_id)))
                 gl.glDeleteBuffers(1, ctypes.byref(gl.GLuint(buffer_id)))
+            # The vertex textures only view pyglet's buffers (the VertexList owns them): delete the textures alone.
+            for texture_id, _attached in self._vertex_textures.values():
+                gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(texture_id)))
+        self._vertex_textures.clear()
         self._face_gl.clear()
         self._face_dirty = {name: None for name in self._face_buffers}
 
@@ -875,13 +948,9 @@ class GLRenderStore(ResourceStore):
         model = self.uniform_data("model_uniforms")
         program["u_model"] = tuple(model) if len(model) == 16 else _IDENTITY_4
         program["u_alpha"] = self.alpha
-        has_face_data = self._flush_face_data()
+        has_face_data = self._flush_face_data() and self._bind_vertex_textures(vlist)
         program["u_has_face_data"] = 1 if has_face_data else 0
-        for name, (_fmt, unit, uniform) in self._face_buffers.items():
-            if name not in self._optional_face_buffers:
-                program[uniform] = unit
-            elif textured:
-                program[uniform] = unit
+        self._set_face_samplers(program, textured, vlist)
         if textured:
             texture = self.texture(self._texture_path)
             gl.glActiveTexture(gl.GL_TEXTURE0 + _TEXTURE_UNIT)
