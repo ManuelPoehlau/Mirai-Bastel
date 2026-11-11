@@ -93,6 +93,7 @@ def _assert_shown(app) -> None:
     surface = provider.surface_mesh
     assert surface is not None and app.surface_chain.holds(provider)
     assert sorted(surface.all_vertex_ids()) == sorted(mesh.all_vertex_ids())
+    assert set(surface.positions()) == set(mesh.all_vertex_ids())  # O1: the table follows the input's journal
     assert {f: surface.face_vertices(f) for f in surface.all_face_ids()} == {
         f: mesh.face_vertices(f) for f in mesh.all_face_ids()}
     for v, p in _expected(app).items():
@@ -184,7 +185,7 @@ def test_the_shown_surface_is_the_definition_through_random_steps(seed):
         fresh.set_pose(skin.pose)
         source = app.morph.provider.surface_mesh if app.morph.provider.surface_mesh is not None else mesh
         fresh.sync(source, app.selection)
-        assert fresh.surface_mesh.export_state()["vertices"] == skin.surface_mesh.export_state()["vertices"]
+        assert fresh.surface_mesh.positions() == skin.surface_mesh.positions()
 
 
 def test_the_surface_is_independent_of_the_order_of_pose_steps_and_weight_writes():
@@ -213,7 +214,7 @@ def test_the_surface_is_independent_of_the_order_of_pose_steps_and_weight_writes
             app.apply_mesh_change("weight", lambda: mesh.set_layer_value(lid, v, new))
             app.update_viewport(0.0)
         _assert_shown(app)
-        results.append(skin.surface_mesh.export_state()["vertices"])
+        results.append(skin.surface_mesh.positions())
     assert results[0] == results[1] == results[2]
 
 

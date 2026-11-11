@@ -718,7 +718,8 @@ and hide sets are not carried onto the view; Manu's practical test (Kurzfassung)
   (the watch's keys, records read through the public queries) to the existing surface as a `MeshDelta`, and the provider
   says so (`surface_topology_changed`, the H7 hook the SubD preview uses; `entry_topology_changed`, a new additive H7-E
   hook, for the base beside the view); the surface's `RenderMesh` follows through its journal. The editing view still
-  rebuilds after an Undo across a topology step (it is closed for topology edits anyway).
+  rebuilds after an Undo across a topology step (it is closed for topology edits anyway). *(Superseded 2026-11-11 by
+  §18: the surface reads the base's topology itself; nothing is replayed, its journal forwards the base's records.)*
 - **Unchanged:** the editing view stays shape-only (every topology operation, the Knife included, is refused on it).
 
 ### 16.2 Choices within the decision (`PROVISIONAL` where marked)
@@ -811,7 +812,8 @@ or Phase 6 (skinning; the weights kind gets the Phase 5 rules for free).
 - **Evaluation location: CPU, in `src/mirai/morph_mix.py`** (`MixSurface`, one evaluated `core.Mesh` per base: same IDs
   and topology, positions = the mix, patched in place from the base's journal — Phase 3/5's `_Surface` generalized). A
   shown target's offsets are cached as a dict while its weight is above 0 (memory bounded by what is dialled in). Normals
-  of the evaluated surface stay the viewport's, computed from that mesh (exact, as in Phase 3).
+  of the evaluated surface stay the viewport's, computed from that mesh (exact, as in Phase 3). *(Amended 2026-11-11,
+  §18: the evaluated surface is a position table over the base's own topology, `SurfacePositions`, not a `core.Mesh`.)*
 - **Stage chain instead of the single H7 slot: `src/mirai/surface_chain.py`, above the viewport** (the viewport and the
   H7 contract are unchanged — an additive layer, easy to reverse). Stages are ordinary H7 providers in a fixed order,
   morph then SubD; a stage's input is the edit mesh or the nearest earlier stage's `surface_mesh`, so SubD's stencils run
@@ -954,6 +956,80 @@ decides whether the GPU / bulk-patch alternatives of §17.1 are needed); morph +
 regional moves (the per-vertex viewport patch of the derived surface). **Next:** Phase 6 (skinning; the weights kind, a
 stage between morph and SubD). The chain and the evaluation rule are additive and reversible (no viewport change), so an
 independent review is not needed for them.
+
+## 18. Addendum 2026-11-11: the evaluated surface as a position table (audit O1)
+
+**Source:** [audit 2026-11-10](../research/deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md) §C.1, §G.1, §G.3 row
+O1, §H step 4 second half; Manu's decisions of 2026-11-11 (O2, then O1; no NumPy before the first O3 stage, D1). Applies
+to the morph mix here and to the skin stage ([AD-028 §17.4](AD-028-SKELETON-AND-SKINNING.md#174-o1-2026-11-11-the-skinned-surface-as-a-position-table)).
+Agent decision within that plan; names `PROVISIONAL`. No Core change (CORE_V1_FREEZE untouched).
+
+**What changed.** `MixSurface.mesh` (and `SkinSurface.mesh`) is no longer a `core.Mesh` copy of the base — `rest_state`
+→ `Mesh.from_state`, every topology edit replayed into it as a `MeshDelta` (§16.1), positions written through
+`set_vertex_position` and its journal — but a `mirai.surface_positions.SurfacePositions`: a slot-indexed table of
+positions over the base mesh's own topology, a read-only view with the `Mesh` queries its consumers use. `_topology_delta`
+is gone. Unchanged: the evaluation rule and its order (§17.1), the drift guard (every candidate recomputed from its inputs),
+the candidates, the surface object's identity over the stage's life (patched in place, `topology_changed` /
+`surface_topology_changed` / `entry_topology_changed`), the chain, the H7 contract (duck-typed; AD-013 H7 amended in one
+line), picking on the mix / at rest while posed (MODELING_ON_DEFORMED_SURFACES §15), and that nothing writes a scene mesh.
+
+**Consumers and the API they need** (collected before the change, by reading each one):
+
+| Consumer | Reads |
+|---|---|
+| the viewport's surface and cage `RenderMesh` (+ `DerivedGeometry`, hidden rule) | `vertex_position`, `face_vertices`, `edge_vertices`, `all_*_ids`, `is_valid_*`, `has_face_uvs`, `face_uvs`, `watch()` (keys of vertices / edges / faces / UVs) |
+| `Viewport._follow_cage` / `_cage_pick_render_mesh` (cage source) | `watch()`: empty or not; new / gone vertices, edges, faces |
+| `Application._query_mesh` → hover, click, Box / Lasso / Paint, `PickCache`, Knife (`knife_pick`, planner, render data), drag mappings, focus / pivot | positions and topology queries; `vertex_edges`, `edge_faces`, `face_edges`; `has_point_layers()` (False: the Knife takes a pick's origin only on a layered mesh, as before); `PickCache` reads edge before-records (`before[:2]`) |
+| the soft-selection shading overlay (`_shown_cage`) | positions of triangles; `KeyError` = "the cage is behind", falls back to the rest shape |
+| `SubdSurfaceProvider` as the next stage | topology queries, `face_uvs`, positions, `watch()` |
+| `SkinSurface` reading the mix | `is_valid_vertex`, `vertex_position`, `watch()` (`topology_touched`: new = before None, gone = not valid) |
+
+So the view has: `vertex_position` from the table; the base's own bound query methods (`face_vertices`, `face_edges`,
+`edge_faces`, `edge_vertices`, `vertex_edges`, `all_*_ids`, `is_valid_*`, `has_face_uvs`, `face_uvs`, `corner_uv`) and
+read-only `symmetry_definition` / `face_regions`; no layers (`has_point_layers()` False, `point_layer_ids()` empty, as
+the old copies had none); `watch()`; nothing that writes (no mutation method exists on it; tests check every one).
+
+**The view's journal** (`SurfaceWatch`, the `MeshWatch` contract): a stage update records the vertices whose shown
+position changed (before = the old position, None = new in the table); following a topology edit, the owner drops the
+vertices the base no longer has (recorded with their last shown position) and forwards the base's own records of the
+edge, face and UV changes — the same records the replayed copy's journal held, because a stage takes its base watch at
+every update. The first record wins, as in the Core. Symmetry, regions and layers are not recorded (no consumer of a
+stage surface reads them). The "one journal hop less" of the audit: positions are no longer written one by one through a
+second `Mesh` and its `_touch_v` per active journal; an update records its moved set once per watch.
+
+**Consistency window.** Topology queries are live, positions are as of the stage's last update; between a base edit and
+the next stage sync a new vertex has no position (`KeyError`, as the old copy, which did not know it either) and a gone
+one is not valid any more (the old copy still showed it). Every reader reads after the sync (the viewport syncs the
+provider first; `_query_mesh` → `Viewport.sync_cage`; the next stage after the earlier one in `ChainedSurface.sync`); the
+soft shading overlay already handled `KeyError`.
+
+**Table layout.** Slot-indexed (AD-001: a dict `VertexId -> slot`, freed slots reused) and per slot the position tuple,
+not one `array('d')` of three float64 per slot. Measured in the container: a read from a float64 array allocates three
+floats and a tuple and costs ≈ 120–190 ns more than `Mesh.vertex_position`; the stored tuple reads as fast as the Mesh.
+The surface `RenderMesh` reads about five positions per moved vertex and frame: with the float64 table its
+`_sync_geometry` was 7–10 ms slower per D3 frame (87.5k, 15 %) than with the tuples — more than O1 gains in the
+evaluation [C]. O3 moves this storage
+to an n×3 float64 array together with the readers that will compute on it; the slot map, the journal and the view
+contract stay.
+
+**Measured [C]** (container; before / after on one host, raw outputs and the reference-PC commands in
+[`RESULTS_O1_CONTAINER_2026-11-11.md`](../../experiments/drag_cost/RESULTS_O1_CONTAINER_2026-11-11.md)): building the mix
+surface at 87.5k 3,225 → 37 ms, the skin surface 3,650 → 92 ms; the first weight step 5.8 → 2.4 s, the first pose step
+5.6 → 3.0 s (what remains is the new surface `RenderMesh`, not part of O1); process memory with both stages 1,411 →
+974 MiB (≈ 200–240 MiB per stage). Per frame (D3 probe, 15 % region, Morph + Skin): the evaluation 8–10 ms faster in
+a weight frame, 2–3 ms in a pose frame; `_sync_geometry` unchanged; every row still over the D3 bar (O3's part).
+
+**Tests.** `tests/test_surface_positions.py` (new): no write path, no layers, live base topology, `KeyError` before the
+owner writes; the watch contract (first record wins, the base's edge / face / UV records forwarded, gone vertices with
+their last position, close and garbage collection detach); slots freed and reused; a `RenderMesh` patched from the view's
+journal equals a fresh build after weight steps, splits, connects and Undo; no stage calls `Mesh.from_state` /
+`export_state`. The randomized oracles (`test_morph_multi.py`, `test_skin_stage.py`) also check that the table holds
+exactly the base's vertices; their bit-identity compares read `positions()` instead of `export_state()["vertices"]`.
+**Mutation checks by hand** (each caught; in brackets the first existing app-level test that catches it without the new
+file): gone vertices kept in the table (`test_skin_stage` oracle), edge / face records not forwarded (Knife on the mix in
+`test_morph_picking`), moved positions not journaled (`test_skin_stage` oracle), the last journal record winning (only
+the new watch test), the skin surface built from the rest shape instead of its input (`test_skin_stage` oracle), new
+vertices not entered (`test_skin_stage` oracle).
 
 ---
 

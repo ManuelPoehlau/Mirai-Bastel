@@ -291,6 +291,7 @@ def test_the_mix_equals_the_definition_through_random_edits():
             return
         expected = morph_mix.evaluate(mesh, weights)
         assert sorted(surface.all_vertex_ids()) == sorted(mesh.all_vertex_ids())
+        assert set(surface.positions()) == set(mesh.all_vertex_ids())  # O1: the table follows the base's journal
         assert {e: (surface.edge_vertices(e), surface.edge_faces(e)) for e in surface.all_edge_ids()} == {
             e: (mesh.edge_vertices(e), mesh.edge_faces(e)) for e in mesh.all_edge_ids()}
         for v in mesh.all_vertex_ids():
@@ -358,7 +359,7 @@ def test_the_mix_equals_the_definition_through_random_edits():
         fresh.set_weight(oid, w, lid)
     fresh.sync(mesh, app.selection)
     if fresh.surface_mesh is not None:
-        assert fresh.surface_mesh.export_state()["vertices"] == provider.surface_mesh.export_state()["vertices"]
+        assert fresh.surface_mesh.positions() == provider.surface_mesh.positions()
 
 
 def test_the_mix_is_independent_of_the_order_of_weight_changes():
@@ -381,7 +382,7 @@ def test_the_mix_is_independent_of_the_order_of_weight_changes():
         for lid in order:
             provider.set_weight(oid, target[lid], lid)
             provider.sync(mesh, app.selection)
-        results.append(provider.surface_mesh.export_state()["vertices"])
+        results.append(provider.surface_mesh.positions())
     assert all(r == results[0] for r in results)
     expected = morph_mix.evaluate(mesh, target)
     assert results[0] == {int(v): list(p) for v, p in expected.items()} or all(

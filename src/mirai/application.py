@@ -190,6 +190,7 @@ from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_binding
 from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, install_morph_bindings, morph_target_ids
 from .skinning import SkinDisplay, skin_layer
 from .surface_chain import SurfaceChain
+from .surface_positions import SurfacePositions
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.camera import nearest_standard_view
 from .viewport.box_select import (
@@ -2998,9 +2999,9 @@ class Application:
             return f"no weights on {self.scene.edit_object.name!r}"
         return mesh, lid, bone
 
-    def _shown_cage(self) -> Mesh | None:
-        """The deformed cage the window shows for the edit mesh (same IDs and topology): the skin stage's posed
-        surface, else the morph mix; None = the rest shape. The face shading sits on it (GUI Phase A3)."""
+    def _shown_cage(self) -> SurfacePositions | None:
+        """The deformed cage the window shows for the edit mesh (same IDs and topology; a `SurfacePositions`, O1): the
+        skin stage's posed surface, else the morph mix; None = the rest shape. The face shading sits on it (GUI Phase A3)."""
         chain = self.surface_chain
         cage = None
         for stage in (self.morph.provider, self.skin.provider):
@@ -4435,9 +4436,9 @@ class Application:
             occlusion=self.display.show_faces,
         )
 
-    def _query_cage(self) -> Mesh | None:
-        """MODELING_ON_DEFORMED_SURFACES §15 (Manu 2026-11-03): the morph mix of the edit object while a target is
-        dialled in above 0 % and the chain shows it - the cage hover, picks, overlays and screen mappings read. None
+    def _query_cage(self) -> SurfacePositions | None:
+        """MODELING_ON_DEFORMED_SURFACES §15 (Manu 2026-11-03): the morph mix of the edit object (a `SurfacePositions`,
+        O1) while a target is dialled in above 0 % and the chain shows it - the cage hover, picks, overlays and screen mappings read. None
         = the rest shape: no target or 0 % (bit-identical to before), posed (§15 (b): S5, the rest cage), a foreign
         host in the slot. The viewport's cage source (`Viewport.set_cage_source`); never written back."""
         morph = self.morph.provider
@@ -4448,7 +4449,7 @@ class Application:
             return None
         return morph.mix_of(self.scene.edit_object_id)
 
-    def _query_mesh(self) -> Mesh:
+    def _query_mesh(self) -> Mesh | SurfacePositions:
         """The mesh hover, click, Box / Lasso / Paint, the Knife and the drag mappings read (same IDs and topology as
         the edit mesh): the shown cage (`_query_cage`, brought up to date first), else the edit mesh. Edits always
         write the edit mesh."""

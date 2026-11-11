@@ -19,13 +19,13 @@ without a posed key is exactly `p`. Dead keys (no such bone) count as the object
 skin second: an expression sculpted at rest rides the pose (F-15, audit §E). Normals stay the viewport's.
 
 **`evaluate`** is the definition (the oracle, the SubD reference). **`SkinSurface`** shows it for one
-bound mesh: an evaluated `core.Mesh` (same IDs and topology as its input), patched in place like
-`morph_mix.MixSurface` - candidates are the input mesh's journal keys (positions, topology: SubD's
-pattern of following its input), the base's weights-layer keys, and on a rig / pose / placement change
-the points with a key of a bone whose transform changed (a bone -> points index kept in step with the
-weights journal). Every candidate is recomputed from its inputs (the drift guard): the shown surface is a
-pure function of (input positions, weights, rig, pose, placement), bit-identical whatever the order of
-pose steps, weight writes and edits.
+bound mesh: a `SurfacePositions` (O1, 2026-11-11: a position table over the base's topology, a read-only
+view with the `Mesh` queries - no longer a `core.Mesh` copy), patched in place like `morph_mix.MixSurface`
+- candidates are the input's journal keys (positions, topology: SubD's pattern of following its input),
+the base's weights-layer keys, and on a rig / pose / placement change the points with a key of a bone
+whose transform changed (a bone -> points index kept in step with the weights journal). Every candidate
+is recomputed from its inputs (the drift guard): the shown surface is a pure function of (input positions,
+weights, rig, pose, placement), bit-identical whatever the order of pose steps, weight writes and edits.
 
 **The stage** (`SkinSurfaceProvider`, `SkinDisplay`, §5.2): wanted only while the rig is posed and the edit
 mesh (or the morph base beside its editing view, H7-E) has a weights layer; at rest the chain is
@@ -49,7 +49,8 @@ from core.mesh import LayerKind
 from core.rig import Rig, rest_frame
 from core.scene import IDENTITY_TRANSFORM
 
-from .morph_mix import _topology_delta, rest_state, topology_touched
+from .morph_mix import topology_touched
+from .surface_positions import SurfacePositions
 
 Vec3 = tuple[float, float, float]
 Mat3 = tuple[Vec3, Vec3, Vec3]
@@ -225,21 +226,21 @@ def is_posed(rig: Optional[Rig], pose: Pose) -> bool:
 
 def evaluate(
     base: Mesh,
-    input_positions: Union[Mesh, Mapping, None],
+    input_positions: Union[Mesh, SurfacePositions, Mapping, None],
     rig: Optional[Rig],
     pose: Pose,
     placement: Placement = None,
     layer=None,
 ) -> dict:
     """The definition (§5.1) for every vertex of `base`: `{VertexId: position}`. `input_positions` is a
-    mesh with the base's IDs (the morph mix) or a mapping; None = the base's rest positions. `layer`
-    defaults to `skin_layer(base)`; without a weights layer every point is its input."""
+    mesh or a `SurfacePositions` with the base's IDs (the morph mix) or a mapping; None = the base's rest
+    positions. `layer` defaults to `skin_layer(base)`; without a weights layer every point is its input."""
     if input_positions is None:
         position = base.vertex_position
-    elif isinstance(input_positions, Mesh):
-        position = input_positions.vertex_position
-    else:
+    elif isinstance(input_positions, Mapping):
         position = input_positions.__getitem__
+    else:
+        position = input_positions.vertex_position
     lid = skin_layer(base) if layer is None else layer
     flat = _flat(object_transforms(skin_transforms(rig, pose), placement))
     out = {}
@@ -253,15 +254,16 @@ def evaluate(
 
 
 class SkinSurface:
-    """The skinned surface of one base mesh (module docstring). `input` is the mesh whose positions are
-    skinned (the base itself, or the morph mix of it: same IDs and topology)."""
+    """The skinned surface of one base mesh (module docstring). `input` is what is skinned: the base itself,
+    or the morph mix of it (a `SurfacePositions` over the same base: same IDs and topology)."""
 
-    def __init__(self, base: Mesh, input_mesh: Mesh) -> None:
+    def __init__(self, base: Mesh, input_mesh: Union[Mesh, SurfacePositions]) -> None:
         self.base = base
         self.input = input_mesh
         self._input_watch = input_mesh.watch()
         self._base_watch = None if input_mesh is base else base.watch()
-        self.mesh: Optional[Mesh] = None
+        #: the shown surface: a `SurfacePositions` over the base's topology (None until the first `update`)
+        self.mesh: Optional[SurfacePositions] = None
         #: True right after an `update` that patched the topology of `mesh` in place (H7)
         self.topology_changed = False
         self.layer = None
@@ -319,17 +321,16 @@ class SkinSurface:
             self.layer = layer
             self._index_all()
             self._flat = flat
-            state = rest_state(self.input)
-            vertices = state["vertices"]
+            surface = SurfacePositions(base, self.input.vertex_position)
             for v in self._values:
                 p = self._point(v)
                 if p != self.input.vertex_position(v):
-                    vertices[int(v)] = list(p)
-            self.mesh = Mesh.from_state(state)
+                    surface._owner_set(v, p)
+            self.mesh = surface
             return True, set()
         candidates = set(change.vertices)
         if topology_touched(change, self.input):
-            self.mesh.apply_delta(_topology_delta(change, self.input, self.mesh))
+            self.mesh._owner_follow_topology(change)
             self.topology_changed = True
         # the weights: a layer that came, went or was written whole re-indexes; else per key
         if layer != self.layer or layer in base_change.layer_whole:
@@ -357,21 +358,30 @@ class SkinSurface:
         return skin_point(p, value, self._flat)
 
     def _recompute(self, candidates) -> set:
-        """`_point` for every candidate, inlined (the pose-step hot loop; same arithmetic)."""
+        """`_point` for every candidate, inlined (the pose-step hot loop; same arithmetic), written into the
+        table where it differs (`SurfacePositions._owner_write`, inlined)."""
         valid, position = self.input.is_valid_vertex, self.input.vertex_position
-        shown, put = self.mesh.vertex_position, self.mesh.set_vertex_position
+        surface = self.mesh
+        index, pos = surface._index, surface._pos
         values, flat = self._values, self._flat
-        changed = set()
+        moved: dict = {}
         for v in candidates:
             if not valid(v):
                 continue
             p = position(v)
             value = values.get(v)
             p = tuple(p) if value is None or not flat else skin_point(p, value, flat)
-            if shown(v) != p:
-                put(v, p)
-                changed.add(v)
-        return changed
+            s = index.get(v)
+            if s is None:  # new in the base since the last update
+                surface._owner_add(v, p)
+                moved[v] = None
+                continue
+            old = pos[s]
+            if old != p:
+                moved[v] = old
+                pos[s] = p
+        surface._owner_record(moved)
+        return set(moved)
 
 
 # -- the stage ------------------------------------------------------------------------------------------
@@ -399,7 +409,8 @@ class SkinSurfaceProvider:
         self._beside = beside
         #: the pose, view state (§6): BoneId -> BonePose; set through `set_pose` (slice 3: the SkeletonController)
         self.pose: dict = {}
-        self.surface_mesh: Optional[Mesh] = None
+        #: the edit object's posed surface (a `SurfacePositions`, O1), None = not shown
+        self.surface_mesh: Optional[SurfacePositions] = None
         self.entry_surfaces: dict = {}
         self.entry_moved: dict = {}
         self.surface_topology_changed = False

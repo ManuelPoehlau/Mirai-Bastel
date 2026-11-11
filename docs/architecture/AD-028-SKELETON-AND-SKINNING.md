@@ -315,7 +315,9 @@ symmetrically (§8.4).
 
 - `src/mirai/skinning.py` (`PROVISIONAL`): `evaluate(base, input_positions, rig, pose, placement)` — the definition,
   the oracle and the SubD reference — and `SkinSurface`: one evaluated `core.Mesh` per bound mesh (same IDs and
-  topology), patched in place like `MixSurface` (F-7). Candidates: the input mesh's journal keys (positions, topology:
+  topology), patched in place like `MixSurface` (F-7). *(Amended 2026-11-11, audit O1: the evaluated surface is a
+  `SurfacePositions` — positions over the base's own topology, a read-only view with the `Mesh` queries — not a
+  `core.Mesh` copy; [AD-025 §18](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#18-addendum-2026-11-11-the-evaluated-surface-as-a-position-table-audit-o1), §17.4 here.)* Candidates: the input mesh's journal keys (positions, topology:
   SubD's pattern of following its input), the base's weights-layer keys, and on a pose change the points with a key of
   a bone whose `S` changed (an index bone → points, kept in step with the weights journal). Every candidate is recomputed
   from its inputs: the shown surface is a pure function of (input positions, weights, pose, placement) — bit-identical
@@ -865,6 +867,21 @@ without a target: p95 ≤ 2.6 ms; even every body point posed stays at 9.8 / 12.
 §5.4 expected (5 %: 11 / 17 ms, 15 %: 31 / 51 ms - the forecast was 12 / 18 and 37 / 57 ms). With the SubD preview on
 the step is SubD's patch of the posed cage (head 15 %: 16 / 25 ms, body 15 %: 41 / 66 ms) - over the bar, as the morph weight
 step with SubD is (AD-025 §17.3: head 1 × 15 % 21 / 31 ms); SubD was not part of P-1's bar. The 16.7 ms bar is the reference PC's to confirm ("Praxistest", step 9).
+
+### 17.4 O1 (2026-11-11): the skinned surface as a position table
+
+Audit 2026-11-10 option O1 for both evaluation stages; the decision, the consumers and the API, the view's journal,
+the table layout and the measurements are recorded once, in
+[AD-025 §18](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#18-addendum-2026-11-11-the-evaluated-surface-as-a-position-table-audit-o1).
+For the skin stage: `SkinSurface.mesh` is a `SurfacePositions` over the base's topology, its first build reads the
+input's positions (the morph mix — itself a `SurfacePositions` — or the base) instead of `rest_state(input)` →
+`Mesh.from_state`; a topology edit arrives through the input's journal (the mix view forwards the base's records, the
+base's own journal otherwise) and drops the vertices that went; `_recompute` writes the table and records the moved set
+once per watch. `evaluate(base, input_positions, …)` accepts a `SurfacePositions` as input (anything not a mapping is
+read through `vertex_position`). Unchanged: §5.1–§5.2 (LBS, candidates, the drift guard, the bone → points index, the
+chain, `keep_edit_surface`, the H7-E entry), picking and the edit mesh at rest while posed (§7.1), "never writes a
+scene mesh". Measured [C] at 87.5k: building the skin surface 3,650 → 92 ms, its memory ≈ 240 MiB less; a pose frame's
+evaluation 2–3 ms faster (D3 probe), still over the D3 bar.
 
 ---
 
