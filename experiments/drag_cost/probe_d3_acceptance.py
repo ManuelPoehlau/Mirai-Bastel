@@ -47,7 +47,6 @@ from __future__ import annotations
 import argparse
 import math
 import statistics
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -56,7 +55,7 @@ _EXPERIMENTS_DIR = Path(__file__).resolve().parent.parent
 if str(_EXPERIMENTS_DIR) not in sys.path:
     sys.path.insert(0, str(_EXPERIMENTS_DIR))
 
-from drag_cost._paths import EXPERIMENT_DIR, REPO_ROOT, ensure_paths  # noqa: E402
+from drag_cost._paths import EXPERIMENT_DIR, REPO_ROOT, ensure_paths, source_state  # noqa: E402,F401
 
 ensure_paths()
 
@@ -133,18 +132,6 @@ def resolve_asset(name: str) -> Path:
     if not path.is_file():
         raise SystemExit(f"no such mesh: {name}")
     return path
-
-
-def source_state() -> str:
-    """Commit and working-tree state of the checkout the probe imports (`git` absent = 'unknown')."""
-    try:
-        head = subprocess.run(["git", "rev-parse", "--short=10", "HEAD"], cwd=REPO_ROOT, capture_output=True,
-                              text=True, check=True).stdout.strip()
-        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=REPO_ROOT,
-                               capture_output=True, text=True, check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "commit unknown (no git)"
-    return f"commit {head}, working tree {'MODIFIED' if dirty else 'clean'}"
 
 
 def percentile(samples: list[float], q: float) -> float:

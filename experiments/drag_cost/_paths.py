@@ -15,7 +15,10 @@ before importing this module.
 
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 EXPERIMENT_DIR = Path(__file__).resolve().parent
@@ -31,3 +34,30 @@ def ensure_paths() -> None:
     """Establishes the order from the module docstring at the front of sys.path."""
     wanted = [str(p) for p in _ORDERED_PATHS]
     sys.path[:] = wanted + [p for p in sys.path if p not in wanted]
+
+
+def _git(*args: str, env: dict | None = None) -> str:
+    return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=True,
+                          env=env).stdout.strip()
+
+
+def source_state() -> str:
+    """Commit and working-tree state of the checkout the probe imports (`git` absent = 'unknown'). A modified tree also
+    names the git tree id of its `src/` as it is on disk (a scratch index, the real one untouched): after the change is
+    committed, `git rev-parse <commit>:src` gives the same id when the measured code is the committed code."""
+    try:
+        head = _git("rev-parse", "--short=10", "HEAD")
+        dirty = _git("status", "--porcelain", "--untracked-files=no")
+    except (OSError, subprocess.CalledProcessError):
+        return "commit unknown (no git)"
+    if not dirty:
+        return f"commit {head}, working tree clean"
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ, GIT_INDEX_FILE=str(Path(tmp) / "index"))
+            _git("read-tree", "HEAD", env=env)
+            _git("add", "-A", "--", "src", env=env)
+            tree = _git("write-tree", "--prefix=src/", env=env)
+    except (OSError, subprocess.CalledProcessError):
+        tree = "unknown"
+    return f"commit {head}, working tree MODIFIED, src/ tree {tree[:10]}"

@@ -20,13 +20,15 @@ window's own chain (`Application` -> `Viewport` -> `GLRenderStore`, the `GL_TYPE
            rebuild, and the bytes handed to the store per step.
 - `chain`  what happens once: load + first frame, save, parse, the first weight step (builds the mix surface), the
            first pose step (builds the skin surface), each with the process memory after it, and whether the SubD
-           preview accepts the mesh.
+           preview accepts the mesh. Since 2026-11-11 (O1) each row also names its stage evaluation and the time spent
+           building new `RenderMesh` objects (a newly shown surface gets one).
 
 The dense asset (`fixtures/gollum_87k.obj`, 87 500 V / 87 500 quads) is `gollum_20k.obj` after one Catmull-Clark step
 of the production evaluator, committed as a test fixture since 2026-11-11 (Manu D5; provenance in `fixtures/README.md`).
 `--verify-dense` regenerates it in a temporary file and compares the bytes; `--make-dense` rewrites it.
 
-Numbers from a container must be labelled as such (`docs/architecture/REFERENCE_HARDWARE.md` §4); the reference PC
+The output names the commit and the working-tree state (2026-11-11, as the D3 probe; a modified tree also names its
+`src/` tree id). Numbers from a container must be labelled as such (`docs/architecture/REFERENCE_HARDWARE.md` §4); the reference PC
 decides. Output is plain ASCII so it pastes cleanly from a Windows console.
 """
 
@@ -45,7 +47,7 @@ _EXPERIMENTS_DIR = Path(__file__).resolve().parent.parent
 if str(_EXPERIMENTS_DIR) not in sys.path:
     sys.path.insert(0, str(_EXPERIMENTS_DIR))
 
-from drag_cost._paths import EXPERIMENT_DIR, REPO_ROOT, ensure_paths  # noqa: E402
+from drag_cost._paths import EXPERIMENT_DIR, REPO_ROOT, ensure_paths, source_state  # noqa: E402
 
 ensure_paths()
 
@@ -318,13 +320,19 @@ def chain_rows(path: Path) -> list[str]:
         last[0] = now
         return "memory n/a" if now is None or before is None else f"process {now:7.0f} MiB ({now - before:+7.0f})"
 
+    parts = _ChainParts()
+
     def row(label: str, fn) -> None:
         gc.collect()
+        parts.reset()
         start = time.perf_counter()
         fn()
         ms = (time.perf_counter() - start) * 1000.0
         gc.collect()
         lines.append(f"  {label:<56} {ms:9.0f} ms   {memory()}")
+        if parts.stage_ms or parts.render_mesh_ms:
+            lines.append(f"    of it: stage evaluation {parts.stage_ms:.0f} ms (MixSurface / SkinSurface.update), "
+                         f"new RenderMesh {parts.render_mesh_ms:.0f} ms")
 
     start = time.perf_counter()
     window, app = build_app(path)
@@ -377,8 +385,48 @@ def chain_rows(path: Path) -> list[str]:
     frame(app)
     on = shown and app.subdivision.provider.surface_mesh is not None
     lines.append(f"  SubD preview: {'on, level ' + str(app.subdivision.level) if on else 'refused'} ({app.status_message})")
+    parts.remove()
     window.close()
     return lines
+
+
+class _ChainParts:
+    """What a chain row's time holds (added 2026-11-11 for O1): the stages' `update` (the evaluated surface, built on
+    its first call) and the construction of a new `RenderMesh` (the viewport's derived data for a newly shown surface,
+    which O1 does not remove). Wrapped from the outside, so the same probe measures the code before and after O1."""
+
+    def __init__(self) -> None:
+        from mirai.morph_mix import MixSurface
+        from mirai.skinning import SkinSurface
+        from viewport.render_mesh import RenderMesh
+
+        self.stage_ms = 0.0
+        self.render_mesh_ms = 0.0
+        self._undo: list = []
+        self._wrap(MixSurface, "update", "stage_ms")
+        self._wrap(SkinSurface, "update", "stage_ms")
+        self._wrap(RenderMesh, "__init__", "render_mesh_ms")
+
+    def _wrap(self, cls, name: str, field: str) -> None:
+        original = getattr(cls, name)
+
+        def timed(*args, **kwargs):
+            start = time.perf_counter()
+            try:
+                return original(*args, **kwargs)
+            finally:
+                setattr(self, field, getattr(self, field) + (time.perf_counter() - start) * 1000.0)
+
+        setattr(cls, name, timed)
+        self._undo.append((cls, name, original))
+
+    def reset(self) -> None:
+        self.stage_ms = self.render_mesh_ms = 0.0
+
+    def remove(self) -> None:
+        for cls, name, original in reversed(self._undo):
+            setattr(cls, name, original)
+        self._undo.clear()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -396,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
     info = machine_info(pyglet.gl.gl_info.get_version_string(), pyglet.gl.gl_info.get_renderer())
     probe.close()
     print("Scale audit probe (2026-11-10): pose-step split and one-time stage costs")
+    print(f"Source: {source_state()}")
     for line in info:
         print(line)
     for name in args.assets:
