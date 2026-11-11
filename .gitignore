@@ -57,3 +57,6 @@ obj/
 
 # ZBrush bridge inbox (AD-029): tickets and staged copies written by src/interop/goz/helper.py
 /goz/
+
+# Dense probe assets written by experiments/drag_cost/probe_scale_audit.py --make-dense
+experiments/drag_cost/_generated/

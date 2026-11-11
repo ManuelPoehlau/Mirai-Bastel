@@ -83,6 +83,8 @@ Damit sind auch die Hover-Zeiten außerhalb eines Drags gemessen (Produktionspfa
 **Hinweis zum Asset (2026-10-17):** Diese gollum-Zahlen gelten für die Datei mit 21 875 V, die heute
 `examples/meshes/gollum_20k.obj` heißt. `examples/meshes/gollum.obj` hat seit `5a90685` (2026-10-13) 87 500 V.
 
+**Hinweis zum Asset (2026-11-10, vom Agenten beim Audit geprüft):** `examples/meshes/gollum.obj` ist im Repository wieder bytegleich mit `gollum_20k.obj` (21 875 V); eine Datei mit 87 500 V gibt es dort nicht mehr. Ein dichtes Mesh derselben Größe (gollum_20k nach einem Catmull-Clark-Schritt) schreibt `python experiments/drag_cost/probe_scale_audit.py --make-dense` nach `experiments/drag_cost/_generated/` (nicht in git). Messungen dazu (Container) und die noch offenen Läufe auf diesem PC: [`ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md`](../research/deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md) §E, §J.
+
 **Praxisbefund auf dem Referenz-PC (Manu, 2026-10-17), gollum mit 87 500 V:** als Referenz-Mesh weiterhin flüssig
 navigierbar (Orbit/Pan/Zoom ohne Bearbeitung; subjektiv, keine Sondenzahlen). Der Draw bleibt also auch bei 175 000 Dreiecken
 nicht der Engpass. Die Interaktionskosten (Hover, Klick, Box/Paint, W-Drag) bei dieser Größe stehen als Containerzahlen in

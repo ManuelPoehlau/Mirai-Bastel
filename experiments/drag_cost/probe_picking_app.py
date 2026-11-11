@@ -99,11 +99,11 @@ def main() -> None:
                 orbit(i)
                 if gpu:
                     t = _ms(lambda: gpu_elements_in_rect(
-                        app.viewport.gpu_picker, app._gpu_pick_mesh(), app._edit_camera, mesh, mode, rect, W, H,
+                        app.viewport.gpu_picker, app._gpu_pick_mesh(), app._objects.edit_camera, mesh, mode, rect, W, H,
                         cache=app._pick_cache, occlusion=True))
                 else:
                     t = _ms(lambda: elements_in_rect(
-                        app._edit_camera, mesh, mode, rect, W, H, cache=app._pick_cache, occlusion=True))
+                        app._objects.edit_camera, mesh, mode, rect, W, H, cache=app._pick_cache, occlusion=True))
                 if i >= 1:
                     box.append(t)
             name = mode.name.lower()
