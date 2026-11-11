@@ -25,8 +25,10 @@ One frame = the input event (`Application.pointer_motion`, what the window's mou
 (`Application.update_viewport`: stage evaluation + `Viewport.sync`) + the window's own `on_draw` of `src/main.py`
 (`install_handlers`: viewport sync + render with the overlays, bones / gizmo, HUD, triad and, unless `--no-panels`,
 the panel layer) + `glFinish`. Reported per row: the frame p50 / p95 / max, its three parts, the split of the tick
-(stage evaluation, `RenderMesh._sync_geometry`, the face-data part of it) and the bytes handed to the GL store per
-frame by resource group. No `flip` (hidden window, no vsync wait).
+(stage evaluation, `RenderMesh._sync_geometry`, the face-data part of it), the split of `on_draw` (viewport render,
+gizmo / bones, HUD, triad, panels, the rest incl. the GPU wait in `glFinish`; added 2026-11-11 after the reference-PC
+run showed `on_draw` at 35-64 ms) and the bytes handed to the GL store per frame by resource group. No `flip` (hidden
+window, no vsync wait).
 
 The output names the commit and whether the working tree had changes (audit addendum 2026-11-10: "record those on
 the next baseline run"). Numbers from a container are not reference-PC numbers (`REFERENCE_HARDWARE.md` §4); llvmpipe
@@ -70,7 +72,26 @@ TIMED = (
     ("viewport.render_mesh", "RenderMesh", "_upload_face_normals", "face_data"),
     ("viewport.viewport", "Viewport", "_sync_edges", "wire"),
     ("viewport.gl_render_store", "GLRenderStore", "_flush_face_data", "face_flush"),
+    # Inside the window's `on_draw` (`src/main.py`); `None` = a module-level function of that module.
+    ("viewport.viewport", "Viewport", "render", "draw_viewport"),
+    ("mirai.application", "Application", "gizmo_items", "draw_gizmo"),
+    ("mirai.application", "Application", "pivot_marker_items", "draw_gizmo"),
+    ("mirai.application", "Application", "bone_items", "draw_gizmo"),
+    ("main", None, "draw_gizmo", "draw_gizmo"),
+    ("hud", "Hud", "update", "draw_hud"),
+    ("hud", "Hud", "draw", "draw_hud"),
+    ("hud", "OrientationTriad", "draw", "draw_triad"),
+    ("gui.imgui_layer", "ImguiLayer", "draw", "draw_panels"),
 )
+#: The parts of `on_draw` reported under it; the rest of the column is the clear, the second `Viewport.sync` and the
+#: wait for the GPU in `glFinish`.
+DRAW_ROWS = {
+    "draw_viewport": "viewport render (faces, wire, overlays)",
+    "draw_gizmo": "gizmo / bones",
+    "draw_hud": "HUD",
+    "draw_triad": "triad",
+    "draw_panels": "panels",
+}
 VERTEX_RESOURCES = frozenset({"positions", "normals", "indices"})
 
 
@@ -137,11 +158,16 @@ class Meter:
         self.bytes: dict[str, int] = {}
         self.present: set[str] = set()
         self._undo: list = []
+        self._depth: dict[str, int] = {}
         for module, cls_name, method, row in TIMED:
-            cls = getattr(importlib.import_module(module), cls_name)
-            if hasattr(cls, method):
-                self._time(cls, method, row)
-                self.present.add(f"{cls_name}.{method}")
+            try:
+                owner = importlib.import_module(module)
+            except ImportError:  # e.g. the panel layer without imgui-bundle
+                continue
+            owner = owner if cls_name is None else getattr(owner, cls_name)
+            if hasattr(owner, method):
+                self._time(owner, method, row)
+                self.present.add(f"{cls_name or module}.{method}")
         from viewport.gl_render_store import GLRenderStore
 
         original = GLRenderStore.update
@@ -158,16 +184,16 @@ class Meter:
     def _time(self, cls, name: str, row: str) -> None:
         original = getattr(cls, name)
         acc = self.ms
-        depth = [0]  # a recursive or nested call of the same row counts once
+        depth = self._depth  # per row: a recursive or nested call of the same row counts once
 
         def timed(*args, **kwargs):
-            depth[0] += 1
+            depth[row] = depth.get(row, 0) + 1
             start = time.perf_counter()
             try:
                 return original(*args, **kwargs)
             finally:
-                depth[0] -= 1
-                if depth[0] == 0:
+                depth[row] -= 1
+                if depth[row] == 0:
                     acc[row] = acc.get(row, 0.0) + (time.perf_counter() - start) * 1000.0
 
         setattr(cls, name, timed)
@@ -299,8 +325,9 @@ def run_rows(path: Path, share: int, steps: int, interactions, panels: bool) -> 
                     inp, tick, draw = frame(motion(WARMUP_STEPS + i))
                     totals.append(inp + tick + draw)
                     parts.append((inp, tick, draw))
-                    for row in ("eval", "sync_geometry", "face_data", "wire", "face_flush"):
+                    for row in ("eval", "sync_geometry", "face_data", "wire", "face_flush", *DRAW_ROWS):
                         rows.setdefault(row, []).append(meter.ms.get(row, 0.0))
+                    rows.setdefault("draw_rest", []).append(draw - sum(meter.ms.get(row, 0.0) for row in DRAW_ROWS))
                     for group in ("vertex", "face", "other"):
                         sent.setdefault(group, []).append(meter.bytes.get(group, 0))
                 if interaction == "pose":
@@ -327,15 +354,19 @@ def report(interaction, wire, totals, parts, rows, sent, weighted) -> list[str]:
         values = [p[k] for p in parts]
         out.append(f"    {label:<40} p50 {statistics.median(values):8.2f}  p95 {percentile(values, 0.95):8.2f}")
     labels = {
-        "eval": "  stage evaluation (mix + skin)",
-        "sync_geometry": "  RenderMesh._sync_geometry (all meshes)",
+        "eval": "  tick: stage evaluation (mix + skin)",
+        "sync_geometry": "  tick: RenderMesh._sync_geometry",
         "face_data": "    of it: face data -> store",
-        "wire": "  wire segments rebuild",
-        "face_flush": "    face-data upload at draw",
+        "wire": "  tick: wire segments rebuild",
     }
+    for row, label in DRAW_ROWS.items():
+        labels[row] = "  draw: " + label
+        if row == "draw_viewport":
+            labels["face_flush"] = "    of it: face-data upload"
+    labels["draw_rest"] = "  draw: rest (clear, sync, GPU wait)"
     for row, label in labels.items():
         values = rows.get(row, [])
-        if not values or (row == "wire" and not any(values)):
+        if not values or (row in ("wire", *DRAW_ROWS) and not any(values)):
             continue
         out.append(f"    {label:<40} p50 {statistics.median(values):8.2f}  p95 {percentile(values, 0.95):8.2f}")
     total_bytes = [sum(v) for v in zip(*sent.values())]

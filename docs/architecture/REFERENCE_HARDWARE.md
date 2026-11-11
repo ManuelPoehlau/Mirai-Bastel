@@ -40,12 +40,13 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
 - ~~Die tatsächlichen Strings `GL_VERSION` / `GL_RENDERER` des laufenden Fensters.~~ Gemessen 2026-10-11 (unten): `3.3.0` /
   `GeForce 9800 GTX/9800 GTX+/PCIe/SSE2`.
 - Ob Treiber und GPU `gl_PrimitiveID` und Fragment-Ableitungen (`dFdx`/`dFdy`) zuverlässig liefern. Beides gehört zu OpenGL 3.3, das Treiberverhalten ist aber offen (siehe `docs/research/viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md` §6). Seit 2026-10-15 benutzt der Production-Shader beides, dazu Buffer-Texturen (AD-018 Nachtrag 2026-10-15): Sieht Flat auf diesem PC nicht pro Polygon aus oder Smooth fleckig, ist das der Befund. **Beantwortet für Flat (Manu, 2026-10-20, Chat): keine Flecken; keine Dreiecke mehr in Smooth und Flat, läuft flüssig (Eintrag unten).**
-- Seit O2 (2026-11-11, AD-018 Nachtrag 2026-11-11) liest der Fragment-Shader die Ecken einer Face über ihre Slots aus
-  den Vertex-Buffern der VertexList, gebunden als `R32F`-Buffer-Texturen (27 statt 10 Texel-Fetches je
-  Smooth-Quad-Fragment, die meisten einzelne Floats). Offen auf diesem Treiber: Pixelgleichheit zum alten Pfad
-  (`python -m pytest tests/test_gl_face_data_layout.py`, Teil des GL-Testlaufs) und die GPU-Zeit des Shaded-Pass
-  (`gpu`-Spalte von `probe_navigation_gl.py` auf `experiments/drag_cost/fixtures/gollum_87k.obj`, vor O2 0,76 ms
-  beim Orbit, 2026-11-10).
+- ~~Seit O2 (2026-11-11, AD-018 Nachtrag 2026-11-11) liest der Fragment-Shader die Ecken einer Face über ihre Slots
+  aus den Vertex-Buffern der VertexList, gebunden als `R32F`-Buffer-Texturen: Pixelgleichheit und GPU-Zeit auf diesem
+  Treiber offen.~~ Gemessen (Manu, 2026-11-11,
+  [`RESULTS_O2_REFERENCE_PC_2026-11-11.md`](../../experiments/drag_cost/RESULTS_O2_REFERENCE_PC_2026-11-11.md)):
+  pixelgleich (GL-Tests 165 passed, inkl. `test_gl_face_data_layout.py`); der Shaded-Pass bei 87,5k / 1024×768 kostet
+  2,76 statt 0,76 ms GPU-Zeit (Orbit-Frame 4,08 statt 1,73 ms p50). Offen: ob der Treiber
+  `GL_ARB_texture_buffer_object_rgb32` anbietet (Befehl in der Ergebnisdatei).
 - Reale Frame- und Hover-Zeiten in den echten Fenstern (`src/main.py`, Playground) auf diesem PC.
   Messsonde für die Drag-Kosten im GL-Pfad (hidden pyglet-Fenster, gibt auch `GL_VERSION` / `GL_RENDERER` aus):
   `python experiments/drag_cost/probe_drag_gl.py`, Doku und Container-Vorher/Nachher in

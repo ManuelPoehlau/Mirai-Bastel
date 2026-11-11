@@ -663,9 +663,12 @@ and the face normal only; the shader reads corner positions and normals from the
   176 → 42 bytes per region vertex in total; its time 36–49 → 10–14 ms p50 (two before / after pairs); the frame
   25–40 ms p50 faster and still far over the D3 bar (O1 / O3 are next). The audit's pose-step split (skin only):
   189 → 137 ms p50. Draw time on llvmpipe unchanged (old and new shader drawn alternately in one process).
-- **Open, reference PC only:** the fragment cost of the dependent fetches on the GeForce 9800 GTX (a Smooth-quad
-  fragment now makes 27 texel fetches — 24 of them single `R32F` texels from two buffers — instead of 10 `RGBA32F`
-  fetches, most from one row) — the `gpu` column of
-  `probe_navigation_gl.py` on the 87.5k fixture against 0.76 ms of 2026-11-10; pixel identity on that driver —
-  `tests/test_gl_face_data_layout.py` is part of the GL test run.
+- **Reference PC (Manu, 2026-11-11,
+  [`RESULTS_O2_REFERENCE_PC_2026-11-11.md`](../../experiments/drag_cost/RESULTS_O2_REFERENCE_PC_2026-11-11.md)):**
+  pixel identity holds on the GeForce 9800 GTX driver (GL tests 165 passed, incl. `test_gl_face_data_layout.py`); the
+  pose step at 87.5k / 15 % went 391.73 → 299.17 ms p50 (face data 106 → 22 ms). The dependent fetches cost GPU time:
+  a Smooth-quad fragment now makes 27 texel fetches (24 single `R32F`) instead of 10 `RGBA32F`, and the shaded pass at
+  87.5k / 1024×768 went 0.76 → 2.76 ms (orbit frame 1.73 → 4.08 ms p50). Accepted: a deformation step's CPU part is
+  about 100 times that. If it ever limits a frame, `RGB32F` buffer textures (`GL_ARB_texture_buffer_object_rgb32`, GL
+  4.0 core) would cut the vertex fetches to a third where the driver offers them.
 

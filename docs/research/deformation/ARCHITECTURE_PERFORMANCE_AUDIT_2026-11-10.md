@@ -762,3 +762,20 @@ separate from O1/O2.
   pass's GPU time with the new texel fetches (a Smooth-quad fragment makes 27 fetches, 24 of them single floats,
   instead of 10). D5's `MAX_DERIVED_FACES` assessment, due "after O2", is not part of this step.
 
+## Addendum — O2 on the reference PC (Manu, 2026-11-11)
+
+Raw output and comparison:
+[`experiments/drag_cost/RESULTS_O2_REFERENCE_PC_2026-11-11.md`](../../../experiments/drag_cost/RESULTS_O2_REFERENCE_PC_2026-11-11.md).
+
+- **Pixel identity on the 9800 GTX driver [RPC]:** the GL tests pass (165), among them
+  `tests/test_gl_face_data_layout.py` (production path against the frozen pre-O2 shader, byte-identical).
+- **Deformation step [RPC]** (the §E.3 split, 87.5k, 15 %): 391.73 → **299.17 ms** p50 wire off, 398.76 → **294.02 ms**
+  wire on; face data → store 106.39 → **22.34 ms**, bytes 2.30 → **0.56 MB**; every other part unchanged.
+- **GPU cost of the new fetches [RPC]:** shaded pass 0.76 → **2.76 ms** GPU timer, orbit frame 1.73 → 4.08 ms p50 (0 of
+  40 frames over 16.7 ms), 1024×768. Accepted for now (the deformation step's CPU part is about 100 times that); the
+  lever if it ever limits a frame is `RGB32F` buffer textures (three times fewer fetches) where the driver offers them.
+- **D3 [RPC], pre-O2 only:** pose 426.37 / 433.35, weight 506.38 / 516.11 ms p50 / p95 (wire off), panels off (Python
+  3.14.2 has no `imgui-bundle`). The run of the probe on the O2 code is still open. `on_draw` takes 35 / 64 ms there;
+  the probe now splits it — in the container the HUD alone costs 10.9 ms per weight-drag frame (0.5 ms per pose
+  frame), a size-independent cost outside O2.
+
