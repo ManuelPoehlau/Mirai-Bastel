@@ -623,3 +623,28 @@ holds the commands and the complete outputs of the split, chain, kernel, navigat
 this audit. The event profiles quoted in §E.6 and §I.1 (cProfile of single events at 87.5k) came from scratch scripts
 that are not kept; they are re-runnable from the description there (`Application.key_press` / `pointer_motion` under
 `cProfile` after `probe_morph_gl.build_app`).
+
+
+---
+
+## Addendum — Reference-PC measurements (Manu, 2026-11-10)
+
+The requested runs from §J have now been supplied and recorded. The original first-pass findings above, including the wording in §K (“Nothing was measured on the reference PC by this audit”), describe the state when this audit was delivered; they are intentionally retained as historical record. This addendum records the later reference-PC evidence without rewriting that first pass.
+
+Full command output:
+[`experiments/drag_cost/RESULTS_SCALE_AUDIT_REFERENCE_PC_2026-11-10.md`](../../../experiments/drag_cost/RESULTS_SCALE_AUDIT_REFERENCE_PC_2026-11-10.md).
+
+### Results that replace the open measurements in §J
+
+- `probe_scale_audit.py`: Q9550 / 9800 GTX measurements completed at 20k and 87.5k. At 87.5k, a 15 % pose step is 399.20 ms p50 with wire off; `RenderMesh._sync_geometry` accounts for 321.59 ms (80.6 %). With wire on the step is 728.70 ms, including 329.02 ms for rebuilding all wire segments. Whole-mesh pose is 2,815.70 ms without wire and 3,142.96 ms with wire.
+- One-time costs on 87.5k: load + first frame 11.665 s; first mix surface 9.533 s; first skin surface 11.088 s. The SubD preview is still refused by the 25,000-derived-face guard.
+- `probe_picking_app.py`: GPU first-pick p50 is 167.10 ms for vertices and 164.84 ms for edges; face first-pick is 3.39 ms. The navigation profile also shows full `PickCache.refresh` / projection / bounding-box work during zoom and first-hover profiling.
+- NumPy 2.2.6 installs and runs under Python 3.12.10 on the Q9550. At 87.5k / 15 %, CPU-only kernel timings are 30.711 ms (visible-data preparation), 11.723 ms (skin), and 0.891 ms (one target morph). Skin and morph match production exactly in the probe; normal and SubD differences are within the reported floating-point tolerances. These are isolated kernels, not an integrated application-frame measurement.
+- `probe_navigation_gl.py`: 87.5k orbit is 1.73 ms p50 (GPU timer 0.76 ms); orbit with wire is 6.25 ms p50 (GPU timer 4.98 ms). The 500-vertex W move is 17.42 ms p50 before its separately reported 6.82 ms draw.
+- Native C was not measured (no compiler on PATH). No pytest output was included in the supplied run, so test-suite status remains unreported here.
+
+### Consequence for the recommendation
+
+The reference-PC results confirm the location of the deformation and wireframe costs, and establish that NumPy 2.2.6 can execute the isolated packed-array kernels on the target CPU under Python 3.12.10. They strengthen the case for the staged O0–O3 direction; they do **not** yet prove end-to-end application performance after integration or O2 shader equivalence. O4 remains conditional on later integrated measurements.
+
+The raw run does not include a repository commit SHA or working-tree status. Record those on the next baseline run so future comparisons can identify the exact source revision.
