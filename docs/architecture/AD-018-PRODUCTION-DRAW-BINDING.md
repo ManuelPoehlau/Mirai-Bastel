@@ -671,7 +671,8 @@ and the face normal only; the shader reads corner positions and normals from the
   87.5k / 1024×768 went 0.76 → 2.76 ms (orbit frame 1.73 → 4.08 ms p50); `RGB32F` buffer textures, which would cut
   the vertex fetches to a third, are not offered by that driver (`GL_ARB_texture_buffer_object_rgb32`: no). **Open:**
   in the complete D3 frame (Morph + Skin, a deformation every frame) the GPU wait in `glFinish` rose from ≈ 28 to
-  ≈ 44 ms (pose, 87.5k / 15 %), more than the fetches explain; suspected is the overlap of the per-frame vertex-buffer
-  updates with their buffer-texture views. `probe_d3_acceptance.py --vertex-textures live|copy|off` decides it on
-  the reference PC (results file above).
+  ≈ 44 ms (pose, 87.5k / 15 %). GPU timers: 43 ms mesh draw with face data, 41 ms with the buffer textures on a
+  copy no update touches, 9 ms without face data — not the overlap of updates and buffer-texture views, but the
+  face-data fetches in a frame that updates buffers (an orbit pays 2 ms for them). Round 2 of the diagnosis
+  (`--interactions still`, `--face-upload orphan`, results file above) is open.
 

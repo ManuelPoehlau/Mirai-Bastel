@@ -21,6 +21,8 @@ def test_defaults_are_the_dense_fixture_a_15_percent_region_and_both_interaction
     assert probe.build_parser().parse_args(["--vertex-textures", "copy"]).vertex_textures == "copy"
     with pytest.raises(SystemExit):
         probe.build_parser().parse_args(["--vertex-textures", "none"])
+    assert args.face_upload == "subdata"
+    assert probe.build_parser().parse_args(["--interactions", "still"]).interactions == ["still"]
 
 
 def test_an_unknown_mesh_exits():

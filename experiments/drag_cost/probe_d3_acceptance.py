@@ -32,7 +32,8 @@ window, no vsync wait).
 
 GPU side (added 2026-11-11 after the reference-PC D3 run showed the GPU wait in `on_draw` rising with O2):
 GL_TIME_ELAPSED around each `GLRenderStore.draw`, split into the commit of the vertex buffers and the draw itself, and
-`--vertex-textures live|copy|off` to tell the cost of the O2 fetches (`copy`: same fetches from a snapshot that the
+`--vertex-textures live|copy|off`, `--interactions still` (no change per frame) and `--face-upload orphan` to tell
+the cost of the O2 fetches (`copy`: same fetches from a snapshot that the
 per-frame updates do not touch; the image goes stale, the timing stays valid) from the cost of reading buffers that
 are updated in the same frame (`live`) and from no face data at all (`off`).
 
@@ -64,7 +65,9 @@ DEFAULT_REGION = 15
 DEFAULT_STEPS = 60
 WARMUP_STEPS = 6
 MORPH_WEIGHT = 60
-INTERACTIONS = ("pose", "weight")
+INTERACTIONS = ("pose", "weight", "still")
+DEFAULT_INTERACTIONS = ("pose", "weight")
+FACE_UPLOAD_MODES = ("subdata", "orphan")
 BAR_MIN_P95_MS = 33.3
 BAR_PREFERRED_P95_MS = 16.7
 
@@ -111,7 +114,11 @@ def build_parser() -> argparse.ArgumentParser:
                         help="OBJ path relative to the repo root (default: the 87.5k fixture)")
     parser.add_argument("--region", type=int, default=DEFAULT_REGION, help="share of the points in percent")
     parser.add_argument("--steps", type=int, default=DEFAULT_STEPS, help="measured frames per row")
-    parser.add_argument("--interactions", nargs="+", choices=INTERACTIONS, default=list(INTERACTIONS))
+    parser.add_argument("--interactions", nargs="+", choices=INTERACTIONS, default=list(DEFAULT_INTERACTIONS),
+                        help="'still' (diagnosis): the posed scene of the pose rows, frames without any change")
+    parser.add_argument("--face-upload", choices=FACE_UPLOAD_MODES, default="subdata",
+                        help="diagnosis: 'orphan' re-specifies a changed face-data buffer whole (glBufferData) "
+                             "instead of patching its changed ranges (glBufferSubData, production)")
     parser.add_argument("--no-panels", action="store_true", help="draw without the panel layer (imgui)")
     parser.add_argument("--vertex-textures", choices=VERTEX_TEXTURE_MODES, default="live",
                         help="diagnosis of the O2 fetches: 'live' = production; 'copy' = the buffer textures view a "
@@ -297,7 +304,7 @@ class GpuTimer:
         return out if self.ok else {label: float("nan") for label in GPU_ROWS}
 
 
-def instrument_draws(timer: GpuTimer, mode: str) -> list:
+def instrument_draws(timer: GpuTimer, mode: str, face_upload: str = "subdata") -> list:
     """Puts the GPU timer around every `GLRenderStore.draw` (the domain's buffers are committed first, in their own
     section) and applies the `--vertex-textures` mode. Returns the undo list (class, name, original)."""
     import ctypes
@@ -328,6 +335,17 @@ def instrument_draws(timer: GpuTimer, mode: str) -> list:
             timer.end()
 
     GLRenderStore.draw = draw
+    if face_upload == "orphan":
+        original_flush = GLRenderStore._flush_face_data
+        undo.append((GLRenderStore, "_flush_face_data", original_flush))
+
+        def flush_orphan(store):
+            for name, dirty in list(store._face_dirty.items()):
+                if dirty:  # changed ranges -> the whole buffer through glBufferData
+                    store._face_dirty[name] = None
+            return original_flush(store)
+
+        GLRenderStore._flush_face_data = flush_orphan
     if mode == "off":
         undo.append((GLRenderStore, "_flush_face_data", GLRenderStore._flush_face_data))
         GLRenderStore._flush_face_data = lambda store: False
@@ -415,12 +433,13 @@ def build(path: Path, share: int, panels: bool):
     return window, app, frame, weighted, morphed, gui is not None
 
 
-def run_rows(path: Path, share: int, steps: int, interactions, panels: bool, mode: str = "live") -> list[str]:
+def run_rows(path: Path, share: int, steps: int, interactions, panels: bool, mode: str = "live",
+             face_upload: str = "subdata") -> list[str]:
     from drag_cost.probe_morph_gl import _key
     from mirai.morph_targets import DRAG_PIXELS_PER_PERCENT
 
     timer = GpuTimer()
-    undo = instrument_draws(timer, mode)  # before `Meter`, so its wrappers see the mode's methods
+    undo = instrument_draws(timer, mode, face_upload)  # before `Meter`, so its wrappers see the mode's methods
     meter = Meter()
     lines: list[str] = []
     try:
@@ -429,22 +448,22 @@ def run_rows(path: Path, share: int, steps: int, interactions, panels: bool, mod
         lines.append(
             f"[{path.stem}] {len(mesh.all_vertex_ids())} V / {len(mesh.all_face_ids())} F; region {share} %: "
             f"{weighted} V weighted, {morphed} V in the morph target at {app.morph_weight} %; "
-            f"panels {'on' if panels_on else 'off'}; vertex textures {mode}"
+            f"panels {'on' if panels_on else 'off'}; vertex textures {mode}; face upload {face_upload}"
         )
         lines.append("  timed: " + ", ".join(sorted(meter.present)))
         e, n = _key("e"), _key("n")
         for wire in (False, True):
             app.viewport.set_display(True, wire, False)
             for interaction in interactions:
-                if interaction == "pose":
+                if interaction in ("pose", "still"):
                     app.pointer_motion(560, 300, 0.0, 0.0)
                     if not app.pose_mode:
                         app.key_press(_key("5"))
                     app.key_press(e)
                     app.pointer_motion(560, 296, 0.0, -4.0)
 
-                    def motion(i):
-                        return 560, 296, 0.0, -4.0 if (i // 20) % 2 == 0 else 4.0
+                    def motion(i, still=interaction == "still"):
+                        return None if still else (560, 296, 0.0, -4.0 if (i // 20) % 2 == 0 else 4.0)
                 else:
                     if not app.posed:
                         raise RuntimeError("weight rows need the pose of the pose rows (run 'pose' first)")
@@ -476,7 +495,7 @@ def run_rows(path: Path, share: int, steps: int, interactions, panels: bool, mod
                     rows.setdefault("draw_rest", []).append(draw - sum(meter.ms.get(row, 0.0) for row in DRAW_ROWS))
                     for group in ("vertex", "face", "other"):
                         sent.setdefault(group, []).append(meter.bytes.get(group, 0))
-                if interaction == "pose":
+                if interaction in ("pose", "still"):
                     app.key_release(e)
                     if not app.posed:
                         raise RuntimeError(f"pose rows: not posed ({app.status_message})")
@@ -548,7 +567,8 @@ def main(argv: list[str] | None = None) -> int:
         f"bar (D3): p95 <= {BAR_MIN_P95_MS} ms minimum, <= {BAR_PREFERRED_P95_MS} ms preferred"
     )
     print()
-    for line in run_rows(path, args.region, args.steps, args.interactions, not args.no_panels, args.vertex_textures):
+    for line in run_rows(path, args.region, args.steps, args.interactions, not args.no_panels, args.vertex_textures,
+                         args.face_upload):
         print(line)
     return 0
 
