@@ -41,7 +41,7 @@ zoom and first hover runs on the last asset (`--profile-top 0` switches it off).
 Scenario `direct` (WP-VIEW-PERF-01 Slice 1, step 0): the rows the 2026-10-17 audit measured in a
 scratch probe, on the same rig, with the picking functions called directly (no frame): hover in
 vertex / edge / face mode and the Knife hover (`knife_pick`) along the hover line, one Paint step
-(30 px = 5 picks, `Application._paint_at`), Box Select 60 / 150 / 300 px in vertex, edge and face
+(30 px = 5 picks, `PointerTools.paint_at`), Box Select 60 / 150 / 300 px in vertex, edge and face
 mode (`elements_in_rect`; edge rows since Slice 2), the retopology snap query (`pick_face` + `face_hit_position`) with a valid
 cache and after an orbit, a pick-cache rebuild and one `recompute_bounds` over all vertices.
 The camera is framed again first (`frame_scene`), so the rows are comparable between runs.
@@ -829,7 +829,7 @@ def run_direct(rig: NavRig, cfg) -> list[DirectResult]:
     out: list[DirectResult] = []
 
     def camera():
-        return app._edit_camera
+        return app._objects.edit_camera
 
     # Warm the cache (camera unchanged since the last frame): the hover rows read a valid cache.
     cache.refresh(camera(), mesh, WIDTH, HEIGHT)
@@ -845,7 +845,7 @@ def run_direct(rig: NavRig, cfg) -> list[DirectResult]:
         direction = 1.0 if i % 2 == 0 else -1.0
         start = (cx - direction * PAINT_STEP_PX / 2.0, cy)
         end = (cx + direction * PAINT_STEP_PX / 2.0, cy)
-        app._paint_at(stroke_samples(start, end))
+        app._pointer_tools.paint_at(stroke_samples(start, end))
 
     app.selection.clear()
     out.append(_direct_row(rig, cfg, f"paint {PAINT_STEP_PX:.0f} px step", paint, min_steps=1,

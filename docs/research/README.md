@@ -15,6 +15,7 @@ Research is detailed and may investigate individual systems or technical questio
 This document is the canonical home for the artist-side Character Systems research. The technical side is kept separately and does not substitute for it:
 
 - [deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md](deformation/MESH_ARCHITECTURE_AUDIT_2026-10-27.md) — mesh architecture audit for morphing, rigging and topology edits after morph targets (English, Discovery): current state verified against code and tests, Half-Edge vs. targeted additions, topology-change contract per operation (ARCH-02), recommended deformation architecture, phased roadmap, five open decisions for Manu (H1–H5).
+- [deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md](deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md) — architecture and performance audit for the 100k-face target on the reference PC (English, Discovery, no decision): data flow Core → evaluation → viewport verified in code, measurements at 20k and 87.5k (container), cost centres, options, open decisions and the reference-PC runs still needed.
 - The earlier technical experiment `experiments/rigging-skinning-morphing/` was removed on 2026-10-24; its findings are in `docs/archive/experiments_2026-10/rigging-skinning-morphing/`.
 
 ## Edit-Mode Mirror / Symmetry Research

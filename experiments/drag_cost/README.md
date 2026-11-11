@@ -23,6 +23,8 @@ reference PC.
 | `probe_drag_gl.py` | CLI probe: hidden pyglet window, `GL_TYPES` from `src/main.py`, one entry per scenario in `SCENARIOS` (`plain_w`; `soft_w` = the Soft Selection drag with the band overlay, WP-SOFT-01 S2b; `soft_w_sym` = the same under symmetry X, AD-SYM-04 SS3) |
 | `probe_navigation_gl.py` | CLI probe (WP-VIEW-PERF-01): orbit, pan, zoom, first hover after a camera change, hover move, selection click, orbit with wire, the `direct` rows (hover vertex/edge/face, Knife hover, Paint step, Box 60/150/300 px, snap query, cache rebuild, `recompute_bounds`; since Slice 1), the real event loop, plain/soft W - per event + frame on head, body and `gollum_20k.obj` (default; `gollum.obj` = 87.5k via `--assets`); see "Navigation and picking" below |
 | `probe_morph_gl.py` | CLI probe (AD-025 Phase 3, 2026-10-27): morph weight step (hold-N drag + frame) on 15 % / 100 % offsets, first show, tap N, a view gesture commit and Apply transform with one target, on head, body and `gollum_20k.obj`; container numbers in [AD-025 §15.3](../../docs/architecture/AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#15-editing-view-and-phase-3-implementation-note-2026-10-27); bar 16.7 ms p95 for head and body on the reference PC. Phase 5 (2026-10-27): Knife commit, Loop Insert, Extrude and Collapse without and with one target (`--only-topology` for these rows alone); numbers in [AD-025 §16](../../docs/architecture/AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#16-phase-5-implementation-note-2026-10-27). Phase 4 (2026-10-27): weight steps with 1 / 10 targets on 15 % / 100 % of the points, without and with the SubD preview (the stage chain; `--only-phase4`), and point-layer memory / journal cost of 10 / 50 targets on gollum_20k and gollum without a window (`--memory`); numbers in [AD-025 §17](../../docs/architecture/AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#17-phase-4-implementation-note-2026-10-27). AD-028 (2026-11-03): `--only-skin` - pose steps (pose mode, E held, a move + the frame) of a jaw-like region of 5 / 15 / 100 %, plain, with one morph target and with SubD level 2; numbers in [AD-028 §17.3](../../docs/architecture/AD-028-SKELETON-AND-SKINNING.md#173-slices-34--app-and-acceptance-2026-11-03) |
+| `probe_scale_audit.py` | CLI probe (scale audit 2026-11-10): the pose step split into the skin evaluation, the parts of `RenderMesh._sync_geometry` (neighbourhood, face normals, vertex normals, positions + normals, face rows), the whole-mesh wire rebuild and the bytes per step, wire off and on; then the one-time costs (load, save, parse, first weight step, first pose step) with the process memory after each. `--make-dense` writes `_generated/gollum_87k.obj` (87 500 V, `gollum_20k` after one Catmull-Clark step; not in git). Report: [audit 2026-11-10](../../docs/research/deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md) |
+| `probe_kernels.py`, `kernels_native.c` | CLI probe, no window (same audit): the production evaluation code against the same computation on packed arrays - making a moved region visible (1-ring normals + buffer data), linear blend skinning, a morph weight step, one SubD stencil level - in pure Python on int slots, in NumPy (optional; runtime SIMD dispatch off) and in native C (optional; compiled on the fly with `-march=core2`, loaded through `ctypes`). Every array kernel is checked against the production values before it is timed. A measurement, not an implementation proposal |
 | `_paths.py` | sys.path bootstrap (pattern copied from `soft_selection/_paths.py`) |
 | `tests/` | headless tests: argument handling, statistics, soft variants and report format, import boundary (no pyglet, no window); one end-to-end smoke run of `soft_w`, skipped without a GL context; `test_probe_navigation_args.py` for the navigation probe (arguments, asset paths, row budget, report format, import boundary) |
 
@@ -919,3 +921,21 @@ Update 2026-10-20: the reference-PC runs of the GPU spike (20k and 87.5k) and of
 README "Result: reference PC"; "Result: topology operations, reference PC" above). Open: Manu's window check of Slice 2,
 the AD-022 / AD-023 reviews and decision, and a run of `architecture_audit_probes/probe_topology_sync_split.py` on the reference PC for the split of
 the viewport sync (a `--profile-top` run does not profile `topology`, see above).
+
+## Scale audit (2026-11-10)
+
+Question, method, container numbers at 20k and 87.5k and the reading are in
+[`docs/research/deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md`](../../docs/research/deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md)
+(§E measurements, §J the runs still needed on the reference PC); the complete probe outputs are in
+[`RESULTS_SCALE_AUDIT_CONTAINER_2026-11-10.md`](RESULTS_SCALE_AUDIT_CONTAINER_2026-11-10.md). Found on the way and fixed
+here (probe code only): `probe_picking_app.py` and the `direct` scenario of `probe_navigation_gl.py` used
+`Application._edit_camera` and `Application._paint_at`, which no longer exist (now `app._objects.edit_camera`,
+`app._pointer_tools.paint_at`). The picking probe's `[GPU] vertex / edge first pick` rows are 77 / 104 ms
+in the container at HEAD against 16 / 21 ms in
+[`RESULTS_PICKING_APP_CONTAINER_2026-10-21.md`](RESULTS_PICKING_APP_CONTAINER_2026-10-21.md) (audit §I.1); a
+reference-PC run of that probe is open.
+
+```
+python experiments/drag_cost/probe_scale_audit.py                 # split + one-time costs, gollum_20k and the 87.5k mesh
+python experiments/drag_cost/probe_kernels.py --assets examples/meshes/gollum_20k.obj dense
+```
