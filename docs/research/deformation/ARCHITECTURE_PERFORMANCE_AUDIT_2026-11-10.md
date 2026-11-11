@@ -780,9 +780,11 @@ Raw output and comparison:
   34.90 → 50.11): its CPU parts are small (viewport render 3.6, gizmo 1.0, HUD 1.1, triad 0.4 ms), the rest is the GPU
   wait in `glFinish` — ≈ 44 ms after O2 against ≈ 28 ms before. GPU timers (round 1): the mesh draw costs 43 ms with
   face data, 41 ms when the buffer textures read a copy no update touches, 9 ms without face data — so not the
-  overlap of updates and buffer textures, but the face-data fetches, which cost only 2 ms in an orbit. Open O2 item:
-  round 2 (`--interactions still`, `--face-upload orphan`) tells whether this driver makes buffer-texture fetches slow
-  in frames that update a buffer texture, or whether the posed view itself is that expensive.
+  overlap of updates and buffer textures, but the face-data fetches, which cost only 2 ms in an orbit. Round 2: the
+  same pose frame costs the GPU ≈ 11 or ≈ 43 ms depending on what ran just before (pose rows right after busy `still`
+  rows: 11 ms, frame 322 ms; on their own: 43 ms) — the GPU's power management, which drops the clocks while a
+  CPU-bound frame leaves it idle; the memory-bound O2 fetches suffer most **[H, round 3 with "prefer maximum
+  performance" open]**. In the window (no `glFinish`) that GPU time overlaps the next frame's ≈ 300 ms of CPU work.
 - **HUD during a weight drag [RPC]: 24.5 ms per frame** (pose: 1.1 ms), gizmo / bones 6.9 ms (pose: 1.0) — the weight
   read-out changes every frame. Size-independent, outside O2.
 

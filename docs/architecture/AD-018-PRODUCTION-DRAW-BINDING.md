@@ -673,6 +673,8 @@ and the face normal only; the shader reads corner positions and normals from the
   in the complete D3 frame (Morph + Skin, a deformation every frame) the GPU wait in `glFinish` rose from ≈ 28 to
   ≈ 44 ms (pose, 87.5k / 15 %). GPU timers: 43 ms mesh draw with face data, 41 ms with the buffer textures on a
   copy no update touches, 9 ms without face data — not the overlap of updates and buffer-texture views, but the
-  face-data fetches in a frame that updates buffers (an orbit pays 2 ms for them). Round 2 of the diagnosis
-  (`--interactions still`, `--face-upload orphan`, results file above) is open.
+  face-data fetches. Round 2: the same frame costs 11 or 43 ms of GPU time depending on the GPU's power state (a
+  CPU-bound frame leaves the GPU idle, the driver lowers its clocks, the memory-bound fetches slow down most); the
+  O2 fetch cost is therefore +2 ms at the orbit's clock and up to ≈ +34 ms at the lowest. Confirmation with the
+  power state pinned is open (round 3 in the results file).
 

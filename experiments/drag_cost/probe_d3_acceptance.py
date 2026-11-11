@@ -537,6 +537,14 @@ def report(interaction, wire, totals, parts, rows, sent, weighted) -> list[str]:
         if not values or (row in ("wire", *DRAW_ROWS) and not any(values)):
             continue
         out.append(f"    {label:<40} p50 {statistics.median(values):8.2f}  p95 {percentile(values, 0.95):8.2f}")
+    draws = [v for v in rows.get("gpu_draw", []) if v == v]  # without NaN
+    if draws and min(draws) > 0.5 and max(draws) > 2.5 * min(draws):  # llvmpipe reports ~0 (deferred work)
+        # Reference PC 2026-11-11: the same frame's mesh draw took 11 or 43 ms - the GPU's power management changes its
+        # clocks when a CPU-bound frame leaves it idle. Comparable GPU numbers need "prefer maximum performance".
+        out.append(
+            f"    NOTE gpu mesh draw varies {min(draws):.2f}-{max(draws):.2f} ms between frames: GPU clock changes "
+            f"(power management) likely; compare runs with the driver set to maximum performance"
+        )
     total_bytes = [sum(v) for v in zip(*sent.values())]
     face = statistics.median(sent.get("face", [0]))
     vertex = statistics.median(sent.get("vertex", [0]))
