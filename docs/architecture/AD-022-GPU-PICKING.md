@@ -382,6 +382,16 @@ mode and every headless path keep the CPU picker (slice 3 not done). Engineering
   Verzögerung"; Box "schon sehr viel besser, evtl. noch etwas optimieren, aber vorerst gut so"; the Box behaviour at the
   silhouette (§4.1, §7 question 3: a few too many rather than too few) "vorerst gut so" — **to be looked at again
   later** (open item, not a decided rule); no unexpected element picked.
+- **Vertex / edge occlusion, 2026-11-11** (audit
+  [`ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md`](../research/deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md)
+  §I.1): since the non-planar-Ngon fix (2026-10-22) the vertex / edge candidates come from the ID passes drawn without
+  depth test and the CPU ray rule (incident faces excluded) decides visibility; that rule called `PickCache.refresh`,
+  i.e. a whole-mesh re-projection on the first hover after every camera change. Now the ray test visits only the faces
+  the face pass drew within 2 px of the candidate (`OCCLUDER_WINDOW_PX`): a face in front of the point is drawn there
+  unless a nearer face covers it, which is then tested instead. When one of the element's own faces lies in front of it
+  (the Ngon case: the window cannot see behind it) the whole-mesh CPU test answers, as before. **Measured [C]**
+  (container, llvmpipe, `probe_picking_app.py`, gollum_20k, GPU first pick vertex / edge, p50 ms): 91 / 73 →
+  **12–17 / 17–26** over three runs (face, untouched: 9–12.8).
 - **Open:** the Box silhouette rule (re-check later, Manu); the Knife
   (picker and planner) still projects the whole mesh per camera change; object picking (mode `4`) is CPU; the Box
   still projects every vertex once per gesture; H7 surfaces: the ID pass draws the cage — since 2026-11-03 the *shown* cage: the morph mix while a target is dialled

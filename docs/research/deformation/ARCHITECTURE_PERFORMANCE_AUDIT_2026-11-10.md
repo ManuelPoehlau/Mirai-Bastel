@@ -541,6 +541,9 @@ non-symmetric counterparts at 20k+ (not measured); that 100k faces with all stag
    are comparable); the reference PC measured 6.9 / 8.2 ms before **[RPC]**. Git cannot date the change (the file
    enters history in a bulk commit, `ac4651e`). The occlusion test needs the faces near a handful of candidates,
    not the whole mesh.
+   **Fixed 2026-11-11 (O0):** the ray test visits only the faces the face pass drew around the candidate; the
+   own-face-in-front (Ngon) case keeps the whole-mesh test (AD-022 §11). Container, 20k, p50: 91 / 73 ms before →
+   12–17 / 17–26 ms after **[C]**.
 2. **The wire overlay is rebuilt for all edges on every geometry change** (`viewport.py:919`, `wireframe.py:16`):
    +26–45 ms at 20k and +117–180 ms at 87.5k per step **[C]**, for a 1-vertex move as for a pose step (a 500-vertex W
    drag at 87.5k: 7.6 ms with the wire off, 144 ms with it on). Not measured on the reference PC; ≈ +75–130 ms at

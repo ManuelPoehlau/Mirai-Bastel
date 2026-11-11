@@ -411,6 +411,27 @@ def point_occluded(camera, mesh, cache, point, width, height, exclude_faces, dep
     )
 
 
+def point_occluded_by(camera, mesh, point, faces, exclude_faces=(), depth_tolerance=DEPTH_TOLERANCE) -> bool:
+    """`point_occluded` with the occluders given: True if a face of `faces` (minus `exclude_faces`) lies strictly
+    closer to the camera than `point` along its view ray. The same ray test, but no cache, no screen pre-filter and
+    no hidden-face rule - the caller picks the faces (the GPU hover path: the faces drawn around the point)."""
+    eye = _ray_origin(camera, point)
+    to_point = vecmath.sub(point, eye)
+    dist = vecmath.length(to_point)
+    if dist <= 1e-9:
+        return False
+    direction = vecmath.scale(to_point, 1.0 / dist)
+    position = mesh.vertex_position
+    for fid in faces:
+        if fid in exclude_faces:
+            continue
+        for tri in triangulate_mesh_face(mesh, fid):
+            t = _ray_triangle_intersection(eye, direction, *(position(v) for v in tri))
+            if t is not None and t < dist - depth_tolerance:
+                return True
+    return False
+
+
 def _ray_origin(camera, point):
     """Where the view ray through `point` starts: the eye, or in ortho (parallel rays) the point
     moved back behind all geometry (`OrbitCamera.ray_origin_toward`)."""

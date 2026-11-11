@@ -129,6 +129,25 @@ def test_hover_agrees_with_the_cpu_picker(app, mode):
     assert differ <= 0.12 * (same + differ), (same, differ)
 
 
+@pytest.mark.parametrize("mode", [SelectionMode.VERTEX, SelectionMode.EDGE])
+def test_hover_after_an_orbit_does_not_reproject_the_mesh(app, monkeypatch, mode):
+    """Audit 2026-11-10 §I.1: the occlusion test of a GPU vertex / edge hover visits the faces drawn around the
+    candidate; the whole-mesh `PickCache.refresh` is left to the own-face-in-front case (the Ngon), which a
+    closed head mesh in front view hardly has."""
+    refreshes = []
+    real_refresh = app._pick_cache.refresh
+    monkeypatch.setattr(app._pick_cache, "refresh", lambda *a: (refreshes.append(a), real_refresh(*a)))
+    hits = 0
+    for i, (x, y) in enumerate(_cursors(9)):
+        if i % 10 == 0:
+            app._objects.edit_camera.orbit(0.05, 0.0)
+            app._camera_changed()
+            app.viewport.sync()
+        hits += _gpu(app, mode, x, y) is not None
+    assert hits > 30
+    assert len(refreshes) <= 0.05 * hits, (len(refreshes), hits)
+
+
 def test_no_stale_ids_right_after_delete_and_undo(app):
     """A pick with no frame in between must see the new buffers: it names what the CPU ray sees now
     (the face behind the hole, or nothing), not the deleted face and not a stale "nothing"."""

@@ -11,7 +11,11 @@ among those few stays the CPU picker's rule, so the two paths differ only where 
 - vertex / edge visibility: the candidates come from the ID buffers drawn *without* depth test and the nearest
   one the CPU rule calls visible wins (usually one ray test): the depth buffer also holds the element's own
   faces, and a non-planar or concave Ngon's triangle can lie in front of its own corner or edge - the depth
-  test hid exactly those (the CPU rule excludes the incident faces);
+  test hid exactly those (the CPU rule excludes the incident faces). The ray test visits only the faces the
+  face pass drew within `OCCLUDER_WINDOW_PX` of the point (audit 2026-11-10 §I.1: before, every hover after a
+  camera move re-projected the whole mesh for `PickCache`); a face in front of the point is drawn there unless
+  an even nearer face covers it, and that one is tested instead. The one case the window cannot see through -
+  the element's own face in front of it (the Ngon case) - takes the whole-mesh CPU test;
 - face: the face under the cursor's pixel (pixel-centre convention);
 - Box (`elements_in_rect`): the CPU candidate rule (all corners inside the rectangle, `PickCache` projections)
   with the depth buffer as the visibility test instead of one ray test per element ("depth oracle", AD-022 §3).
@@ -26,11 +30,20 @@ import math
 
 from core import EdgeId, FaceId, Mesh, SelectionMode, VertexId
 
-from .picking import _point_segment_distance_t, edge_point_occluded, vertex_occluded
+from .picking import (
+    _incident_faces_of_vertex,
+    _point_segment_distance_t,
+    edge_point_occluded,
+    point_occluded_by,
+    vertex_occluded,
+)
 from .picking_cache import PickCache
 
 VERTEX_RADIUS_PX = 14.0
 EDGE_RADIUS_PX = 9.0
+#: Half size (px) of the face-ID window around a vertex / edge point whose faces its occlusion test visits: covers
+#: the point's own pixel and its neighbours (rasterisation samples pixel centres, the point is sub-pixel).
+OCCLUDER_WINDOW_PX = 2.0
 
 
 def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, y: float,
@@ -43,8 +56,6 @@ def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, 
         picker.prepare(render_mesh, width, height, occlusion=occlusion, target=FACES)
         face = picker.face_at(render_mesh, x, y)
         return face if face is not None and mesh.is_valid_face(face) else None
-    if occlusion and cache is not None:
-        cache.refresh(camera, mesh, width, height)
     if mode is SelectionMode.VERTEX:
         picker.prepare(render_mesh, width, height, occlusion=False, target=POINTS)
         candidates = []
@@ -56,9 +67,14 @@ def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, 
                 continue
             d = math.hypot(p[0] - x, p[1] - y)
             if d < VERTEX_RADIUS_PX:
-                candidates.append((d, vid))
-        for _, vid in sorted(candidates):
-            if not occlusion or not vertex_occluded(camera, mesh, cache, vid, width, height):
+                candidates.append((d, vid, p))
+        for _, vid, p in sorted(candidates, key=lambda c: c[:2]):
+            if not occlusion or not _occluded(
+                picker, render_mesh, camera, mesh, mesh.vertex_position(vid), p,
+                _incident_faces_of_vertex(mesh, vid, cache), width, height,
+                lambda: vertex_occluded(camera, mesh, _refreshed(cache, camera, mesh, width, height), vid,
+                                        width, height),
+            ):
                 return VertexId(vid)
         return None
     picker.prepare(render_mesh, width, height, occlusion=False, target=EDGES)
@@ -75,9 +91,38 @@ def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, 
         if d < EDGE_RADIUS_PX:
             candidates.append((d, eid, t))
     for _, eid, t in sorted(candidates):
-        if not occlusion or not edge_point_occluded(camera, mesh, cache, eid, t, width, height):
+        if not occlusion:
+            return EdgeId(eid)
+        va, vb = mesh.edge_vertices(eid)
+        pa, pb = mesh.vertex_position(va), mesh.vertex_position(vb)
+        point = (pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t, pa[2] + (pb[2] - pa[2]) * t)
+        if not _occluded(
+            picker, render_mesh, camera, mesh, point, camera.project_to_screen(point, width, height),
+            set(mesh.edge_faces(eid)), width, height,
+            lambda: edge_point_occluded(camera, mesh, _refreshed(cache, camera, mesh, width, height), eid, t,
+                                        width, height),
+        ):
             return EdgeId(eid)
     return None
+
+
+def _refreshed(cache: PickCache | None, camera, mesh: Mesh, width: int, height: int) -> PickCache | None:
+    if cache is not None:
+        cache.refresh(camera, mesh, width, height)
+    return cache
+
+
+def _occluded(picker, render_mesh, camera, mesh: Mesh, point, screen, incident, width: int, height: int,
+              whole_mesh) -> bool:
+    """The CPU occlusion rule for `point` (a vertex or a point on an edge; `incident` = its faces, never
+    occluders), tested against the faces the face pass drew around `screen`, the point's projection (see the
+    module docstring). `whole_mesh()` = the CPU test over every face, for an own face in front of the point
+    or a point without a projection."""
+    if screen is None or point_occluded_by(camera, mesh, point, incident):
+        return whole_mesh()
+    r = OCCLUDER_WINDOW_PX
+    near = picker.faces_in(render_mesh, screen[0] - r, screen[1] - r, screen[0] + r, screen[1] + r)
+    return point_occluded_by(camera, mesh, point, near, incident)
 
 
 def _faces_of_vertex(mesh: Mesh, vid) -> set:
