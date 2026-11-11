@@ -676,4 +676,8 @@ after those commits, raw output and comparison table:
 - **Open, not O0:** `[GPU]` vertex / edge hover is 6.49 / 7.65 ms (6.25 / 6.97 before O0, 2.15 / 2.72 on 2026-10-21;
   the maxima fell from 52 / 74 to 10 / 13 ms). The rise is older than O0 and coincides with the CPU occlusion rule of
   the Ngon fix (2026-10-22); its split on this PC (ID-buffer reads vs. ray tests) is not measured.
+  *Follow-up 2026-11-11:* profiled in the container: ~70 % of the hover's CPU was the per-candidate camera basis in
+  `project_to_screen` (~200 candidates per vertex hover); plus one ID read per tested candidate. Fixed (AD-022 §11
+  "Hover split"): hover vertex / edge 1.1 / 2.2 → 0.5–0.7 / 0.7–1.05 ms **[C]**, 2 reads per hover; the probe now
+  prints the read share for the reference-PC run.
 

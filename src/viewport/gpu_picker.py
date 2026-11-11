@@ -300,6 +300,32 @@ class GpuPicker:
         found = self.ids_in(FACES, math.floor(x0), math.floor(y0), math.floor(x1), math.floor(y1))
         return {f for f in map(rm.face_of_triangle, found) if f is not None}
 
+    def face_window(self, rm, x0: float, y0: float, x1: float, y1: float):
+        """Reads the face IDs of the rectangle once and returns `faces_in(x0, y0, x1, y1)` for rectangles inside it -
+        the same sets as `faces_in`, without a read (and GPU sync) per call. A rectangle reaching outside the block
+        is read on its own."""
+        width, height = self._size
+        block = self._read(FACES, math.floor(x0), math.floor(y0), math.floor(x1), math.floor(y1))
+
+        def faces_in(a0: float, b0: float, a1: float, b1: float) -> set:
+            c0, r0 = max(0, math.floor(a0)), max(0, math.floor(b0))
+            c1, r1 = min(width - 1, math.floor(a1)), min(height - 1, math.floor(b1))
+            if c1 < c0 or r1 < r0:
+                return set()
+            if block is None:
+                return self.faces_in(rm, a0, b0, a1, b1)
+            bx0, by0, w, h, ids = block
+            if c0 < bx0 or r0 < by0 or c1 >= bx0 + w or r1 >= by0 + h:
+                return self.faces_in(rm, a0, b0, a1, b1)
+            found = set()
+            for row in range(r0 - by0, r1 - by0 + 1):
+                base = row * w
+                found.update(ids[base + c0 - bx0:base + c1 - bx0 + 1])
+            found.discard(-1)
+            return {f for f in map(rm.face_of_triangle, found) if f is not None}
+
+        return faces_in
+
     def _block(self, x0: float, y0: float, x1: float, y1: float):
         width, height = self._size
         bx0, by0 = max(0, math.floor(x0)), max(0, math.floor(y0))

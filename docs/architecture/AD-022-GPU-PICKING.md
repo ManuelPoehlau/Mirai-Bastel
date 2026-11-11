@@ -395,6 +395,13 @@ mode and every headless path keep the CPU picker (slice 3 not done). Engineering
   [`RESULTS_O0_REFERENCE_PC_2026-11-11.md`](../../experiments/drag_cost/RESULTS_O0_REFERENCE_PC_2026-11-11.md)):
   167.10 / 164.84 → **11.00 / 12.62** (2026-10-21: 6.94 / 8.23; §9 abort criterion 1 clear), face 3.30; hover
   6.49 / 7.65 (unchanged by this step; 2.15 / 2.72 on 2026-10-21, open). GL tests 39/39 on the 9800 GTX.
+- **Hover split, 2026-11-11** (after O0): a vertex hover tests the ~200 vertex IDs of the 29 px window; each went
+  through `camera.project_to_screen`, which recomputes eye and basis per call (~70 % of the hover's CPU in the
+  profile). The GPU path now projects through `camera.screen_projector` (bit-identical, as `PickCache` does), and the
+  occlusion tests of one pick share one face-ID read of the cursor's window (`GpuPicker.face_window`) instead of one
+  `glReadPixels` (a GPU sync) per tested candidate: 3.0 / 4.1 → 2 reads per vertex / edge hover. **Measured [C]**
+  (`probe_picking_app.py`, which now prints the reads per hover and their time): hover vertex / edge 1.09–1.11 /
+  2.17–2.24 → 0.54–0.71 / 0.72–1.05 ms; first pick unchanged within noise. Reference PC: open.
 - **Open:** the Box silhouette rule (re-check later, Manu); the Knife
   (picker and planner) still projects the whole mesh per camera change; object picking (mode `4`) is CPU; the Box
   still projects every vertex once per gesture; H7 surfaces: the ID pass draws the cage — since 2026-11-03 the *shown* cage: the morph mix while a target is dialled

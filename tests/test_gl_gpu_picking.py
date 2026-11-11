@@ -283,3 +283,36 @@ def test_ortho_gpu_picking_agrees_with_the_cpu_picker(app, view):
         test_hover_agrees_with_the_cpu_picker(app, mode)
     for mode in (SelectionMode.VERTEX, SelectionMode.EDGE, SelectionMode.FACE):
         test_box_keeps_the_cpu_rule_within_a_few_percent(app, mode)
+
+
+def test_one_face_window_read_answers_like_faces_in(app):
+    """`GpuPicker.face_window` (one read for a hover's occlusion tests) gives the sets `faces_in` reads one by one,
+    also for rectangles reaching past the block or the viewport."""
+    app.selection.mode = SelectionMode.VERTEX
+    app._pick(W / 2 + 0.5, H / 2 + 0.5)  # the face pass is current
+    picker, rm = app.viewport.gpu_picker, app._gpu_pick_mesh()
+    window = picker.face_window(rm, W / 2 - 20, H / 2 - 20, W / 2 + 20, H / 2 + 20)
+    rects = [(W / 2 + dx - 2, H / 2 + dy - 2, W / 2 + dx + 2, H / 2 + dy + 2)
+             for dx in (-18, -7, 0, 5.5, 17) for dy in (-18, -3, 0, 9.5, 17)]
+    rects += [(W / 2 + 15, H / 2, W / 2 + 30, H / 2 + 4), (-5, -5, 3, 3), (W - 3, H - 3, W + 4, H + 4)]
+    assert any(picker.faces_in(rm, *r) for r in rects)
+    for r in rects:
+        assert window(*r) == picker.faces_in(rm, *r), r
+
+
+@pytest.mark.parametrize("mode", [SelectionMode.VERTEX, SelectionMode.EDGE])
+def test_a_hover_reads_the_id_buffers_at_most_twice(app, monkeypatch, mode):
+    """2026-11-11 hover split: each `glReadPixels` is a GPU sync; a hover reads the candidates' window and, for its
+    occlusion tests, one face window - not one read per tested candidate."""
+    from viewport.gpu_picker import GpuPicker
+
+    reads = []
+    original = GpuPicker._read
+    monkeypatch.setattr(GpuPicker, "_read", lambda self, *a: (reads.append(a), original(self, *a))[1])
+    app.selection.mode = mode
+    hits = 0
+    for x, y in _cursors(11):
+        reads.clear()
+        hits += app._pick(x, y) is not None
+        assert len(reads) <= 2, (x, y, len(reads))
+    assert hits > 30

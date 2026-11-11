@@ -56,13 +56,15 @@ def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, 
         picker.prepare(render_mesh, width, height, occlusion=occlusion, target=FACES)
         face = picker.face_at(render_mesh, x, y)
         return face if face is not None and mesh.is_valid_face(face) else None
+    project = _projector(camera, width, height)
+    near = _NearFaces(picker, render_mesh, x, y, max(VERTEX_RADIUS_PX, EDGE_RADIUS_PX) + OCCLUDER_WINDOW_PX + 1.0)
     if mode is SelectionMode.VERTEX:
         picker.prepare(render_mesh, width, height, occlusion=False, target=POINTS)
         candidates = []
         for vid in picker.vertices_near(render_mesh, x, y, VERTEX_RADIUS_PX):
             if not mesh.is_valid_vertex(vid):
                 continue
-            p = camera.project_to_screen(mesh.vertex_position(vid), width, height)
+            p = project(mesh.vertex_position(vid))
             if p is None:
                 continue
             d = math.hypot(p[0] - x, p[1] - y)
@@ -70,8 +72,8 @@ def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, 
                 candidates.append((d, vid, p))
         for _, vid, p in sorted(candidates, key=lambda c: c[:2]):
             if not occlusion or not _occluded(
-                picker, render_mesh, camera, mesh, mesh.vertex_position(vid), p,
-                _incident_faces_of_vertex(mesh, vid, cache), width, height,
+                near, camera, mesh, mesh.vertex_position(vid), p,
+                _incident_faces_of_vertex(mesh, vid, cache),
                 lambda: vertex_occluded(camera, mesh, _refreshed(cache, camera, mesh, width, height), vid,
                                         width, height),
             ):
@@ -83,8 +85,8 @@ def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, 
         if not mesh.is_valid_edge(eid):
             continue
         va, vb = mesh.edge_vertices(eid)
-        a = camera.project_to_screen(mesh.vertex_position(va), width, height)
-        b = camera.project_to_screen(mesh.vertex_position(vb), width, height)
+        a = project(mesh.vertex_position(va))
+        b = project(mesh.vertex_position(vb))
         if a is None or b is None:
             continue
         d, t = _point_segment_distance_t(x, y, a[0], a[1], b[0], b[1])
@@ -97,13 +99,22 @@ def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, 
         pa, pb = mesh.vertex_position(va), mesh.vertex_position(vb)
         point = (pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t, pa[2] + (pb[2] - pa[2]) * t)
         if not _occluded(
-            picker, render_mesh, camera, mesh, point, camera.project_to_screen(point, width, height),
-            set(mesh.edge_faces(eid)), width, height,
+            near, camera, mesh, point, project(point),
+            set(mesh.edge_faces(eid)),
             lambda: edge_point_occluded(camera, mesh, _refreshed(cache, camera, mesh, width, height), eid, t,
                                         width, height),
         ):
             return EdgeId(eid)
     return None
+
+
+def _projector(camera, width: int, height: int):
+    """`camera.project_to_screen` for one view, with eye and basis computed once (`screen_projector`, bit-identical;
+    a hover tests ~200 candidates of the ID window, and the per-call basis was ~70 % of it, 2026-11-11)."""
+    projector = getattr(camera, "screen_projector", None)
+    if projector is not None:
+        return projector(width, height)
+    return lambda point: camera.project_to_screen(point, width, height)
 
 
 def _refreshed(cache: PickCache | None, camera, mesh: Mesh, width: int, height: int) -> PickCache | None:
@@ -112,17 +123,30 @@ def _refreshed(cache: PickCache | None, camera, mesh: Mesh, width: int, height: 
     return cache
 
 
-def _occluded(picker, render_mesh, camera, mesh: Mesh, point, screen, incident, width: int, height: int,
-              whole_mesh) -> bool:
+class _NearFaces:
+    """The faces the face pass drew around a screen point, from one ID read of the cursor's window per pick (made on
+    the first question): each `glReadPixels` is a GPU sync, and a hover asks for one or two candidates."""
+
+    def __init__(self, picker, render_mesh, x: float, y: float, radius: float) -> None:
+        self._args = (render_mesh, x - radius, y - radius, x + radius, y + radius)
+        self._picker = picker
+        self._window = None
+
+    def __call__(self, sx: float, sy: float) -> set:
+        if self._window is None:
+            self._window = self._picker.face_window(*self._args)
+        r = OCCLUDER_WINDOW_PX
+        return self._window(sx - r, sy - r, sx + r, sy + r)
+
+
+def _occluded(near, camera, mesh: Mesh, point, screen, incident, whole_mesh) -> bool:
     """The CPU occlusion rule for `point` (a vertex or a point on an edge; `incident` = its faces, never
     occluders), tested against the faces the face pass drew around `screen`, the point's projection (see the
     module docstring). `whole_mesh()` = the CPU test over every face, for an own face in front of the point
     or a point without a projection."""
     if screen is None or point_occluded_by(camera, mesh, point, incident):
         return whole_mesh()
-    r = OCCLUDER_WINDOW_PX
-    near = picker.faces_in(render_mesh, screen[0] - r, screen[1] - r, screen[0] + r, screen[1] + r)
-    return point_occluded_by(camera, mesh, point, near, incident)
+    return point_occluded_by(camera, mesh, point, near(screen[0], screen[1]), incident)
 
 
 def _faces_of_vertex(mesh: Mesh, vid) -> set:

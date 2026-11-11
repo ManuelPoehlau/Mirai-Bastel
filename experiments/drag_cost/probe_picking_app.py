@@ -7,7 +7,9 @@ picker, ms p50 / max:
 
 - `first pick`: the camera orbits (unmeasured), then one `app._pick` at a cursor on the mesh (measured): the cost
   the Artist feels on the first hover after navigating.
-- `hover`: `app._pick` at moving cursors, camera unchanged.
+- `hover`: `app._pick` at moving cursors, camera unchanged. GPU only, a second row `of it: ID reads`: the time
+  in `GpuPicker._read` (`glReadPixels`, each a GPU sync) per hover and how many reads one hover makes (2026-11-11,
+  the hover split asked for after O0); the rest of the hover is CPU (candidates, ray tests).
 - `box 300px`: the Box rule (`elements_in_rect` / `gpu_elements_in_rect`) right after an orbit, a 300 x 300 px
   rectangle around the mesh centre - the selection the gesture would produce.
 - `delete + pick`: Delete of one face and the re-pick at the cursor (journal path + pick), then Undo (unmeasured).
@@ -77,13 +79,28 @@ def main() -> None:
         app.camera.orbit(0.02 if i % 2 == 0 else -0.02, 0.0)
         app._camera_changed()
 
+    from viewport.gpu_picker import GpuPicker
+
+    reads = {"ms": 0.0, "n": 0}
+    original_read = GpuPicker._read
+
+    def timed_read(self, *args):
+        start = time.perf_counter()
+        try:
+            return original_read(self, *args)
+        finally:
+            reads["ms"] += (time.perf_counter() - start) * 1000.0
+            reads["n"] += 1
+
+    GpuPicker._read = timed_read
+
     for gpu in (False, True):
         app.gpu_picking = gpu
         label = "GPU" if gpu else "CPU"
         print(f"[{label}]")
         for mode in (SelectionMode.VERTEX, SelectionMode.EDGE, SelectionMode.FACE):
             app.selection.mode = mode
-            first, hover, box = [], [], []
+            first, hover, box, hover_reads, hover_read_count = [], [], [], [], []
             for i in range(args.n + 2):
                 orbit(i)
                 t = _ms(lambda: app._pick(cx + 0.5, cy + 0.5))
@@ -91,9 +108,12 @@ def main() -> None:
                     first.append(t)
             for i in range(args.n + 2):
                 x = cx - 60 + 8 * i
+                reads["ms"], reads["n"] = 0.0, 0
                 t = _ms(lambda: app._pick(x + 0.5, cy + 0.5))
                 if i >= 2:
                     hover.append(t)
+                    hover_reads.append(reads["ms"])
+                    hover_read_count.append(reads["n"])
             rect = (cx - 150, cy - 150, cx + 150, cy + 150)
             for i in range(max(3, args.n // 3) + 1):
                 orbit(i)
@@ -109,6 +129,8 @@ def main() -> None:
             name = mode.name.lower()
             print(_row(f"{name} first pick", first))
             print(_row(f"{name} hover", hover))
+            if gpu:
+                print(_row(f"  of it: ID reads ({statistics.mean(hover_read_count):.1f}/hover)", hover_reads))
             print(_row(f"{name} box 300px", box))
 
         app.key_press(Input("key", "3"))
