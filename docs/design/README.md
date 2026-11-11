@@ -5,6 +5,7 @@ This directory contains interaction and workflow principles that guide how Mirai
 ## Documents
 
 - [Workflow Principles](WORKFLOW.md) — direct, low-overhead interaction inspired by Mirai/Nendo/Silo/Wings3D
+- [Rendering Vision](RENDERING_VISION.md) — PROPOSAL (2026-11-11): Artist-first character Lookdev, separate from the modelling Worklight; shared material/light intent across realtime and final rendering; Gollum eyes first; staged delivery and decision gates. See the companion [Rendering Technology Research](../research/RENDERING_TECHNOLOGY_RESEARCH.md).
 - [GUI Bestandsaufnahme — Modelling, Morph, Rig](GUI_Bestandsaufnahme.md) — current Production GUI state snapshot (2026-11-03); verified facts `[V]`, UX hypotheses `[H]`, open Manu decisions `[O]`; starting point, not a specification
 - [GUI Stage 1 — HUD](GUI_STAGE1_HUD.md) — read-only state display in the Production window (2026-10-23): two layout variants on trial, Stage 2 seams, open questions, Artist test steps; Stufe 1b (A1: status strip, bone name, XYZ triad) and Stufe 1c (A3: the weight view, `9`), 2026-11-03
 - Input Map — archived 2026-10-28 ([`archive/input_truth_2026-10/`](../archive/input_truth_2026-10/README.md)); the input truth is the BindingSet with Manu's [`config/keymap.json`](../../config/keymap.json) (AD-013 addendum 2026-10-28)

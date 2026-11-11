@@ -10,6 +10,8 @@ This directory contains the durable project knowledge that should survive indivi
 | [Roadmap](architecture/ROADMAP.md) | Canonical roadmap and work packages |
 | [Architecture](architecture/README.md) | Current system boundaries, accepted architectural direction and V1 decisions |
 | [Design](design/README.md) | Interaction and workflow principles, including the current Production GUI inventory |
+| [Rendering Vision](design/RENDERING_VISION.md) | Proposed Artist-first character Lookdev direction: eyes, light, reflections, skin, shadows, realtime and final rendering |
+| [Rendering Research](research/RENDERING_TECHNOLOGY_RESEARCH.md) | Technical landscape, Wētā / SH research, current Mirai baseline, external renderers, open-source references and open questions |
 | [GUI Bestandsaufnahme](design/GUI_Bestandsaufnahme.md) | Current, dated GUI state assessment for Modelling, Morph and Rig (2026-11-03; hypotheses are not decisions) |
 | [Future Ideas](future_ideas/README.md) | Ideas and requirements deliberately deferred from implementation |
 | [Research](research/README.md) | Historical and technical investigation |

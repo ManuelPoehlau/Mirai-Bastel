@@ -4,6 +4,11 @@
 
 Research is detailed and may investigate individual systems or technical questions deeply.
 
+## Rendering and Lookdev
+
+- [RENDERING_TECHNOLOGY_RESEARCH.md](RENDERING_TECHNOLOGY_RESEARCH.md) — research synthesis (2026-11-11) for character rendering: existing Mirai viewport/material/light baseline, Wētā Manuka/Gazebo and Spherical Harmonics, PBR/IBL, eyes, skin/SSS, shadows, colour management, external renderers and open-source standards. Includes what is known, what is only proposed, a source register and the remaining research/validation list.
+- [viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md](viewport/VIEWPORT_SHADING_FORM_PERCEPTION_RESEARCH.md) — earlier Worklight research for modelling form perception. Its shadow-map rejection applies to the modelling Worklight, not to the separate future Lookdev/Rendering context.
+
 ## Interaction / Input Architecture Research
 
 - [CONTEXT_SENSITIVE_INPUT_ARCHITECTURE_RESEARCH_V1.md](CONTEXT_SENSITIVE_INPUT_ARCHITECTURE_RESEARCH_V1.md) — Discovery zur kontextsensitiven Input-/Hotkey-Auflösung: Global, Application/Room, Component/Selection, Hover, Active Tool und Focus. Untersucht eine mögliche Context-Snapshot-/Binding-Resolver-Schicht ohne eine Architekturentscheidung vorwegzunehmen.
