@@ -493,6 +493,13 @@ build_highlight_flags()`). It touches the `RenderMesh` layout, the
 dirty-state tests and the benchmark scenarios, so it is a separate
 cleanup slice.
 
+*Done 2026-11-11* (audit `ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md` §I.3): the `highlight_flags` entry of
+`MESH_GROUP_ATTRIBUTES`, the vertex shader input and the `v_highlight` varyings (plain and textured programs), the
+upload in the full rebuild, the topology patch and `RenderMesh._sync_selection`, and `SelectionOverlay.
+build_highlight_flags()` / `highlighted_vertices()` (with `tests/test_overlay.py`, which tested only them) are gone. A
+selection or hover change still runs the selection category (`selection_updates`) but touches no store resource;
+selection and hover are drawn only by the overlays. The inactive-attribute guard in `_patch_attribute` stays (generic).
+
 *Extension 2026-09-27 (WP-06 Slice B5a, display modes):* the same
 precedent now also covers **edge lines**. `src/viewport/gl_line_overlay.py`,
 class `GLLineOverlay`: one `GL_LINES` vertex list (two vertices per edge),

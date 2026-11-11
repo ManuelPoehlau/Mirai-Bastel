@@ -13,10 +13,10 @@ vs. ein Structural-Rebuild nötig ist.
 Ressourcen-Zuordnung (Whitebox-Audit, siehe VIEWPORT_V02_ARCHITECTURE.md §7):
 
     camera    -> camera_uniforms              (nur Matrizen/Uniforms)
-    selection -> highlight_flags              (Overlay, getrennt vom Base-Mesh)
+    selection -> (nichts)                     (Auswahl zeichnen die Overlays; seit 2026-11-11 ohne highlight_flags)
     material  -> material_uniforms            (nur Material-Parameter, optional)
     geometry  -> positions, normals           (partial) + Bounds (Derived Data)
-    topology  -> positions, normals, indices, highlight_flags (structural)
+    topology  -> positions, normals, indices  (structural)
 
 Wichtiger Architektur-Unterschied zum Experiment: `RenderMesh` MUTIERT die
 Core-Mesh NICHT selbst (das Experiment tat dies über `move_vertex()`).
@@ -47,8 +47,8 @@ Rebuild" pro Element: `tests/test_render_mesh_incremental.py`.
 
 AD-018 §5 (Option B, additiv): `_rebuild_resources()` deklariert einmalig
 (im Konstruktor) über `ResourceStore.declare_group()`/`declare_uniform()`,
-welche der vier Kern-Ressourcen (`positions`/`normals`/`highlight_flags` +
-`indices`) zusammen EIN drawbares GPU-Objekt bilden, und dass
+welche der Kern-Ressourcen (`positions`/`normals` + `indices`; bis 2026-11-11 auch
+`highlight_flags`) zusammen EIN drawbares GPU-Objekt bilden, und dass
 `camera_uniforms`/`material_uniforms` reine Uniforms sind - statt dass ein
 Store das aus der Aufrufreihenfolge in `_rebuild_resources()` erraten muss
 (die Fragilität, die der Draw-Binding-Spike als offenen Befund gemeldet
@@ -104,7 +104,6 @@ MESH_GROUP = "mesh"
 MESH_GROUP_ATTRIBUTES: dict[str, tuple[str, int]] = {
     "positions": ("position", COMPONENTS_PER_VERTEX),
     "normals": ("normal", COMPONENTS_PER_VERTEX),
-    "highlight_flags": ("highlight_flag", 1),
 }
 MESH_GROUP_INDEX = "indices"
 
@@ -637,16 +636,6 @@ class RenderMesh:
             flat += dead if face_id is None else self._face_row_data(face_id)
         return flat
 
-    def _highlight_flags(self) -> list[float]:
-        """Highlight-Flags in Slot-Reihenfolge (die Buffer-Position jedes Vertex)."""
-        flags = [0.0] * len(self._slot_vertex)
-        index = self._vertex_index
-        for vertex_id in self.overlay.highlighted_vertices(self.mesh):
-            slot = index.get(vertex_id)
-            if slot is not None:
-                flags[slot] = 1.0
-        return flags
-
     def _rebuild_resources(self) -> None:
         def put(name: str, data: list[float]) -> None:
             had = self.store.has(name)
@@ -665,9 +654,6 @@ class RenderMesh:
         put("positions", positions)
         put("normals", normals)
         put("indices", self._indices_flat())
-
-        if self.overlay is not None:
-            put("highlight_flags", self._highlight_flags())
         self.store.end_rebuild(MESH_GROUP)
 
         put(TRIANGLE_FACES, [float(row) for row in self._triangle_face_rows])
@@ -1007,10 +993,6 @@ class RenderMesh:
             self.store.update(TRIANGLE_FACES, run[0], data, len(data) * FLOAT_BYTES)
         self._upload_triangle_uvs(tri_slots)
         self._upload_rows(row_slots)
-        if self.overlay is not None:
-            # Wie der volle Rebuild: die Flags passen zu den (neuen) Slots und zur Auswahl.
-            flags = self._highlight_flags()
-            self.store.update("highlight_flags", 0, flags, len(flags) * FLOAT_BYTES)
         self.content_revision += 1
         if self._hidden or self._hidden_faces:
             # A face added or removed beside hidden ones can change whether an edge or corner is hidden.
@@ -1088,13 +1070,11 @@ class RenderMesh:
         self._upload_rows({face_row[face_id] for face_id in faces})
 
     def _sync_selection(self) -> None:
-        if self.overlay is None:
-            return
-        self.stats.count("selection_updates")
-        flags = self._highlight_flags()
-        # Nur die Overlay-Ressource - KEIN Base-Mesh-Buffer wird angefasst.
-        self.store.update("highlight_flags", 0, flags, len(flags) * FLOAT_BYTES)
-        self.stats.count("partial_updates")
+        # Nichts im Mesh-Buffer hängt an der Auswahl: Punkte, Kanten und Faces der Auswahl zeichnen die Overlays
+        # (AD-018 E18). Bis 2026-11-11 wurde hier ein V-großer `highlight_flags`-Buffer gebaut und hochgeladen, den
+        # der Shader seit E18 nicht mehr las (Audit 2026-11-10 §I.3).
+        if self.overlay is not None:
+            self.stats.count("selection_updates")
 
     def _sync_material(self) -> None:
         if self.material is None:

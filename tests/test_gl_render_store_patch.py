@@ -30,7 +30,7 @@ from viewport.render_mesh import RenderMesh  # noqa: E402
 
 _HEAD_OBJ = Path(__file__).resolve().parents[1] / "examples" / "meshes" / "head_basemesh.obj"
 #: store resource name -> VertexList attribute (AD-018 §5 layout declaration)
-_ATTRIBUTES = {"positions": "position", "normals": "normal", "highlight_flags": "highlight_flag"}
+_ATTRIBUTES = {"positions": "position", "normals": "normal"}
 
 
 @pytest.fixture(scope="module")
@@ -91,8 +91,8 @@ def _assert_gpu_equals_cpu(store: GLRenderStore) -> int:
 
 
 def _random_update(rng: random.Random, store: GLRenderStore, n_verts: int) -> None:
-    name = rng.choice(["positions", "normals", "highlight_flags"])
-    comps = 1 if name == "highlight_flags" else 3
+    name = rng.choice(["positions", "normals"])
+    comps = 3
     first = rng.randrange(n_verts)
     count = rng.choice([1, 1, 1, 2, 5, 17])  # mostly single-vertex, as in a drag
     count = min(count, n_verts - first)

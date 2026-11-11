@@ -558,6 +558,9 @@ non-symmetric counterparts at 20k+ (not measured); that 100k faces with all stag
    change** (`render_mesh.py:634, 1084`) although the fragment shader no longer reads it (comment at
    `gl_render_store.py:71-74`): 96 KB per hover change at 20k, 385 KB at 87.5k. Known and open since 2026-10-17
    (drag_cost README "Next step", option 8).
+   **Fixed 2026-11-11 (O0):** the `highlight_flags` pipeline is removed (AD-018 follow-up, done); a selection or
+   hover change uploads nothing to the mesh buffers. Hover change through `Viewport.sync` at 20k **[C]**: 0.78–0.82 ms
+   and 87.5 KB before → 0.01 ms and 0 bytes after.
 4. **Two probes had bit-rotted.** `probe_picking_app.py` and the `direct` scenario of `probe_navigation_gl.py` used
    `Application._edit_camera` and `Application._paint_at`, which no longer exist (now `app._objects.edit_camera`,
    `app._pointer_tools.paint_at`). Fixed in this commit (probe code only); both run again.

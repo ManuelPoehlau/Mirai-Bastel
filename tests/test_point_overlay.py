@@ -210,8 +210,8 @@ def test_selection_or_hover_change_does_not_rebuild_mesh(mesh, selection, change
     for key in ("mesh_rebuilds", "structural_rebuilds", "gpu_resource_creations",
                 "geometry_uploads"):
         assert counters_after.get(key, 0) == counters_before.get(key, 0), key
-    # Unverändert gegenüber B2: genau ein Partial-Update (highlight_flags).
-    assert counters_after["partial_updates"] - counters_before.get("partial_updates", 0) == 1
+    # Audit 2026-11-10 §I.3: kein Partial-Update mehr (bis dahin: die ungelesenen highlight_flags).
+    assert counters_after.get("partial_updates", 0) == counters_before.get("partial_updates", 0)
 
 
 # -- GLPointOverlay ohne GL-Kontext --------------------------------------------------

@@ -265,13 +265,13 @@ def test_viewport_selection_dirty_only_on_real_change(app):
     assert _selection_rev(app) == rev + 2
 
 
-def test_selection_reaches_highlight_flags(app):
+def test_selection_reaches_the_point_overlay(app):
     a, _ = _two_vertices(app)
     app.viewport.sync()
-    flags_before = list(app.viewport.render_mesh.store.data("highlight_flags"))
+    points_before = {k: list(v) for k, v in app.viewport.point_positions.items()}
     _click(app, _mouse("LEFT"), _screen_pos(app, a))
     app.viewport.sync()
-    assert list(app.viewport.render_mesh.store.data("highlight_flags")) != flags_before
+    assert {k: list(v) for k, v in app.viewport.point_positions.items()} != points_before
 
 
 def test_selection_creates_no_history_and_keeps_mesh(app):

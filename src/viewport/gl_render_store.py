@@ -5,7 +5,7 @@ Ships the real draw path `VIEWPORT_V02_ARCHITECTURE.md` §4.2 specifies
 scoping choice (`docs/archive/early_work_packages/WP-04_GATE_5_COMPLETION.md`): one real, persistent,
 indexed `ShaderProgram.vertex_list_indexed(...)` per `RenderMesh` instance,
 built from `RenderMesh`'s declared "mesh" attribute group
-(`positions`/`normals`/`highlight_flags` + `indices`, see
+(`positions`/`normals` + `indices`, see
 `render_mesh.MESH_GROUP_ATTRIBUTES`), with `camera_uniforms`/
 `material_uniforms` applied as program uniforms at draw time.
 
@@ -47,14 +47,12 @@ VERTEX_SRC = """
 #version 330 core
 in vec3 position;
 in vec3 normal;
-in float highlight_flag;
 
 uniform mat4 u_view;
 uniform mat4 u_proj;
 uniform mat4 u_model;
 
 out vec3 v_normal;
-out float v_highlight;
 out vec3 v_world_pos;
 
 void main() {
@@ -63,15 +61,14 @@ void main() {
     // AD-021 M2-1: rotation + uniform scale only (Q-4), so mat3(u_model) is a valid normal
     // matrix up to length; the fragment shader normalizes.
     v_normal = mat3(u_model) * normal;
-    v_highlight = highlight_flag;
     v_world_pos = world.xyz;
 }
 """
 
 # WP-06 B2b (AD-018 §7 addendum, E18): the selection face tint is gone
-# (Artist REJECT); selection is drawn by `GLPointOverlay`. `v_highlight` stays
-# declared because the `highlight_flags` pipeline is kept until its
-# documented follow-up cleanup.
+# (Artist REJECT); selection is drawn by `GLPointOverlay`. The unread
+# `highlight_flag` attribute and its per-hover upload went with the follow-up
+# cleanup (2026-11-11, audit `ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md` §I.3).
 #
 # Normals (AD-018 addendum 2026-10-15, B5a.1): the fragment looks up its face
 # row via `gl_PrimitiveID` (= triangle number in index-buffer order; pyglet
@@ -105,7 +102,6 @@ void main() {
 FRAGMENT_SRC = """
 #version 330 core
 in vec3 v_normal;
-in float v_highlight;
 in vec3 v_world_pos;
 
 uniform mat4 u_view;
@@ -366,7 +362,6 @@ in vec3 t_normal[];
 in vec3 t_world_pos[];
 
 out vec3 v_normal;
-out float v_highlight;
 out vec3 v_world_pos;
 out vec3 g_bary;
 
@@ -374,7 +369,6 @@ void main() {
     for (int i = 0; i < 3; ++i) {
         gl_Position = gl_in[i].gl_Position;
         v_normal = t_normal[i];
-        v_highlight = 0.0;
         v_world_pos = t_world_pos[i];
         g_bary = vec3(i == 0 ? 1.0 : 0.0, i == 1 ? 1.0 : 0.0, i == 2 ? 1.0 : 0.0);
         gl_PrimitiveID = gl_PrimitiveIDIn;
@@ -753,10 +747,10 @@ class GLRenderStore(ResourceStore):
         attr_name, _components = attributes[name]
         target = getattr(vlist, attr_name, None)
         if target is None:
-            # The driver optimized this attribute out of the program (e.g.
-            # `highlight_flag` since the fragment shader no longer reads it,
-            # AD-018 §7); pyglet then built the VertexList without it, so
-            # there is nothing on the GPU to patch. CPU copy stays in `_cpu`.
+            # The driver optimized this attribute out of the program (seen
+            # with the unread `highlight_flag` before 2026-11-11, AD-018 §7);
+            # pyglet then built the VertexList without it, so there is
+            # nothing on the GPU to patch. CPU copy stays in `_cpu`.
             return
         end = offset + count
         target[offset:end] = data[offset:end]

@@ -115,10 +115,6 @@ def _click(app, inp: Input, pos) -> None:
     app.pointer_release(inp.value, *pos)
 
 
-def _highlight_flags(app) -> list[float]:
-    return list(app.viewport.render_mesh.store.data("highlight_flags"))
-
-
 # ---------------------------------------------------------------------------
 # 1. Split — Edge mode, 1 edge
 # ---------------------------------------------------------------------------
@@ -476,7 +472,7 @@ def test_edge_connect_reaches_per_face_not_strip():
 #
 # Praxistest: Edge hovern, anklicken, `C` → Split. `selection.hovered` zeigte
 # danach weiter auf die gerade entfernte Edge-ID; der nächste Frame crashte
-# beim Aufbau der `highlight_flags` (`KeyError: EdgeId(11)` in
+# beim Aufbau der (2026-11-11 entfernten) `highlight_flags` (`KeyError: EdgeId(11)` in
 # `mesh.edge_vertices`, aufgerufen aus `RenderMesh._rebuild_resources`).
 # Zwei unabhängige Absicherungen werden hier geprüft:
 # - Production richtet den Hover nach einer Topologie-Änderung neu aus
@@ -501,7 +497,7 @@ def test_split_does_not_leave_the_hovered_edge_stale(app):
     assert app.key_press(C) is True
     assert not mesh.is_valid_edge(eid)
 
-    app.update_viewport(0.0)  # war der Crash (Sync → highlight_flags)
+    app.update_viewport(0.0)  # war der Crash (Sync → highlight_flags; heute die Overlay-Layer)
 
     # Kein stale/wrong-kind Hover: Split setzt den Vertex-Modus, also ist der
     # Hover None oder ein gültiger Vertex — nie die entfernte Edge.
@@ -540,7 +536,7 @@ def test_undo_after_edge_connect_does_not_crash_the_render_path(app):
 
     # Die wiederhergestellten (wieder gültigen) Edges dürfen als selektiert
     # markiert sein - nur kein ungültiges Handle darf den Sync sprengen.
-    assert set(_highlight_flags(app)) <= {0.0, 1.0}
+    assert len(app.viewport.line_layers["selected"]) == len(original)
 
 
 def test_transform_arm_after_undo_of_edge_connect_uses_the_restored_selection(app):

@@ -108,9 +108,6 @@ def assert_equivalent(rm: RenderMesh) -> None:
         assert (face is None) == (tri is None)
         if face is not None:
             assert t in rm._face_triangles[face]
-    flags, ref_flags = data("highlight_flags"), ref("highlight_flags")
-    for v in live if rm.overlay is not None else ():
-        assert flags[rm.vertex_index_of(v)] == ref_flags[fresh.vertex_index_of(v)]
     fresh._watch.close()
 
 

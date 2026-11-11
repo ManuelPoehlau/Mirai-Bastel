@@ -26,7 +26,7 @@ class ViewportFacadeTests(unittest.TestCase):
         self.assertIn("positions", ids)
         self.assertIn("normals", ids)
         self.assertIn("indices", ids)
-        self.assertIn("highlight_flags", ids)
+        self.assertNotIn("highlight_flags", ids)
 
     def test_uses_provided_selection_instance(self):
         self.assertIs(self.viewport.selection, self.selection)

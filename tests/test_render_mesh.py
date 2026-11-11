@@ -52,7 +52,8 @@ class InitialBuildTests(unittest.TestCase):
         self.assertIn("positions", ids)
         self.assertIn("normals", ids)
         self.assertIn("indices", ids)
-        self.assertIn("highlight_flags", ids)
+        # Audit 2026-11-10 §I.3: no per-vertex selection buffer any more (the shader never read it since E18).
+        self.assertNotIn("highlight_flags", ids)
 
     def test_build_counts_as_structural(self):
         _mesh, _sel, _overlay, rm = _build()
@@ -278,60 +279,24 @@ class SelectionOverlayIsolationTests(unittest.TestCase):
         self.assertEqual(rm.benchmark_counters["structural_rebuilds"], struct_before)
         self.assertEqual(rm.benchmark_counters.get("geometry_uploads", 0), 0)
 
-    def test_selection_updates_highlight_flags_correctly(self):
+    def test_selection_and_hover_changes_upload_nothing(self):
+        """Audit 2026-11-10 §I.3: selection and hover are drawn by the overlays; a change touches no store
+        resource (before: a V-sized `highlight_flags` upload per change, unread by the shader)."""
         mesh, selection, _overlay, rm = _build()
-        vid = mesh.all_vertex_ids()[2]
-        selection.mode = SelectionMode.VERTEX
-        selection.set({vid})
-        rm.mark_selection_dirty()
-        rm.sync()
-
-        idx = rm.vertex_index_of(vid)
-        flags = rm.store.data("highlight_flags")
-        self.assertEqual(flags[idx], 1.0)
-        self.assertEqual(sum(flags), 1.0)
-
-    def test_edge_mode_selection_highlights_both_endpoints(self):
-        mesh, selection, _overlay, rm = _build()
-        eid = mesh.all_edge_ids()[0]
-        va, vb = mesh.edge_vertices(eid)
+        before = {name: rm.store.data(name) for name in rm.resource_ids()}
+        uploads = rm.benchmark_counters.get("partial_updates", 0)
         selection.mode = SelectionMode.EDGE
-        selection.set({eid})
+        selection.set({mesh.all_edge_ids()[0]})
+        selection.hovered = mesh.all_vertex_ids()[1]
         rm.mark_selection_dirty()
         rm.sync()
-
-        flags = rm.store.data("highlight_flags")
-        self.assertEqual(flags[rm.vertex_index_of(va)], 1.0)
-        self.assertEqual(flags[rm.vertex_index_of(vb)], 1.0)
-
-    def test_hover_is_independent_of_selection(self):
-        mesh, selection, _overlay, rm = _build()
-        selected = mesh.all_vertex_ids()[0]
-        hovered = mesh.all_vertex_ids()[1]
-        selection.mode = SelectionMode.VERTEX
-        selection.set({selected})
-        selection.hovered = hovered
-        rm.mark_selection_dirty()
-        rm.sync()
-
-        flags = rm.store.data("highlight_flags")
-        self.assertEqual(flags[rm.vertex_index_of(selected)], 1.0)
-        self.assertEqual(flags[rm.vertex_index_of(hovered)], 1.0)
-
-    def test_clearing_selection_clears_flags(self):
-        mesh, selection, _overlay, rm = _build()
-        vid = mesh.all_vertex_ids()[0]
-        selection.mode = SelectionMode.VERTEX
-        selection.set({vid})
-        rm.mark_selection_dirty()
-        rm.sync()
-
         selection.clear()
         rm.mark_selection_dirty()
         rm.sync()
 
-        flags = rm.store.data("highlight_flags")
-        self.assertEqual(sum(flags), 0.0)
+        self.assertEqual(rm.benchmark_counters["selection_updates"], 2)
+        self.assertEqual(rm.benchmark_counters.get("partial_updates", 0), uploads)
+        self.assertEqual({name: rm.store.data(name) for name in rm.resource_ids()}, before)
 
 
 class MaterialUpdateTests(unittest.TestCase):
@@ -380,7 +345,6 @@ class TopologyChangeTests(unittest.TestCase):
         n_verts = len(mesh.all_vertex_ids())
         self.assertEqual(len(rm.store.data("positions")), n_verts * 3)
         self.assertEqual(len(rm.store.data("normals")), n_verts * 3)
-        self.assertEqual(len(rm.store.data("highlight_flags")), n_verts)
 
     def test_topology_change_clears_stale_modified_vertices(self):
         mesh, _sel, _overlay, rm = _build()

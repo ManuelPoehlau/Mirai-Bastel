@@ -9,11 +9,13 @@ Architekturprinzip (VIEWPORT_V02_ARCHITECTURE.md §4.7, §11):
 
     Eine Selection-/Hover-Änderung darf die Base-Geometrie NICHT anfassen.
 
-Diese Klasse hält deshalb ausschließlich eine eigene Overlay-Ressource
-(ein Highlight-Flag-Array pro Vertex, 1.0 = selektiert/hovered, 0.0 sonst)
-und schreibt NIE in die `positions`/`normals`/`indices`-Ressourcen des
-Base-Mesh. `RenderMesh._sync_selection()` patcht ausschließlich die
-`highlight_flags`-Ressource.
+Diese Klasse liefert deshalb nur Overlay-Geometrie (Punkte, Segmente, Dreiecke,
+unten) und schreibt NIE in die `positions`/`normals`/`indices`-Ressourcen des
+Base-Mesh. Das frühere Highlight-Flag-Array pro Vertex (`build_highlight_flags`,
+die `highlight_flags`-Ressource des `RenderMesh`) las der Shader seit dem Wegfall
+des Face-Tints (2026-09-26) nicht mehr; entfernt 2026-11-11 (Audit
+`ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md` §I.3), eine Auswahl-Änderung lädt
+seitdem nichts mehr in den Mesh-Buffer.
 
 Hinweis zur Option (VIEWPORT_V02_ARCHITECTURE.md §4.7, "Unresolved
 Decisions"): Es wurde **Option A gewählt in vereinfachter Form** — statt
@@ -29,7 +31,7 @@ separate Overlay-Geometrie jetzt umgesetzt. `point_layers()` liefert die
 Weltpositionen (selektierte Vertices, gehoverter Vertex) rein headless;
 gezeichnet werden sie von `gl_point_overlay.GLPointOverlay`. Der Face-Tint
 über `highlight_flags` ist aus dem Shader entfernt (Artist REJECT); die
-Flag-Ressource selbst bleibt bis zum dokumentierten Follow-up bestehen.
+Flag-Ressource folgte im Follow-up 2026-11-11.
 
 2026-09-27 (WP-06 B5b, E44): dasselbe für Edges und Faces. `line_layers()`
 liefert Segmente (selektierte Edges im Edge-Modus, gehoverte Edge),
@@ -37,8 +39,8 @@ liefert Segmente (selektierte Edges im Edge-Modus, gehoverte Edge),
 gleiche Fan-Triangulierung wie `RenderMesh`). Gezeichnet von
 `gl_line_overlay.GLLineOverlay` bzw. `gl_triangle_overlay.GLTriangleOverlay`.
 
-2026-09-28 (WP-06 B6 fix): `build_highlight_flags()` überspringt ungültige
-IDs genauso wie die Punkt-/Linien-/Face-Methoden oben. Ursache: eine
+2026-09-28 (WP-06 B6 fix): `build_highlight_flags()` (seit 2026-11-11 entfernt) übersprang
+ungültige IDs genauso wie die Punkt-/Linien-/Face-Methoden oben. Ursache: eine
 Topologie-Mutation (Split/Connect, Undo/Redo, Szenenwechsel) kann die
 gehoverte/selektierte ID aus dem Mesh entfernen; `mesh.edge_vertices()` /
 `mesh.face_vertices()` werfen dann `KeyError`, und weil der Aufruf mitten im
@@ -106,85 +108,13 @@ class SelectionOverlay:
     """Hält Selection + Hover als reinen Overlay-Zustand.
 
     Kapselt keine eigene Selection-Logik (die liegt in `core.Selection`),
-    sondern übersetzt deren Zustand in ein Highlight-Flag-Array für die
-    GPU-Overlay-Ressource. Hover ist bewusst getrennt von Selektion
+    sondern übersetzt deren Zustand in Punkte, Segmente und Dreiecke für die
+    Overlays (`point_layers`, `line_layers`, `face_layers`). Hover ist bewusst getrennt von Selektion
     (siehe `core.Selection.hovered`, kein Undo-Eintrag).
     """
 
     def __init__(self, selection: Selection) -> None:
         self.selection = selection
-        # Cache des zuletzt gebauten Highlight-Arrays (Debug/Tests).
-        self._last_highlight_flags: list[float] = []
-
-    def build_highlight_flags(self, mesh) -> list[float]:
-        """Erzeugt ein 1.0/0.0-Flag-Array über `mesh.all_vertex_ids()`
-        (stabile Reihenfolge = Iterationsreihenfolge der Vertex-IDs, siehe
-        RenderMesh._vertex_index für die zugehörige Buffer-Position).
-
-        Im Vertex-Modus: selektierte Vertices direkt markiert.
-        Im Edge-Modus: beide Endpunkte selektierter Edges markiert.
-        Im Face-Modus: alle Vertices selektierter Faces markiert.
-        Hover kommt zusätzlich (mit demselben Flag) oben drauf, unabhängig
-        vom aktuellen Selection-Modus.
-
-        IDs, die in `mesh` nicht (mehr) existieren (z. B. nach einer
-        Topologie-Änderung), werden übersprungen — dieselbe Regel wie in
-        `selected_vertex_positions()`/`line_layers()`/`face_layers()`.
-        """
-        highlighted = self.highlighted_vertices(mesh)
-        flags = [
-            1.0 if vertex_id in highlighted else 0.0
-            for vertex_id in mesh.all_vertex_ids()
-        ]
-        self._last_highlight_flags = flags
-        return flags
-
-    def highlighted_vertices(self, mesh) -> set[VertexId]:
-        """Die Vertices, die `build_highlight_flags` mit 1.0 markiert (Regeln dort); `RenderMesh`
-        legt die Flags damit in Slot-Reihenfolge ab."""
-        highlighted: set[VertexId] = set()
-
-        mode = self.selection.mode
-        if mode is SelectionMode.VERTEX:
-            highlighted.update(
-                vertex_id
-                for vertex_id in self.selection.vertices
-                if mesh.is_valid_vertex(vertex_id)
-            )
-        elif mode is SelectionMode.EDGE:
-            for edge_id in self.selection.edges:
-                if not mesh.is_valid_edge(edge_id):
-                    continue
-                va, vb = mesh.edge_vertices(edge_id)
-                highlighted.add(va)
-                highlighted.add(vb)
-        elif mode is SelectionMode.FACE:
-            for face_id in self.selection.faces:
-                if not mesh.is_valid_face(face_id):
-                    continue
-                highlighted.update(mesh.face_vertices(face_id))
-
-        hovered = self.selection.hovered
-        if hovered is not None:
-            highlighted.update(self._hovered_to_vertices(mesh, hovered))
-        return highlighted
-
-    def _hovered_to_vertices(self, mesh, hovered) -> set[VertexId]:
-        """Vertices, die der gehoverte Hover-Treffer markiert. Ungültige IDs
-        (Element existiert nicht mehr, z. B. nach Split/Connect/Undo) und
-        unbekannte Typen ergeben eine leere Menge — siehe Moduldocstring."""
-        if isinstance(hovered, VertexId):
-            return {hovered} if mesh.is_valid_vertex(hovered) else set()
-        if isinstance(hovered, EdgeId):
-            if not mesh.is_valid_edge(hovered):
-                return set()
-            va, vb = mesh.edge_vertices(hovered)
-            return {va, vb}
-        if isinstance(hovered, FaceId):
-            if not mesh.is_valid_face(hovered):
-                return set()
-            return set(mesh.face_vertices(hovered))
-        return set()
 
     # -- Punkt-Overlay (WP-06 B2b) --------------------------------------------
 
