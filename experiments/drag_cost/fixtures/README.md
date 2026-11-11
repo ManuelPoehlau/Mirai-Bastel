@@ -16,7 +16,8 @@ Committed per Manu's decision D5 (2026-11-11,
 | Generated | 2026-11-10 for the scale audit; committed 2026-11-11. Evaluator at the time: `src/mirai/subdivision/catmull_clark.py` as of `1fb9d80` |
 | Used by | `probe_scale_audit.py` (`--assets dense`, default), `probe_kernels.py` (`dense`), `probe_navigation_gl.py --assets experiments/drag_cost/fixtures/gollum_87k.obj` |
 
-Regenerating it is deterministic (same bytes on Linux in the container, two runs; `newline="\n"` on every
+Regenerating it is deterministic (same bytes on Linux in the container, two runs, and on the reference PC under
+Windows 10 / Python 3.14.2, Manu 2026-11-11: `--verify-dense` "identical", same sha256; `newline="\n"` on every
 platform). Check on any machine:
 
 ```
