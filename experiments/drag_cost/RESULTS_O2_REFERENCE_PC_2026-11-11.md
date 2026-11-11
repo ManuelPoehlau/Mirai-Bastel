@@ -88,6 +88,87 @@ python experiments\drag_cost\probe_d3_acceptance.py --interactions pose --face-u
 Reading: `still` mesh draw ≈ 3 ms → (a), the cost comes with the per-frame updates; `still` ≈ 43 ms → (b). Under (a),
 `orphan` tests the cheapest fix candidate.
 
+## Diagnosis of the GPU wait, round 2 (Manu, fourth paste): still, orphan
+
+At `e750a3b`. GPU mesh draw (face data + shaded pass), p50 / p95 ms:
+
+| Run, row (in run order) | mesh draw p50 | p95 | frame p50 | `on_draw` + `glFinish` p50 |
+|---|---:|---:|---:|---:|
+| run A, `still` wire off (first) | **11.32** | 42.99 | 14.81 | 14.68 |
+| run A, `pose` wire off | **11.47** | 43.31 | 322.62 | 19.07 |
+| run A, `still` wire ON | 11.31 | 43.06 | 15.44 | 15.29 |
+| run A, `pose` wire ON | **11.37** | 16.04 | 321.48 | 19.28 |
+| run B, `pose` wire off, `--face-upload orphan` | 43.80 | 44.17 | 349.72 | 51.25 |
+| run B, `pose` wire ON, `--face-upload orphan` | 43.58 | 43.97 | 353.69 | 53.72 |
+| round 1, `pose` live (own run) | 43.15 | 46.36 | 347.78 | 50.72 |
+
+**Reading.** The same pose frame, with the same uploads, costs the GPU either ≈ 11 ms or ≈ 43 ms; which one depends
+on what ran just before, not on the frame. Pose rows that directly follow `still` rows run at ≈ 11 ms (the frame
+drops to 322 ms, `on_draw` to 19 ms); pose rows in a run of their own run at ≈ 43 ms; the still rows themselves are
+mostly at 11 with a tail at 43. `orphan` changes nothing. Neither hypothesis of round 1 holds. This is the GPU's power
+management (NVIDIA PowerMizer): a pose frame keeps the GPU idle for ≈ 300 of ≈ 350 ms, the driver drops to a lower
+performance level, and the fetch-heavy O2 shader — memory-bound, so sensitive to the memory clock — runs about four
+times slower; frames that keep the GPU busy (`still`, 15 ms) raise the level, and the driver keeps it for a while
+after. The orbit's 2.76 ms (4-ms frames, the GPU busy most of the time) would be a third, higher level; the
+navigation and D3 probes frame the same view (`frame_scene`, 1024×768), so the view is not the difference. **[H]**
+until confirmed with the power state pinned (round 3).
+
+Consequences:
+- The +15 ms of `on_draw` after O2 (D3 rows above) is the O2 shader at a low GPU clock, made visible by the probe's
+  `glFinish`. In the window (no `glFinish`, frames queued) it overlaps the next frame's CPU work as long as the CPU
+  part is the longer one — ≈ 300 against ≈ 43 ms today.
+- The cost of O2's fetches is therefore clock-dependent: +2 ms at the orbit's level (0.76 → 2.76 ms), ≈ +34 ms at the
+  lowest (live 43 vs off 9 ms). Once O1 / O3 shorten the CPU part, the GPU stays busier and clocked higher.
+- The D3 probe now prints a NOTE when the GPU mesh draw varies by more than 2.5× within a row.
+
+## Diagnosis of the GPU wait, round 3 (commands)
+
+NVIDIA control panel → "3D-Einstellungen verwalten" → "Energieverwaltungsmodus" → **"Maximale Leistung bevorzugen"**
+(for `python.exe` under "Programmeinstellungen", or globally; set it back afterwards if wanted). Then:
+```
+python experiments\drag_cost\probe_d3_acceptance.py --interactions pose still
+python experiments\drag_cost\probe_d3_acceptance.py --interactions pose --vertex-textures off
+```
+Expected if the reading holds: the mesh draw stable (no NOTE), pose and still at the same level, near the orbit's
+2.76 ms; `off` gives O2's fetch cost at full clock (pose rows first this time, so the order cannot explain it).
+
+## Diagnosis of the GPU wait, round 3 (Manu, fifth paste): "prefer maximum performance"
+
+At `e750a3b`, the driver set to maximum performance, pose rows first. p50 (p95) ms:
+
+| Row | GPU mesh draw | GPU vertex upload | `on_draw` + `glFinish` | frame |
+|---|---:|---:|---:|---:|
+| `pose` wire off | **11.47** (15.56) | 4.59 | 18.32 | 316.69 (321.86) |
+| `still` wire off | **11.25** (11.36) | 0.00 | 15.80 | 15.91 (16.52) |
+| `pose` wire ON | 11.36 (16.52) | 5.21 | 19.78 | 338.11 (393.77) |
+| `still` wire ON | 11.16 (11.30) | 0.00 | 16.83 | 16.96 (17.71) |
+| `pose` wire off, `--vertex-textures off` | **1.94** (1.96) | 3.88 | 8.22 | 308.49 (312.65) |
+| `pose` wire ON, `--vertex-textures off` | 1.93 (1.96) | 4.77 | 9.19 | 313.07 (327.15) |
+
+**Reading.**
+1. **The power state is confirmed:** with the clocks pinned, the mesh draw is stable at ≈ 11.3 ms in every row,
+   pose rows first included; the ≈ 43 ms of the earlier runs were the low clock state.
+2. **At full clock the face-data shading costs ≈ 9.4 ms of GPU time per pass** (11.3 against 1.9 ms without face data),
+   87.5k / 1024×768, the mesh on about 13 % of the window. The orbit's "+2 ms" (0.76 → 2.76) understated it: **the
+   navigation probe did not clear the depth buffer before drawing**, so the depth test dropped most fragments before
+   they were shaded (the same in `probe_drag_gl.py`'s `(draw)` and `probe_scale_audit.py`'s `draw + glFinish`). Fixed
+   2026-11-11: the three probes clear colour and depth like the window's `on_draw`; their earlier draw / GPU columns
+   measured only part of a shaded pass.
+3. Open: how much of the 9.4 ms O2 added over the pre-O2 layout at full clock (the pre-O2 D3 run was at the low
+   clock), and whether reading positions / normals as one RGBA32F texel instead of three R32F texels brings it down.
+   New probe for it: `probe_shading_gpu.py` (below).
+
+## Shading cost per layout (commands, PowerShell, after `git pull`, driver still at maximum performance)
+
+`probe_shading_gpu.py` draws one full, cleared shaded pass of the D3 view per variant, in turn, on the GPU timer:
+`off` (no face data), `pre-o2` (the frozen test oracle of the old layout), `o2` (production), `o2-rgba` (candidate:
+one RGBA32F fetch per vertex value, 8 instead of 24 per smooth-quad fragment); `pre-o2` and `o2-rgba` must draw the
+same image as `o2` byte for byte (the probe checks it; container: identical).
+```
+python experiments\drag_cost\probe_shading_gpu.py
+python experiments\drag_cost\probe_shading_gpu.py --size 1920 1080
+```
+
 ## Diagnosis of the GPU wait, round 1 commands (for the record)
 
 The D3 probe now times every `GLRenderStore.draw` on the GPU (GL_TIME_ELAPSED: the vertex-buffer upload, then the draw)
@@ -449,4 +530,220 @@ Source: commit 14f08f2e2c, working tree MODIFIED
 ```
 (Header lines identical to the D3 run above — platform, CPU, Python 3.14.2, GL 3.3.0, GeForce 9800 GTX, panels off —
 shortened here.)
+
+## Round 2 raw output (Manu, fourth paste)
+
+```
+PS C:\Users\Manuel\Mirai_Bastel> python experiments\drag_cost\probe_d3_acceptance.py --interactions still pose
+Source: commit e750a3b8ee, working tree MODIFIED
+[gollum_87k] 87500 V / 87500 F; region 15 %: 13125 V weighted, 13125 V in the morph target at 60 %; panels off; vertex textures live; face upload subdata
+  still  wire off  frame  p50    14.81  p95    49.07  max    54.72 ms   [OVER 33.3]
+    input (pointer_motion)                   p50     0.00  p95     0.00
+    tick (update_viewport)                   p50     0.12  p95     0.20
+    on_draw + glFinish                       p50    14.68  p95    48.88
+      tick: stage evaluation (mix + skin)    p50     0.00  p95     0.00
+      tick: RenderMesh._sync_geometry        p50     0.00  p95     0.00
+        of it: face data -> store            p50     0.00  p95     0.00
+      draw: viewport render (faces, wire, overlays) p50     1.01  p95     1.86
+        of it: face-data upload              p50     0.09  p95     0.17
+      draw: gizmo / bones                    p50     0.71  p95     1.20
+      draw: HUD                              p50     0.77  p95     1.22
+      draw: triad                            p50     0.24  p95     0.48
+      draw: rest (clear, sync, GPU wait)     p50    11.77  p95    45.35
+      gpu: vertex-buffer upload              p50     0.00  p95     0.01
+      gpu: mesh draw (face data + shaded pass) p50    11.32  p95    42.99
+    bytes to the GL store per frame                  0  (vertex 0, face data 0; 0 per region vertex)
+  pose   wire off  frame  p50   322.62  p95   352.62  max   424.60 ms   [OVER 33.3]
+    input (pointer_motion)                   p50     0.24  p95     0.26
+    tick (update_viewport)                   p50   302.24  p95   322.84
+    on_draw + glFinish                       p50    19.07  p95    51.38
+      tick: stage evaluation (mix + skin)    p50    68.08  p95    70.65
+      tick: RenderMesh._sync_geometry        p50   224.96  p95   236.42
+        of it: face data -> store            p50    22.93  p95    24.22
+      draw: viewport render (faces, wire, overlays) p50     3.82  p95     4.43
+        of it: face-data upload              p50     0.87  p95     1.28
+      draw: gizmo / bones                    p50     1.15  p95     1.33
+      draw: HUD                              p50     1.12  p95     1.23
+      draw: triad                            p50     0.48  p95     0.60
+      draw: rest (clear, sync, GPU wait)     p50    12.15  p95    44.36
+      gpu: vertex-buffer upload              p50     4.36  p95     6.23
+      gpu: mesh draw (face data + shaded pass) p50    11.47  p95    43.31
+    bytes to the GL store per frame             556940  (vertex 335580, face data 221360; 42 per region vertex)
+  still  wire ON   frame  p50    15.44  p95    52.89  max    67.88 ms   [OVER 33.3]
+    input (pointer_motion)                   p50     0.00  p95     0.00
+    tick (update_viewport)                   p50     0.12  p95     0.20
+    on_draw + glFinish                       p50    15.29  p95    52.65
+      tick: stage evaluation (mix + skin)    p50     0.00  p95     0.00
+      tick: RenderMesh._sync_geometry        p50     0.00  p95     0.00
+        of it: face data -> store            p50     0.00  p95     0.00
+      draw: viewport render (faces, wire, overlays) p50     1.23  p95     2.20
+        of it: face-data upload              p50     0.08  p95     0.17
+      draw: gizmo / bones                    p50     0.70  p95     1.18
+      draw: HUD                              p50     0.75  p95     1.12
+      draw: triad                            p50     0.24  p95     0.49
+      draw: rest (clear, sync, GPU wait)     p50    12.27  p95    48.51
+      gpu: vertex-buffer upload              p50     0.00  p95     0.01
+      gpu: mesh draw (face data + shaded pass) p50    11.31  p95    43.06
+    bytes to the GL store per frame                  0  (vertex 0, face data 0; 0 per region vertex)
+  pose   wire ON   frame  p50   321.48  p95   324.71  max   327.70 ms   [OVER 33.3]
+    input (pointer_motion)                   p50     0.22  p95     0.25
+    tick (update_viewport)                   p50   301.88  p95   305.42
+    on_draw + glFinish                       p50    19.28  p95    20.62
+      tick: stage evaluation (mix + skin)    p50    67.62  p95    68.61
+      tick: RenderMesh._sync_geometry        p50   224.34  p95   227.37
+        of it: face data -> store            p50    22.74  p95    23.96
+      draw: viewport render (faces, wire, overlays) p50     4.16  p95     4.75
+        of it: face-data upload              p50     0.87  p95     1.12
+      draw: gizmo / bones                    p50     1.12  p95     1.21
+      draw: HUD                              p50     1.15  p95     1.31
+      draw: triad                            p50     0.30  p95     0.52
+      draw: rest (clear, sync, GPU wait)     p50    12.51  p95    13.80
+      gpu: vertex-buffer upload              p50     4.54  p95     6.37
+      gpu: mesh draw (face data + shaded pass) p50    11.37  p95    16.04
+    bytes to the GL store per frame             556940  (vertex 335580, face data 221360; 42 per region vertex)
+PS C:\Users\Manuel\Mirai_Bastel> python experiments\drag_cost\probe_d3_acceptance.py --interactions pose --face-upload orphan
+Source: commit e750a3b8ee, working tree MODIFIED
+[gollum_87k] 87500 V / 87500 F; region 15 %: 13125 V weighted, 13125 V in the morph target at 60 %; panels off; vertex textures live; face upload orphan
+  pose   wire off  frame  p50   349.72  p95   367.32  max   387.09 ms   [OVER 33.3]
+    input (pointer_motion)                   p50     0.24  p95     0.27
+    tick (update_viewport)                   p50   297.95  p95   316.36
+    on_draw + glFinish                       p50    51.25  p95    54.14
+      tick: stage evaluation (mix + skin)    p50    66.63  p95    68.50
+      tick: RenderMesh._sync_geometry        p50   221.55  p95   231.03
+        of it: face data -> store            p50    22.42  p95    23.40
+      draw: viewport render (faces, wire, overlays) p50     3.76  p95     4.58
+        of it: face-data upload              p50     0.88  p95     1.16
+      draw: gizmo / bones                    p50     1.15  p95     1.40
+      draw: HUD                              p50     1.14  p95     1.26
+      draw: triad                            p50     0.38  p95     0.51
+      draw: rest (clear, sync, GPU wait)     p50    44.84  p95    47.18
+      gpu: vertex-buffer upload              p50     4.13  p95     5.26
+      gpu: mesh draw (face data + shaded pass) p50    43.80  p95    44.17
+    bytes to the GL store per frame             556940  (vertex 335580, face data 221360; 42 per region vertex)
+  pose   wire ON   frame  p50   353.69  p95   364.19  max   373.03 ms   [OVER 33.3]
+    input (pointer_motion)                   p50     0.24  p95     0.26
+    tick (update_viewport)                   p50   300.06  p95   310.68
+    on_draw + glFinish                       p50    53.72  p95    56.00
+      tick: stage evaluation (mix + skin)    p50    66.75  p95    68.44
+      tick: RenderMesh._sync_geometry        p50   223.62  p95   232.69
+        of it: face data -> store            p50    22.46  p95    24.06
+      draw: viewport render (faces, wire, overlays) p50     4.23  p95     4.85
+        of it: face-data upload              p50     0.91  p95     1.15
+      draw: gizmo / bones                    p50     1.14  p95     1.40
+      draw: HUD                              p50     1.13  p95     1.20
+      draw: triad                            p50     0.45  p95     0.50
+      draw: rest (clear, sync, GPU wait)     p50    46.79  p95    48.96
+      gpu: vertex-buffer upload              p50     4.58  p95     5.50
+      gpu: mesh draw (face data + shaded pass) p50    43.58  p95    43.97
+    bytes to the GL store per frame             556940  (vertex 335580, face data 221360; 42 per region vertex)
+```
+(Header lines as in the runs above, shortened.)
+
+## Round 3 raw output (Manu, fifth paste)
+
+```
+PS C:\Users\Manuel\Mirai_Bastel> python experiments\drag_cost\probe_d3_acceptance.py --interactions pose still
+Source: commit e750a3b8ee, working tree MODIFIED
+[gollum_87k] 87500 V / 87500 F; region 15 %: 13125 V weighted, 13125 V in the morph target at 60 %; panels off; vertex textures live; face upload subdata
+  pose   wire off  frame  p50   316.69  p95   321.86  max   353.13 ms   [OVER 33.3]
+    input (pointer_motion)                   p50     0.23  p95     0.28
+    tick (update_viewport)                   p50   298.07  p95   304.02
+    on_draw + glFinish                       p50    18.32  p95    20.42
+      tick: stage evaluation (mix + skin)    p50    68.84  p95    71.43
+      tick: RenderMesh._sync_geometry        p50   219.69  p95   224.06
+        of it: face data -> store            p50    22.75  p95    24.55
+      draw: viewport render (faces, wire, overlays) p50     3.72  p95     4.25
+        of it: face-data upload              p50     0.82  p95     1.05
+      draw: gizmo / bones                    p50     1.13  p95     1.29
+      draw: HUD                              p50     1.12  p95     1.23
+      draw: triad                            p50     0.32  p95     0.49
+      draw: rest (clear, sync, GPU wait)     p50    12.09  p95    13.71
+      gpu: vertex-buffer upload              p50     4.59  p95     5.71
+      gpu: mesh draw (face data + shaded pass) p50    11.47  p95    15.56
+    bytes to the GL store per frame             556940  (vertex 335580, face data 221360; 42 per region vertex)
+  still  wire off  frame  p50    15.91  p95    16.52  max    17.90 ms   [meets 16.7 (60 FPS)]
+    input (pointer_motion)                   p50     0.00  p95     0.00
+    tick (update_viewport)                   p50     0.13  p95     0.18
+    on_draw + glFinish                       p50    15.80  p95    16.37
+      tick: stage evaluation (mix + skin)    p50     0.00  p95     0.00
+      tick: RenderMesh._sync_geometry        p50     0.00  p95     0.00
+        of it: face data -> store            p50     0.00  p95     0.00
+      draw: viewport render (faces, wire, overlays) p50     1.70  p95     1.83
+        of it: face-data upload              p50     0.16  p95     0.17
+      draw: gizmo / bones                    p50     1.06  p95     1.30
+      draw: HUD                              p50     0.94  p95     1.18
+      draw: triad                            p50     0.37  p95     0.53
+      draw: rest (clear, sync, GPU wait)     p50    11.73  p95    12.01
+      gpu: vertex-buffer upload              p50     0.00  p95     0.00
+      gpu: mesh draw (face data + shaded pass) p50    11.25  p95    11.36
+    bytes to the GL store per frame                  0  (vertex 0, face data 0; 0 per region vertex)
+  pose   wire ON   frame  p50   338.11  p95   393.77  max   435.96 ms   [OVER 33.3]
+    input (pointer_motion)                   p50     0.25  p95     0.42
+    tick (update_viewport)                   p50   317.32  p95   374.26
+    on_draw + glFinish                       p50    19.78  p95    23.18
+      tick: stage evaluation (mix + skin)    p50    71.65  p95    88.97
+      tick: RenderMesh._sync_geometry        p50   234.34  p95   258.00
+        of it: face data -> store            p50    24.23  p95    28.01
+      draw: viewport render (faces, wire, overlays) p50     4.18  p95     5.69
+        of it: face-data upload              p50     0.84  p95     1.55
+      draw: gizmo / bones                    p50     1.14  p95     1.56
+      draw: HUD                              p50     1.15  p95     1.73
+      draw: triad                            p50     0.44  p95     0.59
+      draw: rest (clear, sync, GPU wait)     p50    12.65  p95    14.67
+      gpu: vertex-buffer upload              p50     5.21  p95     6.93
+      gpu: mesh draw (face data + shaded pass) p50    11.36  p95    16.52
+    bytes to the GL store per frame             556940  (vertex 335580, face data 221360; 42 per region vertex)
+  still  wire ON   frame  p50    16.96  p95    17.71  max    18.87 ms   [meets 33.3 (30 FPS), not 16.7]
+    input (pointer_motion)                   p50     0.00  p95     0.00
+    tick (update_viewport)                   p50     0.14  p95     0.20
+    on_draw + glFinish                       p50    16.83  p95    17.49
+      tick: stage evaluation (mix + skin)    p50     0.00  p95     0.00
+      tick: RenderMesh._sync_geometry        p50     0.00  p95     0.00
+        of it: face data -> store            p50     0.00  p95     0.00
+      draw: viewport render (faces, wire, overlays) p50     2.12  p95     2.37
+        of it: face-data upload              p50     0.16  p95     0.17
+      draw: gizmo / bones                    p50     1.04  p95     1.24
+      draw: HUD                              p50     1.05  p95     1.18
+      draw: triad                            p50     0.47  p95     0.48
+      draw: rest (clear, sync, GPU wait)     p50    12.16  p95    12.34
+      gpu: vertex-buffer upload              p50     0.00  p95     0.00
+      gpu: mesh draw (face data + shaded pass) p50    11.16  p95    11.30
+    bytes to the GL store per frame                  0  (vertex 0, face data 0; 0 per region vertex)
+PS C:\Users\Manuel\Mirai_Bastel> python experiments\drag_cost\probe_d3_acceptance.py --interactions pose --vertex-textures off
+Source: commit e750a3b8ee, working tree MODIFIED
+[gollum_87k] 87500 V / 87500 F; region 15 %: 13125 V weighted, 13125 V in the morph target at 60 %; panels off; vertex textures off; face upload subdata
+  pose   wire off  frame  p50   308.49  p95   312.65  max   313.99 ms   [OVER 33.3]
+    input (pointer_motion)                   p50     0.21  p95     0.26
+    tick (update_viewport)                   p50   299.76  p95   304.13
+    on_draw + glFinish                       p50     8.22  p95     9.20
+      tick: stage evaluation (mix + skin)    p50    68.64  p95    70.00
+      tick: RenderMesh._sync_geometry        p50   221.65  p95   226.34
+        of it: face data -> store            p50    23.04  p95    24.30
+      draw: viewport render (faces, wire, overlays) p50     3.10  p95     3.74
+        of it: face-data upload              p50     0.00  p95     0.01
+      draw: gizmo / bones                    p50     1.13  p95     1.36
+      draw: HUD                              p50     1.15  p95     1.34
+      draw: triad                            p50     0.47  p95     0.53
+      draw: rest (clear, sync, GPU wait)     p50     2.57  p95     2.69
+      gpu: vertex-buffer upload              p50     3.88  p95     4.70
+      gpu: mesh draw (face data + shaded pass) p50     1.94  p95     1.96
+    bytes to the GL store per frame             556940  (vertex 335580, face data 221360; 42 per region vertex)
+  pose   wire ON   frame  p50   313.07  p95   327.15  max   435.70 ms   [OVER 33.3]
+    input (pointer_motion)                   p50     0.23  p95     0.25
+    tick (update_viewport)                   p50   303.68  p95   317.84
+    on_draw + glFinish                       p50     9.19  p95    10.09
+      tick: stage evaluation (mix + skin)    p50    69.14  p95    71.13
+      tick: RenderMesh._sync_geometry        p50   225.16  p95   234.51
+        of it: face data -> store            p50    23.23  p95    24.77
+      draw: viewport render (faces, wire, overlays) p50     3.40  p95     4.07
+        of it: face-data upload              p50     0.00  p95     0.01
+      draw: gizmo / bones                    p50     1.13  p95     1.35
+      draw: HUD                              p50     1.16  p95     1.35
+      draw: triad                            p50     0.48  p95     0.49
+      draw: rest (clear, sync, GPU wait)     p50     3.09  p95     3.26
+      gpu: vertex-buffer upload              p50     4.77  p95     5.23
+      gpu: mesh draw (face data + shaded pass) p50     1.93  p95     1.96
+    bytes to the GL store per frame             556940  (vertex 335580, face data 221360; 42 per region vertex)
+```
+(Header lines as in the runs above, shortened.)
 

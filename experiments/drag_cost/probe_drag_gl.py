@@ -323,6 +323,10 @@ class Rig:
         after_step = time.perf_counter()
         self.viewport.sync()
         after_sync = time.perf_counter()
+        # Cleared as the window's `on_draw` does; before 2026-11-11 the draw kept the previous frame's depth, so most
+        # fragments failed the depth test and `(draw)` measured only part of a shaded pass.
+        gl.glClearColor(0.1, 0.1, 0.11, 1.0)
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
         self.viewport.render()
         gl.glFinish()
         end = time.perf_counter()

@@ -99,10 +99,12 @@ die Flächen des Edit-Mesh durch ein eigenes, daraus abgeleitetes Mesh ersetzen 
 Subdivision-Vorschau des SubD Lab); der Viewport kennt kein Verfahren. Vertrag (Duck-Typing):
 `p.sync(mesh, selection) -> set[VertexId]` läuft in `sync()` bei denselben Auslösern wie die
 Zusatz-Overlays (H1) und gibt die bewegten Vertices von `p.surface_mesh` zurück; `p.surface_mesh`
-(ein `core.Mesh` oder None = aus) ist danach das zu zeichnende Mesh - ein anderes Objekt als
-beim letzten `sync()` heißt neu aufbauen. Der Viewport besitzt dafür einen `RenderMesh` ohne
-`SelectionOverlay` mit Kamera, Material, Licht, Flat/Smooth und Matrix des Edit-Mesh und zeichnet
-ihn bei `show_faces` an dessen Stelle. Wire, Auswahl, Tool- und Zusatz-Overlays bleiben auf dem
+(ein `core.Mesh`, eine schreibgeschützte Sicht mit dessen Abfrage-API und `watch()` - seit 2026-11-11 (O1)
+die Morph-Mischung und die Pose als Positionstabelle über der Topologie des Edit-Mesh -, oder None = aus) ist
+danach das zu zeichnende Mesh - ein anderes Objekt als beim letzten `sync()` heißt neu aufbauen. Gelesen werden
+nur Abfragen (Topologie, `vertex_position`, UVs) und das Journal; der Viewport schreibt nie hinein. Der
+Viewport besitzt dafür einen `RenderMesh` ohne `SelectionOverlay` mit Kamera, Material, Licht, Flat/Smooth
+und Matrix des Edit-Mesh und zeichnet ihn bei `show_faces` an dessen Stelle. Wire, Auswahl, Tool- und Zusatz-Overlays bleiben auf dem
 Edit-Mesh (dem Käfig), Picking ist nicht betroffen (außer über die Käfig-Quelle, unten). Kamera-Änderungen erreichen die Fläche in
 jedem `sync()` wie die Objekt-Einträge, ohne den Provider zu fragen. Ohne Provider ändert sich nichts.
 Optional (2026-10-23, SubD in Production): `p.surface_topology_changed` True nach `p.sync(...)` heißt
@@ -134,8 +136,9 @@ Kamera, Material, Matrix, Alpha und Flat/Smooth des Eintrags (jeden Frame nachge
 Eintrag ohne Ersatz wird wie bisher gezeichnet. Fehlt das Attribut, ändert sich nichts.
 
 Käfig-Quelle (2026-11-03, MODELING_ON_DEFORMED_SURFACES §15, AD-013 H7-R2-Addendum): `set_cage_source(fn)`
-gibt dem Viewport eine Funktion, die nach dem Provider-Sync den **gezeigten Käfig** liefert - ein `core.Mesh`
-mit den IDs und der Topologie des Edit-Mesh an den gezeichneten Positionen (die Morph-Mischung) oder None
+gibt dem Viewport eine Funktion, die nach dem Provider-Sync den **gezeigten Käfig** liefert - ein Mesh (oder eine
+Sicht mit dessen Abfrage-API, s. o.) mit den IDs und der Topologie des Edit-Mesh an den gezeichneten Positionen
+(die Morph-Mischung) oder None
 (= das Edit-Mesh selbst). Ist einer gesetzt, lesen Auswahl-, Hover-, Kanten- und Flächen-Overlays seine
 Positionen (`overlay_mesh()`), ebenso Zusatz-Overlays mit `follows_cage = True`; der GPU-Pick zeichnet sein
 ID-Buffer aus diesem Käfig (`gpu_pick_mesh()`: der RenderMesh der Ersatzfläche, wenn sie der Käfig ist, sonst

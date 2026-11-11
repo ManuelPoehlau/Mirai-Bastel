@@ -47,7 +47,6 @@ from __future__ import annotations
 import argparse
 import math
 import statistics
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -56,7 +55,7 @@ _EXPERIMENTS_DIR = Path(__file__).resolve().parent.parent
 if str(_EXPERIMENTS_DIR) not in sys.path:
     sys.path.insert(0, str(_EXPERIMENTS_DIR))
 
-from drag_cost._paths import EXPERIMENT_DIR, REPO_ROOT, ensure_paths  # noqa: E402
+from drag_cost._paths import EXPERIMENT_DIR, REPO_ROOT, ensure_paths, source_state  # noqa: E402,F401
 
 ensure_paths()
 
@@ -133,18 +132,6 @@ def resolve_asset(name: str) -> Path:
     if not path.is_file():
         raise SystemExit(f"no such mesh: {name}")
     return path
-
-
-def source_state() -> str:
-    """Commit and working-tree state of the checkout the probe imports (`git` absent = 'unknown')."""
-    try:
-        head = subprocess.run(["git", "rev-parse", "--short=10", "HEAD"], cwd=REPO_ROOT, capture_output=True,
-                              text=True, check=True).stdout.strip()
-        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=REPO_ROOT,
-                               capture_output=True, text=True, check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "commit unknown (no git)"
-    return f"commit {head}, working tree {'MODIFIED' if dirty else 'clean'}"
 
 
 def percentile(samples: list[float], q: float) -> float:
@@ -537,6 +524,14 @@ def report(interaction, wire, totals, parts, rows, sent, weighted) -> list[str]:
         if not values or (row in ("wire", *DRAW_ROWS) and not any(values)):
             continue
         out.append(f"    {label:<40} p50 {statistics.median(values):8.2f}  p95 {percentile(values, 0.95):8.2f}")
+    draws = [v for v in rows.get("gpu_draw", []) if v == v]  # without NaN
+    if draws and min(draws) > 0.5 and max(draws) > 2.5 * min(draws):  # llvmpipe reports ~0 (deferred work)
+        # Reference PC 2026-11-11: the same frame's mesh draw took 11 or 43 ms - the GPU's power management changes its
+        # clocks when a CPU-bound frame leaves it idle. Comparable GPU numbers need "prefer maximum performance".
+        out.append(
+            f"    NOTE gpu mesh draw varies {min(draws):.2f}-{max(draws):.2f} ms between frames: GPU clock changes "
+            f"(power management) likely; compare runs with the driver set to maximum performance"
+        )
     total_bytes = [sum(v) for v in zip(*sent.values())]
     face = statistics.median(sent.get("face", [0]))
     vertex = statistics.median(sent.get("vertex", [0]))

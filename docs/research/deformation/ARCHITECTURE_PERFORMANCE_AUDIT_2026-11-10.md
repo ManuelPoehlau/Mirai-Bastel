@@ -780,9 +780,64 @@ Raw output and comparison:
   34.90 → 50.11): its CPU parts are small (viewport render 3.6, gizmo 1.0, HUD 1.1, triad 0.4 ms), the rest is the GPU
   wait in `glFinish` — ≈ 44 ms after O2 against ≈ 28 ms before. GPU timers (round 1): the mesh draw costs 43 ms with
   face data, 41 ms when the buffer textures read a copy no update touches, 9 ms without face data — so not the
-  overlap of updates and buffer textures, but the face-data fetches, which cost only 2 ms in an orbit. Open O2 item:
-  round 2 (`--interactions still`, `--face-upload orphan`) tells whether this driver makes buffer-texture fetches slow
-  in frames that update a buffer texture, or whether the posed view itself is that expensive.
+  overlap of updates and buffer textures, but the face-data fetches, which cost only 2 ms in an orbit. Round 2: the
+  same pose frame costs the GPU ≈ 11 or ≈ 43 ms depending on what ran just before (pose rows right after busy `still`
+  rows: 11 ms, frame 322 ms; on their own: 43 ms) — the GPU's power management, which drops the clocks while a
+  CPU-bound frame leaves it idle; the memory-bound O2 fetches suffer most **[H, round 3 with "prefer maximum
+  performance" open]**. In the window (no `glFinish`) that GPU time overlaps the next frame's ≈ 300 ms of CPU work.
+  Round 3 (clocks pinned to maximum performance) confirms it: the mesh draw is stable at ≈ 11.3 ms — and shows that
+  the face-data shading costs ≈ 9.4 ms per full pass at full clock (1.9 ms without face data). The orbit's "+2 ms"
+  understated it: the navigation probe did not clear the depth buffer, so most fragments were never shaded (fixed in
+  three probes). Open: O2's share of the 9.4 ms over the pre-O2 layout and whether RGBA32F vertex fetches reduce it —
+  `probe_shading_gpu.py`.
 - **HUD during a weight drag [RPC]: 24.5 ms per frame** (pose: 1.1 ms), gizmo / bones 6.9 ms (pose: 1.0) — the weight
   read-out changes every frame. Size-independent, outside O2.
 
+
+## Addendum — O1 in the container (2026-11-11)
+
+§H step 4, second half (O1; Manu's decisions above: after O2, no NumPy). Decision record
+[AD-025 §18](../../architecture/AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#18-addendum-2026-11-11-the-evaluated-surface-as-a-position-table-audit-o1)
+(the skin stage: [AD-028 §17.4](../../architecture/AD-028-SKELETON-AND-SKINNING.md#174-o1-2026-11-11-the-skinned-surface-as-a-position-table));
+raw outputs and the reference-PC commands:
+[`experiments/drag_cost/RESULTS_O1_CONTAINER_2026-11-11.md`](../../../experiments/drag_cost/RESULTS_O1_CONTAINER_2026-11-11.md).
+
+- **What changed.** `MixSurface` and `SkinSurface` (§C.1) no longer hold a `core.Mesh` copy (`rest_state` →
+  `Mesh.from_state`, topology replayed as a `MeshDelta`, positions through `set_vertex_position`), but a
+  `SurfacePositions`: a slot-indexed position table over the base mesh's own topology, a read-only view with the `Mesh`
+  queries its consumers use (surface and cage `RenderMesh`, the cage source and `_query_mesh` with picking, hover, Box /
+  Lasso / Paint, the Knife and the drag mappings, the pick cache, the soft shading overlay, SubD and the skin stage as
+  next stages) and a journal of its own (`watch()`, the `MeshWatch` contract). No Core change, no NumPy, no viewport
+  change beyond the H7 contract's wording (duck-typed as before).
+- **Layout.** Per slot the position tuple, not three float64 in one `array('d')`: in pure Python the array's reads cost
+  ≈ 120–190 ns more each, and the surface `RenderMesh` reads ≈ 5 positions per moved vertex — measured as 7–10 ms more
+  `_sync_geometry` per D3 frame, more than O1 saves. O3 moves the storage to arrays together with those readers; slot
+  map, journal and view contract stay.
+- **Gate: the preserved behaviour [C, test-verified].** The randomized oracles (`test_morph_multi.py`,
+  `test_skin_stage.py`: bit-identical to `morph_mix.evaluate` / `skinning.evaluate` through weight and pose steps, edits,
+  topology edits, Undo / Redo; now also "the table holds exactly the base's vertices"), picking and hover on the mix
+  (`test_morph_picking.py`, `test_gl_morph_picking.py`), picking and the edit mesh at rest while posed, SubD as the stage
+  after morph / skin, overlays and wire on the surface, save / load, "never writes a scene mesh": `tests/` 6,912 passed,
+  1 failed (the pre-existing §I.7 file), 8 skipped; `tests/test_gl_*.py` in its own process 165 passed (among them
+  `test_gl_face_data_layout.py`); `experiments/morph_lab/tests` 49 passed. New: `tests/test_surface_positions.py`; six
+  hand mutations of the view and the stages, each caught.
+- **One-time costs and memory [C]** (`probe_scale_audit.py --only chain`, each asset in its own process):
+
+| | 87.5k before | 87.5k after | 20k before | 20k after |
+|---|---:|---:|---:|---:|
+| first weight step (builds the mix surface) | 5,765 ms | **2,354 ms** | 1,164 ms | **420 ms** |
+| of it: the stage | 3,225 ms | **37 ms** | 751 ms | **7 ms** |
+| first pose step (builds the skin surface) | 5,645 ms | **3,003 ms** | 1,403 ms | **468 ms** |
+| of it: the stage | 3,650 ms | **92 ms** | 858 ms | **15 ms** |
+| process memory after both | 1,411 MiB | **974 MiB** | 493 MiB | **384 MiB** |
+
+  Against §G.3's expectation ("≈ 0.45–0.49 GB and 6–7 s per stage"): the stage's own part is gone (≈ 3.2–3.7 s and
+  ≈ 200–240 MiB per stage at 87.5k); §C.3's per-stage figures also held the newly shown surface's `RenderMesh`
+  (1.7–2.6 s, ≈ 190 MiB), which O1 does not touch and which remains in every first step.
+- **D3 frame [C]** (`probe_d3_acceptance.py`, 87.5k, 15 %, Morph + Skin; two pairs on one host, p50): stage evaluation
+  in a weight frame 55.5–56.7 → **45.3–49.2 ms**, in a pose frame 30.4–35.0 → **28.0–31.9 ms**; weight frames 8–19 ms
+  faster, pose frames within the noise; `_sync_geometry` unchanged (≈ 77–85 ms). **Verdict: OVER** the bar (33.3 ms
+  p95) in every row, before and after — as §G.3 said, O1's per-step gain is modest; the frame is still the per-vertex
+  Python work O3 addresses (viewport normals / neighbourhoods / mirrors ≈ 80 ms, stage arithmetic ≈ 28–49 ms).
+- **Open, reference PC:** the GL tests on the 9800 GTX driver, the chain rows at 20k and 87.5k and the D3 probe before /
+  after (commands in the results file; GPU numbers only with "prefer maximum performance").

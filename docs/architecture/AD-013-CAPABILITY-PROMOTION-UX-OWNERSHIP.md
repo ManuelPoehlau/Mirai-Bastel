@@ -1449,6 +1449,10 @@ and cannot hide it.
   hover, vertex moves, topology, `set_edit_mesh`, the first sync after attaching) or when `provider.dirty` is set, **before**
   the extra overlays; it returns the moved vertices of `provider.surface_mesh`.
 - `provider.surface_mesh` is a `core.Mesh` or `None` (off). A different object than at the last sync means: rebuild.
+  *(Amended 2026-11-11, audit 2026-11-10 O1: or a read-only view with the `Mesh` query API and `watch()` - the morph
+  mix and the pose are `mirai.surface_positions.SurfacePositions`, positions over the edit mesh's own topology,
+  [AD-025 §18](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#18-addendum-2026-11-11-the-evaluated-surface-as-a-position-table-audit-o1).
+  The viewport reads queries and the journal only, as before.)*
 - The viewport owns the surface's `RenderMesh` (no `SelectionOverlay`), gives it the edit mesh's camera, aspect, material,
   light uniforms, Flat/Smooth, polygon offset and model matrix, and with `show_faces` draws it instead of the edit mesh.
   Wire, selection, tool and extra overlays stay on the edit mesh; picking and `Application` are unaffected.

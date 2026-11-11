@@ -17,10 +17,12 @@ rewritten as a whole — is recomputed from `b`, the weights and the offsets. Th
 therefore a pure function of the current inputs: bit-identical whatever the order or number of weight
 steps, edits, Undo / Redo (tested against the definition, `tests/test_morph_mix.py`).
 
-`MixSurface` owns the evaluated `core.Mesh` of one base mesh (same IDs and topology, positions = the
-mix; no layers), patched in place from the base's change journal (`Mesh.watch()`, keys only): a weight
-step costs O(points of that target × active targets at a point), an edit O(touched points), a topology
-edit the changed elements (AD-025 §16.1), a rebuild O(V) only the first time.
+`MixSurface` owns the evaluated surface of one base mesh, patched in place from the base's change journal
+(`Mesh.watch()`, keys only): a weight step costs O(points of that target × active targets at a point), an
+edit O(touched points), a topology edit the changed elements (AD-025 §16.1), a build O(V) only the first
+time. Since O1 (2026-11-11, audit 2026-11-10 §G.3) the surface is a `SurfacePositions`: the mix as a
+position table over the base's own topology (a read-only view with the `Mesh` queries; no layers), not a
+`core.Mesh` copy with the base's topology replayed into it.
 """
 
 from __future__ import annotations
@@ -28,13 +30,14 @@ from __future__ import annotations
 from typing import Optional
 
 from core import Mesh
-from core.mesh import MeshDelta
+
+from .surface_positions import SurfacePositions
 
 _ZERO = (0.0, 0.0, 0.0)
 
 
 def rest_state(mesh: Mesh) -> dict:
-    """The mesh's state without its point layers (a derived mesh carries none)."""
+    """The mesh's state without its point layers (the morph editing view's copy, `morph_targets.view_state`; tests)."""
     state = mesh.export_state()
     state["point_layers"] = None
     return state
@@ -91,7 +94,8 @@ class MixSurface:
     def __init__(self, base: Mesh) -> None:
         self.base = base
         self._watch = base.watch()
-        self.mesh: Optional[Mesh] = None
+        #: the shown mix: a `SurfacePositions` over the base's topology (None until the first `update`)
+        self.mesh: Optional[SurfacePositions] = None
         #: the weights the surface shows: LayerId -> whole percent (> 0 only)
         self.weights: dict = {}
         #: True right after an `update` that patched the topology of `mesh` in place (H7)
@@ -135,16 +139,16 @@ class MixSurface:
             self.weights = weights
             self._offsets = {lid: self._load(lid) for lid in weights}
             self._set_terms()
-            state = rest_state(base)
-            vertices = state["vertices"]
+            surface = SurfacePositions(base)
             for v in set().union(*self._offsets.values()) if self._offsets else ():
-                vertices[int(v)] = list(self._point(v))
-            self.mesh = Mesh.from_state(state)
+                surface._owner_set(v, self._point(v))
+            self.mesh = surface
             return True, set()
         candidates = set(change.vertices)
         if topology_touched(change, base):
-            # AD-025 §16.1: the base's changed elements, applied in place (positions follow below)
-            self.mesh.apply_delta(_topology_delta(change, base, self.mesh))
+            # AD-025 §16.1: the surface reads the base's topology; it drops the vertices that went and tells its
+            # watches which elements changed (new vertices get their mix below)
+            self.mesh._owner_follow_topology(change)
             self.topology_changed = True
         offsets = self._offsets
         for lid in list(offsets):  # keep the shown targets' caches in step with the base's journal
@@ -182,11 +186,12 @@ class MixSurface:
 
     def _recompute(self, candidates) -> set:
         """`mix_position` for every candidate, inlined (the weight-step hot loop; same arithmetic, same
-        order: the first term as it is, then += in ascending LayerId order)."""
+        order: the first term as it is, then += in ascending LayerId order), written into the table where it
+        differs (`SurfacePositions._owner_write`, inlined)."""
         base, surface, terms = self.base, self.mesh, self._terms
         valid, rest = base.is_valid_vertex, base.vertex_position
-        shown, put = surface.vertex_position, surface.set_vertex_position
-        changed = set()
+        index, pos = surface._index, surface._pos
+        moved: dict = {}
         for v in candidates:
             if not valid(v):
                 continue
@@ -204,33 +209,14 @@ class MixSurface:
                     sy += f * d[1]
                     sz += f * d[2]
             p = tuple(b) if first else (b[0] + sx, b[1] + sy, b[2] + sz)
-            if shown(v) != p:
-                put(v, p)
-                changed.add(v)
-        return changed
-
-
-def _topology_delta(change, base: Mesh, surface: Mesh) -> MeshDelta:
-    """The surface's records of the elements `change` names (before) against the base's (after), read
-    through the public queries. Vertices only where one appears or goes (a new one at the base's rest
-    position): the positions of kept vertices are the caller's (they carry the mix)."""
-    def vertex(mesh, v):
-        if not mesh.is_valid_vertex(v):
-            return None
-        return tuple(surface.vertex_position(v)) if mesh is base and surface.is_valid_vertex(v) else tuple(mesh.vertex_position(v))
-
-    def edge(mesh, e):
-        return (*mesh.edge_vertices(e), tuple(mesh.edge_faces(e))) if mesh.is_valid_edge(e) else None
-
-    def face(mesh, f):
-        return tuple(mesh.face_vertices(f)) if mesh.is_valid_face(f) else None
-
-    def uvs(mesh, f):
-        return mesh.face_uvs(f) if mesh.is_valid_face(f) else None
-
-    pairs = []
-    for keys, read in ((change.vertices, vertex), (change.edges, edge), (change.faces, face)):
-        pairs.append({k: (read(surface, k), read(base, k)) for k in keys if read(surface, k) != read(base, k)})
-    uv_keys = set(change.faces) | set(change.face_uvs)
-    face_uvs = {f: (uvs(surface, f), uvs(base, f)) for f in uv_keys if uvs(surface, f) != uvs(base, f)}
-    return MeshDelta(*pairs, face_uvs=face_uvs)
+            s = index.get(v)
+            if s is None:  # new in the base since the last update
+                surface._owner_add(v, p)
+                moved[v] = None
+                continue
+            old = pos[s]
+            if old != p:
+                moved[v] = old
+                pos[s] = p
+        surface._owner_record(moved)
+        return set(moved)

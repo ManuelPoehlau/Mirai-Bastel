@@ -46,8 +46,12 @@ Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repos
   [`RESULTS_O2_REFERENCE_PC_2026-11-11.md`](../../experiments/drag_cost/RESULTS_O2_REFERENCE_PC_2026-11-11.md)):
   pixelgleich (GL-Tests 165 passed, inkl. `test_gl_face_data_layout.py`); der Shaded-Pass bei 87,5k / 1024×768 kostet
   2,76 statt 0,76 ms GPU-Zeit (Orbit-Frame 4,08 statt 1,73 ms p50). `GL_ARB_texture_buffer_object_rgb32` bietet der
-  Treiber nicht an (`False`, GL 3.3.0). Offen: warum im D3-Frame (Verformung jeden Frame) das Warten auf die GPU nach
-  O2 von ≈ 28 auf ≈ 44 ms steigt — Diagnose-Befehle in der Ergebnisdatei.
+  Treiber nicht an (`False`, GL 3.3.0). **GPU-Taktstufen (2026-11-11, [H]):** derselbe D3-Frame kostet die GPU ≈ 11 oder
+  ≈ 43 ms, je nachdem, ob sie gerade hoch- oder heruntergetaktet ist (PowerMizer: ein CPU-gebundener Frame lässt sie
+  ≈ 300 ms untätig). GPU-Zeiten auf diesem PC nur mit „Energieverwaltungsmodus: Maximale Leistung bevorzugen“
+  vergleichen — bestätigt in Runde 3 (mit maximaler Leistung stabil ≈ 11,3 ms). Bei vollem Takt kostet das
+  Face-Daten-Shading ≈ 9,4 ms GPU pro vollem Durchgang (87,5k, 1024×768); die Orbit-Werte der Navigations-Probe lagen
+  zu niedrig, weil sie den Tiefenpuffer nicht löschte (seit 2026-11-11 behoben).
 - Reale Frame- und Hover-Zeiten in den echten Fenstern (`src/main.py`, Playground) auf diesem PC.
   Messsonde für die Drag-Kosten im GL-Pfad (hidden pyglet-Fenster, gibt auch `GL_VERSION` / `GL_RENDERER` aus):
   `python experiments/drag_cost/probe_drag_gl.py`, Doku und Container-Vorher/Nachher in

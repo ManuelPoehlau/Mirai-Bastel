@@ -53,6 +53,7 @@ from core.operations import MeshDeltaCommand, record_mesh_change
 
 from .morph_mix import MixSurface, mix_position, offset_keys as _offset_keys, rest_state as _rest_state
 from .morph_mix import topology_touched as _topology_touched
+from .surface_positions import SurfacePositions
 
 from .interaction import commands
 from .interaction.input import (
@@ -378,7 +379,8 @@ class MorphSurfaceProvider:
         self.weights: dict = {}
         #: ObjectId -> the current target (AD-025 Phase 4): the one Tab, N and +/- act on
         self.current: dict = {}
-        self.surface_mesh: Optional[Mesh] = None
+        #: the edit object's mix (a `SurfacePositions` over its mesh's topology, O1 2026-11-11), None = not shown
+        self.surface_mesh: Optional[SurfacePositions] = None
         self.entry_surfaces: dict = {}
         self.entry_moved: dict = {}
         #: H7: the edit object's surface mesh kept its identity but its topology was patched (Phase 5)
@@ -474,10 +476,10 @@ class MorphSurfaceProvider:
     def wants_surface(self) -> bool:
         return bool(self.shown())
 
-    def mix_of(self, object_id) -> Optional[Mesh]:
-        """The object's evaluated mix (same IDs and topology as its mesh) while one of its targets is above 0 %,
-        else None (0 %, no target, not synced yet). MODELING_ON_DEFORMED_SURFACES §15: the cage the base is picked
-        and edited on - read only, never written back."""
+    def mix_of(self, object_id) -> Optional[SurfacePositions]:
+        """The object's evaluated mix (a `SurfacePositions`: its mesh's IDs and topology, the mix's positions) while
+        one of its targets is above 0 %, else None (0 %, no target, not synced yet). MODELING_ON_DEFORMED_SURFACES
+        §15: the cage the base is picked and edited on - read only (the view has no write path)."""
         surface = self._surfaces.get(object_id)
         obj = self._scene_of().objects.get(object_id)
         if surface is None or obj is None or surface.base is not obj.mesh or surface.mesh is None:
