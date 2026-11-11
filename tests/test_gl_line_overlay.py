@@ -198,13 +198,26 @@ def test_flat_shading_is_uniform_across_a_planar_face(gl_window):
     assert not _is_background(reference)
 
 
-def test_lines_follow_a_move_in_place(gl_window):
+def _render_segment_path(gl_window, app) -> bytes:
+    """The same frame with the wire from `edge_segments` (the headless path) instead of the mesh's buffers."""
+    overlay = app.viewport.line_overlay
+    overlay.can_draw_mesh_wire = lambda rm: False
+    app.viewport._edges_dirty = True
+    try:
+        return _render(gl_window, app)
+    finally:
+        del overlay.can_draw_mesh_wire
+
+
+def test_lines_follow_a_move_without_any_upload(gl_window):
+    """Audit 2026-11-10 §I.2: the wire is drawn from the RenderMesh's own buffers, so a move costs it nothing
+    (before: every edge's segment rebuilt and uploaded per geometry change)."""
     app = _app(gl_window)
     app.dispatch_command(cmd.SET_WIREFRAME)
     before = _render(gl_window, app)
     overlay = app.viewport.line_overlay
-    vlist = overlay.vertex_list()
-    uploads = overlay.uploads
+    edges = overlay._mesh_edges
+    counts = (overlay.uploads, edges.full_uploads, edges.range_uploads, _rebuilds(app))
 
     mesh = app.scene.mesh
     vid = mesh.all_vertex_ids()[0]
@@ -214,12 +227,54 @@ def test_lines_follow_a_move_in_place(gl_window):
     after = _render(gl_window, app)
 
     assert after != before
-    assert overlay.uploads == uploads + 1
-    # Same edge count → positions overwritten in the existing vertex list.
-    assert overlay.vertex_list() is vlist
-    assert list(vlist.position[:]) == pytest.approx(
-        [c for seg in app.viewport.edge_segments for p in seg for c in p]
+    assert (overlay.uploads, edges.full_uploads, edges.range_uploads, _rebuilds(app)) == counts
+    assert overlay.vertex_list() is None  # the segment layer was never needed
+    assert after == _render_segment_path(gl_window, app)
+
+
+def _rebuilds(app) -> int:
+    return app.viewport.benchmark_counters.get("line_overlay_rebuilds", 0)
+
+
+@pytest.mark.parametrize("display", [cmd.SET_WIREFRAME, cmd.TOGGLE_WIREFRAME_OVERLAY])
+def test_the_wire_from_the_buffers_equals_the_segment_wire(gl_window, monkeypatch, display):
+    """Same pixels as the segment path, also after a topology change (only the changed edge slots are uploaded,
+    the slot layout as above 2048 elements) and with hidden geometry (hidden edges are zero-length slots)."""
+    import sys
+    from pathlib import Path
+
+    import viewport.render_mesh as render_mesh_module
+
+    examples = Path(__file__).resolve().parents[1] / "examples"
+    monkeypatch.setattr(sys, "path", [str(examples), *sys.path])
+
+    monkeypatch.setattr(render_mesh_module, "INCREMENTAL_MIN_ELEMENTS", 0)
+    app = Application()
+    app.init_scene(
+        "obj", obj_path=examples / "meshes" / "head_basemesh.obj",
+        store_type=GLRenderStore, point_overlay_type=GLPointOverlay, line_overlay_type=GLLineOverlay,
     )
+    app.frame_scene()
+    app.set_viewport_size(gl_window.width, gl_window.height)
+    app.dispatch_command(display)
+    assert _render(gl_window, app) == _render_segment_path(gl_window, app)
+    edges = app.viewport.line_overlay._mesh_edges
+    full, ranges = edges.full_uploads, edges.range_uploads
+
+    mesh = app.scene.mesh
+    mesh.split_edge(mesh.all_edge_ids()[0])
+    app.viewport.on_topology_changed()
+    split = _render(gl_window, app)
+    assert (edges.full_uploads, edges.range_uploads) == (full, ranges + 1)
+    assert split == _render_segment_path(gl_window, app)
+
+    app.viewport.set_hidden(set(mesh.all_vertex_ids()[::3]))
+    hidden = _render(gl_window, app)
+    assert hidden != split
+    assert hidden == _render_segment_path(gl_window, app)
+    app.viewport.set_hidden(())
+    assert _render(gl_window, app) == split
+    assert edges.full_uploads == full
 
 
 def test_render_leaves_depth_func_and_polygon_offset_reset(gl_window):

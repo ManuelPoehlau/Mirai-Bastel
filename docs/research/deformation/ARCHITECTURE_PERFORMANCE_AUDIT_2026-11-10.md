@@ -549,6 +549,11 @@ non-symmetric counterparts at 20k+ (not measured); that 100k faces with all stag
    drag at 87.5k: 7.6 ms with the wire off, 144 ms with it on). Not measured on the reference PC; ≈ +75–130 ms at
    20k **[H]**. The GPU picker already keeps an edge index buffer over the mesh's position buffer
    (`RenderMesh.edge_indices`) — the wire could draw from that with no per-step work.
+   **Fixed 2026-11-11 (O0):** the wire is drawn from the `RenderMesh` VertexList through those edge slots
+   (`GLLineOverlay.draw_mesh_wire`, AD-018 addendum 2026-11-11); `edge_segments` stays only for headless stores.
+   `probe_scale_audit.py --only split` **[C]**, pose-step p50, wire off / on: 20k 15 % 34.6 / 80.0 ms before →
+   26.4 / 29.7 ms after, 20k 100 % 236 / 221 → 227 / 218 ms (both runs noisy at 100 %); 87.5k 15 % 177 / 393 ms
+   (§E.3) → 127 / 140 ms; "wire segments" 36 / 28 / 179 ms → 0.
 3. **`RenderMesh._sync_selection` builds and uploads a V-sized `highlight_flags` buffer on every hover / selection
    change** (`render_mesh.py:634, 1084`) although the fragment shader no longer reads it (comment at
    `gl_render_store.py:71-74`): 96 KB per hover change at 20k, 385 KB at 87.5k. Known and open since 2026-10-17

@@ -10,7 +10,11 @@ What it draws: one `GL_LINES` vertex list per layer, two vertices per edge.
 Layers (`LINE_LAYERS`):
 
 - `wire` (B5a): every mesh edge, from `wireframe.edge_segments()`, pushed in
-  by `Viewport.sync()` only while edges are shown.
+  by `Viewport.sync()` only while edges are shown - the fallback for a mesh
+  whose `RenderMesh` has no GL buffers (headless). With them the wire is drawn by
+  `draw_mesh_wire` straight from the `RenderMesh` VertexList through its edge
+  slots (audit 2026-11-10 §I.2): a geometry change costs the wire nothing, a
+  topology change or Hide re-uploads only the changed edge slots.
 - `hover`, `selected` (B5b): the hovered edge and the selected edges, from
   `SelectionOverlay.line_layers()`.
 - `tool_preview`, `tool_active` (B7, Knife session, `overlay.TOOL_LAYERS`):
@@ -50,6 +54,7 @@ and setting data needs no GL context.
 
 from __future__ import annotations
 
+from .gl_edge_buffer import EdgeIndexBuffer
 from .gl_point_overlay import (
     CLIPPED_COLOR,
     HOVER_COLOR,
@@ -103,6 +108,21 @@ out vec4 out_color;
 void main() {
     out_color = u_color;
 }
+"""
+
+
+# The wire from the `RenderMesh` VertexList: its `position` attribute at the store program's location; the
+# expression is `LINE_VERTEX_SRC`'s, so the hover / selected lines drawn later meet the wire's depth exactly.
+MESH_WIRE_VERTEX_SRC = """
+#version 330 core
+layout(location = {loc}) in vec3 position;
+
+uniform mat4 u_view;
+uniform mat4 u_proj;
+
+void main() {{
+    gl_Position = u_proj * u_view * vec4(position, 1.0);
+}}
 """
 
 
@@ -280,3 +300,65 @@ class GLLineOverlay(FlatColorLayers):
 
     def draw(self, camera_uniforms, layers=(WIRE_LAYER,)) -> None:
         super().draw(camera_uniforms, layers)
+
+    # -- the wire from the mesh's own buffers (audit 2026-11-10 §I.2) ---------------------------------------
+
+    _mesh_wire_program = None
+
+    @staticmethod
+    def can_draw_mesh_wire(render_mesh) -> bool:
+        """True if `draw_mesh_wire` can draw `render_mesh`'s edges: a `GLRenderStore` whose VertexList exists."""
+        from .gl_render_store import GLRenderStore
+
+        store = render_mesh.store
+        return isinstance(store, GLRenderStore) and store.vertex_list() is not None
+
+    @classmethod
+    def mesh_wire_program(cls):
+        if cls._mesh_wire_program is None:
+            from pyglet.graphics.shader import Shader, ShaderProgram
+
+            from .gl_render_store import GLRenderStore
+
+            loc = GLRenderStore.program().attributes["position"]["location"]
+            cls._mesh_wire_program = ShaderProgram(
+                Shader(MESH_WIRE_VERTEX_SRC.format(loc=loc), "vertex"), Shader(LINE_FRAGMENT_SRC, "fragment")
+            )
+        return cls._mesh_wire_program
+
+    def draw_mesh_wire(self, render_mesh, camera_uniforms) -> None:
+        """Draws the `wire` layer as the edge slots of `render_mesh` (`RenderMesh.edge_indices`, hidden edges are
+        zero-length) over its VertexList, in the wire's style; `camera_uniforms` as for `draw` (view·model, proj).
+        Uploads only the edge slots changed since the last call (`gl_edge_buffer.EdgeIndexBuffer`)."""
+        from pyglet import gl
+
+        vlist = render_mesh.store.vertex_list()
+        if vlist is None or len(camera_uniforms) != 32 or not render_mesh.edge_indices:
+            return
+        edges = getattr(self, "_mesh_edges", None)
+        if edges is None:
+            edges = self._mesh_edges = EdgeIndexBuffer()
+        ebo = edges.sync(render_mesh)
+        program = self.mesh_wire_program()
+        program.use()
+        program["u_view"] = tuple(camera_uniforms[0:16])
+        program["u_proj"] = tuple(camera_uniforms[16:32])
+        color, line_width = self.LAYER_STYLES[WIRE_LAYER]
+        program["u_color"] = color
+        gl.glEnable(gl.GL_DEPTH_TEST)
+        gl.glDepthFunc(gl.GL_LEQUAL)
+        gl.glLineWidth(line_width)
+        domain = vlist.domain
+        domain.vao.bind()
+        for buffer, _ in domain.buffer_attributes:
+            buffer.commit()
+        gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, ebo)
+        gl.glDrawElementsBaseVertex(
+            gl.GL_LINES, len(render_mesh.edge_indices), gl.GL_UNSIGNED_INT, None, vlist.start
+        )
+        # The element binding is VAO state: give pyglet its index buffer back.
+        domain.index_buffer.bind_to_index_buffer()
+        domain.vao.unbind()
+        program.stop()
+        gl.glDepthFunc(gl.GL_LESS)
+        gl.glDisable(gl.GL_DEPTH_TEST)

@@ -515,6 +515,19 @@ group; its only additions are the `u_flat` uniform, the world-position
 varying and `set_draw_style(flat, polygon_offset)`. Edge picking / hover /
 highlight remain open (B5b).
 
+*Addendum 2026-11-11 (audit `ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md` §I.2):* with a `GLRenderStore` the
+`wire` layer no longer goes through `edge_segments`. `GLLineOverlay.draw_mesh_wire(render_mesh, …)` draws the edge
+slots of the `RenderMesh` that shows the wire mesh (`RenderMesh.edge_indices`, the layout the GPU picker already
+used, AD-022 §11) as `GL_LINES` from an own element buffer over the store's VertexList
+(`gl_edge_buffer.EdgeIndexBuffer`, `glDrawElementsBaseVertex`); the vertex expression is `LINE_VERTEX_SRC`'s, so the
+hover / selected lines still meet the wire's depth. A geometry change costs the wire nothing, a topology change or
+Hide uploads only the changed edge slots (`RenderMesh.take_edge_changes(consumer)`, now one change set per consumer).
+The store still draws exactly one group; it is only read. `edge_segments` stays the path for a store without GL
+buffers (headless tests, traces) and for a cage under a derived surface (its RenderMesh is synced only for picks);
+`Viewport.edge_segments` is computed on read otherwise. Measured **[C]** (container, `probe_scale_audit.py --only
+split`, gollum_20k, pose step p50): wire segments 36 / 28 ms per step → 0; wire on / off 29.7 / 26.4 ms (15 %
+region) and 218 / 227 ms (100 %), i.e. equal within the run's noise.
+
 *Extension 2026-09-27 (WP-06 Slice B5b, component modes):* the precedent now
 covers the **edge and face highlight** — `GLLineOverlay` gains `hover` /
 `selected` layers next to `wire`, and `src/viewport/gl_triangle_overlay.py`,

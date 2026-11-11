@@ -12,8 +12,8 @@ needs it and cached per (buffer content, camera, model matrix, size, occlusion):
   triangle slot (pyglet issues one `glDrawElements` per VertexList, so the count starts at 0); free slots are
   degenerate and draw nothing. Pushed back by `glPolygonOffset(1, 1)` like the production draw. No back-face culling
   (the CPU picker hits back faces too).
-- **edges**: the edge slots of `RenderMesh.edge_indices` as `GL_LINES` from an own element buffer over the same
-  vertex buffer (`glDrawElementsBaseVertex`); colour = `gl_PrimitiveID + 1` = edge slot. Free slots are zero-length
+- **edges**: the edge slots of `RenderMesh.edge_indices` as `GL_LINES` from an own element buffer
+  (`gl_edge_buffer.EdgeIndexBuffer`) over the same vertex buffer (`glDrawElementsBaseVertex`); colour = `gl_PrimitiveID + 1` = edge slot. Free slots are zero-length
   lines (no fragments).
 - **points**: every vertex slot as a 1 px point (`glDrawArrays`), colour = `gl_VertexID - start + 1`; free slots hold
   `DEAD_POSITION` and are moved outside the clip volume.
@@ -33,12 +33,11 @@ import ctypes
 import math
 from array import array
 
+from .gl_edge_buffer import EdgeIndexBuffer
 from .render_mesh import DEAD_COORD
 
 FACES, EDGES, POINTS = 0, 1, 2
 _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
-#: Edge slots closer than this are uploaded as one range.
-_EDGE_MERGE_GAP = 256
 
 _VS = """
 #version 330 core
@@ -85,17 +84,6 @@ def _decode(raw: bytes) -> list[int]:
     return [(w & 0xFFFFFF) - 1 for w in words]
 
 
-def _runs(slots, gap: int) -> list[tuple[int, int]]:
-    """[lo, hi) slot ranges covering `slots`, joined across gaps below `gap`."""
-    ranges: list[tuple[int, int]] = []
-    for slot in sorted(slots):
-        if ranges and slot <= ranges[-1][1] + gap:
-            ranges[-1] = (ranges[-1][0], slot + 1)
-        else:
-            ranges.append((slot, slot + 1))
-    return ranges
-
-
 class GpuPicker:
     """One per window (GL context). Needs a `RenderMesh` with a `GLRenderStore` whose VertexList exists."""
 
@@ -106,9 +94,7 @@ class GpuPicker:
         self._size = (0, 0)
         self._state = None
         self._done: set[int] = set()
-        self._edge_ebo = 0
-        self._edge_owner = None  # (id(render_mesh), layout_revision) the element buffer holds
-        self._edge_floats = 0
+        self._edges = EdgeIndexBuffer()
         self.renders = 0
 
     # -- availability -------------------------------------------------------------------------------
@@ -176,34 +162,7 @@ class GpuPicker:
         from pyglet import gl
 
         self._release_fbo()
-        if self._edge_ebo:
-            gl.glDeleteBuffers(1, ctypes.byref(gl.GLuint(self._edge_ebo)))
-            self._edge_ebo = 0
-            self._edge_owner = None
-
-    def _sync_edge_buffer(self, rm) -> None:
-        """Uploads the edge slots `RenderMesh` changed since the last upload (all of them for a new
-        mesh or a new layout)."""
-        from pyglet import gl
-
-        changes = rm.take_edge_changes()
-        owner = (id(rm), rm.layout_revision)
-        data = rm.edge_indices
-        if not self._edge_ebo:
-            buffer = gl.GLuint()
-            gl.glGenBuffers(1, ctypes.byref(buffer))
-            self._edge_ebo = buffer.value
-        gl.glBindBuffer(gl.GL_COPY_WRITE_BUFFER, self._edge_ebo)
-        address = data.buffer_info()[0]
-        if changes is None or owner != self._edge_owner or self._edge_floats != len(data):
-            gl.glBufferData(gl.GL_COPY_WRITE_BUFFER, max(4, len(data) * 4), address if data else None,
-                            gl.GL_DYNAMIC_DRAW)
-        else:
-            for lo, hi in _runs(changes, _EDGE_MERGE_GAP):
-                gl.glBufferSubData(gl.GL_COPY_WRITE_BUFFER, lo * 8, (hi - lo) * 8, address + lo * 8)
-        gl.glBindBuffer(gl.GL_COPY_WRITE_BUFFER, 0)
-        self._edge_owner = owner
-        self._edge_floats = len(data)
+        self._edges.release()
 
     # -- render -------------------------------------------------------------------------------------
 
@@ -232,8 +191,7 @@ class GpuPicker:
             self._programs = self._build_programs()
         primitive, vertex = self._programs
         vlist = rm.store.vertex_list()
-        if target == EDGES:
-            self._sync_edge_buffer(rm)
+        edge_ebo = self._edges.sync(rm) if target == EDGES else 0
         self.renders += 1
 
         old_viewport = (gl.GLint * 4)()
@@ -276,7 +234,7 @@ class GpuPicker:
                 if target == POINTS:
                     gl.glDrawArrays(gl.GL_POINTS, vlist.start, vlist.count)
                 else:
-                    gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, self._edge_ebo)
+                    gl.glBindBuffer(gl.GL_ELEMENT_ARRAY_BUFFER, edge_ebo)
                     gl.glDrawElementsBaseVertex(
                         gl.GL_LINES, len(rm.edge_indices), gl.GL_UNSIGNED_INT, None, vlist.start
                     )

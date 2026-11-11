@@ -241,13 +241,15 @@ class RenderMesh:
         self._retriangulate: set[VertexId] = set()
         # Edge-Slots (AD-022 B2, 2026-10-21): je Slot die beiden Vertex-Slots (frei = (0, 0), eine
         # Linie ohne Länge, die nichts rasterisiert). Kein Store-Inhalt: der GPU-Picker
-        # (`gpu_picker.py`) lädt sie als eigenen Index-Buffer über die `positions` dieser Mesh;
-        # `take_edge_changes()` sagt ihm, welche Slots sich seitdem geändert haben.
+        # (`gpu_picker.py`) und der Wire (`gl_line_overlay.GLLineOverlay.draw_mesh_wire`, 2026-11-11) laden sie
+        # je als eigenen Index-Buffer über die `positions` dieser Mesh; `take_edge_changes(consumer)` sagt jedem,
+        # welche Slots sich seit seinem letzten Aufruf geändert haben.
         self._edge_slot: dict[EdgeId, int] = {}
         self._slot_edge: list[EdgeId | None] = []
         self._free_edge_slots: list[int] = []
         self.edge_indices = array("I")
-        self._edge_dirty: set[int] | None = None
+        # consumer -> geänderte Slots seit seinem letzten `take_edge_changes`; fehlt er, gilt "alle".
+        self._edge_dirty: dict[object, set[int]] = {}
         #: +1 je vollem Rebuild (alle Slots neu vergeben) und je Änderung irgendeines Buffer-Inhalts
         #: (Topology-Patch, Geometry-Sync): Cache-Schlüssel für Konsumenten wie den GPU-Picker.
         self.layout_revision = 0
@@ -319,13 +321,18 @@ class RenderMesh:
                 flat[i + 1] = index[b]
             i += 2
         self.edge_indices = flat
-        self._edge_dirty = None
+        self._edge_dirty = {}
 
-    def take_edge_changes(self) -> set[int] | None:
-        """Edge-Slots, deren Indizes sich seit dem letzten Aufruf geändert haben; None = alle (neues
-        Layout). Genau ein Konsument (der GPU-Picker der Viewport)."""
-        dirty, self._edge_dirty = self._edge_dirty, set()
+    def take_edge_changes(self, consumer: object = None) -> set[int] | None:
+        """Edge-Slots, deren Indizes sich seit dem letzten Aufruf von `consumer` geändert haben; None = alle (neues
+        Layout, oder `consumer` fragt zum ersten Mal). Je Konsument (GPU-Picker, Wire) ein eigener Stand."""
+        dirty = self._edge_dirty.get(consumer)
+        self._edge_dirty[consumer] = set()
         return dirty
+
+    def _edge_slot_changed(self, slot: int) -> None:
+        for dirty in self._edge_dirty.values():
+            dirty.add(slot)
 
     def edge_of_slot(self, slot: int) -> EdgeId | None:
         if not 0 <= slot < len(self._slot_edge):
@@ -421,8 +428,7 @@ class RenderMesh:
             visible = edge not in new.edges
             self.edge_indices[2 * slot] = index[a] if visible else 0
             self.edge_indices[2 * slot + 1] = index[b] if visible else 0
-            if self._edge_dirty is not None:
-                self._edge_dirty.add(slot)
+            self._edge_slot_changed(slot)
         self._upload_vec3("indices", tri_slots)
         self._upload_triangle_uvs(tri_slots)
         self.content_revision += 1
@@ -913,14 +919,14 @@ class RenderMesh:
             pos_slots[index[v]] = position(v)
 
         edge_indices = self.edge_indices
-        edge_dirty = self._edge_dirty
+        edge_dirty = tuple(self._edge_dirty.values())
         for e in removed_e:
             slot = edge_slot.pop(e)
             self._slot_edge[slot] = None
             self._free_edge_slots.append(slot)
             edge_indices[2 * slot] = edge_indices[2 * slot + 1] = 0
-            if edge_dirty is not None:
-                edge_dirty.add(slot)
+            for dirty in edge_dirty:
+                dirty.add(slot)
         edge_vertices = mesh.edge_vertices
         for e in (*added_e, *changed_e):
             slot = edge_slot.get(e)
@@ -931,8 +937,8 @@ class RenderMesh:
             visible = self._edge_visible(e)
             edge_indices[2 * slot] = index[a] if visible else 0
             edge_indices[2 * slot + 1] = index[b] if visible else 0
-            if edge_dirty is not None:
-                edge_dirty.add(slot)
+            for dirty in edge_dirty:
+                dirty.add(slot)
 
         # Neu triangulieren: neue / geänderte Faces und alle Faces um bewegte Vertices; dazu Faces mit
         # neuen UVs (AD-026: ihre Dreiecks-Slots bekommen sie beim Schreiben).

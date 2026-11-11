@@ -28,7 +28,10 @@ eigenes Linien-Overlay: `sync()` berechnet `edge_segments` neu, wenn Vertices
 bewegt wurden oder die Topologie sich geändert hat — und nur, solange Edges
 sichtbar sind (Zähler `line_overlay_rebuilds`). Ein `line_overlay_type`
 (z. B. `GLLineOverlay`) bekommt sie und zeichnet sie in `render()` zwischen
-Mesh und Punkten.
+Mesh und Punkten. Kann das Overlay den Wire aus den GL-Buffern des RenderMesh zeichnen,
+das ihn zeigt (`GLLineOverlay.draw_mesh_wire`, Audit 2026-11-10 §I.2), entfällt dieser
+Neuaufbau ganz: der Wire liest die Positionen des Mesh-Buffers über dessen Edge-Slots, und
+`edge_segments` wird nur noch beim Lesen berechnet (Tests, Diagnose).
 
 Edge-/Face-Auswahl (WP-06 B5b, E44/E45): `sync()` berechnet mit den Punkten
 auch `line_layers` (gehoverte/selektierte Edges als Segmente) und
@@ -234,7 +237,7 @@ class Viewport:
         self.line_overlay = (
             line_overlay_type() if line_overlay_type is not None else None
         )
-        self.edge_segments: list = []
+        self._edge_segments: list = []
         #: Hide / Isolate (`set_hidden`); `_surface_hidden_key` / `_surface_tint_key` = what the surface RenderMesh last got
         self.hidden_vertices: frozenset = frozenset()
         self.hidden_faces: frozenset = frozenset()
@@ -864,7 +867,7 @@ class Viewport:
         for key, rm in self.entry_surface_render_meshes.items():
             self._follow_entry(key, self.object_entries[key], rm)
             rm.sync()
-        if self.show_edges and self._edges_dirty:
+        if self.show_edges and self._edges_dirty and self._wire_render_mesh() is None:
             self._sync_edges()
         for overlay in self.extra_overlays:
             if changed or getattr(overlay, "dirty", False):
@@ -916,14 +919,39 @@ class Viewport:
             return rm.mesh
         return self.mesh
 
+    def _wire_render_mesh(self) -> RenderMesh | None:
+        """The synced `RenderMesh` of the wire mesh (`_wire_mesh`) when the line overlay can draw the wire from its
+        GL buffers (`GLLineOverlay.draw_mesh_wire`): the edit mesh's or the surface's (an ID-identical one, or the
+        shown cage when the surface is the cage). None = the segment path (`_sync_edges`): headless, or a cage under
+        a derived surface, whose own RenderMesh is synced only for picks."""
+        overlay = self.line_overlay
+        can_draw = getattr(overlay, "can_draw_mesh_wire", None)
+        if can_draw is None:
+            return None
+        mesh = self._wire_mesh()
+        rm = self.render_mesh
+        if rm.mesh is not mesh:
+            rm = self.surface_render_mesh
+            if rm is None or rm.mesh is not mesh:
+                return None
+        return rm if can_draw(rm) else None
+
+    @property
+    def edge_segments(self) -> list:
+        """The wire as `(a, b)` world-position pairs, one per shown edge of the wire mesh. Kept per change only on
+        the segment path; while the wire is drawn from the mesh's buffers it is computed on read."""
+        if self.show_edges and self._wire_render_mesh() is not None:
+            return edge_segments(self._wire_mesh(), self.hidden_vertices, self.render_mesh.resolved_hidden.edges)
+        return self._edge_segments
+
     def _sync_edges(self) -> None:
-        # E39: voller Neuaufbau pro dirty Frame (für B5a akzeptiert).
+        # E39: voller Neuaufbau pro dirty Frame (für B5a akzeptiert); nur noch ohne GL-Buffer (`_wire_render_mesh`).
         # The wire mesh has the edit mesh's IDs and edges (cage / ID-identical surface): its resolved edges hold.
-        self.edge_segments = edge_segments(
+        self._edge_segments = edge_segments(
             self._wire_mesh(), self.hidden_vertices, self.render_mesh.resolved_hidden.edges
         )
         if self.line_overlay is not None:
-            self.line_overlay.set_segments(self.edge_segments)
+            self.line_overlay.set_segments(self._edge_segments)
         self.render_mesh.stats.count("line_overlay_rebuilds")
         self._edges_dirty = False
 
@@ -971,7 +999,11 @@ class Viewport:
             if getattr(overlay, "DRAW_UNDER_HIGHLIGHTS", False):
                 overlay.draw(camera_uniforms)
         if self.line_overlay is not None and self.wire_drawn():
-            self.line_overlay.draw(camera_uniforms, layers=(WIRE_LAYER,))
+            wire_rm = self._wire_render_mesh()
+            if wire_rm is not None:
+                self.line_overlay.draw_mesh_wire(wire_rm, camera_uniforms)
+            else:
+                self.line_overlay.draw(camera_uniforms, layers=(WIRE_LAYER,))
         if self.face_overlay is not None and any(self.face_layers.values()):
             self.face_overlay.draw(camera_uniforms)
         if self.line_overlay is not None and any(self.line_layers.values()):
