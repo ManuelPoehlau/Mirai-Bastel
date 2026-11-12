@@ -1018,6 +1018,9 @@ surface at 87.5k 3,225 → 37 ms, the skin surface 3,650 → 92 ms; the first we
 5.6 → 3.0 s (what remains is the new surface `RenderMesh`, not part of O1); process memory with both stages 1,411 →
 974 MiB (≈ 200–240 MiB per stage). Per frame (D3 probe, 15 % region, Morph + Skin): the evaluation 8–10 ms faster in
 a weight frame, 2–3 ms in a pose frame; `_sync_geometry` unchanged; every row still over the D3 bar (O3's part).
+**Reference PC [RPC]** (2026-11-12, [results](../../experiments/drag_cost/RESULTS_O1_REFERENCE_PC_2026-11-12.md)):
+building the mix / skin surface 3,367 / 2,852 → 378 / 136 ms, first weight / pose step 9.5 / 9.8 → 6.1 / 6.7 s,
+process memory with both stages 1,170 → 730 MiB; D3 evaluation −10 ms (pose) / −20 ms (weight), still over the bar.
 
 **Tests.** `tests/test_surface_positions.py` (new): no write path, no layers, live base topology, `KeyError` before the
 owner writes; the watch contract (first record wins, the base's edge / face / UV records forwarded, gone vertices with

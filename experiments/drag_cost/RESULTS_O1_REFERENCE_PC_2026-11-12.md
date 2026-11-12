@@ -527,3 +527,68 @@ Run: hidden 1024x768 window, 60 frames per row after 6 unmeasured; bar (D3): p95
     NOTE gpu mesh draw varies 11.18-46.73 ms between frames: GPU clock changes (power management) likely; compare runs with the driver set to maximum performance
     bytes to the GL store per frame             556940  (vertex 335580, face data 221360; 42 per region vertex)
 ```
+
+## Reading (agent, 2026-11-12)
+
+Added after the run; the text above is the run's record and stays as it was. All numbers are **[RPC]**: Q9550 /
+9800 GTX, Windows 10, Python 3.14.2, panels off, NVIDIA "prefer maximum performance". "before" = `830f62e`
+(worktree, clean), "after" = `1871107` with `src/` tree `559d88b8e2` = `f0a90cc:src` (the "MODIFIED" is the tracked
+scene file, outside `src/`). One run per side; the container pairs are in
+[`RESULTS_O1_CONTAINER_2026-11-11.md`](RESULTS_O1_CONTAINER_2026-11-11.md).
+
+### One-time costs and memory (`probe_scale_audit.py --only chain`)
+
+| | 87.5k before | 87.5k after | 20k before | 20k after |
+|---|---:|---:|---:|---:|
+| first weight step (builds the mix surface) | 9,452 ms | **6,149 ms** | 2,218 ms | **1,453 ms** |
+| of it: the stage | 3,367 ms | **378 ms** | 852 ms | **103 ms** |
+| of it: new RenderMesh | 6,035 ms | 5,729 ms | 1,350 ms | 1,330 ms |
+| first pose step (builds the skin surface) | 9,829 ms | **6,672 ms** | 2,403 ms | **1,615 ms** |
+| of it: the stage | 2,852 ms | **136 ms** | 708 ms | **31 ms** |
+| of it: new RenderMesh | 5,842 ms | 5,770 ms | 1,351 ms | 1,370 ms |
+| process memory after both stages | 1,170 MiB | **730 MiB** | 366 MiB | **253 MiB** |
+
+Building the stage surfaces is 9× (mix) and 21× (skin) faster at 87.5k; a first step loses ≈ 3.2–3.3 s of its ≈ 9.5 s.
+What remains is the new surface `RenderMesh` (≈ 5.8 s here), not part of O1. Memory with both stages −440 MiB (−38 %).
+The ratio to the container differs per row (the old stage build was about as fast here as in the container, the new
+mix build 10× slower); compare before / after on one machine.
+
+### D3 frame (`probe_d3_acceptance.py`, 87.5k, 15 %, Morph + Skin), p50 / p95 ms
+
+| Row | frame before | frame after | stage evaluation p50 | `_sync_geometry` p50 |
+|---|---:|---:|---:|---:|
+| pose wire off | 319.44 / 334.65 | **307.45 / 317.85** | 67.95 → **57.75** | 222.83 → 221.59 |
+| weight wire off | 401.01 / 436.74 | **375.16 / 389.26** | 110.56 → **89.85** | 224.03 → 220.48 |
+| pose wire ON | 327.69 / 341.81 | **313.35 / 333.55** | 68.85 → **59.26** | 227.70 → 225.87 |
+| weight wire ON | 404.10 / 419.84 | **379.47 / 396.85** | 110.92 → **91.09** | 226.24 → 224.56 |
+
+The evaluation is 10 ms (pose, −15 %) and 20 ms (weight, −19 %) faster, the frame 12–14 ms (pose) and 25–26 ms (weight)
+at p50; `_sync_geometry` is unchanged (the tuple table reads as fast as the `Mesh`). **D3: OVER** in every row
+(p95 318–397 ms, 10–12× the 33.3 ms bar). After O1 a pose frame is ≈ 72 % `_sync_geometry` (normals, neighbourhoods,
+mirrors), ≈ 19 % evaluation, ≈ 6 % `on_draw`; the weight rows add the known HUD read-out (24.6 ms) and a GPU
+vertex-buffer upload of ≈ 33 ms (4 ms in the pose rows), both the same before O1. The GPU mesh draw is a stable
+11.4 ms p50 with maximum performance set; its p95 of ≈ 46 ms in the weight rows is a few slow frames (the probe's NOTE).
+
+### Tests: three explanations above do not hold
+
+- **"138 vs. 152":** 138 is the right count. The 152 in the prompt was the agent's error (it counted
+  `tests/test_skinning.py`, 14 tests, instead of the new `tests/test_surface_positions.py`); the container collects 138
+  for the same five files. Nothing is collected differently under Python 3.14.
+- **"6,555 vs. 6,912 / 183 vs. 8 skipped" — the accounting from the skip list.** In the combined run a module sets
+  `pyglet.options["headless"]`; on Windows that needs EGL, which is missing, so every later module that opens a
+  `pyglet.window` or a GL context skips. Not collected (189 tests in 7 modules, 7 skip lines): `test_gui_imgui_window`
+  16 and `test_gui_menus` 21 (no `imgui-bundle` under 3.14); `test_main_wiring` 39, `test_pyglet_input` 49,
+  `test_soft_selection_input` 58 (they set headless themselves: they need EGL and never run on this PC);
+  `test_transform_alt_orbit` 5 and `test_scene_menu_local_tmp` 1 (skipped only because an earlier module set
+  headless). Skipped at run time (176): 167 "no GL context" — the 165 `test_gl_*` tests (they passed in their own
+  process, 165) and `test_main_entry_point` 2 —, 1 test of `test_application_symmetry_cycle` (sets headless), and the
+  tests' own 8 skips (the same 8 as in the container). 189 + 167 + 1 = 357 = 6,912 − 6,555. Not run anywhere on this PC
+  in this cycle: the 147 EGL-only tests (by design), the 37 imgui tests (Python 3.14), and 7 tests that would run in
+  their own process (`test_transform_alt_orbit`, `test_main_entry_point`).
+- **The known failure** (`test_scene_menu_local_tmp`) did not run — the module was skipped (above), it is not fixed.
+- **`test_hud_strip.py::test_the_triad_ignores_zoom_and_pan_and_perspective`** is not floating-point non-determinism:
+  `OrbitCamera.basis()` takes the view direction as `target − eye()` with `eye = target + distance · direction`, so its
+  last bits depend on `target` and `distance`. With glibc's `sin` / `cos` the rounding cancels for the test's values,
+  with the Windows runtime it does not (1–2 ULP). Deterministic, invisible on screen, and outside O1 (`f0a90cc` touches
+  neither `hud.py` nor the camera); whether it failed here before O1 is not known (no earlier full run on this PC). A
+  fix of its own: compare with a tolerance, or let `basis()` derive the direction from yaw / pitch.

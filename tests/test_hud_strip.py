@@ -335,11 +335,19 @@ def test_a_free_perspective_view_keeps_the_handedness():
     assert x_axis[0] > origin[0]
 
 
+def _same_triad(a, b) -> bool:
+    """Equal up to rounding. `OrbitCamera.basis()` takes the view direction as `target - eye()`, so its last bits depend
+    on target and distance: bit-equal with glibc, 1-2 ULP apart with the Windows runtime's sin / cos (reference PC,
+    2026-11-12). A real dependence on zoom, pan or perspective would be many orders larger than the tolerance."""
+    ta, tb = _triad(a), _triad(b)
+    return ta.keys() == tb.keys() and all(_near(ta[name], tb[name], eps=1e-12) for name in ta)
+
+
 def test_the_triad_ignores_zoom_and_pan_and_perspective():
     a, b = OrbitCamera(), OrbitCamera(target=(5.0, 2.0, -3.0), distance=40.0, fov_degrees=20.0)
-    assert triad_axes(a) == triad_axes(b)  # only the view rotation counts
+    assert _same_triad(a, b)  # only the view rotation counts
     b.set_ortho(True)
-    assert triad_axes(a) == triad_axes(b)
+    assert _same_triad(a, b)
 
 
 # -- the orientation triad: layout against the strip ------------------------------------------------------------
