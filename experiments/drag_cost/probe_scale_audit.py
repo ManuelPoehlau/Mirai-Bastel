@@ -17,7 +17,10 @@ window's own chain (`Application` -> `Viewport` -> `GLRenderStore`, the `GL_TYPE
            the outside (nothing under `src/` is changed): the skin evaluation, the parts of
            `RenderMesh._sync_geometry` (neighbourhood sets, face normals, vertex normals, positions + normals,
            face data - the 36-float rows before O2, the face normals after, 2026-11-11), the whole-mesh wire
-           rebuild, and the bytes handed to the store per step.
+           rebuild, and the bytes handed to the store per step. Since O3 stage 1 (2026-11-12) the same parts are timed
+           on the arrays of `viewport.packed_geometry.PackedGeometry` where that module exists, plus row 2f (the moved
+           vertices' slots and positions into the arrays); a part with no method in the checkout prints `-`, so this
+           probe measures the code before and after O3 alike.
 - `chain`  what happens once: load + first frame, save, parse, the first weight step (builds the mix surface), the
            first pose step (builds the skin surface), each with the process memory after it, and whether the SubD
            preview accepts the mesh. Since 2026-11-11 (O1) each row also names its stage evaluation and the time spent
@@ -68,6 +71,7 @@ SPLIT_ROWS = (
     "2c  vertex normals",
     "2d  positions + normals -> mirror -> store",
     "2e  face data -> store (O2: face normals)",
+    "2f  ids -> slots, positions -> arrays (O3)",
     "3 wire segments (whole mesh)",
     "4 face-data glBufferSubData at draw",
 )
@@ -170,30 +174,44 @@ class _Wrappers:
     """Timing wrappers on class attributes, removed again by `remove()`."""
 
     def __init__(self) -> None:
-        import viewport.derived as derived
+        import importlib
+
         import viewport.gl_render_store as gl_store
-        import viewport.render_mesh as render_mesh
-        import viewport.viewport as viewport
-        from mirai.skinning import SkinSurface
 
         self.acc: dict[str, float] = {}
         self.bytes = 0
+        #: rows with at least one wrapped method in this checkout (the others print "-")
+        self.present: set[str] = set()
         self._undo: list = []
         rows = SPLIT_ROWS
-        for cls, name, label in (
-            (SkinSurface, "_recompute", rows[0]),
-            (render_mesh.RenderMesh, "_sync_geometry", rows[1]),
-            (derived.DerivedGeometry, "affected_neighborhood", rows[2]),
-            (derived.DerivedGeometry, "update_face_normals", rows[3]),
-            (derived.DerivedGeometry, "update_vertex_normals", rows[4]),
-            (render_mesh.RenderMesh, "_upload_vec3", rows[5]),
+        for module, cls_name, name, label in (
+            ("mirai.skinning", "SkinSurface", "_recompute", rows[0]),
+            ("viewport.render_mesh", "RenderMesh", "_sync_geometry", rows[1]),
+            # Until O3 stage 1 (2026-11-12) the dicts of `DerivedGeometry`; since then the slot-indexed arrays of
+            # `PackedGeometry` (the class that exists in the checkout is timed, the other is skipped).
+            ("viewport.derived", "DerivedGeometry", "affected_neighborhood", rows[2]),
+            ("viewport.packed_geometry", "PackedGeometry", "neighbourhood", rows[2]),
+            ("viewport.derived", "DerivedGeometry", "update_face_normals", rows[3]),
+            ("viewport.packed_geometry", "PackedGeometry", "update_face_normals", rows[3]),
+            ("viewport.derived", "DerivedGeometry", "update_vertex_normals", rows[4]),
+            ("viewport.packed_geometry", "PackedGeometry", "update_vertex_normals", rows[4]),
+            ("viewport.render_mesh", "RenderMesh", "_upload_vec3", rows[5]),
+            ("viewport.render_mesh", "RenderMesh", "_upload_slots", rows[5]),
             # Before O2 (2026-11-11) the 36-float rows; since O2 only the face normals (the method that exists runs).
-            (render_mesh.RenderMesh, "_upload_rows", rows[6]),
-            (render_mesh.RenderMesh, "_upload_face_normals", rows[6]),
-            (viewport.Viewport, "_sync_edges", rows[7]),
-            (gl_store.GLRenderStore, "_flush_face_data", rows[8]),
+            ("viewport.render_mesh", "RenderMesh", "_upload_rows", rows[6]),
+            ("viewport.render_mesh", "RenderMesh", "_upload_face_normals", rows[6]),
+            ("viewport.viewport", "Viewport", "_sync_edges", rows[8]),
+            ("viewport.gl_render_store", "GLRenderStore", "_flush_face_data", rows[9]),
+            # O3 stage 1: the moved vertices' slots and positions into the arrays (before O3 this work had no method
+            # of its own: dict comprehensions inside `_sync_geometry`, counted in row 2 only).
+            ("viewport.render_mesh", "RenderMesh", "_read_moved", rows[7]),
         ):
-            self._time(cls, name, label)
+            try:
+                cls = getattr(importlib.import_module(module), cls_name)
+            except (ImportError, AttributeError):
+                continue  # not in this checkout (e.g. the array module before O3)
+            if self._time(cls, name, label):
+                self.present.add(label)
         original = gl_store.GLRenderStore.update
 
         def counting(store, name, offset, data, nbytes):
@@ -203,10 +221,10 @@ class _Wrappers:
         gl_store.GLRenderStore.update = counting
         self._undo.append((gl_store.GLRenderStore, "update", original))
 
-    def _time(self, cls, name: str, label: str) -> None:
+    def _time(self, cls, name: str, label: str) -> bool:
         original = getattr(cls, name, None)
         if original is None:
-            return  # not in this checkout (e.g. the face-data method of the other layout)
+            return False  # not in this checkout (e.g. the face-data method of the other layout)
         acc = self.acc
 
         def timed(*args, **kwargs):
@@ -218,6 +236,7 @@ class _Wrappers:
 
         setattr(cls, name, timed)
         self._undo.append((cls, name, original))
+        return True
 
     def reset(self) -> None:
         self.acc.clear()
@@ -289,8 +308,11 @@ def split_rows(path: Path, share: int, steps: int) -> list[str]:
             )
             lines.append(f"  step (pointer_motion + update_viewport)       {total:9.2f}  100 %   (p95 {p95:.2f})")
             for row in SPLIT_ROWS:
+                if row not in wrappers.present:
+                    lines.append(f"  {row:<45} {'-':>9}          (no such method in this checkout)")
+                    continue
                 value = statistics.median(samples[row])
-                if value == 0.0 and row == SPLIT_ROWS[7] and not wire:
+                if value == 0.0 and row == SPLIT_ROWS[8] and not wire:
                     continue
                 lines.append(f"  {row:<45} {value:9.2f}  {100.0 * value / total:5.1f} %")
             lines.append(f"  draw + glFinish                               {statistics.median(draws):9.2f}")

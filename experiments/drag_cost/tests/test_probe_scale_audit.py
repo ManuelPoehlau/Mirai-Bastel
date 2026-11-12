@@ -54,8 +54,8 @@ def test_imports_only_src_examples_and_its_own_folder(module):
     modules = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
     modules |= {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     assert modules <= {
-        "__future__", "argparse", "array", "ctypes", "gc", "hashlib", "math", "os", "platform", "shutil", "statistics",
-        "subprocess", "sys", "tempfile", "time", "pathlib",
+        "__future__", "argparse", "array", "ctypes", "gc", "hashlib", "importlib", "math", "os", "platform", "shutil",
+        "statistics", "subprocess", "sys", "tempfile", "time", "pathlib",
         "drag_cost", "loaders", "pyglet", "numpy", "mirai", "core", "viewport",
     }
 
