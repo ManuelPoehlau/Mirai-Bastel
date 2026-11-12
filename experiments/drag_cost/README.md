@@ -939,7 +939,8 @@ reference-PC run of that probe is open. *2026-11-11:* audit §I.1–§I.3 fixed 
 (picking probe, `--only split`, GL tests) is in
 [`RESULTS_O0_REFERENCE_PC_2026-11-11.md`](RESULTS_O0_REFERENCE_PC_2026-11-11.md).
 *2026-11-11, O1* (evaluated surfaces as position tables, audit §G.3): container before / after (one-time costs and
-memory, D3 frame) and the reference-PC commands in [`RESULTS_O1_CONTAINER_2026-11-11.md`](RESULTS_O1_CONTAINER_2026-11-11.md).
+memory, D3 frame) and the reference-PC commands in [`RESULTS_O1_CONTAINER_2026-11-11.md`](RESULTS_O1_CONTAINER_2026-11-11.md);
+the reference-PC run (tests with the skip list, chain, D3) in [`RESULTS_O1_REFERENCE_PC_2026-11-12.md`](RESULTS_O1_REFERENCE_PC_2026-11-12.md).
 
 ```
 python experiments/drag_cost/probe_scale_audit.py                 # split + one-time costs, gollum_20k and the 87.5k mesh

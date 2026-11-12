@@ -841,3 +841,30 @@ raw outputs and the reference-PC commands:
   Python work O3 addresses (viewport normals / neighbourhoods / mirrors ≈ 80 ms, stage arithmetic ≈ 28–49 ms).
 - **Open, reference PC:** the GL tests on the 9800 GTX driver, the chain rows at 20k and 87.5k and the D3 probe before /
   after (commands in the results file; GPU numbers only with "prefer maximum performance").
+
+## Addendum — O1 on the reference PC (Manu, 2026-11-12)
+
+Raw output, the skip list and the comparison:
+[`experiments/drag_cost/RESULTS_O1_REFERENCE_PC_2026-11-12.md`](../../../experiments/drag_cost/RESULTS_O1_REFERENCE_PC_2026-11-12.md)
+(Python 3.14.2, panels off, NVIDIA "prefer maximum performance"; `src/` tree `559d88b8e2` = `f0a90cc:src` after,
+`830f62e` before).
+
+- **Gate, tests [RPC]:** `tests/test_gl_*.py` in its own process 165 passed (face-data pixel identity on this driver,
+  picking on the mix); the five O1 test files 138 passed; `experiments/morph_lab/tests` 49 passed. `tests/` in one run:
+  6,555 passed, 183 skipped, 1 failed — fully accounted for in the results file: on Windows (no EGL) every
+  window / GL module after the first one that sets `pyglet.options["headless"]` skips (the GL modules ran on their
+  own), the imgui modules need a Python with `imgui-bundle`; the one failure is
+  `test_hud_strip.py::test_the_triad_ignores_zoom_and_pan_and_perspective`, 1–2 ULP from `OrbitCamera.basis()`
+  computing the view direction as `target − eye()` (Windows' `sin` / `cos`), outside O1 — a small fix of its own.
+- **One-time costs and memory [RPC]**, 87.5k: building the mix surface 3,367 → **378 ms**, the skin surface 2,852 →
+  **136 ms**; first weight step 9.45 → **6.15 s**, first pose step 9.83 → **6.67 s** (the rest is the new surface
+  `RenderMesh`, ≈ 5.8 s); process memory with both stages 1,170 → **730 MiB**. 20k: 2.22 / 2.40 → 1.45 / 1.62 s,
+  366 → 253 MiB.
+- **D3 [RPC]**, p50 (p95): pose wire off 319.44 (334.65) → **307.45 (317.85)**, weight 401.01 (436.74) → **375.16
+  (389.26)**; wire on 327.69 (341.81) → **313.35 (333.55)**, 404.10 (419.84) → **379.47 (396.85)**. Stage evaluation
+  −10 ms (pose) / −20 ms (weight), `_sync_geometry` unchanged (≈ 221–226 ms). Still 10–12× over the bar.
+- **Reading.** O1 did what §G.3 said: the per-stage copy, its build time and its memory are gone; the per-step gain is
+  modest. A pose frame is now ≈ 72 % `RenderMesh._sync_geometry` and ≈ 19 % stage arithmetic — the per-vertex Python
+  work that O3 (§H step 5, NumPy, D1) moves onto arrays, starting with the normals. Separately visible in the weight
+  rows: the HUD read-out (24.6 ms, known) and a GPU vertex-buffer upload of ≈ 33 ms (4 ms in pose rows), both unchanged
+  by O1.
