@@ -188,7 +188,22 @@ same split after O1 was 222 ms `_sync_geometry` of a 307 ms pose frame; its afte
 
 - **Stage 2:** skin and morph evaluation on arrays, the O1 table as an n×3 float64 array, positions handed from the
   stage to `RenderMesh` as arrays (no read per vertex, H7 contract). Its oracles are the existing ones
-  (`morph_mix.evaluate`, `skinning.evaluate`, bit-identical).
+  (`morph_mix.evaluate`, `skinning.evaluate`, bit-identical). Not started in this session: after stage 1 the D3 tick
+  in the container is ≈ 23–43 ms stage evaluation against 12 ms `_sync_geometry`, so stage 2 is the next lever — but
+  only the arithmetic is a kernel; the rest of a stage frame is per-vertex Python that an array table alone does not
+  remove, and it crosses contracts:
+  - **the journal** — `SurfacePositions._owner_record` merges one before-record per moved vertex into every watch, and
+    consumers read them (`morph_mix.topology_touched`, `Viewport._follow_cage`: `before is None` = new; `regions`,
+    `orbit_focus`); an array stage needs a record form for "these slots moved" with the same meaning;
+  - **candidates** — the skin stage's bone → points index and the mix's offset caches are dicts / sets of `VertexId`s;
+    as arrays they become slot index arrays kept in step with the weights / offsets journal;
+  - **the hand-over** — `RenderMesh` reads each moved position once (row 2f, 3.2 ms here); without that read it needs
+    the stage's positions and a slot map stage-table → render slots (H7 is duck-typed; the viewport still imports
+    nothing from `src/mirai`);
+  - **bit-identity details** — the mix adds "the first term as it is, then += in ascending LayerId order"; the skin's
+    remainder weight is `1.0 - math.fsum(...)` over the bones present in the pose (no NumPy equivalent: precompute per
+    point when weights or the bone set change), its first term is taken as it is, `c == 0.0` skips the rest term.
+  A design pass for these four points comes before code (an AD addendum to AD-025 §18 / AD-028 §17.4 or here).
 - SubD stencils on arrays (own package); O4 (C kernels; only per D2, if O3 leaves the D3 bar unmet on the reference
   PC); D6; the GPU shading cost of O2's fetches; the HUD during a weight drag; the GPU vertex-buffer upload of pyglet's
   whole region (each its own small package, audit addenda).
