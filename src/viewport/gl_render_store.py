@@ -37,6 +37,7 @@ here (see AD-018 §5 "Deliberately not decided here").
 
 from __future__ import annotations
 
+import ctypes
 from array import array
 
 from .light_rig import PRESET_HEUTE, PRESETS, resolve
@@ -422,6 +423,20 @@ _VERTEX_TEXTURES = {"position": (_POSITIONS_UNIT, "u_positions"), "normal": (_NO
 _FACE_MERGE_GAP = 1024
 
 
+def _write_floats(values: array, offset: int, data) -> None:
+    """`data` (a list of numbers, or a contiguous float32 buffer such as a NumPy view - O3, AD-032) into the float32
+    copy `values` at `offset`, growing it as needed. A buffer is copied byte for byte (the same float32 values the
+    list path would round to)."""
+    count = len(data)
+    end = offset + count
+    if len(values) < end:
+        values.extend(array("f", bytes(4 * (end - len(values)))))
+    if isinstance(data, (list, tuple)):
+        values[offset:end] = array("f", data)
+    else:
+        memoryview(values).cast("B")[4 * offset:4 * end] = memoryview(data).cast("B")
+
+
 def _register_sampler_buffer_uniform() -> None:
     """pyglet (2.1) has no setter for `samplerBuffer` uniforms and raises KeyError while
     introspecting the program. A sampler uniform is an int texture unit like `sampler2D`, so the
@@ -607,6 +622,8 @@ class GLRenderStore(ResourceStore):
         if name in self._face_buffers:
             self._face_cpu[name] = array("f")
             self._face_dirty[name] = None
+        elif self._is_vertex_attribute(name):
+            self._cpu[name] = array("f")  # O3: float32 like the GPU buffer, patched by memmove
         else:
             self._cpu[name] = []
         self.stats.count("gpu_resource_creations")
@@ -621,11 +638,19 @@ class GLRenderStore(ResourceStore):
         if name in self._face_buffers:
             self._update_face_data(name, offset, data)
             return
-        buf = self._cpu.setdefault(name, [])
-        needed = offset + len(data)
-        if len(buf) < needed:
-            buf.extend([0.0] * (needed - len(buf)))
-        buf[offset:offset + len(data)] = data
+        if self._is_vertex_attribute(name):
+            buf = self._cpu.get(name)
+            if not isinstance(buf, array):
+                buf = self._cpu[name] = array("f", buf or ())
+            _write_floats(buf, offset, data)
+        else:
+            if not isinstance(data, list):
+                data = data.tolist() if hasattr(data, "tolist") else list(data)
+            buf = self._cpu.setdefault(name, [])
+            needed = offset + len(data)
+            if len(buf) < needed:
+                buf.extend([0.0] * (needed - len(buf)))
+            buf[offset:offset + len(data)] = data
 
         group = self._group_of(name)
         if group is None:
@@ -648,9 +673,7 @@ class GLRenderStore(ResourceStore):
     def _update_face_data(self, name: str, offset: int, data: list) -> None:
         values = self._face_cpu.setdefault(name, array("f"))
         end = offset + len(data)
-        if len(values) < end:
-            values.extend(array("f", bytes(4 * (end - len(values)))))
-        values[offset:end] = array("f", data)
+        _write_floats(values, offset, data)
         if name not in self._face_dirty:
             self._face_dirty[name] = []
         dirty = self._face_dirty[name]
@@ -792,6 +815,9 @@ class GLRenderStore(ResourceStore):
                 return group
         return None
 
+    def _is_vertex_attribute(self, name: str) -> bool:
+        return any(name in attributes for attributes, _index in self._groups.values())
+
     def _patch_attribute(
         self, group: str, name: str, data: list[float], offset: int, count: int
     ) -> None:
@@ -824,6 +850,11 @@ class GLRenderStore(ResourceStore):
             # with the unread `highlight_flag` before 2026-11-11, AD-018 §7);
             # pyglet then built the VertexList without it, so there is
             # nothing on the GPU to patch. CPU copy stays in `_cpu`.
+            return
+        if isinstance(data, array):
+            # O3 (AD-032): the float32 CPU copy into pyglet's float32 backing store, one copy of the bytes - the same
+            # values the element-wise slice assignment wrote. Reading `target` above still marks pyglet's region dirty.
+            ctypes.memmove(ctypes.addressof(target) + 4 * offset, data.buffer_info()[0] + 4 * offset, 4 * count)
             return
         end = offset + count
         target[offset:end] = data[offset:end]

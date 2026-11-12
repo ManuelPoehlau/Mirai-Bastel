@@ -1,4 +1,6 @@
-# Entwicklungs-/Test-Abhängigkeiten (Python 3.9+).
+# Entwicklungs-/Test-Abhängigkeiten (Python 3.10+; Referenz-PC: 3.12, REFERENCE_HARDWARE §4).
+# Die Laufzeit-Abhängigkeiten von src/ (NumPy, AD-032) kommen aus requirements.txt.
+-r requirements.txt
 pytest
 
 # pyglet: Playground (optional, nicht im Default-Lauf) und Teile von tests/ und der Labs. Schon `import pyglet.window`

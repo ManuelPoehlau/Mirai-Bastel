@@ -1,0 +1,9 @@
+# Laufzeit-Abhängigkeiten von src/ (Production). Entwicklung und Tests: requirements-dev.txt (schließt diese Datei ein).
+#
+# NumPy (AD-032, Manu D1 2026-11-11): seit O3 Stufe 1 rechnet der Viewport seine abgeleiteten Daten (Normalen,
+# Nachbarschaft, Spiegel) auf Arrays. Exakt gepinnt: 2.2.6 ist die letzte geprüfte Version, die auf dem Referenz-PC
+# (Core 2 Quad Q9550, kein x86-64-v2) importiert und rechnet - unter Python 3.12.10, der dort verifizierten Laufzeit
+# (docs/architecture/REFERENCE_HARDWARE.md §4). Unter Python 3.14 gibt es kein 2.2.6-Wheel; neuere NumPy-Versionen
+# brechen auf dem Q9550 beim Import ab. Hochziehen nur nach einem Lauf auf dem Referenz-PC.
+# src/core importiert kein NumPy (tests/test_packed_geometry.py).
+numpy==2.2.6

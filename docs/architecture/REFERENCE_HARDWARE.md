@@ -130,7 +130,7 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
 - **Python-Umgebungen (Manu, 2026-10-20):** In PowerShell ist `python` 3.14.2 (alle Messungen hier und in den READMEs liefen damit, auch der Versuch, unter 3.12 zu messen); der PyCharm-Interpreter ist **Python 3.12.10** (Manu: früher musste auf 3.12 zurückgegangen werden, weil unter 3.14.2 etwas nicht funktionierte, der Grund ist ihm nicht mehr bekannt). Beide sind installiert. Zeiten und Garbage-Collector-Verhalten können sich zwischen den Versionen unterscheiden; ein Lauf unter 3.12.10 steht **aus** (Anleitung: `pip install pyglet` in die 3.12-venv, dann `probe_topology_sync_split.py` damit starten).
 - **NumPy (Manu, 2026-10-20, venv, Python 3.14.2 und 3.12.10):** unter 3.14.2: `import numpy` mit NumPy 2.5.4 (`cp314-cp314-win_amd64`, per `pip install numpy` in einer neuen venv) bricht auf dem Referenz-PC ab:
 `RuntimeError: NumPy was built with baseline optimizations: (X86_V2) but your machine doesn't support: (X86_V2).` Der Prozessor (Penryn, SSE4.1) erfüllt die x86-64-v2-Basis nicht
-  (Lesart, nicht geprüft: SSE4.2/POPCNT fehlen). **Unter Python 3.12.10 importiert dagegen NumPy 2.2.6 (`cp312-cp312-win_amd64`, `pip install "numpy<2.3"` in einer venv) ohne Fehler** (nur der Import, keine Rechenzeit gemessen). Bis zu welcher NumPy-Version das geht, ist ungeprüft; unter 3.14 verlangt Python ein NumPy, das hier nicht startet. Folge nach §4 dieses Dokuments: Code, der ein aktuelles NumPy voraussetzt, ist ein Konflikt mit dem Referenz-PC; ein gepinntes älteres NumPy unter 3.12 ist es nach dem heutigen Stand nicht, müsste aber ausdrücklich entschieden werden.
+  (Lesart, nicht geprüft: SSE4.2/POPCNT fehlen). **Unter Python 3.12.10 importiert dagegen NumPy 2.2.6 (`cp312-cp312-win_amd64`, `pip install "numpy<2.3"` in einer venv) ohne Fehler** (nur der Import, keine Rechenzeit gemessen). Bis zu welcher NumPy-Version das geht, ist ungeprüft; unter 3.14 verlangt Python ein NumPy, das hier nicht startet. Folge nach §4 dieses Dokuments: Code, der ein aktuelles NumPy voraussetzt, ist ein Konflikt mit dem Referenz-PC; ein gepinntes älteres NumPy unter 3.12 ist es nach dem heutigen Stand nicht, müsste aber ausdrücklich entschieden werden. *(Entschieden 2026-11-11, D1: `numpy==2.2.6` unter Python 3.12.10, seit 2026-11-12 in Production - §4.)*
 
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 
@@ -150,6 +150,17 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
 - Leistungs- und Render-Aussagen kennzeichnen: gemessen **auf dem Referenz-PC** oder anderswo (z. B. headless unter Xvfb). Headless-Zahlen ersetzen keine Messung hier.
 - Ein Feature, das OpenGL über 3.3, Mehrkern-Parallelisierung oder neuere CPU-Befehlssätze braucht, wird als Konflikt mit dem Referenz-PC gemeldet und nicht still eingebaut.
 - Nichts hier als gemessen darstellen, was in Abschnitt 2 unter „Einschätzung“ oder „Offen“ steht.
+- **NumPy und Python-Version (Manu, Entscheidung D1, 2026-11-11; seit 2026-11-12 in Production, [AD-032](AD-032-PACKED-ARRAYS-NUMPY.md)):**
+  NumPy ist eine Laufzeit-Abhängigkeit von `src/` (oberhalb des Core; `src/core` importiert kein NumPy), exakt gepinnt
+  in `requirements.txt` auf `numpy==2.2.6`. Die verifizierte Laufzeit auf dem Referenz-PC ist **Python 3.12.10**: dort
+  importiert und rechnet NumPy 2.2.6 (Kernel-Probe 2026-11-10). Es gibt **keine x86-64-v2-Voraussetzung**: der Q9550
+  erfüllt sie nicht, und NumPy-Builds mit dieser Basis (z. B. 2.5.x) brechen hier beim Import ab. Unter Python 3.14 gibt
+  es kein 2.2.6-Wheel - Läufe, die Production-Code ausführen, laufen auf dem Referenz-PC deshalb unter 3.12 (vorher und
+  nachher mit demselben Interpreter, wenn verglichen wird). Ein Hochziehen von NumPy oder Python wird erst nach einem Lauf
+  hier übernommen (Import, `tests/test_packed_geometry.py`, die D3-Probe). Fehlt NumPy oder startet es nicht, bricht
+  `import viewport` mit einem Hinweis auf diese Regel ab. **Offen (Stand 2026-11-12):** der Import und die Ausführung des
+  Production-Pfads auf dem Referenz-PC (D1 „verify the actual production import and execution“) - Befehle in
+  `experiments/drag_cost/RESULTS_O3_STAGE1_CONTAINER_2026-11-12.md`.
 
 ---
 

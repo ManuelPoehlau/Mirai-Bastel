@@ -94,7 +94,9 @@ Die Production-Aufteilung ist bewusst zweigeteilt: `src/viewport` besitzt
 Renderdaten, Dirty-State, Overlay und Resource-Stores; `src/mirai/viewport`
 besitzt die wiederverwendbare Orbit-Kamera, Picking und Display-State. Die
 Bindung erfolgt an der Application-Grenze, ohne dass `src/viewport` von
-`src/mirai` importiert.
+`src/mirai` importiert. Seine abgeleitete Geometrie (Normalen, Nachbarschaft,
+CPU-Spiegel) rechnet `src/viewport` seit 2026-11-12 auf NumPy-Arrays
+([AD-032](AD-032-PACKED-ARRAYS-NUMPY.md)); `src/core` importiert kein NumPy.
 
 Derzeit implementierte Verantwortlichkeiten sind:
 

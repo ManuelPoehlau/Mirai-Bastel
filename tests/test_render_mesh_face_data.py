@@ -9,6 +9,8 @@ vertices; the rows must stay equal to a fresh build while vertices move and afte
 
 from __future__ import annotations
 
+from array import array
+
 import pytest
 
 import tests._bootstrap  # noqa: F401
@@ -80,8 +82,10 @@ def test_the_slots_address_the_vertex_buffers_the_shader_reads():
         for k, slot in enumerate(_rows(rm, FACE_CORNERS)[rm._face_row[face_id]][:4]):
             v = mesh.face_vertices(face_id)[k]
             s = int(slot)
-            assert _close(positions[3 * s:3 * s + 3], mesh.vertex_position(v))
-            assert _close(normals[3 * s:3 * s + 3], rm.derived.vertex_normals[v])
+            # The store holds float32 like the GPU buffer (since O3 stage 1 also after a full build, AD-032): exactly the
+            # float32 rounding of the vertex's position and normal.
+            assert positions[3 * s:3 * s + 3] == array("f", mesh.vertex_position(v)).tolist()
+            assert normals[3 * s:3 * s + 3] == array("f", rm.derived.vertex_normals[v]).tolist()
 
 
 def test_triangle_rows_are_padded():

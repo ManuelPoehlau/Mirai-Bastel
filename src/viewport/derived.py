@@ -23,7 +23,12 @@ Normalen-Definition (wie im Experiment gewählt und im Proof verifiziert):
   einer Linie lagen (Split-Vertex auf einer Kante); siehe
   docs/archive/early_work_packages/WP-04_GATE_5_COMPLETION.md §7.2 (Nachtrag).
 - Vertex-Normale: flächengewichteter Durchschnitt der Normalen aller
-  incident Faces.
+  incident Faces. Seit O3 Stufe 1 (AD-032, 2026-11-12) in fester Reihenfolge
+  summiert: die Faces nach aufsteigender `FaceId` (vorher in der Iterations-
+  reihenfolge eines `set`). Damit ist `DerivedGeometry` die bit-genaue
+  Python-Referenz der Array-Kernel in `packed_geometry.py`, die `RenderMesh`
+  seitdem rechnet (Unterschied zur alten Reihenfolge: höchstens Rundung in der
+  letzten Stelle).
 
 Minimale betroffene Nachbarschaft bei einem Vertex-Move V (siehe
 `affected_neighborhood`):
@@ -224,6 +229,11 @@ class DerivedGeometry:
     `vertex_to_faces` ist bewusst hier (nicht im Core) angesiedelt: reine
     Render-/Derived-Data, nicht Teil der Topologie-Domäne (§7 der
     Core-Spezifikation - Topologie-Grenze).
+
+    Seit O3 Stufe 1 (AD-032) rechnet `RenderMesh` nicht mehr hiermit, sondern auf
+    Arrays (`packed_geometry.PackedGeometry`); diese Klasse bleibt die reine
+    Python-Referenz (Test-Orakel) der Normalen-Definition, die die Arrays
+    bit-genau treffen.
     """
 
     def __init__(self, mesh: Mesh, on_bounds_recomputed=None) -> None:
@@ -281,7 +291,7 @@ class DerivedGeometry:
         sums: dict[VertexId, Vec3] = {v: (0.0, 0.0, 0.0) for v in mesh.all_vertex_ids()}
         for vertex_id, face_ids in self.vertex_to_faces.items():
             acc = sums[vertex_id]
-            for face_id in face_ids:
+            for face_id in sorted(face_ids):  # fixed order: ascending FaceId (module docstring)
                 fn = self.face_normals[face_id]
                 acc = (acc[0] + fn[0], acc[1] + fn[1], acc[2] + fn[2])
             sums[vertex_id] = acc
@@ -330,15 +340,14 @@ class DerivedGeometry:
         """Berechnet die Vertex-Normale für die gegebenen Vertices neu.
 
         Verwendet die (bereits aktualisierten) Face-Normalen der incident
-        Faces jedes Vertex (flächengewichteter Durchschnitt) — es werden
-        KEINE Faces außerhalb `vertex_ids` neu besucht.
+        Faces jedes Vertex (flächengewichteter Durchschnitt, in aufsteigender
+        `FaceId`-Reihenfolge summiert) — es werden KEINE Faces außerhalb
+        `vertex_ids` neu besucht.
         """
-        # Scalars instead of a new tuple per face (same additions in the same order): this runs for
-        # every moved vertex's 1-ring per frame (a morph weight step, a SubD surface patch, a drag).
         v2f, face_normals, out = self.vertex_to_faces, self.face_normals, self.vertex_normals
         for vertex_id in vertex_ids:
             x = y = z = 0.0
-            for face_id in v2f.get(vertex_id, ()):
+            for face_id in sorted(v2f.get(vertex_id, ())):
                 fx, fy, fz = face_normals[face_id]
                 x += fx
                 y += fy

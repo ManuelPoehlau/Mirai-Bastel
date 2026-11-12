@@ -94,7 +94,11 @@ class ResourceStore(ABC):
 
     @abstractmethod
     def update(self, name: str, offset: int, data: list[float], nbytes: int) -> None:
-        """Partielles Update in dieselbe Ressource (gleiche Identität)."""
+        """Partielles Update in dieselbe Ressource (gleiche Identität).
+
+        `data`: eine Liste von Zahlen oder (seit O3 Stufe 1, AD-032) ein zusammenhängendes 1-D-float32-Array
+        (Buffer-Protokoll, z. B. eine NumPy-Sicht auf einen CPU-Spiegel von `RenderMesh`). Der Store kopiert die
+        Werte; er behält keine Referenz auf `data`."""
 
     @abstractmethod
     def destroy(self, name: str) -> None:
@@ -178,6 +182,8 @@ class TraceStore(ResourceStore):
 
     def update(self, name: str, offset: int, data: list[float], nbytes: int) -> None:
         res = self._ensure(name)
+        if not isinstance(data, list):
+            data = data.tolist() if hasattr(data, "tolist") else list(data)
         buf = self._data.setdefault(name, [])
         needed = offset + len(data)
         if len(buf) < needed:
@@ -280,6 +286,8 @@ class PygletStore(ResourceStore):
             name, ("position", 3)
         )
         attr_array = getattr(vlist, attribute_name)
+        if not isinstance(data, list):
+            data = data.tolist() if hasattr(data, "tolist") else list(data)
         attr_array[offset:offset + len(data)] = data
         res.updates += 1
         res.bytes_uploaded += nbytes

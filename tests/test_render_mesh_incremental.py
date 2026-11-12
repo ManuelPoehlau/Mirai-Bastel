@@ -3,8 +3,9 @@ the buffers holding, per element, what a fresh full build of the same mesh holds
 
 Oracle: a new `RenderMesh` on the same mesh (the full-rebuild path). Compared per live element,
 because the patched layout keeps slots (dead slots, spare capacity) while the fresh one is compact:
-positions and normals per vertex (normals within 1e-9: a vertex normal is a sum over a set of
-faces whose iteration order may differ), the triangles of every face in order and their face row,
+positions and normals per vertex - bit-identical since O3 stage 1 (AD-032: a vertex normal adds its faces in
+ascending FaceId order, whatever the layout; until then within 1e-9, the faces were summed in a set's order), the
+triangles of every face in order and their face row,
 the face-data rows (`face_normals`; `face_corners` through the vertices its slots address), `triangle_faces`,
 adjacency; every other triangle slot is
 degenerate and every free vertex slot holds `DEAD_POSITION`. Sequences mix every topology
@@ -46,10 +47,6 @@ def _grid(n: int) -> Mesh:
     return mesh
 
 
-def _close(a, b, tol=1e-9) -> bool:
-    return all(abs(x - y) <= tol for x, y in zip(a, b)) and len(a) == len(b)
-
-
 def assert_equivalent(rm: RenderMesh) -> None:
     mesh = rm.mesh
     fresh = RenderMesh(mesh, overlay=rm.overlay, store_type=TraceStore)
@@ -61,9 +58,9 @@ def assert_equivalent(rm: RenderMesh) -> None:
     assert set(rm._vertex_index) == live
     for v in live:
         i, j = rm.vertex_index_of(v), fresh.vertex_index_of(v)
-        assert positions[3 * i:3 * i + 3] == pytest.approx(rpos[3 * j:3 * j + 3], abs=1e-6)
-        assert _close(normals[3 * i:3 * i + 3], rnorm[3 * j:3 * j + 3], 1e-6), v
-        assert _close(rm.derived.vertex_normals[v], fresh.derived.vertex_normals[v])
+        assert positions[3 * i:3 * i + 3] == rpos[3 * j:3 * j + 3]
+        assert normals[3 * i:3 * i + 3] == rnorm[3 * j:3 * j + 3], v
+        assert rm.derived.vertex_normals[v] == fresh.derived.vertex_normals[v]
     for slot, v in enumerate(rm._slot_vertex):
         if v is None:
             assert tuple(positions[3 * slot:3 * slot + 3]) == pytest.approx(DEAD_POSITION)
@@ -85,13 +82,13 @@ def assert_equivalent(rm: RenderMesh) -> None:
             tri = rm._triangle_indices[t]
             assert indices[3 * t:3 * t + 3] == [float(rm.vertex_index_of(v)) for v in tri]
         n, m = FACE_NORMAL_FLOATS, FACE_CORNER_FLOATS
-        assert _close(face_normals[row * n:(row + 1) * n], ref_face_normals[ref_row * n:(ref_row + 1) * n], 1e-6), f
+        assert face_normals[row * n:(row + 1) * n] == ref_face_normals[ref_row * n:(ref_row + 1) * n], f
         # Corner slots differ between the patched and the compact layout: compare the vertices they address.
         mine_c, theirs_c = corners[row * m:(row + 1) * m], ref_corners[ref_row * m:(ref_row + 1) * m]
         k = min(len(mesh.face_vertices(f)), 4)
         assert [rm._slot_vertex[int(x)] for x in mine_c[:k]] == [fresh._slot_vertex[int(x)] for x in theirs_c[:k]], f
         assert mine_c[k:4] == theirs_c[k:4] and mine_c[4:] == theirs_c[4:], f
-        assert _close(rm.derived.face_normals[f], fresh.derived.face_normals[f])
+        assert rm.derived.face_normals[f] == fresh.derived.face_normals[f]
     for t in range(len(indices) // 3):
         if t not in live_slots:
             assert indices[3 * t:3 * t + 3] == [0.0, 0.0, 0.0]

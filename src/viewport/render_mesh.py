@@ -72,6 +72,13 @@ sich nur strukturell (und `face_corners` mit der Regionsfarbe); eine Verformung 
 Faces um bewegte Vertices (4 Floats je Face; bis O2 waren es 36 Floats je Face um jeden Vertex mit neuer Normale:
 Normale, vier Eck-Positionen, vier Eck-Normalen - Audit 2026-11-10 §E.3).
 
+Arrays (AD-032, O3 Stufe 1, 2026-11-12): die abgeleiteten Daten - Positionen je Slot, Face- und Vertex-Normalen, die
+Nachbarschaft (Ecken je Face-Zeile, Faces je Vertex-Slot) - liegen in `packed` (`packed_geometry.PackedGeometry`,
+NumPy-Arrays auf genau diesem Slot-Layout), nicht mehr in Dicts nach ID. Ein Geometry-Sync liest nur die Positionen der
+bewegten Vertices (`_read_moved`), rechnet den 1-Ring auf den Arrays (bit-gleich zur Python-Referenz
+`derived.DerivedGeometry`) und gibt float32-Bereiche der CPU-Spiegel an den Store; ein Topology-Patch schreibt die
+Journal-Änderungen in die Arrays wie in das Slot-Layout. `derived` ist seitdem eine Lese-Sicht nach ID auf die Arrays.
+
 Textur (AD-026, 2026-10-29): hat die Mesh Face-Ecken-UVs und das gebundene Material eine Textur
 (`material.texture`), legt `RenderMesh` eine dritte Daten-Ressource an, `triangle_uvs`: je
 Dreiecks-Slot die UVs seiner drei Ecken (6 Floats, in der Reihenfolge seiner Indizes; eine Face ohne
@@ -84,13 +91,16 @@ beim Verschieben. Ohne Textur gibt es sie nicht - kein Upload, kein Unterschied 
 from __future__ import annotations
 
 from array import array
+from collections.abc import Mapping
+from itertools import chain
 
 from core import EdgeId, FaceId, Mesh, VertexId
 
 from .benchmark import BenchmarkCounters
 from .category import DirtyState
-from .derived import DerivedGeometry, _normalize, face_normal, triangulate_face
+from .derived import triangulate_face
 from .hidden_rule import NOTHING, Resolved, resolve
+from .packed_geometry import PackedGeometry, np
 from .overlay import SelectionOverlay
 from .resource_store import ResourceStore, TraceStore
 
@@ -157,15 +167,21 @@ def _flatten_vec3(values) -> list[float]:
 _UPLOAD_GAP = 32
 
 
-def _ranges(slots, gap: int) -> list[tuple[int, int]]:
-    """[lo, hi) slot ranges covering `slots`, joined across gaps of fewer than `gap` slots."""
-    ranges: list[list[int]] = []
-    for slot in sorted(slots):
-        if ranges and slot < ranges[-1][1] + gap:
-            ranges[-1][1] = slot + 1
-        else:
-            ranges.append([slot, slot + 1])
-    return [(lo, hi) for lo, hi in ranges]
+def _ranges(slots: np.ndarray, gap: int) -> list[tuple[int, int]]:
+    """[lo, hi) slot ranges covering the ascending, distinct `slots`, joined across gaps of fewer than `gap` slots."""
+    if not len(slots):
+        return []
+    breaks = np.flatnonzero(np.diff(slots) > gap)
+    lows = slots[np.concatenate(((0,), breaks + 1))].tolist()
+    highs = (slots[np.concatenate((breaks, (len(slots) - 1,)))] + 1).tolist()
+    return list(zip(lows, highs))
+
+
+def _slot_array(slots) -> np.ndarray:
+    """Ascending, distinct slots from a set, a list or an array of ints."""
+    if isinstance(slots, np.ndarray):
+        return np.unique(slots)
+    return np.unique(np.fromiter(slots, dtype=np.intp, count=len(slots)))
 
 
 def _runs(slots) -> list[list[int]]:
@@ -177,6 +193,66 @@ def _runs(slots) -> list[list[int]]:
         else:
             runs.append([slot])
     return runs
+
+
+class _ById(Mapping):
+    """`{id: value}` over one of `RenderMesh`'s id -> slot / row maps, read from the arrays on access (read-only)."""
+
+    __slots__ = ("_index", "_read", "_has")
+
+    def __init__(self, index: dict, read, has=None) -> None:
+        self._index, self._read, self._has = index, read, has
+
+    def __getitem__(self, key):
+        slot = self._index[key]
+        if self._has is not None and not self._has(slot):
+            raise KeyError(key)
+        return self._read(slot)
+
+    def __iter__(self):
+        has = self._has
+        return iter(self._index) if has is None else (k for k, slot in self._index.items() if has(slot))
+
+    def __len__(self) -> int:
+        return len(self._index) if self._has is None else sum(1 for _ in self)
+
+
+class DerivedView:
+    """What `RenderMesh.derived` was until O3 stage 1 (a `derived.DerivedGeometry`), as read-only mappings over the
+    arrays (AD-032): `vertex_normals` / `face_normals` ({id: (x, y, z)}), `vertex_to_faces` ({VertexId: set of FaceId},
+    only vertices with faces, as the reference) and the lazy bounds. For tests, probes and the transform tools' normal
+    queries; `RenderMesh` itself computes on the arrays."""
+
+    def __init__(self, render_mesh: "RenderMesh") -> None:
+        self._rm = render_mesh
+        packed, row_face = render_mesh.packed, render_mesh._row_face
+        self.vertex_normals = _ById(render_mesh._vertex_index, lambda slot: tuple(packed.VN[slot].tolist()))
+        self.face_normals = _ById(render_mesh._face_row, lambda row: tuple(packed.FN[row].tolist()))
+        self.vertex_to_faces = _ById(
+            render_mesh._vertex_index, lambda slot: {row_face[r] for r in packed.faces_of(slot)},
+            lambda slot: packed.vertex_faces.count[slot] > 0,
+        )
+
+    def affected_neighborhood(self, mesh: Mesh, moved_vertices) -> tuple[set[FaceId], set[VertexId]]:
+        """(face ids, vertex ids) a move of `moved_vertices` re-normals - `PackedGeometry.neighbourhood` by id
+        (`mesh` is accepted for the reference's signature; the view reads its own render mesh)."""
+        rm = self._rm
+        index = rm._vertex_index
+        slots = np.fromiter((index[v] for v in moved_vertices), dtype=np.intp, count=len(moved_vertices))
+        rows, ring = rm.packed.neighbourhood(slots)
+        return {rm._row_face[r] for r in rows.tolist()}, {rm._slot_vertex[v] for v in ring.tolist()}
+
+    def _bounds(self):
+        stats = self._rm.stats
+        return self._rm.packed.bounds(lambda: stats.count("bounds_recalculations"))
+
+    @property
+    def bounds_min(self):
+        return self._bounds()[0]
+
+    @property
+    def bounds_max(self):
+        return self._bounds()[1]
 
 
 class RenderMesh:
@@ -212,10 +288,10 @@ class RenderMesh:
         self._uv_active = False
         # Änderungs-Journal der Mesh (AD-023 V1): was sich seit dem letzten Sync geändert hat.
         self._watch = mesh.watch()
-        self._mirror: dict[str, array] = {}
-        self.derived = DerivedGeometry(
-            mesh, on_bounds_recomputed=lambda: self.stats.count("bounds_recalculations")
-        )
+        # CPU mirrors (float32, one row per slot / face row): what the store last received, patched in place.
+        self._mirror: dict[str, np.ndarray] = {}
+        #: Positions, face / vertex normals and their adjacency on this layout's slots and rows (AD-032, O3 stage 1).
+        self.packed = PackedGeometry()
         self.dirty = DirtyState()
         self.overlay = overlay
 
@@ -299,8 +375,13 @@ class RenderMesh:
     def _incremental(self) -> bool:
         return len(self._vertex_index) + len(self._face_row) >= INCREMENTAL_MIN_ELEMENTS
 
+    @property
+    def derived(self) -> "DerivedView":
+        """Read-only view of the derived data by ID (`vertex_normals`, `face_normals`, `vertex_to_faces`, bounds), the
+        mapping API of `derived.DerivedGeometry` over the arrays of `packed`."""
+        return DerivedView(self)
+
     def _full_rebuild(self) -> None:
-        self.derived.full_recompute(self.mesh)
         if self._hidden or self._hidden_faces:
             self._resolved = resolve(self.mesh, self._hidden, self._hidden_faces)
         self._rebuild_index_mapping()
@@ -513,13 +594,22 @@ class RenderMesh:
         self._retriangulate = set()
         self._rebuild_edge_slots(spare)
 
-    def _positions_flat(self) -> list[float]:
-        position = self.mesh.vertex_position
-        return [c for v in self._slot_vertex for c in (DEAD_POSITION if v is None else position(v))]
-
-    def _normals_flat(self) -> list[float]:
-        normals = self.derived.vertex_normals
-        return [c for v in self._slot_vertex for c in (_ZERO3 if v is None else normals[v])]
+        # The arrays (AD-032) on exactly this layout: live slots first in mesh order, spare slots dead.
+        pos = np.empty((n_v + spare_v, 3))
+        pos[n_v:] = DEAD_POSITION
+        if n_v:
+            pos[:n_v] = np.fromiter(chain.from_iterable(map(positions.__getitem__, vids)), dtype=np.float64,
+                                    count=3 * n_v).reshape(n_v, 3)
+        live = np.zeros(n_v + spare_v, dtype=bool)
+        live[:n_v] = True
+        sizes = np.zeros(n_f + spare_f, dtype=np.intp)
+        sizes[:n_f] = np.fromiter(map(len, face_boundary.values()), dtype=np.intp, count=n_f)
+        index = self._vertex_index
+        corners = np.fromiter(map(index.__getitem__, chain.from_iterable(face_boundary.values())), dtype=np.intp,
+                              count=int(sizes.sum()))
+        face_ids = np.full(n_f + spare_f, -1, dtype=np.int64)
+        face_ids[:n_f] = np.fromiter(fids, dtype=np.int64, count=n_f)
+        self.packed.build(pos, live, sizes, corners, face_ids)
 
     def _indices_flat(self) -> list[float]:
         return [c for t, tri in enumerate(self._triangle_indices) for c in self._triangle_values(t, tri)]
@@ -591,17 +681,6 @@ class RenderMesh:
         if set_texture is not None:
             set_texture(getattr(self.material, "texture", None) if self._uv_active else None)
 
-    def _face_normal_values(self, face_ids) -> list[float]:
-        """The `face_normals` rows of `face_ids` (Newell normal, corner count), concatenated in that order."""
-        face_normals = self.derived.face_normals
-        boundary = self._face_boundary
-        out: list[float] = []
-        extend = out.extend
-        for face_id in face_ids:
-            nx, ny, nz = face_normals[face_id]
-            extend((nx, ny, nz, float(len(boundary[face_id]))))
-        return out
-
     def _face_corner_values(self, face_ids) -> list[float]:
         """The `face_corners` rows of `face_ids` (vertex slots of the first four corners, unused ones 0; region tint),
         concatenated in that order."""
@@ -645,19 +724,23 @@ class RenderMesh:
                 self.stats.count("structural_rebuilds")
 
         self.store.begin_rebuild(MESH_GROUP)
-        positions, normals = self._positions_flat(), self._normals_flat()
-        # CPU-Spiegel (2026-10-21): ein Patch schreibt hierhin und lädt wenige zusammengefasste
-        # Bereiche hoch statt eines `store.update` je Vertex (W-Drag großer Auswahlen).
-        self._mirror = {"positions": array("f", positions), "normals": array("f", normals)}
-        put("positions", positions)
-        put("normals", normals)
+        packed = self.packed
+        # CPU-Spiegel (2026-10-21; seit O3 float32-Arrays je Slot): ein Patch schreibt hierhin und lädt wenige
+        # zusammengefasste Bereiche hoch statt eines `store.update` je Vertex (W-Drag großer Auswahlen).
+        positions, normals = packed.P.astype(np.float32), packed.VN.astype(np.float32)
+        self._mirror = {"positions": positions, "normals": normals}
+        put("positions", positions.reshape(-1))
+        put("normals", normals.reshape(-1))
         put("indices", self._indices_flat())
         self.store.end_rebuild(MESH_GROUP)
 
         put(TRIANGLE_FACES, [float(row) for row in self._triangle_face_rows])
-        face_normals = self._face_rows_flat(self._face_normal_values, _DEAD_NORMAL_ROW)
-        self._mirror[FACE_NORMALS] = array("f", face_normals)
-        put(FACE_NORMALS, face_normals)
+        # Face rows: Newell normal + corner count; a free row has size 0 and normal (0, 0, 0) = `_DEAD_NORMAL_ROW`.
+        face_normals = np.zeros((len(self._row_face), FACE_NORMAL_FLOATS), dtype=np.float32)
+        face_normals[:, :3] = packed.FN
+        face_normals[:, 3] = packed.corners.count
+        self._mirror[FACE_NORMALS] = face_normals
+        put(FACE_NORMALS, face_normals.reshape(-1))
         put(FACE_CORNERS, self._face_rows_flat(self._face_corner_values, _DEAD_CORNER_ROW))
         self._uv_active = self._uv_wanted()
         if self._uv_active:
@@ -767,7 +850,12 @@ class RenderMesh:
         if change.faces or change.face_uvs:
             return True
         index = self._vertex_index
-        return any((v in index) != mesh.is_valid_vertex(v) for v in change.vertices)
+        vertices = change.vertices
+        if vertices.keys() <= index.keys():
+            # The usual frame (only moves, every vertex known): structural only if one of them went away. Same answer
+            # as the general test below, without a Python-level step per moved vertex (O3 stage 1).
+            return not all(map(mesh.is_valid_vertex, vertices))
+        return any((v in index) != mesh.is_valid_vertex(v) for v in vertices)
 
     # -- Kategorie-Syncs ------------------------------------------------------
 
@@ -845,33 +933,52 @@ class RenderMesh:
         if any(len(b) < 3 for b in new_boundary.values()):
             return False
 
-        derived = self.derived
-        v2f, fnormals, vnormals = derived.vertex_to_faces, derived.face_normals, derived.vertex_normals
+        packed = self.packed
+        row_face = self._row_face
         position = mesh.vertex_position
-        dirty_vertices: set[VertexId] = set()
-        pos_slots: dict[int, tuple] = {}
-        normal_slots: dict[int, tuple] = {}
+        pos_slots: set[int] = set()
+        normal_slots: set[int] = set()
         tri_slots: dict[int, tuple] = {}
         # Face rows whose Newell normal (`normal_rows`) or corner slots (`corner_rows`) changed; the corners' positions
         # and normals are read from the vertex buffers (O2), so a face around a moved vertex needs no other row.
         normal_rows: set[int] = set()
         corner_rows: set[int] = set()
 
-        # Adjazenz: alte Boundaries austragen, neue eintragen.
+        # Adjacency (vertex -> faces): edited here as FaceId sets, read from the arrays before anything moves, written
+        # back as rows in ascending FaceId order once every face has its row (AD-032: the fixed summation order).
+        faces_around: dict[VertexId, set[FaceId]] = {}
+
+        def adjacency(v: VertexId) -> set[FaceId]:
+            got = faces_around.get(v)
+            if got is None:
+                slot = index.get(v)
+                got = faces_around[v] = set() if slot is None else {row_face[r] for r in packed.faces_of(slot)}
+            return got
+
+        dirty_vertices: set[VertexId] = set()
         for f in (*removed_f, *changed_f):
             old = face_boundary[f]
             for v in old:
-                faces_of = v2f.get(v)
-                if faces_of is not None:
-                    faces_of.discard(f)
+                adjacency(v).discard(f)
             dirty_vertices.update(old)
         for f, b in new_boundary.items():
             for v in b:
-                faces_of = v2f.get(v)
-                if faces_of is None:
-                    v2f[v] = {f}
-                else:
-                    faces_of.add(f)
+                adjacency(v).add(f)
+
+        # Re-triangulated: new / changed faces and every face around a vertex moved since its faces' last
+        # triangulation (`_retriangulate`, this patch's moves); dazu Faces mit neuen UVs (AD-026: ihre Dreiecks-Slots
+        # bekommen sie beim Schreiben). The faces around those vertices now are their faces before this patch minus the
+        # removed ones, plus new / changed faces (already in the set) - read from the arrays before rows are reused.
+        retri: set[FaceId] = set(new_boundary)
+        if self._uv_active:
+            retri.update(f for f in change.face_uvs if f in face_row and is_valid_face(f))
+        removed_v_set = set(removed_v)
+        around = [index[v] for v in (*moved_v, *self._retriangulate) if v in index and v not in removed_v_set]
+        if around:
+            rows = packed.rows_around(np.fromiter(around, dtype=np.intp, count=len(around)))
+            retri.update(map(row_face.__getitem__, rows.tolist()))
+            retri.difference_update(removed_f)
+        self._retriangulate = set()
 
         def free_triangles(f: FaceId) -> None:
             for t in face_triangles.pop(f):
@@ -883,31 +990,33 @@ class RenderMesh:
         for f in removed_f:
             free_triangles(f)
             row = face_row.pop(f)
-            self._row_face[row] = None
+            row_face[row] = None
             self._free_rows.append(row)
             normal_rows.add(row)
             corner_rows.add(row)
             del face_boundary[f]
-            fnormals.pop(f, None)
+            packed.clear_face(row)
         for f in changed_f:
             free_triangles(f)
         for v in removed_v:
             slot = index.pop(v)
             self._slot_vertex[slot] = None
             self._free_vertex_slots.append(slot)
-            pos_slots[slot] = DEAD_POSITION
-            normal_slots[slot] = _ZERO3
-            vnormals.pop(v, None)
-            if not v2f.get(v, True):
-                del v2f[v]
-            self._retriangulate.discard(v)
+            packed.clear_vertex(slot, DEAD_POSITION)
+            pos_slots.add(slot)
+            normal_slots.add(slot)
         for v in added_v:
             slot = self._free_vertex_slots.pop()
             index[v] = slot
             self._slot_vertex[slot] = v
-            pos_slots[slot] = position(v)
+            packed.add_vertex(slot, position(v))
+            pos_slots.add(slot)
+            normal_slots.add(slot)  # (0, 0, 0) until a face holds it
+        P = packed.P
         for v in moved_v:
-            pos_slots[index[v]] = position(v)
+            slot = index[v]
+            P[slot] = position(v)
+            pos_slots.add(slot)
 
         edge_indices = self.edge_indices
         edge_dirty = tuple(self._edge_dirty.values())
@@ -931,26 +1040,16 @@ class RenderMesh:
             for dirty in edge_dirty:
                 dirty.add(slot)
 
-        # Neu triangulieren: neue / geänderte Faces und alle Faces um bewegte Vertices; dazu Faces mit
-        # neuen UVs (AD-026: ihre Dreiecks-Slots bekommen sie beim Schreiben).
-        retri: set[FaceId] = set(new_boundary)
-        if self._uv_active:
-            retri.update(f for f in change.face_uvs if f in face_row and is_valid_face(f))
-        for v in (*moved_v, *self._retriangulate):
-            faces_of = v2f.get(v)
-            if faces_of:
-                retri.update(faces_of)
-        self._retriangulate = set()
+        live_rows: list[int] = []
         for f in retri:
             b = new_boundary.get(f) or face_vertices(f)
             positions = {v: position(v) for v in b}
             tris = triangulate_face(b, positions)
-            fnormals[f] = face_normal(positions, b)
             face_boundary[f] = tuple(b)
             row = face_row.get(f)
             if row is None:
                 row = face_row[f] = self._free_rows.pop()
-                self._row_face[row] = f
+                row_face[row] = f
             slots = face_triangles.get(f)
             if slots is None or len(slots) != len(tris):
                 if slots is not None:
@@ -962,36 +1061,28 @@ class RenderMesh:
                 self._triangle_face_rows[t] = row
                 tri_slots[t] = self._triangle_values(t, tri)
             normal_rows.add(row)
+            live_rows.append(row)
             if f in new_boundary:
                 corner_rows.add(row)
+                packed.set_face(row, [index[v] for v in b])
             dirty_vertices.update(b)
-
-        # Vertex-Normalen um alles, was sich geändert hat (wie `full_recompute`: ein Vertex ohne
-        # Faces bekommt (0, 0, 0) und keinen Adjazenz-Eintrag).
-        for v in dirty_vertices:
+        for v, faces in faces_around.items():
             slot = index.get(v)
-            if slot is None:
-                continue
-            faces_of = v2f.get(v)
-            sx = sy = sz = 0.0
-            if faces_of:
-                for f in faces_of:
-                    n = fnormals[f]
-                    sx += n[0]
-                    sy += n[1]
-                    sz += n[2]
-            elif faces_of is not None:
-                del v2f[v]
-            normal = vnormals[v] = _normalize((sx, sy, sz))
-            normal_slots[slot] = normal
-        for v in added_v:
-            if v not in vnormals:
-                vnormals[v] = _ZERO3
-                normal_slots[index[v]] = _ZERO3
-        derived.invalidate_bounds(mesh)
+            if slot is not None:
+                packed.set_faces_of(slot, [face_row[f] for f in sorted(faces)])
 
-        self._upload_vec3("positions", pos_slots)
-        self._upload_vec3("normals", normal_slots)
+        # Normals: the faces re-triangulated here, then the vertices around everything that changed (like the full
+        # build: a vertex without faces gets (0, 0, 0)).
+        if live_rows:
+            packed.update_face_normals(np.unique(np.asarray(live_rows, dtype=np.intp)))
+        dirty_slots = [index[v] for v in dirty_vertices if v in index]
+        if dirty_slots:
+            packed.update_vertex_normals(np.unique(np.asarray(dirty_slots, dtype=np.intp)))
+            normal_slots.update(dirty_slots)
+        packed.invalidate_bounds()
+
+        self._upload_slots("positions", pos_slots)
+        self._upload_slots("normals", normal_slots)
         self._upload_vec3("indices", tri_slots)
         for run in _runs(tri_slots):
             data = [float(self._triangle_face_rows[t]) for t in run]
@@ -1006,42 +1097,39 @@ class RenderMesh:
         return True
 
     def _upload_vec3(self, name: str, slot_values: dict[int, tuple]) -> None:
-        mirror = self._mirror.get(name)
-        if mirror is None:
-            for run in _runs(slot_values):
-                data = [c for slot in run for c in slot_values[slot]]
-                self.store.update(name, run[0] * COMPONENTS_PER_VERTEX, data, len(data) * FLOAT_BYTES)
-                self.stats.count("partial_updates")
+        """`slot_values` ({slot: 3 values}) of a resource without a CPU mirror (the triangle indices), one upload per
+        run of consecutive slots."""
+        for run in _runs(slot_values):
+            data = [c for slot in run for c in slot_values[slot]]
+            self.store.update(name, run[0] * COMPONENTS_PER_VERTEX, data, len(data) * FLOAT_BYTES)
+            self.stats.count("partial_updates")
+
+    def _upload_slots(self, name: str, slots) -> None:
+        """Positions or vertex normals of `slots` (from `packed`) into the float32 mirror, then to the store in merged
+        ranges: slots closer than `_UPLOAD_GAP` share one upload; the unchanged values in between come from the mirror,
+        so one call replaces many (the per-call cost dominates, not the bytes)."""
+        if not len(slots):
             return
-        for slot, value in slot_values.items():
-            i = slot * COMPONENTS_PER_VERTEX
-            mirror[i:i + COMPONENTS_PER_VERTEX] = array("f", value)
-        # Slots closer than `_UPLOAD_GAP` share one upload: the unchanged values in between come from
-        # the mirror, so one call replaces many (the per-call cost dominates, not the bytes).
-        for lo, hi in _ranges(slot_values, _UPLOAD_GAP):
-            data = mirror[lo * COMPONENTS_PER_VERTEX:hi * COMPONENTS_PER_VERTEX].tolist()
+        slots = _slot_array(slots)
+        mirror = self._mirror[name]
+        mirror[slots] = (self.packed.P if name == "positions" else self.packed.VN)[slots]
+        for lo, hi in _ranges(slots, _UPLOAD_GAP):
+            data = mirror[lo:hi].reshape(-1)
             self.store.update(name, lo * COMPONENTS_PER_VERTEX, data, len(data) * FLOAT_BYTES)
             self.stats.count("partial_updates")
 
     def _upload_face_normals(self, rows) -> None:
-        """`face_normals` rows (freed rows as zeros) through the CPU mirror, uploaded in merged ranges like
-        `_upload_vec3`: a deformation rewrites these rows only, and they lie scattered over the buffer."""
-        if not rows:
+        """`face_normals` rows (Newell normal, corner count; freed rows zeros) through the CPU mirror, uploaded in
+        merged ranges like `_upload_slots`: a deformation rewrites these rows only, and they lie scattered over the
+        buffer."""
+        if not len(rows):
             return
+        rows = _slot_array(rows)
         mirror = self._mirror[FACE_NORMALS]
-        row_face = self._row_face
-        face_normals = self.derived.face_normals
-        boundary = self._face_boundary
-        for row in rows:
-            face_id = row_face[row]
-            i = row * FACE_NORMAL_FLOATS
-            if face_id is None:
-                mirror[i] = mirror[i + 1] = mirror[i + 2] = mirror[i + 3] = 0.0
-                continue
-            mirror[i], mirror[i + 1], mirror[i + 2] = face_normals[face_id]
-            mirror[i + 3] = len(boundary[face_id])
+        mirror[rows, :3] = self.packed.FN[rows]
+        mirror[rows, 3] = self.packed.corners.count[rows]
         for lo, hi in _ranges(rows, _UPLOAD_GAP):
-            data = mirror[lo * FACE_NORMAL_FLOATS:hi * FACE_NORMAL_FLOATS].tolist()
+            data = mirror[lo:hi].reshape(-1)
             self.store.update(FACE_NORMALS, lo * FACE_NORMAL_FLOATS, data, len(data) * FLOAT_BYTES)
         self.stats.count("face_data_uploads", len(rows))
 
@@ -1057,6 +1145,16 @@ class RenderMesh:
             self.store.update(FACE_CORNERS, run[0] * FACE_CORNER_FLOATS, data, len(data) * FLOAT_BYTES)
             self.stats.count("face_data_uploads", len(run))
 
+    def _read_moved(self, moved) -> np.ndarray:
+        """The slots of the `moved` vertices; their current positions (one `vertex_position` read each, from the mesh or
+        a stage's position table) written into `packed.P`. Only the moved vertices are read - nothing per frame is
+        read for the whole mesh."""
+        n = len(moved)
+        slots = np.fromiter(map(self._vertex_index.__getitem__, moved), dtype=np.intp, count=n)
+        self.packed.P[slots] = np.fromiter(chain.from_iterable(map(self.mesh.vertex_position, moved)),
+                                           dtype=np.float64, count=3 * n).reshape(n, 3)
+        return slots
+
     def _sync_geometry(self) -> None:
         moved = self.dirty.modified_vertices
         if not moved:
@@ -1065,31 +1163,29 @@ class RenderMesh:
         self.stats.count("vertex_updates", len(moved))
         self._retriangulate.update(moved)
 
-        affected_faces, affected_vertices = self.derived.affected_neighborhood(
-            self.mesh, moved
-        )
-        self.derived.update_face_normals(self.mesh, affected_faces)
-        self.derived.update_vertex_normals(self.mesh, affected_vertices)
+        # O3 stage 1 (AD-032): the moved positions into the arrays, then the 1-ring on arrays - the faces around the
+        # moved vertices get new Newell normals, every vertex of those faces a new vertex normal.
+        packed = self.packed
+        slots = self._read_moved(moved)
+        rows, ring = packed.neighbourhood(slots)
+        packed.update_face_normals(rows)
+        packed.update_vertex_normals(ring)
 
         # Bounds sind Derived Data -> kein Structural-Rebuild. WP-VIEW-PERF-01: nur
         # invalidieren; das O(V)-Recalc (`bounds_recalculations`) läuft beim nächsten Lesen.
-        self.derived.invalidate_bounds(self.mesh)
+        packed.invalidate_bounds()
         self.stats.count("bounds_invalidations")
         self.stats.count("normal_recomputations")
 
         # Positions / Normalen: nur die verschobenen Vertices bzw. ihr 1-Ring, über den CPU-Spiegel in
         # wenigen zusammengefassten Bereichen hochgeladen.
-        index = self._vertex_index
-        position = self.mesh.vertex_position
-        normals = self.derived.vertex_normals
-        self._upload_vec3("positions", {index[v]: position(v) for v in moved})
-        self._upload_vec3("normals", {index[v]: normals[v] for v in affected_vertices})
-        self.stats.count("geometry_uploads", len(moved) + len(affected_vertices))
+        self._upload_slots("positions", slots)
+        self._upload_slots("normals", ring)
+        self.stats.count("geometry_uploads", len(moved) + len(ring))
 
         # Face-Daten (O2): nur die Newell-Normalen der Faces um bewegte Vertices; Positionen und Normalen ihrer Ecken
         # liest der Shader aus den eben hochgeladenen Vertex-Buffern, die Eck-Slots ändern sich nicht.
-        face_row = self._face_row
-        self._upload_face_normals({face_row[face_id] for face_id in affected_faces})
+        self._upload_face_normals(rows)
 
     def _sync_selection(self) -> None:
         # Nichts im Mesh-Buffer hängt an der Auswahl: Punkte, Kanten und Faces der Auswahl zeichnen die Overlays

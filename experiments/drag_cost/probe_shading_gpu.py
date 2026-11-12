@@ -156,6 +156,8 @@ def store_classes():
             for name, mirror in (("position", "positions"), ("normal", "normals")):
                 if name not in self._copies:
                     values = self.source._mirror[mirror]
+                    if hasattr(values, "reshape"):  # since O3 stage 1 a float32 array (slots x 3), before an array('f')
+                        values = array("f", values.reshape(-1).tobytes())
                     padded = array("f", bytes(4 * 4 * (len(values) // 3)))
                     for k in range(3):
                         padded[k::4] = values[k::3]

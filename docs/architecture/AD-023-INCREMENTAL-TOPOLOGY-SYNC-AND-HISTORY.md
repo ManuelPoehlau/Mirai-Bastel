@@ -192,6 +192,10 @@ Not a dependency today (`requirements-dev.txt`). Recorded reason so far: instruc
 (REFERENCE_HARDWARE §2). Measured 2026-10-20 [RPC]: NumPy 2.5.4 under Python 3.14.2 does not import (x86-64-v2); NumPy
 2.2.6 under Python 3.12.10 imports (no timing). *(reading)* Not pursued here because the dominant cost is a Python-object mesh
 (dicts of dataclasses), not arithmetic that a vector library accelerates; to be revisited only with a measurement.
+*Update 2026-11-12:* revisited with the measurements of the 2026-11-10 audit (§E.5) and decided by Manu (D1, 2026-11-11);
+since O3 stage 1 the viewport's derived geometry is computed on NumPy arrays, `numpy==2.2.6` in `requirements.txt`
+([AD-032](AD-032-PACKED-ARRAYS-NUMPY.md)). The slot layout and the journal-driven patch of this AD are what the arrays
+follow; "patch == full rebuild" is bit-identical since then (AD-032 §3, §5).
 
 ## 3. What it touches
 

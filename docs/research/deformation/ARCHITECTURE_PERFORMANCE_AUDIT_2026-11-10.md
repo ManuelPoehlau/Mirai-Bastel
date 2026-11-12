@@ -868,3 +868,52 @@ Raw output, the skip list and the comparison:
   work that O3 (§H step 5, NumPy, D1) moves onto arrays, starting with the normals. Separately visible in the weight
   rows: the HUD read-out (24.6 ms, known) and a GPU vertex-buffer upload of ≈ 33 ms (4 ms in pose rows), both unchanged
   by O1.
+
+## Addendum — O3 stage 1 in the container (2026-11-12)
+
+§H step 5, first stage (Manu's decisions above: O3 after O2 and O1; D1 NumPy `==2.2.6` under Python 3.12.10, entering
+`requirements.txt` with this stage). Decision record [AD-032](../../architecture/AD-032-PACKED-ARRAYS-NUMPY.md); raw
+outputs and the reference-PC commands:
+[`experiments/drag_cost/RESULTS_O3_STAGE1_CONTAINER_2026-11-12.md`](../../../experiments/drag_cost/RESULTS_O3_STAGE1_CONTAINER_2026-11-12.md).
+
+- **What changed.** `RenderMesh._sync_geometry` and its topology patch (§E.3: "face normals, vertex normals,
+  neighbourhood sets, positions + normals") no longer work per vertex over dicts keyed by ID, but on NumPy arrays on
+  `RenderMesh`'s own slots and rows (`src/viewport/packed_geometry.py`): positions, face and vertex normals, the corner
+  lists and the vertex → faces lists, patched from the journal like the slot layout; float32 mirrors handed to the
+  store as arrays (`memmove` into pyglet's backing store). Per frame only the moved vertices' positions are read (one
+  `vertex_position` each). No Core change, no change to the stages (stage 2), the face-data layout, the shader or the GL
+  calls. NumPy above the Core only.
+- **Normals bit-identical, no tolerance.** The kernels add in the reference's order (per corner / per face column, never
+  `reduceat`); the one decision: a vertex normal now sums its faces in ascending FaceId order (before: a set's order;
+  differences ≤ 2.2·10⁻¹⁶, in float32 none on `gollum_20k` / the 87.5k fixture, 15 of 978 components on
+  `head_basemesh`). The prototype's ≤ 3·10⁻¹⁴ of §E.5 came from `reduceat`'s internal order. "Patch == full rebuild"
+  is now bit-identical (the test compares with `==`). 16 of 16 images byte-identical against the pre-O3 tree.
+- **Gate: tests [C].** `tests/` 6,928 passed, 1 failed (the pre-existing §I.7 file), 8 skipped; `tests/test_gl_*.py` in
+  its own process 165 passed (among them the O2 pixel gate); `experiments/morph_lab/tests` 49 and
+  `experiments/drag_cost/tests` 84 passed; six hand mutations caught.
+- **Measured [C]** (87.5k, 15 % region; before = `7153fae` from a worktree, after = the O3 tree; two sets each on one
+  host):
+
+| | before | after |
+|---|---:|---:|
+| `_sync_geometry` per pose step (§E.3 split), p50 | 70.8–82.6 ms | **11.9 ms** |
+| of it: neighbourhood / face normals / vertex normals | 7.9–9.7 / 25.2–28.1 / 11.3–14.2 ms | 1.2 / 2.6 / 1.6 ms |
+| of it: positions + normals → store / face data → store | 14.3–17.7 / 7.0–8.2 ms | 2.1 / 0.7 ms |
+| of it: moved ids → slots, positions → arrays (new row) | — | 3.2 ms |
+| pose step (split), p50 | 97.0–117.4 ms | **35.8–35.9 ms** |
+| D3 frame p50 / p95, pose wire off (pair 2) | 139.0 / 160.6 ms | **79.5 / 99.4 ms** |
+| D3 frame p50 / p95, weight wire off (pair 2) | 169.6 / 192.2 ms | **107.2 / 118.5 ms** |
+| D3 frame p50 / p95, pose / weight wire ON (pair 2) | 163.1 / 190.1 ms p50 | **99.8 / 125.6 ms** p50 |
+| new surface `RenderMesh` (first weight / pose step) | 2.1–3.0 s | **1.0–1.1 s** |
+| process memory with both stages | 974–976 MiB | **880–881 MiB** |
+
+- **D3 verdict [C]: OVER** in every row, before and after. A pose frame in the container is now ≈ 24 ms software draw
+  (llvmpipe; not a reference-PC cost), ≈ 23–26 ms stage evaluation, ≈ 12 ms `_sync_geometry`. The NumPy part of the
+  sync measured ≈ 1.6× slower on the Q9550 than here in the kernel probe (30.7 vs 19.5 ms, 2026-11-10), the Python
+  parts ≈ 3×: for the reference PC that suggests `_sync_geometry` ≈ 25–40 ms instead of ≈ 222 ms **[H]**, which leaves
+  a pose frame dominated by the stage evaluation (58 / 90 ms after O1 [RPC]) and the draw — i.e. stage 2 (skin and morph
+  on arrays) is the next lever, O4 still only per D2 after the reference-PC run.
+- **Open, reference PC:** the production import and execution under Python 3.12.10 + NumPy 2.2.6 (D1), the GL tests on
+  the 9800 GTX driver, split / D3 / chain before and after with the same 3.12 interpreter (GPU numbers only with
+  "prefer maximum performance"). Stage 2 is not started.
+

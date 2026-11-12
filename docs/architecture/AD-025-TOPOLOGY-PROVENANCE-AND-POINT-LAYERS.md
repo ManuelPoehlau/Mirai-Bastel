@@ -1010,7 +1010,9 @@ The surface `RenderMesh` reads about five positions per moved vertex and frame: 
 `_sync_geometry` was 7–10 ms slower per D3 frame (87.5k, 15 %) than with the tuples — more than O1 gains in the
 evaluation [C]. O3 moves this storage
 to an n×3 float64 array together with the readers that will compute on it; the slot map, the journal and the view
-contract stay.
+contract stay. *(2026-11-12, O3 stage 1, [AD-032](AD-032-PACKED-ARRAYS-NUMPY.md) §4: the surface `RenderMesh` now reads
+each moved position once per frame into its own arrays; the table stays tuples until stage 2 moves it to an array
+together with the stage kernels and an array hand-over to the viewport.)*
 
 **Measured [C]** (container; before / after on one host, raw outputs and the reference-PC commands in
 [`RESULTS_O1_CONTAINER_2026-11-11.md`](../../experiments/drag_cost/RESULTS_O1_CONTAINER_2026-11-11.md)): building the mix

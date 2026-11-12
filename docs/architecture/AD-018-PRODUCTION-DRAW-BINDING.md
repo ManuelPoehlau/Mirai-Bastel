@@ -680,3 +680,13 @@ and the face normal only; the shader reads corner positions and normals from the
   navigation probe drew without clearing the depth buffer. Open: O2's share over the pre-O2 layout and an RGBA32F
   variant of the vertex fetches (`probe_shading_gpu.py`).
 
+## Addendum — 2026-11-12: the store takes float32 arrays (O3 stage 1, AD-032)
+
+`ResourceStore.update(name, offset, data, nbytes)` accepts, besides a list, a contiguous 1-D float32 array (a NumPy view
+of one of `RenderMesh`'s float32 CPU mirrors); the store copies it and keeps no reference. `GLRenderStore` holds the
+vertex attributes' CPU copy as `array('f')` and patches pyglet's backing store with one `memmove` per range (the same
+float32 bytes the element-wise slice assignment wrote); face data is copied byte for byte. `TraceStore` stores
+`tolist()` — and therefore float32 values after a full build too. GL calls, the O2 face-data layout and the shader are
+unchanged; the pixel gate (`test_gl_face_data_layout.py`) passes unchanged, and a cross-check against the pre-O3 tree
+(16 scenes) is byte-identical. Decision record: [AD-032](AD-032-PACKED-ARRAYS-NUMPY.md) §6.
+
