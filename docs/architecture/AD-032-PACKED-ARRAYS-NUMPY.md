@@ -65,6 +65,11 @@ In the viewport, owned by each `RenderMesh`, on that `RenderMesh`'s slots and ro
 - **The viewport imports nothing from `src/mirai`** (unchanged; `packed_geometry` imports only NumPy).
 - **NumPy above the Core only.** `src/core` imports no NumPy; `tests/test_packed_geometry.py` checks every module of
   `src/core` for it. The Core's own packed layers (`LayerSlots` + `PackedValues`, `array('d')`) are untouched.
+- **A wrong NumPy says so before it loads** (2026-11-13): `packed_geometry` compares the installed NumPy with
+  `PINNED_NUMPY` (= `requirements.txt`, test-pinned) through package metadata and writes one stderr line (version,
+  Python, interpreter path) before `import numpy` - on the reference PC `src/main.py` under the global Python 3.14
+  ended with exit code `0xC0000409` and no Python message, so the `ImportError` hint never came. Missing NumPy keeps
+  the `ImportError` with the hint.
 - **No second ID map.** `PackedGeometry` knows no IDs; `RenderMesh`'s `_vertex_index` / `_slot_vertex` / `_face_row` /
   `_row_face` are the only maps (the pattern of `LayerSlots` + `PackedValues`: a dict ID → slot, values per slot).
   `RenderMesh.derived` is now a read-only view by ID over the arrays (`DerivedView`: `vertex_normals`, `face_normals`,

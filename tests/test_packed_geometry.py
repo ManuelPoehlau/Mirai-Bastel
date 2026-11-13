@@ -262,3 +262,38 @@ def test_a_missing_numpy_names_the_pinned_version(monkeypatch):
     module = importlib.util.module_from_spec(spec)
     with pytest.raises(ImportError, match=r"numpy==2\.2\.6.*REFERENCE_HARDWARE"):
         spec.loader.exec_module(module)
+
+
+def test_the_pin_in_the_module_is_the_pin_in_requirements_txt():
+    from viewport.packed_geometry import PINNED_NUMPY
+
+    lines = (REPO / "requirements.txt").read_text(encoding="utf-8").splitlines()
+    pins = [line.split("==", 1)[1].strip() for line in lines if line.strip().startswith("numpy==")]
+    assert pins == [PINNED_NUMPY]
+
+
+def _load_packed_geometry(name: str):
+    spec = importlib.util.spec_from_file_location(name, REPO / "src" / "viewport" / "packed_geometry.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_an_unpinned_numpy_is_named_before_it_is_loaded(monkeypatch, capsys):
+    """A NumPy that ends the process inside its own import (reference PC, Python 3.14, 2026-11-13) leaves no Python
+    message; the line is written first."""
+    from importlib import metadata
+
+    monkeypatch.setattr(metadata, "version", lambda name: "9.9.9" if name == "numpy" else metadata.version(name))
+    _load_packed_geometry("_packed_unpinned")
+    err = capsys.readouterr().err
+    assert "NumPy 9.9.9" in err and "numpy==2.2.6" in err and "REFERENCE_HARDWARE" in err and sys.executable in err
+
+
+def test_the_pinned_numpy_imports_silently(monkeypatch, capsys):
+    from importlib import metadata
+
+    monkeypatch.setattr(metadata, "version", lambda name: "2.2.6")
+    _load_packed_geometry("_packed_pinned")
+    assert capsys.readouterr().err == ""
+

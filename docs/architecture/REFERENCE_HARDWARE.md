@@ -158,7 +158,10 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
   es kein 2.2.6-Wheel - Läufe, die Production-Code ausführen, laufen auf dem Referenz-PC deshalb unter 3.12 (vorher und
   nachher mit demselben Interpreter, wenn verglichen wird). Ein Hochziehen von NumPy oder Python wird erst nach einem Lauf
   hier übernommen (Import, `tests/test_packed_geometry.py`, die D3-Probe). Fehlt NumPy oder startet es nicht, bricht
-  `import viewport` mit einem Hinweis auf diese Regel ab. **Gemessen 2026-11-13 (Manu):** unter Python 3.12.10 in einer venv
+  `import viewport` mit einem Hinweis auf diese Regel ab. Ein anderes als das gepinnte NumPy nennt `viewport` vorher in
+  einer Zeile auf stderr (Version, Python, Interpreter-Pfad): **beobachtet 2026-11-13** - `src/main.py` unter dem
+  globalen Python 3.14 (PyCharm-Konfiguration) endete ohne jede Python-Meldung mit Exit-Code `0xC0000409`; unter 3.14
+  gibt es kein NumPy 2.2.6. Production-Läufe auf diesem PC deshalb immer mit dem 3.12-Interpreter (`.venv312`). **Gemessen 2026-11-13 (Manu):** unter Python 3.12.10 in einer venv
   installiert `pip install -r requirements-dev.txt` NumPy 2.2.6 (`cp312-cp312-win_amd64`); der Import des
   Production-Pfads und seine Ausführung in allen Probes laufen hier, die Array-Tests (Normalen bit-gleich auch auf dem
   Q9550) und die GL-Tests bestehen (D1 erfüllt;

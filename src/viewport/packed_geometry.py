@@ -33,12 +33,39 @@ the IDs, not of the layout, a patched layout and a fresh full build hold bit-ide
 
 from __future__ import annotations
 
+import sys
+from importlib import metadata
+
+#: The NumPy `requirements.txt` pins (Manu D1; `tests/test_packed_geometry.py` keeps both equal).
+PINNED_NUMPY = "2.2.6"
+_RULE = "docs/architecture/REFERENCE_HARDWARE.md §4"
+
+
+def _warn_unpinned_numpy() -> None:
+    """One stderr line, written before NumPy is loaded, when the installed NumPy is not the pinned one: on the
+    reference PC a newer NumPy can end the process inside its own import without any Python message (Python 3.14,
+    2026-11-13: exit code 0xC0000409), so this is the only place that can still say why."""
+    try:
+        installed = metadata.version("numpy")
+    except metadata.PackageNotFoundError:
+        return  # the import below raises ImportError with the hint
+    if installed == PINNED_NUMPY:
+        return
+    print(
+        f"Mirai: NumPy {installed} under Python {sys.version.split()[0]} ({sys.executable}); pinned is "
+        f"numpy=={PINNED_NUMPY}, on the reference PC under Python 3.12 ({_RULE}). If the process now ends without a "
+        "message, this NumPy did not start on this CPU.",
+        file=sys.stderr, flush=True,
+    )
+
+
+_warn_unpinned_numpy()
 try:
     import numpy as np
 except (ImportError, RuntimeError) as exc:  # RuntimeError: a NumPy built for x86-64-v2 on a CPU without it
     raise ImportError(
-        "Mirai needs NumPy (requirements.txt: numpy==2.2.6; on the reference PC under Python 3.12, see "
-        f"docs/architecture/REFERENCE_HARDWARE.md §4): {type(exc).__name__}: {exc}"
+        f"Mirai needs NumPy (requirements.txt: numpy=={PINNED_NUMPY}; on the reference PC under Python 3.12, see "
+        f"{_RULE}): {type(exc).__name__}: {exc}"
     ) from exc
 
 #: Spare entries per vertex in the vertex -> faces pool after a full build: a topology patch that adds a face or two
