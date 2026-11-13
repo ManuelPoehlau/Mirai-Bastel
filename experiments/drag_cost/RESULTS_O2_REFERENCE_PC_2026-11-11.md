@@ -169,6 +169,21 @@ python experiments\drag_cost\probe_shading_gpu.py
 python experiments\drag_cost\probe_shading_gpu.py --size 1920 1080
 ```
 
+**Result (Manu, 2026-11-13, clocks pinned, Python 3.12.10, `d61d06d`):**
+
+| Size | `off` | `pre-o2` | `o2` | `o2-rgba` | Images |
+|---|---|---|---|---|---|
+| 1024×768 | 1.94 | 7.18 | 11.24 | 8.25 | `pre-o2` and `o2-rgba` identical to `o2` |
+| 1920×1080 | 2.45 | 9.44 | 14.71 | 10.90 | `pre-o2` and `o2-rgba` identical to `o2` |
+
+GPU p50, ms.
+- At full clock O2 adds **+4.0 ms (+56 %)** over the pre-O2 layout.
+- The RGBA32F fetch variant (`o2-rgba`) would take `o2` down by 27 % (11.24 → 8.25 ms).
+- The "NOTE the GPU times vary a lot" the probe printed is a false alarm. Its rule compares variants with each other,
+  and those differ 5.8× by design; within each variant the times stayed within 2 %.
+- Close-up coverage and raw output:
+  [`lookdev_gpu_probe/RESULTS_REFERENCE_PC_2026-11-13.md`](../lookdev_gpu_probe/RESULTS_REFERENCE_PC_2026-11-13.md) §6.
+
 ## Diagnosis of the GPU wait, round 1 commands (for the record)
 
 The D3 probe now times every `GLRenderStore.draw` on the GPU (GL_TIME_ELAPSED: the vertex-buffer upload, then the draw)

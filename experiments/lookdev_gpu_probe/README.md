@@ -1,8 +1,9 @@
 # Lookdev GPU probe — Lookdev step 1 (2026-11-13)
 
-**Status:** isolated experiment, prepared and validated in the container only (`TESTED [C]`). **No reference-PC or
-main-PC result yet** — everything a GPU driver decides is `OPEN` until Manu's run. No change under `src/`, `tests/`,
-`config/`; no dependency added.
+**Status:** isolated experiment. **Run on the reference PC on 2026-11-13**
+([`RESULTS_REFERENCE_PC_2026-11-13.md`](RESULTS_REFERENCE_PC_2026-11-13.md), `MEASURED [RPC]`); container validation
+in [`RESULTS_CONTAINER_2026-11-13.md`](RESULTS_CONTAINER_2026-11-13.md). Main PC: `OPEN`. No change under `src/`,
+`tests/`, `config/`; no dependency added.
 **Source:** [Lookdev P0 audit](../../docs/research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §5.7 (driver questions),
 §6.4 (fill-rate risk), §9 step 1 and §10 (recommendation: probe before the eye lab);
 [RENDERING_VISION.md](../../docs/design/RENDERING_VISION.md) §8 ("cubemap reflections: Realistic" — unmeasured until
@@ -18,14 +19,29 @@ Before the Eye Proof (P1) is built around an environment format, two unknowns:
 2. **What does a frame-filling shaded pass cost?** The Worklight's face-data pass is known only at ≈ 13 % coverage
    (≈ 9.4 ms GPU at 87.5k / 1024×768, `RESULTS_O2_REFERENCE_PC_2026-11-11.md`); a Lookdev close-up fills the frame.
 
+## Result on the reference PC (2026-11-13, MEASURED [RPC]; details and readings in the results file)
+
+- **A, B, C pass in every format.** RGBA8, RGBA16F and RGBA32F cubes store, sample, mip-select and filter exactly;
+  the driver reports the requested formats.
+- **D fails, but only at corners.** Seamless filtering works across edges. A filter tap beyond both edges of a face
+  (a cube corner) comes from one face instead of the mean of three, which leaves seams at the 4², 2² and 1² levels.
+  The emulation in `cube_math.seamless_bilinear` reproduces the measured jumps within ~1.5 %. INFERRED from that
+  emulation: equalizing the three corner texels per level (`cube_math.equalize_corners`) and not using the 1×1 level
+  removes it.
+- **T:** one cube lookup over a full 1920×1080 frame costs ≈ 0.1 ms. Seamless filtering is free; RGBA16F is as fast
+  as RGBA8.
+- **Worklight at a frame-filling close-up (87.5k):** 16.1 ms at 1024×768 and 26.8 ms at 1920×1080 GPU time for the
+  pass alone; without face data, 2.9 / 5.0 ms.
+
 ## Files
 
 | File | What |
 |---|---|
 | `probe_gl_caps.py` | The capability probe: own hidden pyglet window and GL context, own programs and offscreen targets; **imports nothing from `src/`**. Checks A–D, timing T, hygiene R (below). |
-| `cube_math.py` | GL-free half: the GL cube-face convention, test patterns, expected values, the clamp-to-edge emulation, verdict rules, PNG writer, source state. NumPy only. |
+| `cube_math.py` | GL-free half: the GL cube-face convention, test patterns, expected values, the clamp-to-edge and seamless (two corner rules) emulations, the corner fix-up, verdict rules, PNG writer, source state. NumPy only. |
 | `probe_worklight_coverage.py` | Thin wrapper around the **unchanged** `drag_cost/probe_shading_gpu.measure`: same fixture, variants, timer and image check, with the camera dollied in (`--dolly`, default 1.0 / 0.5 / 0.3 ≈ 14 / 62 / 98 % coverage at 1024×768). |
 | `RESULTS_TEMPLATE.md` | The results format (evidence labels per cell); copy to `RESULTS_<MACHINE>_<DATE>.md`. |
+| `RESULTS_REFERENCE_PC_2026-11-13.md` | The reference-PC run (`MEASURED [RPC]`): GL facts, A–D, the corner diagnosis, fetch cost, Worklight baseline and close-ups, reading for P1, raw output. |
 | `RESULTS_CONTAINER_2026-11-13.md` | What the container could validate (`TESTED [C]`), raw output. |
 | `tests/` | Headless tests (face convention, patterns, interpretation, argument / import boundaries, the dolly hook) and GL tests (a full small run reaches a verdict everywhere and cleans up; leak and state checks catch what they should). |
 | `.gitignore` | ignores `out/` (seam panoramas written by `--images`). |
@@ -91,7 +107,10 @@ displays with scaling and refresh rate); the probe prints GL strings, limits, al
 `ValueError: min() iterable argument is empty` *after* measuring when every variant's fastest draw is ≤ 0.5 ms — its
 power-management NOTE check (line 257) takes `min()` of an empty generator. The reference PC is not affected (≥ 1.9 ms),
 a modern GPU at 1024×768 may be. Not fixed here (outside this lab's footprint); the one-line fix is to give that
-`min(...)` a `default=float("inf")`. The coverage wrapper reports the case instead of a traceback.
+`min(...)` a `default=float("inf")`. The coverage wrapper reports the case instead of a traceback. The same NOTE
+check also fires falsely whenever the *variants* differ by more than 2.5× (reference PC 2026-11-13: `off` 1.9 ms
+against `o2` 11.2 ms, every variant within 2 %). This probe's own rule (`cube_math.timing_unstable`) compares within
+each variant instead.
 
 ## Commands — container (agent)
 
@@ -154,7 +173,8 @@ is not even monotonic in the pixel count, `RESULTS_CONTAINER_2026-11-13.md`).
 ## Tests
 
 `python -m pytest experiments/lookdev_gpu_probe/tests -q` (not part of the default `pytest` run; AGENTS.md §8a: run when
-this folder changes). 27 headless tests, 3 GL tests (`xvfb-run -a` in a container; skipped without pyglet / display).
+this folder changes). 30 headless tests, 3 GL tests (`xvfb-run -a` in a container; skipped without pyglet / display).
+Two headless tests pin the reference PC's seam measurements to the emulation.
 The GL tests assert only what must hold on any driver — every check reaches a verdict, no leak, state restored — not
 that a driver passes A–D: that is a finding for the results file, not a red test.
 
@@ -168,5 +188,7 @@ that a driver passes A–D: that is a finding for the results file, not a red te
 - **Vorher:** NVIDIA-Systemsteuerung → globale Einstellung „Maximale Leistung bevorzugen“.
 - **Ausführen:** die sieben PowerShell-Befehle oben (Abschnitt „Commands — reference PC“), Ausgabe hier einfügen. Es
   wird nichts installiert und nichts an der App geändert. Dauer grob 5–10 Minuten.
-- **Bisher nur im Container geprüft** (Software-Grafik): alles grün, aufgeräumt, keine GL-Fehler. Das sagt **nichts**
-  über deine 9800 GTX — genau dafür ist dein Lauf da.
+- **Dein Lauf (2026-11-13):** Cubemaps funktionieren in allen Formaten, nur an den Würfelecken filtert die Karte
+  nicht nahtlos (Abhilfe beim Vorberechnen, ohne Laufzeitkosten). Eine Spiegelung kostet ≈ 0,1 ms pro Bild; teuer
+  ist das Worklight-Shading in der Großaufnahme (16 / 27 ms). Kurzfassung und Zahlen:
+  [`RESULTS_REFERENCE_PC_2026-11-13.md`](RESULTS_REFERENCE_PC_2026-11-13.md).

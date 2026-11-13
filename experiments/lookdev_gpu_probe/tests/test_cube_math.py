@@ -174,12 +174,56 @@ def test_seam_verdict_reads_the_four_cases():
     assert cm.seam_verdict(_rows(0.05, 0.05, 2.5 / 255), 1 / 255)[0] == cm.PASS
 
 
+#: Check D on the reference PC (2026-11-13), RGBA32F, GL_TEXTURE_CUBE_MAP_SEAMLESS on: largest edge jump per level.
+RPC_JUMP_ON = {0: 0.00010, 1: 0.0, 2: 0.0, 3: 0.00005, 4: 0.00910, 5: 0.06196, 6: 0.16915}
+
+
+def _seam_jumps(levels, samples, corner):
+    return [cm.max_jump(cm.seamless_bilinear(level, samples["a"], corner),
+                        cm.seamless_bilinear(level, samples["b"], corner)) for level in levels]
+
+
+def test_seamless_emulation_matches_both_drivers():
+    """The "average" corner rule is continuous everywhere (as llvmpipe measured); the "one face" rule reproduces the
+    9800 GTX's residual jumps at 4x4 / 2x2 / 1x1 within a few percent and its clean levels above."""
+    levels = [cm.stored(level, cm.RGBA32F) for level in cm.smooth_pattern(64)]
+    samples = cm.seam_samples()
+    assert max(_seam_jumps(levels, samples, "average")) < 1e-3
+    one_face = _seam_jumps(levels, samples, "one face")
+    for level, measured in RPC_JUMP_ON.items():
+        if measured > 1e-3:
+            assert one_face[level] == pytest.approx(measured, rel=0.03)
+        else:
+            assert one_face[level] < 1e-3
+    with pytest.raises(ValueError):
+        cm.seamless_bilinear(levels[0], samples["a"], "nearest")
+
+
+def test_seamless_equals_plain_bilinear_inside_a_face():
+    level = cm.stored(cm.smooth_pattern(16)[0], cm.RGBA32F)
+    dirs, _ = cm.gradient_samples(16, True)
+    assert np.allclose(cm.seamless_bilinear(level, dirs, "one face"), cm.bilinear_clamp(level, dirs))
+
+
+def test_equalized_corners_make_the_corner_rule_irrelevant_down_to_2x2():
+    levels = [cm.stored(level, cm.RGBA32F) for level in cm.smooth_pattern(64)]
+    near_corners = cm.seam_samples(positions=(0.95, 0.99, -0.99))
+    raw = _seam_jumps(levels, near_corners, "one face")
+    fixed = _seam_jumps([cm.equalize_corners(level) for level in levels], near_corners, "one face")
+    assert raw[2] > 5e-3 and raw[3] > 1e-2  # without the fix-up: visible next to a corner even at 16^2 / 8^2
+    assert max(fixed[:-1]) < 1e-3  # with it: continuous at every level but 1x1
+    for level in levels[:-1]:
+        changed = np.any(cm.equalize_corners(level) != level, axis=-1)
+        assert changed.sum() == 24  # 8 corners x 3 faces, nothing else
+
+
 def test_timing_helpers():
     assert cm.percentile([3.0, 1.0, 2.0], 0.5) == 2.0
     assert cm.timing_summary([1.0, 2.0, 3.0, 4.0]) == (2.5, pytest.approx(3.85), 1.0, 4.0)
-    assert not cm.timing_unstable({"a": [1.0, 1.1], "b": [2.0, 2.2]})
-    assert cm.timing_unstable({"a": [1.0, 1.1], "b": [2.0, 4.0]})
-    assert not cm.timing_unstable({"a": [0.1, 0.2], "b": [0.3, 3.0]})  # too small to mean anything
+    # variants may differ a lot (reference PC 2026-11-13: off 1.9 ms, o2 11.2 ms) - only a spread within one counts
+    assert not cm.timing_unstable({"off": [1.91, 1.96], "o2": [11.11, 11.34]})
+    assert cm.timing_unstable({"off": [1.91, 1.96], "o2": [11.1, 43.0]})
+    assert not cm.timing_unstable({"a": [0.1, 0.9]})  # too small to mean anything
     assert not cm.timing_unstable({"a": []})
 
 

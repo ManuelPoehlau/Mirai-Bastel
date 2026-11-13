@@ -862,3 +862,35 @@ Not started here, per the task.
   - `RESULTS_O3_STAGE2_REFERENCE_PC_2026-11-13.md`.
 - This audit ran no tests and took no measurements. Container caveat: the session's environment has no pyglet and
   NumPy 2.5.3 instead of the pinned 2.2.6, so a run here would not have been representative anyway.
+
+---
+
+## Addendum — 2026-11-13: §9 step 1 run on the reference PC
+
+The capability and fill-rate probe of §9 step 1 / §10 is
+[`experiments/lookdev_gpu_probe/`](../../experiments/lookdev_gpu_probe/README.md). Manu ran it on the reference PC
+([`RESULTS_REFERENCE_PC_2026-11-13.md`](../../experiments/lookdev_gpu_probe/RESULTS_REFERENCE_PC_2026-11-13.md)).
+**MEASURED [RPC]** unless marked otherwise; the audit body above is unchanged.
+
+- **§5.7 Q1:**
+  - `GL_MAX_TEXTURE_IMAGE_UNITS` 32 (combined 96);
+  - texture and cube size 8192;
+  - `GL_MAX_SAMPLES` 16;
+  - 8 colour attachments, 8 draw buffers;
+  - `GL_EXT_texture_filter_anisotropic` present (16×);
+  - `GL_NVX_gpu_memory_info` present: 512 MiB dedicated.
+- **§5.7 Q2:**
+  - RGBA16F (and RGBA8, RGBA32F) cubes with mips are stored, sampled, mip-selected (`textureLod`) and filtered
+    correctly.
+  - RGBA16F filters at RGBA8 speed. One lookup over a full 1920×1080 frame costs ≈ 0.1 ms.
+- **§5.7 Q3:** `GL_TEXTURE_CUBE_MAP_SEAMLESS` works across edges but not at cube corners, where a tap comes from one
+  face. That leaves seams at the 4², 2² and 1² levels. INFERRED from an emulation fitted to the measurement:
+  equalizing the corner texels per level and not using 1×1 removes them. This replaces the fallback "CPU edge fix-up"
+  of §5.8 by a corner fix-up.
+- **§5.7 Q4:** an RGBA32F colour renderbuffer is complete (the probe's read-back target). Depth textures were not
+  tested.
+- **§5.7 Q5 and Q6** (sRGB, MSAA): not tested, OPEN.
+- **§6.4 fill rate:** the Worklight pass at a frame-filling close-up of the 87.5k fixture costs **16.1 ms (1024×768)
+  and 26.8 ms (1920×1080)**, and 2.9 / 5.0 ms without face data. Cost per covered pixel falls with coverage, so the
+  13 % figure cannot be extrapolated linearly. This is input for D-L6 and D-L8.
+- **§2.2:** pyglet's default context on the reference PC is a **core** profile, as read from the source.

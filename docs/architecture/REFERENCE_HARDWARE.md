@@ -132,6 +132,32 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
 `RuntimeError: NumPy was built with baseline optimizations: (X86_V2) but your machine doesn't support: (X86_V2).` Der Prozessor (Penryn, SSE4.1) erfüllt die x86-64-v2-Basis nicht
   (Lesart, nicht geprüft: SSE4.2/POPCNT fehlen). **Unter Python 3.12.10 importiert dagegen NumPy 2.2.6 (`cp312-cp312-win_amd64`, `pip install "numpy<2.3"` in einer venv) ohne Fehler** (nur der Import, keine Rechenzeit gemessen). Bis zu welcher NumPy-Version das geht, ist ungeprüft; unter 3.14 verlangt Python ein NumPy, das hier nicht startet. Folge nach §4 dieses Dokuments: Code, der ein aktuelles NumPy voraussetzt, ist ein Konflikt mit dem Referenz-PC; ein gepinntes älteres NumPy unter 3.12 ist es nach dem heutigen Stand nicht, müsste aber ausdrücklich entschieden werden. *(Entschieden 2026-11-11, D1: `numpy==2.2.6` unter Python 3.12.10, seit 2026-11-12 in Production - §4.)*
 
+**Gemessen auf dem Referenz-PC (Manu, 2026-11-13), Lookdev-GL-Fähigkeiten und Pixelkosten** — Python 3.12.10
+(`.venv312`), NumPy 2.2.6, pyglet 2.1.19, NVIDIA „Maximale Leistung bevorzugen“;
+`experiments/lookdev_gpu_probe/probe_gl_caps.py`, `drag_cost/probe_shading_gpu.py`,
+`lookdev_gpu_probe/probe_worklight_coverage.py`. Alles mit Rohausgabe in
+[`RESULTS_REFERENCE_PC_2026-11-13.md`](../../experiments/lookdev_gpu_probe/RESULTS_REFERENCE_PC_2026-11-13.md):
+
+- **Kontext:** GL 3.3.0, `NVIDIA Corporation`, GLSL `3.30 NVIDIA via Cg compiler`, **Core-Profil** (pyglets
+  Standard, wie `src/main.py`), 237 Extensions. Bildschirm **1200×1920** (hochkant).
+- **Grenzen:**
+  - 32 Textur-Einheiten im Fragment-Shader (96 kombiniert);
+  - Texturen und Cubemaps bis 8192²;
+  - anisotrope Filterung bis 16×;
+  - `GL_MAX_SAMPLES` 16.
+- **Grafikspeicher:** laut `GL_NVX_gpu_memory_info` **512 MiB** (Windows zeigt 481 MB); beim Start ≈ 395 MiB frei.
+- **Cubemaps in RGBA8, RGBA16F und RGBA32F:** Anlegen, Lesen, `textureLod` sowie bi- und trilineare Filterung sind
+  exakt. RGBA16F ist so schnell wie RGBA8.
+- **Nahtlose Filterung** (`GL_TEXTURE_CUBE_MAP_SEAMLESS`) wirkt über die Kanten, **aber nicht an den Würfelecken**.
+  Dort nimmt der Treiber eine Seite statt des Mittels der drei; das ergibt Nähte in den Stufen 4², 2² und 1².
+  Abhilfe beim Vorberechnen: siehe die Ergebnisdatei.
+- **Pixelkosten:**
+  - Ein Cubemap-Zugriff über ein volles 1920×1080-Bild kostet ≈ 0,1 ms GPU-Zeit.
+  - Der Worklight-Durchgang (87,5k, mit Face-Daten) kostet in der bildfüllenden Großaufnahme **16,1 ms bei
+    1024×768 und 26,8 ms bei 1920×1080**, ohne Face-Daten 2,9 bzw. 5,0 ms. Im gerahmten D3-Blick sind es 11,2 bzw.
+    14,7 ms.
+  - Die versteckten 1920×1080-Fenster der Sonden behielten ihre Größe.
+
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 
 ---

@@ -679,6 +679,12 @@ and the face normal only; the shader reads corner positions and normals from the
   ≈ 9.4 ms per full pass at 87.5k / 1024×768 (1.9 ms without face data); the orbit's +2 ms understated it because the
   navigation probe drew without clearing the depth buffer. Open: O2's share over the pre-O2 layout and an RGBA32F
   variant of the vertex fetches (`probe_shading_gpu.py`).
+  *Measured 2026-11-13 (reference PC, clocks pinned, Manu;
+  [`RESULTS_REFERENCE_PC_2026-11-13.md`](../../experiments/lookdev_gpu_probe/RESULTS_REFERENCE_PC_2026-11-13.md) §6):
+  GPU p50 per full pass at 87.5k / 1024×768 (framed): no face data 1.94, pre-O2 7.18, O2 11.24, RGBA32F fetches
+  8.25 ms. O2 adds +4.0 ms (+56 %) over pre-O2; the RGBA32F variant would recover 24–27 % of O2 at every coverage,
+  with a byte-identical image. At a frame-filling close-up O2 costs 16.1 ms (1024×768) and 26.8 ms (1920×1080). No
+  decision taken here.*
 
 ## Addendum — 2026-11-12: the store takes float32 arrays (O3 stage 1, AD-032)
 

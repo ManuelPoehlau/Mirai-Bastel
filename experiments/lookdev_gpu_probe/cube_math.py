@@ -315,6 +315,66 @@ def max_jump(values_a: np.ndarray, values_b: np.ndarray) -> float:
     return float(np.max(np.abs(values_a[..., :3] - values_b[..., :3])))
 
 
+#: Corner rules for `seamless_bilinear`. "average": a filter tap beyond both edges of the face takes the mean of the
+#: three texels meeting at that cube corner (Mesa llvmpipe behaves so; it is how I read the GL spec, not verified here).
+#: "one face": it takes the face's own corner texel - reproduces the GeForce 9800 GTX within ~1.5 % (2026-11-13, see
+#: RESULTS_REFERENCE_PC_2026-11-13.md); taking either neighbour's corner texel instead gives the same jumps there.
+CORNER_RULES = ("average", "one face")
+
+
+def _adjacent_texel(level: np.ndarray, face, i, j) -> np.ndarray:
+    """Texel (i, j) of `face` with at most one index outside the face: the texel of the adjacent face that the
+    extended texel centre falls into (seamless filtering across an edge)."""
+    n = level.shape[1]
+    f2, s2, t2 = direction_to_face_st(face_st_to_direction(face, (i + 0.5) / n, (j + 0.5) / n))
+    return level[f2, np.clip(np.floor(t2 * n).astype(int), 0, n - 1), np.clip(np.floor(s2 * n).astype(int), 0, n - 1)]
+
+
+def seamless_bilinear(level: np.ndarray, d: np.ndarray, corner: str = "average") -> np.ndarray:
+    """Bilinear lookup into `level` (6, n, n, 4) WITH seamless filtering: taps beyond an edge come from the adjacent
+    face; taps beyond both edges follow `corner` (see `CORNER_RULES`). Analysis tool for the seam findings."""
+    if corner not in CORNER_RULES:
+        raise ValueError(f"corner rule {corner!r} not in {CORNER_RULES}")
+    n = level.shape[1]
+    face, s, t = direction_to_face_st(d)
+    x, y = s * n - 0.5, t * n - 0.5
+    i0, j0 = np.floor(x).astype(int), np.floor(y).astype(int)
+    fx, fy = (x - i0)[..., None], (y - j0)[..., None]
+
+    def tap(i, j):
+        out_i, out_j = (i < 0) | (i >= n), (j < 0) | (j >= n)
+        ic, jc = np.clip(i, 0, n - 1), np.clip(j, 0, n - 1)
+        own = level[face, jc, ic]
+        across_s, across_t = _adjacent_texel(level, face, i, jc), _adjacent_texel(level, face, ic, j)
+        value = np.where((out_i & ~out_j)[..., None], across_s, own)
+        value = np.where((out_j & ~out_i)[..., None], across_t, value)
+        at_corner = (own + across_s + across_t) / 3.0 if corner == "average" else own
+        return np.where((out_i & out_j)[..., None], at_corner, value)
+
+    top = tap(i0, j0) * (1.0 - fx) + tap(i0 + 1, j0) * fx
+    bottom = tap(i0, j0 + 1) * (1.0 - fx) + tap(i0 + 1, j0 + 1) * fx
+    return top * (1.0 - fy) + bottom * fy
+
+
+def equalize_corners(level: np.ndarray) -> np.ndarray:
+    """A copy of `level` in which the three texels meeting at each of the 8 cube corners hold their mean - a CPU
+    fix-up after prefiltering that makes the corner rule irrelevant (both rules then agree). Meaningful down to 2x2;
+    at 1x1 every texel is a corner of four cube corners and cannot satisfy all of them."""
+    out = level.copy()
+    n = level.shape[1]
+    for corner in np.array(np.meshgrid([-1.0, 1.0], [-1.0, 1.0], [-1.0, 1.0])).T.reshape(-1, 3):
+        texels = []
+        for axis in range(3):  # the corner texel of each of the three faces meeting there
+            d = corner.copy()
+            d[axis] *= 1.0 + 1e-6
+            face, s, t = direction_to_face_st(d)
+            texels.append((int(face), min(int(np.floor(t * n)), n - 1), min(int(np.floor(s * n)), n - 1)))
+        mean = np.mean([level[f, j, i] for f, j, i in texels], axis=0)
+        for f, j, i in texels:
+            out[f, j, i] = mean
+    return out
+
+
 @dataclass
 class SeamRow:
     level: int
@@ -390,11 +450,11 @@ def timing_summary(samples: list[float]) -> tuple[float, float, float, float]:
 
 
 def timing_unstable(rows: dict[str, list[float]]) -> bool:
-    """Same rule as `drag_cost/probe_shading_gpu.py`: the GPU times of one run spread by more than 2.5x (only when the
-    times are large enough to mean something) - usually the driver's power management."""
-    lows = [min(v) for v in rows.values() if v]
-    highs = [max(v) for v in rows.values() if v]
-    return bool(lows) and min(lows) > 0.5 and max(highs) > 2.5 * min(lows)
+    """The rounds of one variant spread by more than 2.5x (only for times large enough to mean something): a clock
+    change during the run, usually the driver's power management. Compared within each variant - variants differ
+    legitimately (`drag_cost/probe_shading_gpu.py` compares across them and warned on the reference PC, 2026-11-13,
+    although every variant stayed within 2 %)."""
+    return any(v and min(v) > 0.5 and max(v) > 2.5 * min(v) for v in rows.values())
 
 
 # -- environment and reporting helpers -------------------------------------------------------------------------------
