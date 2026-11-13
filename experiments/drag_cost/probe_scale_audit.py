@@ -20,7 +20,10 @@ window's own chain (`Application` -> `Viewport` -> `GLRenderStore`, the `GL_TYPE
            rebuild, and the bytes handed to the store per step. Since O3 stage 1 (2026-11-12) the same parts are timed
            on the arrays of `viewport.packed_geometry.PackedGeometry` where that module exists, plus row 2f (the moved
            vertices' slots and positions into the arrays); a part with no method in the checkout prints `-`, so this
-           probe measures the code before and after O3 alike.
+           probe measures the code before and after O3 alike. Since O3 stage 2 (2026-11-13) row 2f also times the
+           array hand-over of a stage's table (`_read_table_moves`), and two totals are added: the skin stage's whole
+           update (row 5: its candidates and row 1) and `Viewport._sync_surface` (row 6: the stages, the hand-over
+           and the surface `RenderMesh` sync).
 - `chain`  what happens once: load + first frame, save, parse, the first weight step (builds the mix surface), the
            first pose step (builds the skin surface), each with the process memory after it, and whether the SubD
            preview accepts the mesh. Since 2026-11-11 (O1) each row also names its stage evaluation and the time spent
@@ -71,9 +74,13 @@ SPLIT_ROWS = (
     "2c  vertex normals",
     "2d  positions + normals -> mirror -> store",
     "2e  face data -> store (O2: face normals)",
-    "2f  ids -> slots, positions -> arrays (O3)",
+    "2f  moved -> slots, positions -> arrays (O3)",
     "3 wire segments (whole mesh)",
     "4 face-data glBufferSubData at draw",
+    # O3 stage 2 (2026-11-13): the whole stage update (candidates + row 1) and the whole surface sync of the viewport
+    # (the provider's stages + the surface RenderMesh's sync incl. its journal read); both methods exist before and after.
+    "5 skin stage update, total (candidates + 1)",
+    "6 Viewport._sync_surface, total (stages + 2)",
 )
 
 
@@ -203,8 +210,13 @@ class _Wrappers:
             ("viewport.viewport", "Viewport", "_sync_edges", rows[8]),
             ("viewport.gl_render_store", "GLRenderStore", "_flush_face_data", rows[9]),
             # O3 stage 1: the moved vertices' slots and positions into the arrays (before O3 this work had no method
-            # of its own: dict comprehensions inside `_sync_geometry`, counted in row 2 only).
+            # of its own: dict comprehensions inside `_sync_geometry`, counted in row 2 only). O3 stage 2 (2026-11-13):
+            # a stage's position table hands its moved slots and positions over as arrays (`_read_table_moves`); the
+            # per-vertex read `_read_moved` stays for the edit mesh. Whichever exists and runs is timed.
             ("viewport.render_mesh", "RenderMesh", "_read_moved", rows[7]),
+            ("viewport.render_mesh", "RenderMesh", "_read_table_moves", rows[7]),
+            ("mirai.skinning", "SkinSurface", "update", rows[10]),
+            ("viewport.viewport", "Viewport", "_sync_surface", rows[11]),
         ):
             try:
                 cls = getattr(importlib.import_module(module), cls_name)

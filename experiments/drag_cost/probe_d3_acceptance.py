@@ -25,7 +25,9 @@ One frame = the input event (`Application.pointer_motion`, what the window's mou
 (`Application.update_viewport`: stage evaluation + `Viewport.sync`) + the window's own `on_draw` of `src/main.py`
 (`install_handlers`: viewport sync + render with the overlays, bones / gizmo, HUD, triad and, unless `--no-panels`,
 the panel layer) + `glFinish`. Reported per row: the frame p50 / p95 / max, its three parts, the split of the tick
-(stage evaluation, `RenderMesh._sync_geometry`, the face-data part of it), the split of `on_draw` (viewport render,
+(the viewport's whole surface sync, the stages' whole update, their evaluation, `RenderMesh._sync_geometry`, its
+per-vertex read / array hand-over (row 2f of the scale audit; these three rows added 2026-11-13 for O3 stage 2) and
+its face-data part), the split of `on_draw` (viewport render,
 gizmo / bones, HUD, triad, panels, the rest incl. the GPU wait in `glFinish`; added 2026-11-11 after the reference-PC
 run showed `on_draw` at 35-64 ms) and the bytes handed to the GL store per frame by resource group. No `flip` (hidden
 window, no vsync wait).
@@ -73,9 +75,18 @@ BAR_PREFERRED_P95_MS = 16.7
 #: Timed methods: (module, class, method, row). A method missing in the checked-out code is skipped, so the same probe
 #: measures the code before and after a change of the face-data layout (O2: `_upload_rows` -> `_upload_face_normals`).
 TIMED = (
+    # O3 stage 2 (2026-11-13): the viewport's whole surface sync (the stages, the hand-over, the surface RenderMesh)
+    # and the stages' whole update (their candidates + the evaluation `_recompute`) - both exist before and after.
+    ("viewport.viewport", "Viewport", "_sync_surface", "surface_sync"),
+    ("mirai.morph_mix", "MixSurface", "update", "stage_update"),
+    ("mirai.skinning", "SkinSurface", "update", "stage_update"),
     ("mirai.morph_mix", "MixSurface", "_recompute", "eval"),
     ("mirai.skinning", "SkinSurface", "_recompute", "eval"),
     ("viewport.render_mesh", "RenderMesh", "_sync_geometry", "sync_geometry"),
+    # Row 2f of the split: the moved vertices' positions into the arrays - read per vertex (O3 stage 1, `_read_moved`)
+    # or handed over from a stage's table as arrays (O3 stage 2, `_read_table_moves`).
+    ("viewport.render_mesh", "RenderMesh", "_read_moved", "read_moved"),
+    ("viewport.render_mesh", "RenderMesh", "_read_table_moves", "read_moved"),
     ("viewport.render_mesh", "RenderMesh", "_upload_rows", "face_data"),
     ("viewport.render_mesh", "RenderMesh", "_upload_face_normals", "face_data"),
     ("viewport.viewport", "Viewport", "_sync_edges", "wire"),
@@ -477,7 +488,8 @@ def run_rows(path: Path, share: int, steps: int, interactions, panels: bool, mod
                         rows.setdefault(row, []).append(gpu.get(row, 0.0))
                     totals.append(inp + tick + draw)
                     parts.append((inp, tick, draw))
-                    for row in ("eval", "sync_geometry", "face_data", "wire", "face_flush", *DRAW_ROWS):
+                    for row in ("surface_sync", "stage_update", "eval", "sync_geometry", "read_moved", "face_data",
+                                "wire", "face_flush", *DRAW_ROWS):
                         rows.setdefault(row, []).append(meter.ms.get(row, 0.0))
                     rows.setdefault("draw_rest", []).append(draw - sum(meter.ms.get(row, 0.0) for row in DRAW_ROWS))
                     for group in ("vertex", "face", "other"):
@@ -508,8 +520,11 @@ def report(interaction, wire, totals, parts, rows, sent, weighted) -> list[str]:
         values = [p[k] for p in parts]
         out.append(f"    {label:<40} p50 {statistics.median(values):8.2f}  p95 {percentile(values, 0.95):8.2f}")
     labels = {
+        "surface_sync": "  tick: Viewport._sync_surface (all of it)",
+        "stage_update": "  tick: stage update (candidates + eval)",
         "eval": "  tick: stage evaluation (mix + skin)",
         "sync_geometry": "  tick: RenderMesh._sync_geometry",
+        "read_moved": "    of it: moved -> slots, positions (2f)",
         "face_data": "    of it: face data -> store",
         "wire": "  tick: wire segments rebuild",
     }

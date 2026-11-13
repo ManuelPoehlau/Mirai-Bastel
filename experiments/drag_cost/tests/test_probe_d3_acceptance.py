@@ -57,6 +57,14 @@ def test_both_face_data_layouts_are_timed_under_one_row():
     assert rows[("RenderMesh", "_upload_rows")] == rows[("RenderMesh", "_upload_face_normals")] == "face_data"
 
 
+def test_the_per_vertex_read_and_the_array_hand_over_are_timed_under_one_row():
+    """O3 stage 2 (2026-11-13): row 2f is the per-vertex read before and the hand-over of a stage's table after."""
+    rows = {(cls, method): row for _module, cls, method, row in probe.TIMED}
+    assert rows[("RenderMesh", "_read_moved")] == rows[("RenderMesh", "_read_table_moves")] == "read_moved"
+    assert rows[("MixSurface", "update")] == rows[("SkinSurface", "update")] == "stage_update"
+    assert rows[("Viewport", "_sync_surface")] == "surface_sync"
+
+
 def test_imports_only_src_examples_and_its_own_folder():
     tree = ast.parse(inspect.getsource(probe))
     modules = {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
