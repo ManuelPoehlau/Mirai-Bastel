@@ -5,9 +5,9 @@ O2 and O1; **D1**: NumPy as a production dependency, pinned `numpy==2.2.6`, Pyth
 reference PC, no x86-64-v2 requirement, NumPy enters `requirements.txt` with the first O3 stage). Names `PROVISIONAL`.
 No Core change (CORE_V1_FREEZE untouched); `src/core` imports no NumPy. Stage 2 (skin and morph on arrays, the O1
 position table as an n×3 float64 array) and the SubD stencils are **not** part of it (§9).
-**Open on the reference PC:** the production import and execution under Python 3.12.10 + NumPy 2.2.6 (D1: "verify the
-actual production import and execution on the reference PC"), the GL tests on that driver, and the before / after runs
-(§8; commands in the results file).
+**Reference PC (Manu, 2026-11-13):** D1 verified — the production import and execution under Python 3.12.10 + NumPy 2.2.6
+on the Q9550, the array tests (normals bit-identical on that CPU) and the GL tests (165, pixel gate) pass; before /
+after measured (§8). Not run there yet: `pytest tests` and `experiments/morph_lab/tests` under 3.12.
 **Source:** [audit 2026-11-10](../research/deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md) §E.3, §E.5, §G.3
 row O3, §H step 5, "Decisions (Manu, 2026-11-11)" D1–D3, the addenda "O1 in the container" / "O1 on the reference PC";
 [AD-025 §18](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#18-addendum-2026-11-11-the-evaluated-surface-as-a-position-table-audit-o1)
@@ -182,7 +182,15 @@ git worktree; after = the O3 tree. Raw outputs, the pairs and the reference-PC c
 **D3 [C]: OVER** in every row, before and after (in the container the software rasteriser alone takes 24–47 ms of a
 frame). What is left of the tick: the stage evaluation (23–43 ms, stage 2), `_sync_geometry` 12 ms, of which 3.2 ms
 is the remaining per-vertex read (row 2f), and the HUD in weight rows (7 ms, its own package). On the reference PC the
-same split after O1 was 222 ms `_sync_geometry` of a 307 ms pose frame; its after-value is open (status line above).
+same split after O1 was 222 ms `_sync_geometry` of a 307 ms pose frame.
+
+**Reference PC [RPC]** (Manu, 2026-11-13, Python 3.12.10 + NumPy 2.2.6, panels on, before and after with the same
+interpreter; [`RESULTS_O3_STAGE1_REFERENCE_PC_2026-11-13.md`](../../experiments/drag_cost/RESULTS_O3_STAGE1_REFERENCE_PC_2026-11-13.md)):
+`_sync_geometry` per pose step 204.80 → **34.60 ms** (row 2f 9.50 ms), the pose step 267.25 → 96.66 ms; D3 frame p50 /
+p95 pose 294.63 / 298.94 → **117.77 / 122.87 ms**, weight 361.96 / 388.13 → **189.17 / 199.91 ms** (wire ON within
+1–2 ms at p50), `_sync_geometry` in every D3 row 207–211 → 32–33 ms; a new surface `RenderMesh` 6.2–6.6 → 3.0 s;
+process memory with both stages 714 → 619 MiB. **D3 still OVER** (p95 3.7× pose, 6× weight). Every part of the new sync
+costs ≈ 3× its container time there, the NumPy parts included (per-call overhead at 13k elements, not arithmetic).
 
 ## 9. Not in this stage
 
@@ -239,6 +247,8 @@ dropped, the faces around moved vertices not re-triangulated. The pixel cross-ch
   Pose-Schritt 97–117 → 36 ms; D3-Frame Pose 139 → 80 ms (immer noch über 33 ms — hier rechnet die Grafik in Software,
   und die Skin-/Morph-Auswertung ist Stufe 2). Neues Anzeige-Mesh 2–3 s → 1 s.
 - **NumPy:** `numpy==2.2.6` steht jetzt in `requirements.txt`. Auf deinem PC läuft das nur unter **Python 3.12**
-  (nicht 3.14). Bitte die Befehle in `experiments/drag_cost/RESULTS_O3_STAGE1_CONTAINER_2026-11-12.md` ausführen —
-  damit ist auch D1 („Import und Ausführung auf dem Referenz-PC prüfen“) erledigt.
+  (nicht 3.14). D1 ist auf deinem PC geprüft (2026-11-13): Import, Ausführung, Bit-Gleichheit der Normalen, GL-Tests.
+- **Auf deinem PC gemessen (2026-11-13):** Anzeige-Sync 205 → 35 ms, D3-Frame Pose 295 → 118 ms, Gewicht 362 →
+  189 ms, neues Anzeige-Mesh 6,2–6,6 → 3,0 s. D3 noch nicht erreicht; größter Rest ist jetzt die Skin-/Morph-Auswertung
+  (Stufe 2).
 

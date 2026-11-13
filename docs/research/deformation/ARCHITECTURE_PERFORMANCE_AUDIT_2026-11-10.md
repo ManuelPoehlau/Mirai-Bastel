@@ -917,3 +917,41 @@ outputs and the reference-PC commands:
   the 9800 GTX driver, split / D3 / chain before and after with the same 3.12 interpreter (GPU numbers only with
   "prefer maximum performance"). Stage 2 is not started.
 
+## Addendum — O3 stage 1 on the reference PC (Manu, 2026-11-13)
+
+Raw output and comparison:
+[`experiments/drag_cost/RESULTS_O3_STAGE1_REFERENCE_PC_2026-11-13.md`](../../../experiments/drag_cost/RESULTS_O3_STAGE1_REFERENCE_PC_2026-11-13.md)
+(Python 3.12.10 + NumPy 2.2.6 in a venv, `imgui-bundle` installed so panels on; after = `40e5ce4`, `src/` tree
+`ccd5b2a877` = the O3 commit; before = `7153fae` from a worktree, same interpreter).
+
+- **D1 verified [RPC]:** the production import (`viewport.render_mesh` → `packed_geometry` → NumPy 2.2.6) and every
+  probe's production path run on the Q9550; `tests/test_packed_geometry.py` and the three RenderMesh test files pass
+  there (64; normals bit-identical to the Python reference on this CPU); the GL tests pass (165, among them the O2 pixel
+  gate, now fed from the arrays). Not part of this run: `pytest tests` and `experiments/morph_lab/tests` under 3.12.
+- **Measured [RPC]** (87.5k, 15 % region):
+
+| | before | after |
+|---|---:|---:|
+| `_sync_geometry` per pose step (§E.3 split), p50 | 204.80 ms | **34.60 ms** |
+| of it: ids → slots, positions → arrays (row 2f) | — | 9.50 ms |
+| pose step (split), p50 | 267.25 ms | **96.66 ms** |
+| D3 frame p50 / p95, pose wire off | 294.63 / 298.94 ms | **117.77 / 122.87 ms** |
+| D3 frame p50 / p95, weight wire off | 361.96 / 388.13 ms | **189.17 / 199.91 ms** |
+| D3 frame p50, pose / weight wire ON | 298.40 / 368.01 ms | **119.07 / 188.21 ms** |
+| D3 `_sync_geometry` p50, all four rows | 207.18–211.44 ms | **32.06–33.04 ms** |
+| D3 stage evaluation p50, pose / weight | 57.2 / 87.4 ms | 55.5 / 92.4 ms (unchanged: stage 2) |
+| new surface `RenderMesh` (first weight / pose step) | 6.2 / 6.6 s | **3.0 / 3.0 s** |
+| process memory after both stages | 714 MiB | **619 MiB** |
+
+- **D3 verdict [RPC]: OVER**, p95 3.7× (pose) to 6–8× (weight) the minimum bar (before 9–12×). A pose frame is now
+  ≈ 47 % stage evaluation, 28 % `_sync_geometry`, 17 % `on_draw`; the weight frame adds the HUD (25.6 ms) and the GPU
+  vertex-buffer upload (35 ms GPU timer), both unchanged and their own packages. The GPU rows carry the probe's
+  power-state note in the weight rows (whether "prefer maximum performance" was set is not stated); CPU rows unaffected.
+- **Reading.** The new kernels cost ≈ 3× their container time on the Q9550 — the NumPy parts too (not the 1.6× of the
+  whole-array kernel probe): at 13k elements per call the cost is per-call overhead. The container addendum's estimate
+  (≈ 25–40 ms) held. D2 is not triggered yet (O3 is not finished). For planning only **[H]**: stage 2 with an array
+  hand-over (evaluation 55–92 ms → about the kernel probe's 11.7 ms LBS + 0.9 ms morph, and no row 2f) would leave a
+  pose frame of roughly 60–70 ms — still about twice the bar, with ≈ 23–25 ms NumPy sync and ≈ 20 ms `on_draw` (of the
+  ≈ 11.4 ms mesh draw at full clock, ≈ 9.4 ms is the O2 face-data shading). Those are where D2 (O4) and the shading
+  cost decide after stage 2.
+

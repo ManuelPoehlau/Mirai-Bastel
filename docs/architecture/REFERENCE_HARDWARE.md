@@ -158,9 +158,12 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
   es kein 2.2.6-Wheel - Läufe, die Production-Code ausführen, laufen auf dem Referenz-PC deshalb unter 3.12 (vorher und
   nachher mit demselben Interpreter, wenn verglichen wird). Ein Hochziehen von NumPy oder Python wird erst nach einem Lauf
   hier übernommen (Import, `tests/test_packed_geometry.py`, die D3-Probe). Fehlt NumPy oder startet es nicht, bricht
-  `import viewport` mit einem Hinweis auf diese Regel ab. **Offen (Stand 2026-11-12):** der Import und die Ausführung des
-  Production-Pfads auf dem Referenz-PC (D1 „verify the actual production import and execution“) - Befehle in
-  `experiments/drag_cost/RESULTS_O3_STAGE1_CONTAINER_2026-11-12.md`.
+  `import viewport` mit einem Hinweis auf diese Regel ab. **Gemessen 2026-11-13 (Manu):** unter Python 3.12.10 in einer venv
+  installiert `pip install -r requirements-dev.txt` NumPy 2.2.6 (`cp312-cp312-win_amd64`); der Import des
+  Production-Pfads und seine Ausführung in allen Probes laufen hier, die Array-Tests (Normalen bit-gleich auch auf dem
+  Q9550) und die GL-Tests bestehen (D1 erfüllt;
+  `experiments/drag_cost/RESULTS_O3_STAGE1_REFERENCE_PC_2026-11-13.md`). Die NumPy-Teile kosten hier ≈ 3× ihre Zeit im
+  Container (bei 13k Elementen je Aufruf zählt der Aufruf-Overhead, nicht die Rechnung).
 
 ---
 

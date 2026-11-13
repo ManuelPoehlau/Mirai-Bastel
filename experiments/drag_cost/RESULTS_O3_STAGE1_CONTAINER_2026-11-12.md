@@ -107,6 +107,8 @@ does not touch (triangulation, the slot layout's dicts and lists, edge slots).
 
 ## Commands for the reference PC (PowerShell, from the repo root)
 
+*Run on 2026-11-13 (Manu): [`RESULTS_O3_STAGE1_REFERENCE_PC_2026-11-13.md`](RESULTS_O3_STAGE1_REFERENCE_PC_2026-11-13.md).*
+
 D1: the runtime there is **Python 3.12.10 with `numpy==2.2.6`** — not the PowerShell default 3.14 (no 2.2.6 wheel, and
 newer NumPy does not start on the Q9550). Before and after with the same interpreter. GPU numbers only with the NVIDIA
 setting "Maximale Leistung bevorzugen" for `python.exe` ([O2 reference-PC results](RESULTS_O2_REFERENCE_PC_2026-11-11.md),
