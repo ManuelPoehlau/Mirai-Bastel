@@ -105,7 +105,7 @@ def test_the_watch_has_the_mesh_watch_contract():
 def test_slots_are_freed_and_reused():
     base = _grid(3)
     view = SurfacePositions(base)
-    capacity = len(view._pos)
+    capacity = view.slot_count
     rng = random.Random(4)
     for _ in range(30):
         edge = rng.choice(base.all_edge_ids())
@@ -122,7 +122,7 @@ def test_slots_are_freed_and_reused():
         view._owner_follow_topology(change)
         view._owner_write([(v, base.vertex_position(v)) for v in change.vertices if base.is_valid_vertex(v)])
         assert set(view.positions()) == set(base.all_vertex_ids())
-    assert len(view._pos) <= capacity + 1  # one vertex in flight at a time: one extra slot at most
+    assert view.slot_count <= capacity + 1  # one vertex in flight at a time: one extra slot at most
     assert all(view.vertex_position(v) == base.vertex_position(v) for v in base.all_vertex_ids())
 
 

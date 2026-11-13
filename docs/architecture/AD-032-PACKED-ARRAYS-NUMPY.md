@@ -1,6 +1,8 @@
-# AD-032 — Packed arrays (NumPy) for the viewport's derived geometry (audit O3, stage 1)
+# AD-032 — Packed arrays (NumPy) for the viewport's derived geometry and the stages (audit O3, stages 1 and 2)
 
-**Status:** IMPLEMENTED, stage 1 (2026-11-12). Agent decision within Manu's plan and decisions of 2026-11-11 (O3 after
+**Status:** IMPLEMENTED, stage 1 (2026-11-12) and **stage 2 (2026-11-13**: the morph mix and the skin stage on arrays,
+the O1 table as an n×3 float64 array, its journal as slot chunks, the array hand-over to `RenderMesh` — design §11,
+implementation and container measurements §12; reference PC open). Agent decision within Manu's plan and decisions of 2026-11-11 (O3 after
 O2 and O1; **D1**: NumPy as a production dependency, pinned `numpy==2.2.6`, Python 3.12.10 the verified runtime on the
 reference PC, no x86-64-v2 requirement, NumPy enters `requirements.txt` with the first O3 stage). Names `PROVISIONAL`.
 No Core change (CORE_V1_FREEZE untouched); `src/core` imports no NumPy. Stage 2 (skin and morph on arrays, the O1
@@ -199,8 +201,8 @@ costs ≈ 3× its container time there, the NumPy parts included (per-call overh
 
 ## 9. Not in this stage
 
-- **Stage 2:** skin and morph evaluation on arrays, the O1 table as an n×3 float64 array, positions handed from the
-  stage to `RenderMesh` as arrays (no read per vertex, H7 contract). Its oracles are the existing ones
+- **Stage 2** *(done 2026-11-13: design §11, implementation §12)*: skin and morph evaluation on arrays, the O1 table as
+  an n×3 float64 array, positions handed from the stage to `RenderMesh` as arrays (no read per vertex, H7 contract). Its oracles are the existing ones
   (`morph_mix.evaluate`, `skinning.evaluate`, bit-identical). Not started in this session: after stage 1 the D3 tick
   in the container is ≈ 23–43 ms stage evaluation against 12 ms `_sync_geometry`, so stage 2 is the next lever — but
   only the arithmetic is a kernel; the rest of a stage frame is per-vertex Python that an array table alone does not
@@ -335,6 +337,71 @@ table, rows = its slots) and `table_slots(vertex_ids)` (their slots) gives `Rend
   remaining ones (picking cache refresh, overlays of selected elements, SubD as the next stage, triangulation at
   topology patches) read what they read before.
 
+## 12. Stage 2 — implemented (2026-11-13)
+
+The design of §11 as built; no change to it was needed (the compaction of an untaken watch starts at
+`max(capacity, 1024)` rows). Files: `src/mirai/surface_positions.py` (the table, the slot
+journal `SurfaceChange`, `MovedVertices`), `src/mirai/morph_mix.py` (`MixSurface` on `_Offsets` arrays), 
+`src/mirai/skinning.py` (`SkinSurface`: posed terms, LBS kernel), `src/viewport/render_mesh.py` (the table path),
+`src/viewport/viewport.py` (moved sets handed on without a copy). `evaluate` in both stage modules, `mix_position`,
+`skin_point`, the providers, the chain and the H7 attributes are unchanged. `src/mirai` takes NumPy from
+`viewport.packed_geometry` (one import site behind the pinned-version check of §2).
+
+- **Per frame, a pose step** (Morph + Skin): the skin's candidates are the slot arrays of the bones whose transform
+  changed; `_skin` runs one column per posed term (at most 4) over them; `_owner_write_slots` compares, writes and
+  records one chunk; the provider returns a `MovedVertices`; the viewport marks the surface `RenderMesh` dirty with
+  it; the `RenderMesh` takes its journal's `slot_moves()`, maps them to its slots and copies the rows. No
+  `vertex_position`, no per-vertex dict, no per-watch merge (pinned: `tests/test_stage_arrays.py`, the app-level test
+  counts zero `vertex_position` calls on a stage table and zero `_read_moved` calls for the surface through pose and
+  weight steps).
+- **A weight step:** the mix's candidates are the present slots of the target whose weight changed; `_mix` adds the
+  target columns in ascending `LayerId` order; the skin takes the mix's `slot_moves()` as its candidates (same slots,
+  mirrored layout); then as above.
+- **Topology edits, base edits, weight writes, Undo / Redo** go the dict path as before (per element, only what the
+  journal names) and keep the arrays in step: new vertices get their slot first, freed slots clear the mix's presence,
+  the skin rebuilds the posed terms of the points whose weights changed, the `RenderMesh` patches its slot maps.
+- **What stays per vertex:** `vertex_position` for readers outside the frame path (§11.4), the per-element bookkeeping
+  of a topology patch, the first build of a table (one read per vertex, as before) and the term rebuild when weights
+  change or a bone enters / leaves the posed set (Python per point: `math.fsum` has no NumPy equivalent).
+- **Memory:** per stage the table (24 B per slot) and the arrays that replace dicts of tuples — the mix's `B` and per
+  shown target `present` + `D` (25 B per slot); the skin's posed terms (≈ 81 B per slot) and, over the base, its input
+  cache (24 B per slot). Measured: +5–9 MiB process memory at 87.5k with both stages (below).
+
+**Measured [C]** (container: Python 3.13.18, NumPy 2.2.6, llvmpipe; before = `10beee7`, the probe commit on the stage-1
+code, from a worktree; after = the stage-2 tree; two sets each on one host, pair 2 back to back; raw outputs, pair 1 and
+the reference-PC commands:
+[`RESULTS_O3_STAGE2_CONTAINER_2026-11-13.md`](../../experiments/drag_cost/RESULTS_O3_STAGE2_CONTAINER_2026-11-13.md)):
+
+| 87.5k, 15 % region | before (1 / 2) | after (1 / 2) |
+|---|---:|---:|
+| pose step (split, skin only), p50 | 45.4 / 48.0 ms | **18.2 / 14.4 ms** |
+| of it: skin evaluation (`SkinSurface._recompute`) | 27.4 / 28.6 ms | **5.1 / 4.0 ms** |
+| of it: row 2f (moved positions into the arrays) | 4.0 / 4.3 ms | **0.6 / 0.5 ms** |
+| of it: `_sync_geometry` (rows 2a–2f) | 14.2 / 14.8 ms | 12.4 / 9.8 ms |
+| D3 tick (everything but the draw) p50, four rows (pair 2) | 52.8–84.0 ms | **15.0–22.4 ms** |
+| D3 stage evaluation p50, pose / weight (pair 2) | 35.6 / 55.3 ms | **4.0 / 6.8 ms** |
+| D3 frame p50 / p95, pose wire off (pair 2) | 109.0 / 127.7 ms | **58.5 / 75.7 ms** |
+| D3 frame p50 / p95, weight wire off (pair 2) | 132.3 / 165.4 ms | **71.4 / 85.6 ms** |
+| next pose / weight step + frame (chain) | 90–68 / 79–64 ms | 52–50 / 39–40 ms |
+| building a stage, a new surface `RenderMesh`, load | — | unchanged (within noise) |
+| bytes to the store per frame | 556,940 | 556,940 |
+
+**D3 [C]: OVER** in every row, before and after: llvmpipe draws on the CPU (43–79 ms of a frame). The tick alone is
+15–22 ms p50, p95 19–31 ms; in it, the stages 4–9 ms and `_sync_geometry` 10–13 ms (stage 1's NumPy parts, now the
+largest CPU item). For the reference PC **[H]**, scaling each part by stage 1's container → reference-PC factor (≈ 3×):
+stage evaluation 55 / 92 → ≈ 12 / 20 ms, `_sync_geometry` 33 → ≈ 24 ms (row 2f gone), the rest of the tick 9–15 → ≈
+2 ms; with `on_draw` unchanged (20 ms pose; 49 ms weight with the HUD's 26 ms) a pose frame of ≈ 55–60 ms and a weight
+frame of ≈ 95 ms — still over the bar, now dominated by the NumPy sync and the draw. That is where D2 (O4) and the
+HUD / GPU packages decide, after the reference-PC run.
+
+**Tests [C].** `tests/` 6,944 passed, 1 failed (the pre-existing `test_scene_menu_local_tmp.py`, audit §I.7), 8 skipped
+(GL modules in the combined run); `tests/test_gl_*.py` in its own process 165 passed (the pixel gate among them);
+`experiments/morph_lab/tests` 49, `experiments/drag_cost/tests` 85 passed. New `tests/test_stage_arrays.py` (13: the
+journal against a per-vertex reference, `slot_moves()`, slot reuse, first record wins, bounded watches, `MovedVertices`,
+signed zeros and `fsum` bit for bit, the mirrored layout, the table path == a fresh build with zero per-vertex reads,
+unreported faces, the app-level pose / weight steps). Hand mutations: 13 of 14 caught; the 14th, `slot_moves()` without
+its mapping check, cannot fire (a mapping change always records by id in every watch) — a second guard.
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
@@ -354,4 +421,11 @@ table, rows = its slots) and `table_slots(vertex_ids)` (their slots) gives `Rend
 - **Auf deinem PC gemessen (2026-11-13):** Anzeige-Sync 205 → 35 ms, D3-Frame Pose 295 → 118 ms, Gewicht 362 →
   189 ms, neues Anzeige-Mesh 6,2–6,6 → 3,0 s. D3 noch nicht erreicht; größter Rest ist jetzt die Skin-/Morph-Auswertung
   (Stufe 2).
+- **Stufe 2 (2026-11-13, gebaut):** Morph-Mischung und Skin rechnen jetzt ebenfalls auf Arrays, und die Anzeige bekommt
+  die bewegten Positionen als Array statt Punkt für Punkt. Ergebnis wieder bit-gleich zur bisherigen Definition (keine
+  Toleranz, kein Core-Eingriff, also kein Haltepunkt für dich). Im Container: Skin-Auswertung 27–29 → 4–5 ms, die ganze
+  Auswertung im D3-Frame 36 / 55 → 4 / 7 ms (Pose / Gewicht), der Tick ohne Zeichnen 53–84 → 15–22 ms. D3 bleibt im
+  Container „über" (dort zeichnet die CPU). Auf deinem PC erwarte ich grob 55–60 ms Pose-Frame **[H]** — die Messung
+  brauche ich von dir (Befehle in `experiments/drag_cost/RESULTS_O3_STAGE2_CONTAINER_2026-11-13.md`, wieder mit
+  `.venv312`). Danach entscheidet D2 (O4), ob der Rest (NumPy-Sync ≈ 24 ms, Zeichnen, HUD) kompiliert werden muss.
 

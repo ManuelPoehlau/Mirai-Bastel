@@ -882,6 +882,12 @@ read through `vertex_position`). Unchanged: §5.1–§5.2 (LBS, candidates, the 
 chain, `keep_edit_surface`, the H7-E entry), picking and the edit mesh at rest while posed (§7.1), "never writes a
 scene mesh". Measured [C] at 87.5k: building the skin surface 3,650 → 92 ms, its memory ≈ 240 MiB less; a pose frame's
 evaluation 2–3 ms faster (D3 probe), still over the D3 bar.
+*(2026-11-13, O3 stage 2, [AD-032 §11–§12](AD-032-PACKED-ARRAYS-NUMPY.md#11-stage-2--design-2026-11-13): LBS on arrays.
+The skin's table mirrors the mix's slots (over the base it keeps its own and caches the base positions); the bone →
+points index gives slot arrays per key; the posed terms of every point (transform row, weight, `c = 1.0 -
+math.fsum(...)`, `c == 0.0`) are padded arrays of width 4, rebuilt only for points whose weights changed or whose keys
+entered / left the posed set; the kernel adds term column by term column, the first as it is - bit-identical to
+`evaluate`, §5.1 unchanged.)*
 
 ---
 

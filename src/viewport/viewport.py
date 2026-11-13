@@ -102,7 +102,10 @@ Zusatz-Overlays (H1) und gibt die bewegten Vertices von `p.surface_mesh` zurück
 (ein `core.Mesh`, eine schreibgeschützte Sicht mit dessen Abfrage-API und `watch()` - seit 2026-11-11 (O1)
 die Morph-Mischung und die Pose als Positionstabelle über der Topologie des Edit-Mesh -, oder None = aus) ist
 danach das zu zeichnende Mesh - ein anderes Objekt als beim letzten `sync()` heißt neu aufbauen. Gelesen werden
-nur Abfragen (Topologie, `vertex_position`, UVs) und das Journal; der Viewport schreibt nie hinein. Der
+nur Abfragen (Topologie, `vertex_position`, UVs) und das Journal; der Viewport schreibt nie hinein. Optional
+(2026-11-13, O3 Stufe 2, AD-032 §11.3): hat das Flächen-Mesh `position_array()` / `table_slots()` und das Journal
+`slot_moves()`, übernimmt der RenderMesh bewegte Positionen als Arrays statt einzeln (`render_mesh.py`); die bewegte
+Menge darf dann eine schreibgeschützte Menge sein, die ihre IDs erst beim Lesen bildet - der Viewport kopiert sie nicht. Der
 Viewport besitzt dafür einen `RenderMesh` ohne `SelectionOverlay` mit Kamera, Material, Licht, Flat/Smooth
 und Matrix des Edit-Mesh und zeichnet ihn bei `show_faces` an dessen Stelle. Wire, Auswahl, Tool- und Zusatz-Overlays bleiben auf dem
 Edit-Mesh (dem Käfig), Picking ist nicht betroffen (außer über die Käfig-Quelle, unten). Kamera-Änderungen erreichen die Fläche in
@@ -617,7 +620,7 @@ class Viewport:
             elif apply_moved and key in patched:
                 rm.mark_topology_dirty()
             elif apply_moved and moved.get(key):
-                rm.mark_vertices_dirty(set(moved[key]))
+                rm.mark_vertices_dirty(moved[key])  # RenderMesh copies what it keeps (AD-032 §11.1: no set per frame)
 
     def _follow_entry(self, key, entry: RenderMesh, rm: RenderMesh, *, rebuilt: bool = False) -> None:
         """Hält die Ersatzfläche eines Eintrags mit dessen Kamera, Material, Matrix und Stil gleich."""
@@ -663,7 +666,7 @@ class Viewport:
             # gleicht sie über sein Journal inkrementell ab (AD-023), statt neu aufzubauen.
             rm.mark_topology_dirty()
         elif moved:
-            rm.mark_vertices_dirty(set(moved))
+            rm.mark_vertices_dirty(moved)  # RenderMesh copies what it keeps (AD-032 §11.1: no set per frame)
         rm.sync()
         self._sync_surface_display_state()
 

@@ -1452,7 +1452,10 @@ and cannot hide it.
   *(Amended 2026-11-11, audit 2026-11-10 O1: or a read-only view with the `Mesh` query API and `watch()` - the morph
   mix and the pose are `mirai.surface_positions.SurfacePositions`, positions over the edit mesh's own topology,
   [AD-025 §18](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#18-addendum-2026-11-11-the-evaluated-surface-as-a-position-table-audit-o1).
-  The viewport reads queries and the journal only, as before.)*
+  The viewport reads queries and the journal only, as before.)* *(Amended 2026-11-13, O3 stage 2: such a view may also
+  hand its positions over as arrays - `position_array()`, `table_slots(ids)` and `slot_moves()` on its journal's change
+  - and the returned moved set may be a read-only `Set` that builds its ids on demand; the viewport passes it on without
+  copying. [AD-032 §11.3](AD-032-PACKED-ARRAYS-NUMPY.md#113-the-hand-over-to-rendermesh-without-a-read-per-vertex).)*
 - The viewport owns the surface's `RenderMesh` (no `SelectionOverlay`), gives it the edit mesh's camera, aspect, material,
   light uniforms, Flat/Smooth, polygon offset and model matrix, and with `show_faces` draws it instead of the edit mesh.
   Wire, selection, tool and extra overlays stay on the edit mesh; picking and `Application` are unaffected.

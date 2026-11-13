@@ -26,6 +26,10 @@ the base's weights-layer keys, and on a rig / pose / placement change the points
 whose transform changed (a bone -> points index kept in step with the weights journal). Every candidate
 is recomputed from its inputs (the drift guard): the shown surface is a pure function of (input positions,
 weights, rig, pose, placement), bit-identical whatever the order of pose steps, weight writes and edits.
+Since O3 stage 2 (2026-11-13, AD-032 §11) it computes on arrays: its table mirrors the mix's slots (or keeps its own
+over the base, with a cache of the base positions), the bone -> points index gives slot arrays, the posed terms of
+every slot are padded arrays (width `WEIGHTS_WIDTH`) rebuilt only when a point's weights or the set of posed keys
+change, and LBS runs column by column in the rule's order - bit-identical to `evaluate`.
 
 **The stage** (`SkinSurfaceProvider`, `SkinDisplay`, §5.2): wanted only while the rig is posed and the edit
 mesh (or the morph base beside its editing view, H7-E) has a weights layer; at rest the chain is
@@ -45,12 +49,15 @@ from dataclasses import dataclass
 from typing import Optional, Union
 
 from core import Mesh, ObjectTransform
+from core.layer_storage import WEIGHTS_WIDTH
 from core.mesh import LayerKind
 from core.rig import Rig, rest_frame
 from core.scene import IDENTITY_TRANSFORM
 
+from viewport.packed_geometry import np  # NumPy behind its pinned-version check (AD-032 §2)
+
 from .morph_mix import topology_touched
-from .surface_positions import SurfacePositions
+from .surface_positions import MovedVertices, SurfacePositions, _grown
 
 Vec3 = tuple[float, float, float]
 Mat3 = tuple[Vec3, Vec3, Vec3]
@@ -272,6 +279,20 @@ class SkinSurface:
         # mix caches its offsets) and the bone index's inverse
         self._values: dict = {}
         self._points_of: dict = {}  # key -> set of VertexIds
+        # -- on the table's slots (AD-032 §11.2) --
+        #: the input is a table whose slots this one mirrors (the mix); else the input is the base
+        self._table_input = isinstance(input_mesh, SurfacePositions)
+        #: the input positions when the input is the base (refreshed for what its journal names); None = `input.P`
+        self._X = None
+        self._key_slots: dict = {}  # key -> its points' slots (ascending), rebuilt when its set or the slots change
+        self._key_row: dict = {}  # key -> row of `_T`
+        self._T = np.zeros((0, 12))  # per key row: the flat transform (m00, m01, m02, c0, m10, ..., c2)
+        # the posed terms of every slot, in the value's order: transform row, weight; their count; c and c == 0
+        self._tn = np.zeros(0, dtype=np.intp)
+        self._tk = np.zeros((0, WEIGHTS_WIDTH), dtype=np.intp)
+        self._tw = np.zeros((0, WEIGHTS_WIDTH))
+        self._tc = np.zeros(0)
+        self._tcz = np.zeros(0, dtype=bool)
 
     def close(self) -> None:
         self._input_watch.close()
@@ -289,6 +310,7 @@ class SkinSurface:
         """Rebuilds the index from the layer; returns every point it names before and after."""
         before = set(self._values)
         self._values, self._points_of = {}, {}
+        self._key_slots.clear()
         if self.layer is not None:
             for v, value in self.base.layer_items(self.layer):
                 self._index(v, value)
@@ -296,16 +318,125 @@ class SkinSurface:
 
     def _index(self, v, value) -> None:
         old = self._values.pop(v, ())
+        key_slots = self._key_slots
         for k, _ in old:
             points = self._points_of.get(k)
             if points is not None:
                 points.discard(v)
+                key_slots.pop(k, None)
                 if not points:
                     del self._points_of[k]
         if value:
             self._values[v] = value
             for k, _ in value:
                 self._points_of.setdefault(k, set()).add(v)
+                key_slots.pop(k, None)
+
+    def _slots_of_key(self, k):
+        """The slots of the points with key `k` (ascending; points the table does not hold are skipped)."""
+        got = self._key_slots.get(k)
+        if got is None:
+            index = self.mesh._index
+            points = [index[v] for v in self._points_of.get(k, ()) if v in index]
+            got = self._key_slots[k] = np.sort(np.asarray(points, dtype=np.intp))
+        return got
+
+    # -- the posed terms (AD-032 §11.2) -------------------------------------------------------------
+
+    def _fit(self) -> None:
+        capacity = self.mesh.capacity
+        if len(self._tn) < capacity:
+            self._tn = _grown(self._tn, capacity, 0)
+            self._tk = _grown(self._tk, capacity, 0)
+            self._tw = _grown(self._tw, capacity, 0.0)
+            self._tc = _grown(self._tc, capacity, 0.0)
+            self._tcz = _grown(self._tcz, capacity, False)
+            if self._X is not None:
+                self._X = _grown(self._X, capacity, 0.0)
+
+    def _set_transforms(self) -> None:
+        """`_T` rows of the keys with a transform now (a key keeps its row for the stage's life)."""
+        rows = self._key_row
+        for k in self._flat:
+            if k not in rows:
+                rows[k] = len(rows)
+        if len(self._T) < len(rows):
+            self._T = _grown(self._T, len(rows), 0.0)
+        for k, a in self._flat.items():
+            self._T[rows[k]] = a
+
+    def _rebuild_terms(self, vertex_ids) -> None:
+        """The posed terms of the held `vertex_ids` under `_flat`: per key with a transform, in the value's order, its
+        `_T` row and weight; `c = 1.0 - math.fsum(...)` of those weights (as `skin_point`)."""
+        index, values, flat, rows = self.mesh._index, self._values, self._flat, self._key_row
+        slots, counts, keys, weights, cs = [], [], [], [], []
+        pad_k, pad_w = [0] * WEIGHTS_WIDTH, [0.0] * WEIGHTS_WIDTH
+        for v in vertex_ids:
+            s = index.get(v)
+            if s is None:
+                continue
+            value = values.get(v)
+            posed = [(rows[k], w) for k, w in value if k in flat] if value and flat else ()
+            n = len(posed)
+            slots.append(s)
+            counts.append(n)
+            keys.append([k for k, _ in posed] + pad_k[n:])
+            ws = [w for _, w in posed]
+            weights.append(ws + pad_w[n:])
+            cs.append(1.0 - math.fsum(ws) if n else 1.0)
+        if not slots:
+            return
+        slots = np.asarray(slots, dtype=np.intp)
+        self._tn[slots] = counts
+        self._tk[slots] = keys
+        self._tw[slots] = weights
+        c = np.asarray(cs)
+        self._tc[slots] = c
+        self._tcz[slots] = c == 0.0
+
+    def _inputs(self):
+        return self._X if self._X is not None else self.input.position_array()
+
+    def _skin(self, slots, X) -> "np.ndarray":
+        """LBS of held `slots` (`skin_point`, bit for bit): per term column j, `w * (((a0*x + a1*y) + a2*z) + a3)` per
+        component, the first term as it is, then `+=`; `c*p + sum`, or the sum where c == 0.0; a point without a
+        posed term is its input as it is."""
+        out = X[slots]
+        counts = self._tn[slots]
+        posed = np.flatnonzero(counts)
+        if not len(posed):
+            return out
+        sl, n = slots[posed], counts[posed]
+        nmin, nmax = int(n.min()), int(n.max())
+        if nmin != nmax:  # most terms first: the slots that still have a term j are a prefix
+            order = np.argsort(-n, kind="stable")
+            posed, sl, n = posed[order], sl[order], n[order]
+        p = out[posed]
+        x, y, z = p[:, 0], p[:, 1], p[:, 2]
+        neg = -n
+        T, tk, tw = self._T, self._tk, self._tw
+        acc = np.empty((len(sl), 3))
+        for j in range(nmax):
+            m = len(sl) if j < nmin else int(np.searchsorted(neg, -j, side="left"))
+            a = T[tk[sl[:m], j]]
+            w = tw[sl[:m], j]
+            xm, ym, zm = x[:m], y[:m], z[:m]
+            for axis in range(3):
+                r = 4 * axis
+                t = a[:, r] * xm
+                t += a[:, r + 1] * ym
+                t += a[:, r + 2] * zm
+                t += a[:, r + 3]
+                t *= w
+                if j == 0:
+                    acc[:, axis] = t
+                else:
+                    acc[:m, axis] += t
+        rest = ~self._tcz[sl]
+        if rest.any():
+            acc[rest] = self._tc[sl[rest], None] * p[rest] + acc[rest]
+        out[posed] = acc
+        return out
 
     # -- update ----------------------------------------------------------------------------------
 
@@ -321,67 +452,94 @@ class SkinSurface:
             self.layer = layer
             self._index_all()
             self._flat = flat
-            surface = SurfacePositions(base, self.input.vertex_position)
-            for v in self._values:
-                p = self._point(v)
-                if p != self.input.vertex_position(v):
-                    surface._owner_set(v, p)
-            self.mesh = surface
+            layout = self.input if self._table_input else None
+            surface = self.mesh = SurfacePositions(base, None if layout is not None else self.input.vertex_position,
+                                                   layout=layout)
+            if layout is None:
+                self._X = surface.P.copy()
+            self._fit()
+            self._set_transforms()
+            self._rebuild_terms(self._values)
+            if self._values:
+                slots = np.unique(surface.table_slots(list(self._values)))
+                surface._owner_write_slots(slots, self._skin(slots, self._inputs()))  # nobody watches yet
             return True, set()
-        candidates = set(change.vertices)
-        if topology_touched(change, self.input):
-            self.mesh._owner_follow_topology(change)
-            self.topology_changed = True
+        surface = self.mesh
+        index = surface._index
+        candidates: list = []  # slot arrays
+        named: set = set()  # VertexIds
+        dirty: set = set()  # VertexIds whose posed terms are rebuilt
+        new_slots = None
+        moves = change.slot_moves() if self._table_input else None
+        if moves is not None:
+            candidates.append(moves)
+        else:
+            vertices = change.vertices
+            if topology_touched(change, self.input):
+                surface._owner_follow_topology(change)
+                self._key_slots.clear()
+                self.topology_changed = True
+            valid = self.input.is_valid_vertex
+            new = [v for v in vertices if v not in index and valid(v)]
+            if new:  # a slot each (the mix's, mirrored); the row is written below, the base's cache with `held`
+                new_slots = np.fromiter((surface._owner_add(v, (0.0, 0.0, 0.0)) for v in new), dtype=np.intp,
+                                        count=len(new))
+                surface._owner_record(dict.fromkeys(new))
+                self._key_slots.clear()
+                self._fit()
+                dirty.update(new)
+            held = [v for v in vertices if v in index and valid(v)]
+            if held and self._X is not None:  # the base's positions the journal names
+                self._X[surface.table_slots(held)] = [base.vertex_position(v) for v in held]
+            named.update(held)
         # the weights: a layer that came, went or was written whole re-indexes; else per key
         if layer != self.layer or layer in base_change.layer_whole:
             self.layer = layer
-            candidates |= self._index_all()
+            touched = self._index_all()
+            named |= touched
+            dirty |= touched
         elif layer is not None and layer in base_change.layer_values:
             for v in base_change.layer_values[layer]:
                 value = base.layer_value(layer, v) if base.is_valid_vertex(v) else ()
                 self._index(v, value)
-                candidates.add(v)
+                named.add(v)
+                dirty.add(v)
         # rig, pose, placement: the points of every bone whose transform changed
         if flat != self._flat:
-            points_of = self._points_of
-            for k in set(flat) | set(self._flat):
-                if flat.get(k) != self._flat.get(k):
-                    candidates |= points_of.get(k, set())
+            old = self._flat
+            for k in set(flat) | set(old):
+                if flat.get(k) != old.get(k):
+                    candidates.append(self._slots_of_key(k))
+                    if (k in flat) != (k in old):  # posed <-> not: the terms of its points change
+                        dirty |= self._points_of.get(k, set())
             self._flat = flat
-        return False, self._recompute(candidates)
+            self._set_transforms()
+        if dirty:
+            self._rebuild_terms(dirty)
+        if named:
+            held = [v for v in named if v in index]
+            if held:
+                candidates.append(np.unique(surface.table_slots(held)))
+        if new_slots is not None:
+            candidates.append(new_slots)
+        return False, self._recompute(candidates, new_slots)
 
-    def _point(self, v) -> Vec3:
-        p = self.input.vertex_position(v)
-        value = self._values.get(v)
-        if value is None or not self._flat:
-            return tuple(p)  # type: ignore[return-value]
-        return skin_point(p, value, self._flat)
-
-    def _recompute(self, candidates) -> set:
-        """`_point` for every candidate, inlined (the pose-step hot loop; same arithmetic), written into the
-        table where it differs (`SurfacePositions._owner_write`, inlined)."""
-        valid, position = self.input.is_valid_vertex, self.input.vertex_position
+    def _recompute(self, candidates: list, new_slots=None) -> MovedVertices:
+        """LBS for every candidate slot (`_skin`), written into the table where it differs and recorded as one chunk;
+        new vertices are written as they are (recorded by id). Returns the changed vertices (new ones included)."""
         surface = self.mesh
-        index, pos = surface._index, surface._pos
-        values, flat = self._values, self._flat
-        moved: dict = {}
-        for v in candidates:
-            if not valid(v):
-                continue
-            p = position(v)
-            value = values.get(v)
-            p = tuple(p) if value is None or not flat else skin_point(p, value, flat)
-            s = index.get(v)
-            if s is None:  # new in the base since the last update
-                surface._owner_add(v, p)
-                moved[v] = None
-                continue
-            old = pos[s]
-            if old != p:
-                moved[v] = old
-                pos[s] = p
-        surface._owner_record(moved)
-        return set(moved)
+        if not candidates:
+            return surface._owner_moved(np.zeros(0, dtype=np.intp))
+        slots = np.unique(np.concatenate(candidates)) if len(candidates) > 1 else candidates[0]
+        slots = slots[surface._held[slots]]
+        always = None
+        if new_slots is not None:
+            always = np.zeros(len(slots), dtype=bool)
+            always[np.searchsorted(slots, new_slots)] = True
+        changed = surface._owner_write_slots(slots, self._skin(slots, self._inputs()), always)
+        if new_slots is not None:
+            changed = np.union1d(changed, new_slots)
+        return surface._owner_moved(changed)
 
 
 # -- the stage ------------------------------------------------------------------------------------------

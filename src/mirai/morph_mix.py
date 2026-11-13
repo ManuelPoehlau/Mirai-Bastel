@@ -22,7 +22,10 @@ steps, edits, Undo / Redo (tested against the definition, `tests/test_morph_mix.
 edit O(touched points), a topology edit the changed elements (AD-025 §16.1), a build O(V) only the first
 time. Since O1 (2026-11-11, audit 2026-11-10 §G.3) the surface is a `SurfacePositions`: the mix as a
 position table over the base's own topology (a read-only view with the `Mesh` queries; no layers), not a
-`core.Mesh` copy with the base's topology replayed into it.
+`core.Mesh` copy with the base's topology replayed into it. Since O3 stage 2 (2026-11-13, AD-032 §11) it
+computes on arrays on the table's slots: the offsets of each shown target as `present` / `D` arrays, the base
+positions as `B`, the candidates as slot arrays; the sum keeps the rule's order column by column (the first term as
+it is, then `+=` in ascending `LayerId` order), so the result is bit-identical to `evaluate`.
 """
 
 from __future__ import annotations
@@ -31,7 +34,9 @@ from typing import Optional
 
 from core import Mesh
 
-from .surface_positions import SurfacePositions
+from viewport.packed_geometry import np  # NumPy behind its pinned-version check (AD-032 §2)
+
+from .surface_positions import MovedVertices, SurfacePositions, _grown
 
 _ZERO = (0.0, 0.0, 0.0)
 
@@ -88,6 +93,33 @@ def evaluate(base: Mesh, weights: dict) -> dict:
     return out
 
 
+class _Offsets:
+    """One shown target's offsets on the table's slots (AD-032 §11.2): `present` (the vertex at the slot has an entry -
+    exactly the keys of the dict cache this replaces) and `D` (its offset). A freed slot is cleared; a new vertex
+    starts absent."""
+
+    __slots__ = ("present", "D", "_slots")
+
+    def __init__(self, capacity: int) -> None:
+        self.present = np.zeros(capacity, dtype=bool)
+        self.D = np.zeros((capacity, 3))
+        self._slots = None
+
+    def fit(self, capacity: int) -> None:
+        if len(self.present) < capacity:
+            self.present = _grown(self.present, capacity, False)
+            self.D = _grown(self.D, capacity, 0.0)
+
+    def slots(self):
+        """The present slots, ascending (cached until the next change)."""
+        if self._slots is None:
+            self._slots = np.flatnonzero(self.present)
+        return self._slots
+
+    def changed(self) -> None:
+        self._slots = None
+
+
 class MixSurface:
     """The evaluated surface of one base mesh (module docstring)."""
 
@@ -100,11 +132,13 @@ class MixSurface:
         self.weights: dict = {}
         #: True right after an `update` that patched the topology of `mesh` in place (H7)
         self.topology_changed = False
-        # LayerId -> {VertexId: offset} of every shown target (a cache of the base's layer, kept in step
+        # LayerId -> `_Offsets` of every shown target (a cache of the base's layer on the table's slots, kept in step
         # through the journal); dropped when the target's weight goes to 0 (memory bounded by the mix)
         self._offsets: dict = {}
-        # [(factor, offsets dict)] in ascending LayerId order - the summation order
+        # [(factor, _Offsets)] in ascending LayerId order - the summation order
         self._terms: list = []
+        # the base positions on the table's slots (refreshed for the vertices the base's journal names)
+        self._B = None
 
     def close(self) -> None:
         self._watch.close()
@@ -112,20 +146,28 @@ class MixSurface:
     def pending(self) -> bool:
         return not self._watch.peek().is_empty()
 
-    def _load(self, lid) -> dict:
-        return dict(self.base.layer_items(lid))
-
-    def _point(self, v) -> tuple:
-        b = self.base.vertex_position(v)
-        terms = []
-        for f, offsets in self._terms:
-            d = offsets.get(v)
-            if d is not None:
-                terms.append((f, d))
-        return mix_position(b, terms)
+    def _load(self, lid) -> _Offsets:
+        """The target's stored offsets on the table's slots (every stored vertex is held: new ones get slots first)."""
+        surface = self.mesh
+        out = _Offsets(surface.capacity)
+        items = self.base.layer_items(lid)
+        if items:
+            n = len(items)
+            slots = surface.table_slots([v for v, _ in items])
+            out.D[slots] = np.fromiter((c for _, d in items for c in d), dtype=np.float64, count=3 * n).reshape(n, 3)
+            out.present[slots] = True
+        return out
 
     def _set_terms(self) -> None:
         self._terms = [(factor(self.weights[lid]), self._offsets[lid]) for lid in sorted(self.weights, key=int)]
+
+    def _fit(self) -> None:
+        """Per-slot arrays as large as the table (it grows when vertices enter)."""
+        capacity = self.mesh.capacity
+        if len(self._B) < capacity:
+            self._B = _grown(self._B, capacity, 0.0)
+            for offsets in self._offsets.values():
+                offsets.fit(capacity)
 
     def update(self, weights: dict) -> tuple[bool, set]:
         """Shows `weights` (LayerId -> whole percent; 0 and unknown layers are ignored). Returns
@@ -136,87 +178,126 @@ class MixSurface:
         change = self._watch.take()
         self.topology_changed = False
         if self.mesh is None:
+            surface = self.mesh = SurfacePositions(base)
+            self._B = surface.P.copy()
             self.weights = weights
             self._offsets = {lid: self._load(lid) for lid in weights}
             self._set_terms()
-            surface = SurfacePositions(base)
-            for v in set().union(*self._offsets.values()) if self._offsets else ():
-                surface._owner_set(v, self._point(v))
-            self.mesh = surface
+            if self._offsets:
+                slots = np.unique(np.concatenate([o.slots() for o in self._offsets.values()]))
+                surface._owner_set_slots(slots, self._mix(slots))
             return True, set()
-        candidates = set(change.vertices)
+        surface = self.mesh
+        index = surface._index
+        valid = base.is_valid_vertex
+        candidates: list = []  # slot arrays
+        named = change.vertices
         if topology_touched(change, base):
             # AD-025 §16.1: the surface reads the base's topology; it drops the vertices that went and tells its
-            # watches which elements changed (new vertices get their mix below)
-            self.mesh._owner_follow_topology(change)
+            # watches which elements changed (new vertices get a slot here and their mix below)
+            freed = surface._owner_follow_topology(change)
+            for offsets in self._offsets.values():
+                offsets.present[freed] = False
+                offsets.changed()
             self.topology_changed = True
+        new = [v for v in named if v not in index and valid(v)]
+        if new:
+            rows = [base.vertex_position(v) for v in new]
+            new_slots = np.fromiter((surface._owner_add(v, p) for v, p in zip(new, rows)), dtype=np.intp,
+                                    count=len(new))
+            surface._owner_record(dict.fromkeys(new))
+            self._fit()
+            self._B[new_slots] = rows
+        else:
+            new_slots = None
+        moved = [v for v in named if v in index and valid(v)]
+        if moved:  # the base positions the journal names (moved, new)
+            slots = surface.table_slots(moved)
+            self._B[slots] = [base.vertex_position(v) for v in moved]
+            candidates.append(np.unique(slots))
         offsets = self._offsets
         for lid in list(offsets):  # keep the shown targets' caches in step with the base's journal
+            cache = offsets[lid]
             if lid not in alive:
-                candidates |= set(offsets.pop(lid))
+                candidates.append(offsets.pop(lid).slots())
                 continue
             keys = offset_keys(change, lid)
-            cache = offsets[lid]
             if keys is None:
                 fresh = self._load(lid)
-                candidates |= set(cache) | set(fresh)
+                candidates += [cache.slots(), fresh.slots()]
                 offsets[lid] = fresh
                 continue
-            for v in keys:
-                d = base.layer_value(lid, v) if base.is_valid_vertex(v) else _ZERO
+            held = [v for v in keys if v in index]  # a vertex that went left with its slot
+            if not held:
+                continue
+            for v in held:
+                s = index[v]
+                d = base.layer_value(lid, v) if valid(v) else _ZERO
                 if d == _ZERO:
-                    cache.pop(v, None)
+                    cache.present[s] = False
                 else:
-                    cache[v] = d
-            candidates |= keys
+                    cache.present[s] = True
+                    cache.D[s] = d
+            cache.changed()
+            candidates.append(np.unique(surface.table_slots(held)))
         if weights != self.weights:
             for lid in set(weights) | set(self.weights):
-                old, new = self.weights.get(lid), weights.get(lid)
-                if old == new:
+                old, new_weight = self.weights.get(lid), weights.get(lid)
+                if old == new_weight:
                     continue
-                if new is None:  # weight 0: its points go back to the other targets' mix
-                    candidates |= set(offsets.pop(lid, ()))
+                if new_weight is None:  # weight 0: its points go back to the other targets' mix
+                    cache = offsets.pop(lid, None)
+                    if cache is not None:
+                        candidates.append(cache.slots())
                     continue
                 if lid not in offsets:
                     offsets[lid] = self._load(lid)
-                candidates |= set(offsets[lid])
+                candidates.append(offsets[lid].slots())
             self.weights = weights
         self._set_terms()
-        return False, self._recompute(candidates)
+        if new_slots is not None:
+            candidates.append(new_slots)
+        return False, self._recompute(candidates, new_slots)
 
-    def _recompute(self, candidates) -> set:
-        """`mix_position` for every candidate, inlined (the weight-step hot loop; same arithmetic, same
-        order: the first term as it is, then += in ascending LayerId order), written into the table where it
-        differs (`SurfacePositions._owner_write`, inlined)."""
-        base, surface, terms = self.base, self.mesh, self._terms
-        valid, rest = base.is_valid_vertex, base.vertex_position
-        index, pos = surface._index, surface._pos
-        moved: dict = {}
-        for v in candidates:
-            if not valid(v):
+    def _mix(self, slots) -> "np.ndarray":
+        """The rule for held `slots`, column by column: per target in ascending LayerId order, the first present term
+        `f * d` as it is, then `+= f * d`; `b + sum`, or `b` as stored without a term (`mix_position`, bit for bit)."""
+        out = self._B[slots]
+        acc = started = None
+        for f, offsets in self._terms:
+            has = offsets.present[slots]
+            if not has.any():
                 continue
-            b = rest(v)
-            first = True
-            for f, offsets in terms:
-                d = offsets.get(v)
-                if d is None:
-                    continue
-                if first:
-                    sx, sy, sz = f * d[0], f * d[1], f * d[2]
-                    first = False
-                else:
-                    sx += f * d[0]
-                    sy += f * d[1]
-                    sz += f * d[2]
-            p = tuple(b) if first else (b[0] + sx, b[1] + sy, b[2] + sz)
-            s = index.get(v)
-            if s is None:  # new in the base since the last update
-                surface._owner_add(v, p)
-                moved[v] = None
-                continue
-            old = pos[s]
-            if old != p:
-                moved[v] = old
-                pos[s] = p
-        surface._owner_record(moved)
-        return set(moved)
+            if acc is None:
+                acc = np.zeros((len(slots), 3))
+                started = np.zeros(len(slots), dtype=bool)
+                first = has
+            else:
+                first = has & ~started
+                rest = has & started
+                if rest.any():
+                    acc[rest] += f * offsets.D[slots[rest]]
+            if first.any():
+                acc[first] = f * offsets.D[slots[first]]
+            started |= has
+        if acc is not None:
+            out[started] = out[started] + acc[started]
+        return out
+
+    def _recompute(self, candidates: list, new_slots=None) -> MovedVertices:
+        """The rule for every candidate slot (`_mix`), written into the table where it differs and recorded as one
+        chunk; new vertices are written as they are (recorded by id). Returns the changed vertices (new ones
+        included)."""
+        surface = self.mesh
+        if not candidates:
+            return surface._owner_moved(np.zeros(0, dtype=np.intp))
+        slots = np.unique(np.concatenate(candidates)) if len(candidates) > 1 else candidates[0]
+        slots = slots[surface._held[slots]]
+        always = None
+        if new_slots is not None:
+            always = np.zeros(len(slots), dtype=bool)
+            always[np.searchsorted(slots, new_slots)] = True
+        changed = surface._owner_write_slots(slots, self._mix(slots), always)
+        if new_slots is not None:
+            changed = np.union1d(changed, new_slots)
+        return surface._owner_moved(changed)

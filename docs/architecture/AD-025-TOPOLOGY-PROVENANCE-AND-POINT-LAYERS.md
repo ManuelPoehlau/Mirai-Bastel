@@ -1012,7 +1012,12 @@ evaluation [C]. O3 moves this storage
 to an n×3 float64 array together with the readers that will compute on it; the slot map, the journal and the view
 contract stay. *(2026-11-12, O3 stage 1, [AD-032](AD-032-PACKED-ARRAYS-NUMPY.md) §4: the surface `RenderMesh` now reads
 each moved position once per frame into its own arrays; the table stays tuples until stage 2 moves it to an array
-together with the stage kernels and an array hand-over to the viewport.)*
+together with the stage kernels and an array hand-over to the viewport.)* *(2026-11-13, O3 stage 2,
+[AD-032 §11–§12](AD-032-PACKED-ARRAYS-NUMPY.md#11-stage-2--design-2026-11-13): the table is an n×3 float64 array; the
+mix computes on arrays (offsets per shown target as `present` / `D` on the table's slots, the base positions cached as
+`B`, the sum column by column in ascending `LayerId` order, the first term as it is - bit-identical to `evaluate`); the
+journal records a write as one slot chunk (the dict of this section on demand); the surface `RenderMesh` takes moved
+positions as arrays. Slot map, view contract and the meaning of the records unchanged.)*
 
 **Measured [C]** (container; before / after on one host, raw outputs and the reference-PC commands in
 [`RESULTS_O1_CONTAINER_2026-11-11.md`](../../experiments/drag_cost/RESULTS_O1_CONTAINER_2026-11-11.md)): building the mix

@@ -79,6 +79,14 @@ bewegten Vertices (`_read_moved`), rechnet den 1-Ring auf den Arrays (bit-gleich
 `derived.DerivedGeometry`) und gibt float32-Bereiche der CPU-Spiegel an den Store; ein Topology-Patch schreibt die
 Journal-Änderungen in die Arrays wie in das Slot-Layout. `derived` ist seitdem eine Lese-Sicht nach ID auf die Arrays.
 
+Positionstabelle (AD-032 §11.3, O3 Stufe 2, 2026-11-13; H7 duck-typed, der Viewport importiert nichts aus `src/mirai`):
+hat die Mesh `position_array()` (n x 3 float64, Zeilen = ihre Slots) und `table_slots(vertex_ids)` - die ausgewertete
+Fläche einer Stufe (Morph-Mischung, Pose) -, liest ein Geometry-Sync keine Position einzeln: das eigene Journal nennt
+mit `slot_moves()` die bewegten Tabellen-Slots, eine Abbildung Tabellen-Slot -> Slot dieses Layouts (beim vollen
+Rebuild gebaut, im Topology-Patch nachgeführt) macht daraus die eigenen Slots, und die Positionen kommen als ein
+Array-Ausschnitt (`_read_table_moves`). Die vom Host gemeldete Menge markiert dann nur "Geometrie geändert"; die
+Wahrheit ist das Journal (wie bei der Topologie). Eine `core.Mesh` (das Edit-Mesh) behält `_read_moved`.
+
 Textur (AD-026, 2026-10-29): hat die Mesh Face-Ecken-UVs und das gebundene Material eine Textur
 (`material.texture`), legt `RenderMesh` eine dritte Daten-Ressource an, `triangle_uvs`: je
 Dreiecks-Slot die UVs seiner drei Ecken (6 Floats, in der Reihenfolge seiner Indizes; eine Face ohne
@@ -288,6 +296,16 @@ class RenderMesh:
         self._uv_active = False
         # Änderungs-Journal der Mesh (AD-023 V1): was sich seit dem letzten Sync geändert hat.
         self._watch = mesh.watch()
+        # AD-032 §11.3: a stage's position table hands moved positions over as arrays (module docstring); None = a mesh
+        # read per vertex. The maps table slot -> render slot and back (-1 = none) are built with the slot layout.
+        has_table = callable(getattr(mesh, "position_array", None)) and callable(getattr(mesh, "table_slots", None))
+        self._table = mesh if has_table else None
+        self._table_render = np.zeros(0, dtype=np.intp)
+        self._render_table = np.zeros(0, dtype=np.intp)
+        #: the table slots this sync's journal names as moved (None = read the host's vertex ids)
+        self._table_moves = None
+        # Render slots moved since their faces' last triangulation (the table path's `_retriangulate`).
+        self._retriangulate_slots = np.zeros(0, dtype=bool)
         # CPU mirrors (float32, one row per slot / face row): what the store last received, patched in place.
         self._mirror: dict[str, np.ndarray] = {}
         #: Positions, face / vertex normals and their adjacency on this layout's slots and rows (AD-032, O3 stage 1).
@@ -558,7 +576,13 @@ class RenderMesh:
         fids = mesh.all_face_ids()
         position = mesh.vertex_position
         face_vertices = mesh.face_vertices
-        positions = {v: position(v) for v in vids}
+        table = self._table
+        if table is not None:  # the table's rows of these vertices: the floats `vertex_position` returns
+            table_slots = table.table_slots(vids)
+            rows = table.position_array()[table_slots]
+            positions = dict(zip(vids, map(tuple, rows.tolist())))
+        else:
+            positions = {v: position(v) for v in vids}
         spare = len(vids) + len(fids) >= INCREMENTAL_MIN_ELEMENTS
 
         self._vertex_index = {vertex_id: i for i, vertex_id in enumerate(vids)}
@@ -597,9 +621,16 @@ class RenderMesh:
         # The arrays (AD-032) on exactly this layout: live slots first in mesh order, spare slots dead.
         pos = np.empty((n_v + spare_v, 3))
         pos[n_v:] = DEAD_POSITION
-        if n_v:
+        if table is not None:
+            pos[:n_v] = rows
+            self._table_render = np.full(len(table.position_array()), -1, dtype=np.intp)
+            self._table_render[table_slots] = np.arange(n_v, dtype=np.intp)
+            self._render_table = np.full(n_v + spare_v, -1, dtype=np.intp)
+            self._render_table[:n_v] = table_slots
+        elif n_v:
             pos[:n_v] = np.fromiter(chain.from_iterable(map(positions.__getitem__, vids)), dtype=np.float64,
                                     count=3 * n_v).reshape(n_v, 3)
+        self._retriangulate_slots = np.zeros(n_v + spare_v, dtype=bool)
         live = np.zeros(n_v + spare_v, dtype=bool)
         live[:n_v] = True
         sizes = np.zeros(n_f + spare_f, dtype=np.intp)
@@ -770,7 +801,8 @@ class RenderMesh:
             return
         self.dirty.geometry = True
         self.dirty.geometry_rev += 1
-        self.dirty.modified_vertices.update(vertex_ids)
+        if self._table is None:  # a position table's moves come from its journal (module docstring, AD-032 §11.3)
+            self.dirty.modified_vertices.update(vertex_ids)
 
     def mark_topology_dirty(self) -> None:
         """Informiert RenderMesh, dass sich die Topologie geändert hat
@@ -817,6 +849,7 @@ class RenderMesh:
         self.stats.start("sync")
         if self.dirty.topology or self.dirty.geometry:
             change = self._watch.take()
+            moves = None if self.dirty.topology else self._slot_moves(change)
             if self.dirty.topology:
                 self._sync_topology(change)
                 # Eine Topology-Änderung invalidiert etwaige separat markierte
@@ -824,6 +857,9 @@ class RenderMesh:
                 # bereits enthalten) - nicht doppelt verarbeiten.
                 self.dirty.geometry = False
                 self.dirty.modified_vertices.clear()
+            elif moves is not None:
+                # A position table, nothing but moves (AD-032 §11.3): its slots are read as arrays.
+                self._table_moves = moves
             elif self._structural(change):
                 # Gemeldet als reine Positionsänderung, das Journal zeigt aber neue oder
                 # entfernte Elemente: als Topology-Änderung behandeln (nie ein falscher Buffer).
@@ -832,6 +868,10 @@ class RenderMesh:
                 self.dirty.modified_vertices.clear()
             else:
                 self._retriangulate.update(change.vertices)
+                if self._table is not None:
+                    # A table's change with records by id that keep this layout (rare): the journal names what moved.
+                    index, valid = self._vertex_index, self.mesh.is_valid_vertex
+                    self.dirty.modified_vertices.update(v for v in change.vertices if v in index and valid(v))
         if self.dirty.geometry:
             self._sync_geometry()
         if self.dirty.selection:
@@ -844,6 +884,14 @@ class RenderMesh:
             self._sync_model()
         self.dirty.reset()
         self.stats.stop("sync")
+
+    def _slot_moves(self, change):
+        """The moved table slots of `change` when this mesh is a position table and the change is nothing but moves
+        under its current slot mapping (`slot_moves()` of the table's journal); None otherwise."""
+        if self._table is None:
+            return None
+        slot_moves = getattr(change, "slot_moves", None)
+        return slot_moves() if slot_moves is not None else None
 
     def _structural(self, change) -> bool:
         mesh = self.mesh
@@ -974,11 +1022,16 @@ class RenderMesh:
             retri.update(f for f in change.face_uvs if f in face_row and is_valid_face(f))
         removed_v_set = set(removed_v)
         around = [index[v] for v in (*moved_v, *self._retriangulate) if v in index and v not in removed_v_set]
-        if around:
-            rows = packed.rows_around(np.fromiter(around, dtype=np.intp, count=len(around)))
+        marked = np.flatnonzero(self._retriangulate_slots)  # the table path's moved slots (all live: reset per patch)
+        if len(marked) and removed_v:
+            marked = marked[~np.isin(marked, [index[v] for v in removed_v])]
+        if around or len(marked):
+            around_slots = np.concatenate((np.fromiter(around, dtype=np.intp, count=len(around)), marked))
+            rows = packed.rows_around(around_slots)
             retri.update(map(row_face.__getitem__, rows.tolist()))
             retri.difference_update(removed_f)
         self._retriangulate = set()
+        self._retriangulate_slots[:] = False
 
         def free_triangles(f: FaceId) -> None:
             for t in face_triangles.pop(f):
@@ -998,6 +1051,7 @@ class RenderMesh:
             packed.clear_face(row)
         for f in changed_f:
             free_triangles(f)
+        table_render, render_table = self._table_render, self._render_table
         for v in removed_v:
             slot = index.pop(v)
             self._slot_vertex[slot] = None
@@ -1005,13 +1059,27 @@ class RenderMesh:
             packed.clear_vertex(slot, DEAD_POSITION)
             pos_slots.add(slot)
             normal_slots.add(slot)
-        for v in added_v:
+            if self._table is not None:  # its table slot may already hold a new vertex: clear only its own entry
+                t = render_table[slot]
+                if t >= 0 and table_render[t] == slot:
+                    table_render[t] = -1
+                render_table[slot] = -1
+        added_table = self._table.table_slots(added_v) if self._table is not None and added_v else None
+        if added_table is not None and int(added_table.max()) >= len(table_render):
+            grown = np.full(len(self._table.position_array()), -1, dtype=np.intp)
+            grown[:len(table_render)] = table_render
+            table_render = self._table_render = grown
+        for k, v in enumerate(added_v):
             slot = self._free_vertex_slots.pop()
             index[v] = slot
             self._slot_vertex[slot] = v
             packed.add_vertex(slot, position(v))
             pos_slots.add(slot)
             normal_slots.add(slot)  # (0, 0, 0) until a face holds it
+            if added_table is not None:
+                t = int(added_table[k])
+                table_render[t] = slot
+                render_table[slot] = t
         P = packed.P
         for v in moved_v:
             slot = index[v]
@@ -1155,18 +1223,44 @@ class RenderMesh:
                                            dtype=np.float64, count=3 * n).reshape(n, 3)
         return slots
 
-    def _sync_geometry(self) -> None:
-        moved = self.dirty.modified_vertices
-        if not moved:
-            return
-        self.content_revision += 1
-        self.stats.count("vertex_updates", len(moved))
-        self._retriangulate.update(moved)
+    def _read_table_moves(self, moves) -> np.ndarray | None:
+        """AD-032 §11.3: the render slots of the moved table slots `moves` (through the table -> render map) with their
+        rows of the table copied into `packed.P` - no read per vertex. None if a moved table slot has no render slot
+        (cannot happen while the maps follow the journal; counted, and the caller rebuilds)."""
+        render = self._table_render
+        if int(moves[-1]) >= len(render):
+            return None
+        slots = render[moves]
+        if int(slots.min()) < 0:
+            return None
+        self.packed.P[slots] = self._table.position_array()[moves]
+        return slots
 
-        # O3 stage 1 (AD-032): the moved positions into the arrays, then the 1-ring on arrays - the faces around the
+    def _sync_geometry(self) -> None:
+        moves, self._table_moves = self._table_moves, None
+        if moves is not None:
+            if not len(moves):
+                return
+            slots = self._read_table_moves(moves)
+            if slots is None:
+                self.stats.count("table_map_misses")
+                self._sync_topology()
+                return
+            self.content_revision += 1
+            self.stats.count("vertex_updates", len(moves))
+            self._retriangulate_slots[slots] = True
+        else:
+            moved = self.dirty.modified_vertices
+            if not moved:
+                return
+            self.content_revision += 1
+            self.stats.count("vertex_updates", len(moved))
+            self._retriangulate.update(moved)
+            slots = self._read_moved(moved)
+
+        # O3 stage 1 (AD-032): the moved positions are in the arrays, now the 1-ring on arrays - the faces around the
         # moved vertices get new Newell normals, every vertex of those faces a new vertex normal.
         packed = self.packed
-        slots = self._read_moved(moved)
         rows, ring = packed.neighbourhood(slots)
         packed.update_face_normals(rows)
         packed.update_vertex_normals(ring)
@@ -1181,7 +1275,7 @@ class RenderMesh:
         # wenigen zusammengefassten Bereichen hochgeladen.
         self._upload_slots("positions", slots)
         self._upload_slots("normals", ring)
-        self.stats.count("geometry_uploads", len(moved) + len(ring))
+        self.stats.count("geometry_uploads", len(slots) + len(ring))
 
         # Face-Daten (O2): nur die Newell-Normalen der Faces um bewegte Vertices; Positionen und Normalen ihrer Ecken
         # liest der Shader aus den eben hochgeladenen Vertex-Buffern, die Eck-Slots ändern sich nicht.
