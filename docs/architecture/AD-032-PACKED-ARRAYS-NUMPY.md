@@ -217,6 +217,7 @@ costs ≈ 3× its container time there, the NumPy parts included (per-call overh
     remainder weight is `1.0 - math.fsum(...)` over the bones present in the pose (no NumPy equivalent: precompute per
     point when weights or the bone set change), its first term is taken as it is, `c == 0.0` skips the rest term.
   A design pass for these four points comes before code (an AD addendum to AD-025 §18 / AD-028 §17.4 or here).
+  *(2026-11-13: the design is §11.)*
 - SubD stencils on arrays (own package); O4 (C kernels; only per D2, if O3 leaves the D3 bar unmet on the reference
   PC); D6; the GPU shading cost of O2's fetches; the HUD during a weight drag; the GPU vertex-buffer upload of pyglet's
   whole region (each its own small package, audit addenda).
@@ -236,6 +237,103 @@ modules in the combined run); `tests/test_gl_*.py` in its own process 165 passed
 `experiments/drag_cost/tests` 84 passed. Six hand mutations, each caught: vertex normals in another order, Newell
 wrapping to the wrong corner, the adjacency not written back, the adjacency in set order, the last upload range
 dropped, the faces around moved vertices not re-triangulated. The pixel cross-check against the pre-O3 tree: §5.
+
+---
+
+## 11. Stage 2 — design (2026-11-13)
+
+Scope (audit §H step 5, second stage): `MixSurface` and `SkinSurface` evaluate on arrays, the O1 table
+(`SurfacePositions`) holds its positions as an n×3 float64 array, and the surface `RenderMesh` takes the moved positions
+as arrays (row 2f without a read per vertex). Agent decision within Manu's plan (O3, D1). **No Core change and no
+tolerance** — both reasons for a stop (§ "Haltepunkt" of the task) are absent, so the design is implemented in the same
+session. The four points of §9, in that order:
+
+### 11.1 The journal: "these slots moved", same meaning
+
+A watch of a `SurfacePositions` accumulates a `SurfaceChange` (the `MeshChange` interface, duck-typed) with an ordered
+list of entries of two kinds:
+
+- **position records as slot chunks** — `(slots, before, slot_vertex)`: the table slots one stage write changed
+  (distinct), their positions before that write (float64 rows) and the slot → `VertexId` list in force when it was
+  recorded. One chunk per write, shared by every watch (immutable arrays): recording costs O(watches), not
+  O(moved × watches) as `_owner_record`'s per-vertex merge did;
+- **records by id** (a dict `VertexId -> before`) for everything that changes the slot mapping: a vertex new in the table
+  (before None) and a vertex gone (its last shown position) — plus, as now, the base's edge / face / UV records of a
+  topology edit forwarded by `_owner_follow_topology`.
+
+**Meaning unchanged.** `change.vertices` is a plain dict, built on first access from the entries in their order, first
+record wins (the state at the consumer's last `take`), None = new, gone = last position — the records the tuple table
+wrote. A change of the slot mapping first copies the slot → `VertexId` list if a chunk refers to it (copy-on-write),
+so a chunk always resolves to the vertices it was recorded for, and every mapping change leaves a record by id in every
+watch. `is_empty()` and `peek()` never build the dict.
+
+**The fast path (new, duck-typed): `change.slot_moves()`** returns the ascending, distinct slots when the change is
+nothing but position records under the table's current mapping (no record by id, no edge / face / UV record), else
+None — then the reader reads `change.vertices` as before. Readers, checked one by one:
+
+| Reader | Watches | Reads after stage 2 |
+|---|---|---|
+| `RenderMesh` (surface, entry surfaces, cage pick) | the stage surface it draws | `slot_moves()` per frame; the dict at topology changes (as now) |
+| `SkinSurface` (input = the mix) | the mix | `slot_moves()` per frame; the dict and `morph_mix.topology_touched` at topology changes |
+| `Viewport._follow_cage`, the soft shading's cage | the cage (the mix) | `is_empty()` / `take()` only |
+| `Viewport._cage_pick_render_mesh`, `PickCache`, the hidden-set cache, SubD as the next stage | the cage / their input | the dict (`before is None`, keys, `before[:2]` of edges) on their own refresh — unchanged |
+| `regions`, `orbit_focus` | the edit mesh (`core.Mesh`, `FocusTracker.bind(scene.mesh)`; a Core edit's change) | never a stage surface — unchanged by construction |
+
+**Bounded.** A watch that is not taken for a while (the picking cache during a drag) merges adjacent chunks of one
+mapping once its rows exceed the table's capacity (`np.unique(..., return_index=True)`: first occurrence wins) and folds
+into the dict beyond 64 entries; its memory stays O(table).
+
+**The moved set of a stage update** (H7 `sync() -> moved`, `entry_moved`) becomes a `MovedVertices`: a read-only `Set`
+of `VertexId`s over a slot array and its slot → `VertexId` list, built into ids only when iterated or tested; `len` and
+`bool` without that. The viewport hands it to `RenderMesh.mark_vertices_dirty` without `set(...)`.
+
+### 11.2 Candidates as slot indices, kept in step with the journal
+
+- **Mix.** Per shown target the offsets cache becomes arrays on the table's slots — `present` (bool) and `D` (n×3
+  float64) — kept in step with the base's journal by the same rules as the dict it replaces (a whole-layer write reloads
+  the layer's stored items; a per-key write sets `present` iff `d != (0, 0, 0)`, the same comparison); a freed slot
+  clears its presence in every loaded target, a new vertex starts absent. The base positions are cached as `B` (n×3
+  float64), refreshed for exactly the vertices the base's journal names. A weight step's candidates are the present
+  slots of each target whose weight changed (cached `flatnonzero`), an edit's the slots of the journal's vertices; a
+  vertex new in the base gets its slot before the offsets are read.
+- **Skin.** The weights cache and the bone → points index stay by id (they change with weight writes, per element);
+  each key gets a cached slot array, rebuilt when its point set or the slot mapping changed. The **posed terms** of every
+  slot are padded arrays of width 4 (`WEIGHTS_WIDTH`): the transform row of each posed key, its weight, the count, `c`
+  and `c == 0` — rebuilt for the points whose weights changed and for the points of keys that entered or left the posed
+  set (identity ↔ posed, a bone added / deleted), not per pose step. A pose step's candidates are the slot arrays of the
+  keys whose transform changed; a morph step's the input's `slot_moves()`.
+- **Layout.** The skin's table **mirrors its input's slot layout** when the input is a table (the mix): built as a copy
+  of the input's layout, it frees what the input freed and puts a new vertex on the input's slot. So the skin reads its
+  input as `input.P[slots]` without a map, and the mix's `slot_moves()` are the skin's candidates as they are. Over the
+  base mesh (no target) the skin keeps its own layout and caches the input positions like the mix's `B`.
+
+### 11.3 The hand-over to `RenderMesh` without a read per vertex
+
+Duck-typed (H7; the viewport still imports nothing from `src/mirai`): a mesh with `position_array()` (its n×3 float64
+table, rows = its slots) and `table_slots(vertex_ids)` (their slots) gives `RenderMesh` a **table path**:
+
+- full rebuild: the table slots of its vertices once, the positions from `position_array()[slots]` (the same floats
+  `vertex_position` returns), and two int maps — table slot → render slot, render slot → table slot;
+- topology patch: as now from the dict; the maps are patched for the vertices that went (through render → table) and
+  came (`table_slots`);
+- per frame: its own watch's `slot_moves()` → render slots through the map → `packed.P[render] =
+  position_array()[table]` (`_read_table_moves`, row 2f). The host's moved set only marks geometry dirty; the journal is
+  the truth (as it already is for topology). A `RenderMesh` over a `core.Mesh` (the edit mesh) keeps `_read_moved`.
+
+### 11.4 Bit-identity, no tolerance
+
+- **Mix**, per component and target column: the first present term `f * d` as it is (not added to 0.0), then
+  `acc += f * d` in ascending `LayerId` order, then `b + acc`; a point without a term is `b` as stored.
+- **Skin**, per term column j (the value's order = ascending key): `t = w * (((a0*x + a1*y) + a2*z) + a3)` per component,
+  the first term as it is, then `+=`; `c = 1.0 - math.fsum(posed weights)` per point in Python when its terms are
+  rebuilt; `c == 0.0` → `acc`, else `c*p + acc`; no posed term → `p` exactly.
+- **Writes** only where `(new != old).any(axis=1)` — the tuple `!=` (−0.0 == 0.0, NaN != NaN).
+- NumPy's float64 `*` and `+` are the IEEE operations Python's floats use (§5), one column at a time, never a reduction;
+  `evaluate` (both modules) stays the pure-Python definition and the oracle.
+- **Per-vertex reads** of the table (`vertex_position`) read three floats from a flat memoryview of the array: bit-exact,
+  ≈ 100 ns slower than the stored tuple (container: 138 vs 36 ns). The per-frame readers move to arrays above; the
+  remaining ones (picking cache refresh, overlays of selected elements, SubD as the next stage, triangulation at
+  topology patches) read what they read before.
 
 ---
 
