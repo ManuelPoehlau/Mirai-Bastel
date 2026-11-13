@@ -1,0 +1,2940 @@
+{
+ "numpy": "2.5.3",
+ "python": "3.13.18",
+ "meshes": [
+  {
+   "name": "cube_sphere_5048",
+   "triangulate_ms": 4.775875000177621,
+   "refsurface_build_ms": 37.44211599996561,
+   "refsurface_build_peak_mb": 12.394309,
+   "refsurface_build_ms_best": 19.105876999674365,
+   "closest_grid_build_ms": 5.2971569998589985,
+   "nv": 5048,
+   "nt": 10092,
+   "mean_edge": 0.05038676467415016,
+   "bytes_tracer_arrays": 4188300,
+   "bytes_all_arrays": 4808976,
+   "bytes_closest_grid": 297392,
+   "bytes_per_vertex_tracer": 829.6949286846276,
+   "edge_graph_ms": 1.470811000217509,
+   "cases": [
+    {
+     "affected": 103,
+     "radius_rel_edge": 7.4596405029296875,
+     "weights_dijkstra_ms": 0.24105700003929087,
+     "transport_frames_ms": 2.5507380000817648,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.03177400003551156,
+        "update_ms_mean": 0.7464372500862737,
+        "update_ms_last": 0.8995680000225548,
+        "update_ms_max": 0.8995680000225548,
+        "us_per_vertex_last": 8.7336699031316,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.02073599989671493,
+        "update_ms_mean": 2.102944599937473,
+        "update_ms_last": 2.425651000066864,
+        "update_ms_max": 4.507813000145688,
+        "us_per_vertex_last": 23.55000970938703,
+        "max_passes": 19
+       },
+       "30": {
+        "begin_ms": 0.020744999801536324,
+        "update_ms_mean": 4.587506316685601,
+        "update_ms_last": 6.504696000320109,
+        "update_ms_max": 10.103948000050877,
+        "us_per_vertex_last": 63.152388352622424,
+        "max_passes": 56
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.020981000034225872,
+        "update_ms_mean": 0.6853015000842788,
+        "update_ms_last": 0.8177459999387793,
+        "update_ms_max": 0.8959080000749964,
+        "us_per_vertex_last": 7.939281552803682,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.015826999970158795,
+        "update_ms_mean": 1.7227805499942406,
+        "update_ms_last": 2.615249000427866,
+        "update_ms_max": 3.1910590000734373,
+        "us_per_vertex_last": 25.3907669944453,
+        "max_passes": 19
+       },
+       "30": {
+        "begin_ms": 0.019672000235004816,
+        "update_ms_mean": 3.3462763000216,
+        "update_ms_last": 5.9729449999395,
+        "update_ms_max": 5.9729449999395,
+        "us_per_vertex_last": 57.98975728096602,
+        "max_passes": 56
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.0018309997358301189,
+        "update_ms_mean": 0.48351649991218437,
+        "update_ms_last": 0.5971220002720656,
+        "update_ms_max": 0.6336179999379965,
+        "us_per_vertex_last": 5.7973009735152,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.0011409997568989638,
+        "update_ms_mean": 1.2930009499996231,
+        "update_ms_last": 2.229626000371354,
+        "update_ms_max": 2.229626000371354,
+        "us_per_vertex_last": 21.64685437253742,
+        "max_passes": 19
+       },
+       "30": {
+        "begin_ms": 0.002401000074314652,
+        "update_ms_mean": 3.333741166625259,
+        "update_ms_last": 8.589956999912829,
+        "update_ms_max": 8.589956999912829,
+        "us_per_vertex_last": 83.39764077585271,
+        "max_passes": 56
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.13875399963581003,
+        "update_ms_mean": 0.46847174996855756,
+        "update_ms_last": 0.5961209999441053,
+        "update_ms_max": 0.5961209999441053,
+        "us_per_vertex_last": 5.787582523729178,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.09758999976838822,
+        "update_ms_mean": 0.5971320000526248,
+        "update_ms_last": 0.4246960002092237,
+        "update_ms_max": 1.5658110000913439,
+        "us_per_vertex_last": 4.1232621379536285,
+        "max_passes": 4
+       },
+       "30": {
+        "begin_ms": 0.09534099990560208,
+        "update_ms_mean": 0.5913594833524863,
+        "update_ms_last": 0.5212910000409465,
+        "update_ms_max": 4.203009999855567,
+        "us_per_vertex_last": 5.061077670300452,
+        "max_passes": 5
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.008277999768324662,
+        "update_ms_mean": 0.4568365001205166,
+        "update_ms_last": 0.4495930002121895,
+        "update_ms_max": 0.5661700001837744,
+        "us_per_vertex_last": 4.364980584584364,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.0056769999901007395,
+        "update_ms_mean": 0.39607900000646623,
+        "update_ms_last": 0.3465049999249459,
+        "update_ms_max": 0.5463530001179606,
+        "us_per_vertex_last": 3.3641262128635523,
+        "max_passes": 4
+       },
+       "30": {
+        "begin_ms": 0.006412999937310815,
+        "update_ms_mean": 0.4412076666994835,
+        "update_ms_last": 0.3996209998149425,
+        "update_ms_max": 0.825729000098363,
+        "us_per_vertex_last": 3.8798155321839074,
+        "max_passes": 4
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.018244999864691636,
+        "update_ms_mean": 1.4971437501571927,
+        "update_ms_last": 1.21165500013376,
+        "update_ms_max": 2.374152000356844,
+        "us_per_vertex_last": 11.76364077799767,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.008046999937505461,
+        "update_ms_mean": 1.4899809500775518,
+        "update_ms_last": 1.588446999903681,
+        "update_ms_max": 2.498729999842908,
+        "us_per_vertex_last": 15.421815533045447,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.010501999895495828,
+        "update_ms_mean": 1.7324780666588897,
+        "update_ms_last": 1.804792999791971,
+        "update_ms_max": 2.339789999950881,
+        "us_per_vertex_last": 17.52226213390263,
+        "max_passes": 1
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.005500999577634502,
+        "update_ms_mean": 1.2216559998705634,
+        "update_ms_last": 1.1305069997433748,
+        "update_ms_max": 1.6663009996591427,
+        "us_per_vertex_last": 10.975796114013347,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.003671999820653582,
+        "update_ms_mean": 1.1203877000980356,
+        "update_ms_last": 0.9756130002642749,
+        "update_ms_max": 1.8058519999613054,
+        "us_per_vertex_last": 9.471970876352183,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.0029590000849566422,
+        "update_ms_mean": 1.0497797833522782,
+        "update_ms_last": 0.9733279998727085,
+        "update_ms_max": 1.4943979999770818,
+        "us_per_vertex_last": 9.44978640653115,
+        "max_passes": 1
+       }
+      },
+      "closest_global": {
+       "2": {
+        "begin_ms": 0.0067470000431058,
+        "update_ms_mean": 7.322678750028899,
+        "update_ms_last": 6.267178000143758,
+        "update_ms_max": 8.268176000001404,
+        "us_per_vertex_last": 60.846388350910274,
+        "max_passes": 0
+       },
+       "10": {
+        "begin_ms": 0.005987999884382589,
+        "update_ms_mean": 6.961430399996971,
+        "update_ms_last": 6.188461999954598,
+        "update_ms_max": 8.088047000001097,
+        "us_per_vertex_last": 60.08215533936502,
+        "max_passes": 0
+       }
+      }
+     }
+    },
+    {
+     "affected": 1001,
+     "radius_rel_edge": 22.48698043823242,
+     "weights_dijkstra_ms": 1.9942540002375608,
+     "transport_frames_ms": 23.208122000141884,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.03455800015217392,
+        "update_ms_mean": 3.069424750037797,
+        "update_ms_last": 2.981677000207128,
+        "update_ms_max": 3.98480700005166,
+        "us_per_vertex_last": 2.9786983019052227,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.027089000013802433,
+        "update_ms_mean": 4.513200349970248,
+        "update_ms_last": 6.4308920000257785,
+        "update_ms_max": 6.4308920000257785,
+        "us_per_vertex_last": 6.424467532493285,
+        "max_passes": 22
+       },
+       "30": {
+        "begin_ms": 0.027887999749509618,
+        "update_ms_mean": 9.034515749954153,
+        "update_ms_last": 25.261233000037464,
+        "update_ms_max": 25.261233000037464,
+        "us_per_vertex_last": 25.23599700303443,
+        "max_passes": 61
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.0436609998359927,
+        "update_ms_mean": 4.458198999941487,
+        "update_ms_last": 4.896323999673768,
+        "update_ms_max": 4.896323999673768,
+        "us_per_vertex_last": 4.891432567106662,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.04046799995194306,
+        "update_ms_mean": 5.648553899959552,
+        "update_ms_last": 7.431940000060422,
+        "update_ms_max": 7.431940000060422,
+        "us_per_vertex_last": 7.424515484575846,
+        "max_passes": 22
+       },
+       "30": {
+        "begin_ms": 0.04550099993139156,
+        "update_ms_mean": 10.051266366660153,
+        "update_ms_last": 15.074538000135362,
+        "update_ms_max": 24.79396499984432,
+        "us_per_vertex_last": 15.059478521613748,
+        "max_passes": 61
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.0019509998310240917,
+        "update_ms_mean": 2.221273750024011,
+        "update_ms_last": 2.5308640001640015,
+        "update_ms_max": 2.5308640001640015,
+        "us_per_vertex_last": 2.528335664499502,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.0017719999050314073,
+        "update_ms_mean": 3.976125899953331,
+        "update_ms_last": 6.258371000058105,
+        "update_ms_max": 6.258371000058105,
+        "us_per_vertex_last": 6.252118881176928,
+        "max_passes": 22
+       },
+       "30": {
+        "begin_ms": 0.0019089998204435688,
+        "update_ms_mean": 11.66817631661464,
+        "update_ms_last": 14.90417399963917,
+        "update_ms_max": 21.557140999902913,
+        "us_per_vertex_last": 14.889284714924246,
+        "max_passes": 61
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.2059739999822341,
+        "update_ms_mean": 2.5219855001523683,
+        "update_ms_last": 3.3758590002435085,
+        "update_ms_max": 3.5578179999902204,
+        "us_per_vertex_last": 3.3724865137297786,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.2036420000877115,
+        "update_ms_mean": 1.4468114000692367,
+        "update_ms_last": 1.2035720001222217,
+        "update_ms_max": 3.585904000374285,
+        "us_per_vertex_last": 1.20236963049173,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.1945500002875633,
+        "update_ms_mean": 1.2978534166298534,
+        "update_ms_last": 1.244058999873232,
+        "update_ms_max": 2.5120310001511825,
+        "us_per_vertex_last": 1.2428161836895426,
+        "max_passes": 5
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.011008000001311302,
+        "update_ms_mean": 1.3506437500154789,
+        "update_ms_last": 1.0809400000653113,
+        "update_ms_max": 2.3462539998035936,
+        "us_per_vertex_last": 1.079860139925386,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.011567999990802491,
+        "update_ms_mean": 1.1741729999812378,
+        "update_ms_last": 1.0760259997368848,
+        "update_ms_max": 2.678291999927751,
+        "us_per_vertex_last": 1.0749510486881966,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.014429999737330945,
+        "update_ms_mean": 1.1852816333430383,
+        "update_ms_last": 0.9399760001542745,
+        "update_ms_max": 2.3322570000345877,
+        "us_per_vertex_last": 0.9390369631910834,
+        "max_passes": 5
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.015241000255628023,
+        "update_ms_mean": 10.248545499962347,
+        "update_ms_last": 8.21612500021729,
+        "update_ms_max": 15.502357000059419,
+        "us_per_vertex_last": 8.207917083134156,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.016651999885652913,
+        "update_ms_mean": 7.857802600005925,
+        "update_ms_last": 7.812550000380725,
+        "update_ms_max": 11.32460799999535,
+        "us_per_vertex_last": 7.804745255125599,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.016865999896253925,
+        "update_ms_mean": 8.063666716695176,
+        "update_ms_last": 7.686110999657103,
+        "update_ms_max": 11.848485999962577,
+        "us_per_vertex_last": 7.678432567090013,
+        "max_passes": 1
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.00561299975743168,
+        "update_ms_mean": 7.4417280000034225,
+        "update_ms_last": 6.726390000039828,
+        "update_ms_max": 10.243529000035778,
+        "us_per_vertex_last": 6.719670329710118,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.0044000003072142135,
+        "update_ms_mean": 7.14686960002382,
+        "update_ms_last": 6.973615999868343,
+        "update_ms_max": 10.375723999914044,
+        "us_per_vertex_last": 6.966649350517826,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.0071829999797046185,
+        "update_ms_mean": 7.727836883342813,
+        "update_ms_last": 6.857753000076627,
+        "update_ms_max": 14.995323999755783,
+        "us_per_vertex_last": 6.850902097978649,
+        "max_passes": 1
+       }
+      },
+      "closest_global": {
+       "2": {
+        "begin_ms": 0.003714000285981456,
+        "update_ms_mean": 137.89057200006027,
+        "update_ms_last": 131.7361090000304,
+        "update_ms_max": 149.03445599975385,
+        "us_per_vertex_last": 131.60450449553488,
+        "max_passes": 0
+       },
+       "10": {
+        "begin_ms": 0.004121000074519543,
+        "update_ms_mean": 119.51262624993433,
+        "update_ms_last": 113.96040499994342,
+        "update_ms_max": 136.81301799988432,
+        "us_per_vertex_last": 113.84655844150191,
+        "max_passes": 0
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "name": "cube_sphere_20186",
+   "triangulate_ms": 11.65463200004524,
+   "refsurface_build_ms": 156.9089750000785,
+   "refsurface_build_peak_mb": 49.342738,
+   "refsurface_build_ms_best": 74.6595470000102,
+   "closest_grid_build_ms": 17.67995799991695,
+   "nv": 20186,
+   "nt": 40368,
+   "mean_edge": 0.02519921209085023,
+   "bytes_tracer_arrays": 16752840,
+   "bytes_all_arrays": 19235490,
+   "bytes_closest_grid": 1452096,
+   "bytes_per_vertex_tracer": 829.9237095016348,
+   "edge_graph_ms": 5.244817999937368,
+   "cases": [
+    {
+     "affected": 101,
+     "radius_rel_edge": 7.505302429199219,
+     "weights_dijkstra_ms": 0.18734700006461935,
+     "transport_frames_ms": 2.295740000135993,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.02191500016124337,
+        "update_ms_mean": 0.7313807500395342,
+        "update_ms_last": 0.8951740001066355,
+        "update_ms_max": 0.8951740001066355,
+        "us_per_vertex_last": 8.863108911946886,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.013056000170763582,
+        "update_ms_mean": 1.5434544499612457,
+        "update_ms_last": 2.578116999757185,
+        "update_ms_max": 2.578116999757185,
+        "us_per_vertex_last": 25.525910888685,
+        "max_passes": 22
+       },
+       "30": {
+        "begin_ms": 0.017969000055018114,
+        "update_ms_mean": 3.4755181832982394,
+        "update_ms_last": 6.215339999926073,
+        "update_ms_max": 6.215339999926073,
+        "us_per_vertex_last": 61.53801980124825,
+        "max_passes": 60
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.02005200030907872,
+        "update_ms_mean": 0.6521444998952575,
+        "update_ms_last": 0.9050949997799762,
+        "update_ms_max": 0.9050949997799762,
+        "us_per_vertex_last": 8.961336631484913,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.01223600020239246,
+        "update_ms_mean": 1.5828606499553644,
+        "update_ms_last": 2.64828600029432,
+        "update_ms_max": 2.64828600029432,
+        "us_per_vertex_last": 26.220653468260593,
+        "max_passes": 22
+       },
+       "30": {
+        "begin_ms": 0.019939000139856944,
+        "update_ms_mean": 3.5413252832995568,
+        "update_ms_last": 6.265980000080162,
+        "update_ms_max": 6.265980000080162,
+        "us_per_vertex_last": 62.03940594138775,
+        "max_passes": 60
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.0029090001589793246,
+        "update_ms_mean": 0.5285117499624903,
+        "update_ms_last": 0.7353810001404781,
+        "update_ms_max": 0.7353810001404781,
+        "us_per_vertex_last": 7.281000001390873,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.001463999979023356,
+        "update_ms_mean": 1.4870127000904176,
+        "update_ms_last": 2.509422999992239,
+        "update_ms_max": 2.509422999992239,
+        "us_per_vertex_last": 24.845772277150882,
+        "max_passes": 22
+       },
+       "30": {
+        "begin_ms": 0.0024320002012245823,
+        "update_ms_mean": 3.410606283349201,
+        "update_ms_last": 6.00361500028157,
+        "update_ms_max": 6.097524999859161,
+        "us_per_vertex_last": 59.44173267605515,
+        "max_passes": 60
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.12863100027971086,
+        "update_ms_mean": 0.45072025011450023,
+        "update_ms_last": 0.5191140003262262,
+        "update_ms_max": 0.6374189997586654,
+        "us_per_vertex_last": 5.139742577487389,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.08510299994668458,
+        "update_ms_mean": 0.45095175000824383,
+        "update_ms_last": 0.4685549997702765,
+        "update_ms_max": 0.6340539998745953,
+        "us_per_vertex_last": 4.639158413567094,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.08736199970371672,
+        "update_ms_mean": 0.4449262500202167,
+        "update_ms_last": 0.41671999997561215,
+        "update_ms_max": 0.724485000318964,
+        "us_per_vertex_last": 4.125940593817942,
+        "max_passes": 5
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.005857999894942623,
+        "update_ms_mean": 0.4634257500129024,
+        "update_ms_last": 0.5071770001450204,
+        "update_ms_max": 0.5927669999437057,
+        "us_per_vertex_last": 5.021554456881391,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.004274999810149893,
+        "update_ms_mean": 0.4638075000002573,
+        "update_ms_last": 0.46379800005524885,
+        "update_ms_max": 0.5883000003450434,
+        "us_per_vertex_last": 4.592059406487612,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.004749999789055437,
+        "update_ms_mean": 0.8890387666951938,
+        "update_ms_last": 0.8700710000084655,
+        "update_ms_max": 3.083467000124074,
+        "us_per_vertex_last": 8.61456435651946,
+        "max_passes": 5
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.00815799967313069,
+        "update_ms_mean": 2.0639602499841203,
+        "update_ms_last": 2.0302610000726418,
+        "update_ms_max": 2.339768999718217,
+        "us_per_vertex_last": 20.101594060125166,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.007927999831736088,
+        "update_ms_mean": 1.8999414500513012,
+        "update_ms_last": 1.9343190001563926,
+        "update_ms_max": 2.3470639998777187,
+        "us_per_vertex_last": 19.151673268875175,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.015104000340215862,
+        "update_ms_mean": 1.4137670832875908,
+        "update_ms_last": 1.1901909997504845,
+        "update_ms_max": 2.363942000101815,
+        "us_per_vertex_last": 11.784069304460242,
+        "max_passes": 1
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.0029210000320745166,
+        "update_ms_mean": 1.0485957500350196,
+        "update_ms_last": 0.9822269998949196,
+        "update_ms_max": 1.2014809999527643,
+        "us_per_vertex_last": 9.725019800939798,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.0022879999050928745,
+        "update_ms_mean": 0.9798905999332419,
+        "update_ms_last": 1.0037950000878482,
+        "update_ms_max": 1.2126960000387044,
+        "us_per_vertex_last": 9.938564357305427,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.0023610000425833277,
+        "update_ms_mean": 0.9944793999845084,
+        "update_ms_last": 0.9436909999749332,
+        "update_ms_max": 1.2452419996407116,
+        "us_per_vertex_last": 9.343475247276567,
+        "max_passes": 1
+       }
+      },
+      "closest_global": {
+       "2": {
+        "begin_ms": 0.003786999968724558,
+        "update_ms_mean": 4.854160000149932,
+        "update_ms_last": 4.468748999897798,
+        "update_ms_max": 5.352824000055989,
+        "us_per_vertex_last": 44.245039602948495,
+        "max_passes": 0
+       },
+       "10": {
+        "begin_ms": 0.0027599999157246202,
+        "update_ms_mean": 4.587440450018221,
+        "update_ms_last": 4.618207000021357,
+        "update_ms_max": 5.145096999967791,
+        "us_per_vertex_last": 45.724821782389675,
+        "max_passes": 0
+       }
+      }
+     }
+    },
+    {
+     "affected": 1001,
+     "radius_rel_edge": 23.337814331054688,
+     "weights_dijkstra_ms": 1.2345119998826704,
+     "transport_frames_ms": 21.740381000199704,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.035677000141731696,
+        "update_ms_mean": 4.1881472499198935,
+        "update_ms_last": 5.385734999890701,
+        "update_ms_max": 5.385734999890701,
+        "us_per_vertex_last": 5.380354645245456,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.050250999720447,
+        "update_ms_mean": 4.944441550014744,
+        "update_ms_last": 6.824737999977515,
+        "update_ms_max": 6.824737999977515,
+        "us_per_vertex_last": 6.817920079897617,
+        "max_passes": 24
+       },
+       "30": {
+        "begin_ms": 0.028870999813079834,
+        "update_ms_mean": 8.907556916688009,
+        "update_ms_last": 15.398773000015353,
+        "update_ms_max": 15.398773000015353,
+        "us_per_vertex_last": 15.383389610404949,
+        "max_passes": 62
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.032608999845251674,
+        "update_ms_mean": 2.689558250153823,
+        "update_ms_last": 2.9708070001106535,
+        "update_ms_max": 2.9708070001106535,
+        "us_per_vertex_last": 2.967839160949704,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.03368399984537973,
+        "update_ms_mean": 4.5415653499503605,
+        "update_ms_last": 6.652399999893532,
+        "update_ms_max": 6.652399999893532,
+        "us_per_vertex_last": 6.645754245647884,
+        "max_passes": 24
+       },
+       "30": {
+        "begin_ms": 0.031071999728737865,
+        "update_ms_mean": 9.56134849997549,
+        "update_ms_last": 15.424910000092495,
+        "update_ms_max": 17.49945499977912,
+        "us_per_vertex_last": 15.409500499592902,
+        "max_passes": 62
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.0309419997392979,
+        "update_ms_mean": 2.3152775000880865,
+        "update_ms_last": 3.224762000172632,
+        "update_ms_max": 3.224762000172632,
+        "us_per_vertex_last": 3.221540459712919,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.002021000000240747,
+        "update_ms_mean": 4.129988249951566,
+        "update_ms_last": 6.227670000043872,
+        "update_ms_max": 6.904226999722596,
+        "us_per_vertex_last": 6.22144855149238,
+        "max_passes": 24
+       },
+       "30": {
+        "begin_ms": 0.0019589997464208864,
+        "update_ms_mean": 8.291329933331326,
+        "update_ms_last": 14.60953600007997,
+        "update_ms_max": 14.60953600007997,
+        "us_per_vertex_last": 14.594941059020949,
+        "max_passes": 62
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.21640599970851326,
+        "update_ms_mean": 1.2000057499790273,
+        "update_ms_last": 0.9989679997488565,
+        "update_ms_max": 2.0473849999689264,
+        "us_per_vertex_last": 0.9979700297191374,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.19194200012861984,
+        "update_ms_mean": 1.0877719999825786,
+        "update_ms_last": 1.0257280000587343,
+        "update_ms_max": 1.952184999936435,
+        "us_per_vertex_last": 1.0247032967619722,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.15300499990189564,
+        "update_ms_mean": 1.0897556832787814,
+        "update_ms_last": 1.0516500001358509,
+        "update_ms_max": 2.031328000157373,
+        "us_per_vertex_last": 1.0505994007351158,
+        "max_passes": 5
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.009091000265470939,
+        "update_ms_mean": 1.4367992500865512,
+        "update_ms_last": 1.3387960002546606,
+        "update_ms_max": 1.9945130002270162,
+        "us_per_vertex_last": 1.3374585417129476,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.008516999969288008,
+        "update_ms_mean": 1.3098008000270056,
+        "update_ms_last": 1.2729220002256625,
+        "update_ms_max": 1.963090999652195,
+        "us_per_vertex_last": 1.2716503498757867,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.011248000191699248,
+        "update_ms_mean": 1.2230212333179225,
+        "update_ms_last": 1.0967000002892746,
+        "update_ms_max": 2.002032000291365,
+        "us_per_vertex_last": 1.0956043958933812,
+        "max_passes": 5
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.010070999906020006,
+        "update_ms_mean": 7.596070000090549,
+        "update_ms_last": 7.235618999857252,
+        "update_ms_max": 9.181246000025567,
+        "us_per_vertex_last": 7.228390609248004,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.01164700006484054,
+        "update_ms_mean": 7.070042950022071,
+        "update_ms_last": 6.7449160001160635,
+        "update_ms_max": 8.018108000214852,
+        "us_per_vertex_last": 6.738177822293769,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.01331999965259456,
+        "update_ms_mean": 7.772134233338572,
+        "update_ms_last": 8.051877999605495,
+        "update_ms_max": 9.122224999828177,
+        "us_per_vertex_last": 8.043834165440055,
+        "max_passes": 1
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.006035000296833459,
+        "update_ms_mean": 8.14500000001317,
+        "update_ms_last": 7.820001000254706,
+        "update_ms_max": 9.916039000017918,
+        "us_per_vertex_last": 7.812188811443263,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.004764000095747178,
+        "update_ms_mean": 7.862565900018126,
+        "update_ms_last": 6.739552999988518,
+        "update_ms_max": 10.874458000216691,
+        "us_per_vertex_last": 6.7328201798087095,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.0073609999162727036,
+        "update_ms_mean": 7.788775183356241,
+        "update_ms_last": 7.084968000071967,
+        "update_ms_max": 13.470556999891414,
+        "us_per_vertex_last": 7.077890109962005,
+        "max_passes": 1
+       }
+      },
+      "closest_global": {
+       "2": {
+        "begin_ms": 0.004610999894794077,
+        "update_ms_mean": 108.5134907501697,
+        "update_ms_last": 111.27237500022602,
+        "update_ms_max": 112.50038800017137,
+        "us_per_vertex_last": 111.16121378643957,
+        "max_passes": 0
+       },
+       "10": {
+        "begin_ms": 0.004472999989957316,
+        "update_ms_mean": 114.47935949995554,
+        "update_ms_last": 162.04095900002358,
+        "update_ms_max": 162.04095900002358,
+        "us_per_vertex_last": 161.87907992010346,
+        "max_passes": 0
+       }
+      }
+     }
+    },
+    {
+     "affected": 10005,
+     "radius_rel_edge": 71.87796401977539,
+     "weights_dijkstra_ms": 33.922769999662705,
+     "transport_frames_ms": 274.6160649999183,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.21656999979313696,
+        "update_ms_mean": 26.75176474986074,
+        "update_ms_last": 28.81652399992163,
+        "update_ms_max": 28.81652399992163,
+        "us_per_vertex_last": 2.8802122938452404,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.21201500021561515,
+        "update_ms_mean": 41.50262304997341,
+        "update_ms_last": 63.116706000073464,
+        "update_ms_max": 72.5375840002016,
+        "us_per_vertex_last": 6.3085163418364285,
+        "max_passes": 25
+       },
+       "30": {
+        "begin_ms": 0.2724569999372761,
+        "update_ms_mean": 75.05303925001196,
+        "update_ms_last": 112.84049300002152,
+        "update_ms_max": 133.6060329999782,
+        "us_per_vertex_last": 11.278410094954674,
+        "max_passes": 69
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.24593200032541063,
+        "update_ms_mean": 25.832141749901893,
+        "update_ms_last": 27.562780999687675,
+        "update_ms_max": 27.562780999687675,
+        "us_per_vertex_last": 2.7549006496439454,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.21922499990978395,
+        "update_ms_mean": 42.90582660000837,
+        "update_ms_last": 69.76948000010452,
+        "update_ms_max": 69.76948000010452,
+        "us_per_vertex_last": 6.973461269375765,
+        "max_passes": 25
+       },
+       "30": {
+        "begin_ms": 0.17615500019019237,
+        "update_ms_mean": 80.17062909998458,
+        "update_ms_last": 134.6850270001596,
+        "update_ms_max": 163.74640200001522,
+        "us_per_vertex_last": 13.461771814108907,
+        "max_passes": 69
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.0029829998311470263,
+        "update_ms_mean": 23.717363000059777,
+        "update_ms_last": 25.615942000058567,
+        "update_ms_max": 25.615942000058567,
+        "us_per_vertex_last": 2.5603140429843645,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.0025320000531792175,
+        "update_ms_mean": 41.53187599990815,
+        "update_ms_last": 67.60630600001605,
+        "update_ms_max": 67.60630600001605,
+        "us_per_vertex_last": 6.757251974014597,
+        "max_passes": 25
+       },
+       "30": {
+        "begin_ms": 0.0022159997570270207,
+        "update_ms_mean": 65.72630143333147,
+        "update_ms_last": 97.98000000000684,
+        "update_ms_max": 131.15804700009903,
+        "us_per_vertex_last": 9.793103448276545,
+        "max_passes": 69
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.9751630000209843,
+        "update_ms_mean": 9.996333000003688,
+        "update_ms_last": 6.4180770000348275,
+        "update_ms_max": 21.11506900018867,
+        "us_per_vertex_last": 0.6414869565252201,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.8614230000603129,
+        "update_ms_mean": 7.325547800019194,
+        "update_ms_last": 7.055885999761813,
+        "update_ms_max": 20.23909099989396,
+        "us_per_vertex_last": 0.7052359819851887,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.8468849996461358,
+        "update_ms_mean": 6.973629433324883,
+        "update_ms_last": 6.630326999584213,
+        "update_ms_max": 20.497740000337217,
+        "us_per_vertex_last": 0.6627013492837794,
+        "max_passes": 5
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.041605000205890974,
+        "update_ms_mean": 11.729210249995958,
+        "update_ms_last": 8.700510000380746,
+        "update_ms_max": 20.579421000093134,
+        "us_per_vertex_last": 0.8696161919421035,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.04126500016354839,
+        "update_ms_mean": 8.645893300035823,
+        "update_ms_last": 8.157077999840112,
+        "update_ms_max": 20.48615500007145,
+        "us_per_vertex_last": 0.8153001499090566,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.040070000068226364,
+        "update_ms_mean": 8.448435466690777,
+        "update_ms_last": 8.540931999959867,
+        "update_ms_max": 19.784421999702317,
+        "us_per_vertex_last": 0.8536663668125803,
+        "max_passes": 5
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.06886299979669275,
+        "update_ms_mean": 139.78417725002146,
+        "update_ms_last": 125.61209300019982,
+        "update_ms_max": 160.29850199993234,
+        "us_per_vertex_last": 12.55493183410293,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.12545499976113206,
+        "update_ms_mean": 105.7747886000243,
+        "update_ms_last": 100.61179800004538,
+        "update_ms_max": 155.54447500016977,
+        "us_per_vertex_last": 10.056151724142467,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.1339160003226425,
+        "update_ms_mean": 121.6890395666572,
+        "update_ms_last": 161.00939499983724,
+        "update_ms_max": 161.00939499983724,
+        "us_per_vertex_last": 16.092893053456997,
+        "max_passes": 1
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.0248140004259767,
+        "update_ms_mean": 131.24966600003063,
+        "update_ms_last": 111.76135200003046,
+        "update_ms_max": 189.81053100014833,
+        "us_per_vertex_last": 11.170549925040525,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.017589999970368808,
+        "update_ms_mean": 115.77101074994971,
+        "update_ms_last": 115.5055999997785,
+        "update_ms_max": 148.50716099999772,
+        "us_per_vertex_last": 11.544787606174761,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.02689199982341961,
+        "update_ms_mean": 98.8023600499749,
+        "update_ms_last": 95.06348000013531,
+        "update_ms_max": 152.89961999997104,
+        "us_per_vertex_last": 9.501597201412824,
+        "max_passes": 1
+       }
+      },
+      "closest_global": {}
+     }
+    }
+   ]
+  },
+  {
+   "name": "cube_sphere_99848",
+   "triangulate_ms": 61.47687799966661,
+   "refsurface_build_ms": 914.6663820001777,
+   "refsurface_build_peak_mb": 243.797337,
+   "refsurface_build_ms_best": 403.18089599986706,
+   "closest_grid_build_ms": 96.360913999888,
+   "nv": 99848,
+   "nt": 199692,
+   "mean_edge": 0.011330575526015747,
+   "bytes_tracer_arrays": 82872300,
+   "bytes_all_arrays": 95153376,
+   "bytes_closest_grid": 10289048,
+   "bytes_per_vertex_tracer": 829.9845765563657,
+   "edge_graph_ms": 30.61925100018925,
+   "cases": [
+    {
+     "affected": 109,
+     "radius_rel_edge": 7.520523071289062,
+     "weights_dijkstra_ms": 0.25848100040093414,
+     "transport_frames_ms": 3.692220000175439,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.027898000098502962,
+        "update_ms_mean": 0.9643447500593538,
+        "update_ms_last": 1.0837509998964379,
+        "update_ms_max": 1.0837509998964379,
+        "us_per_vertex_last": 9.942669723820531,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.01844200005507446,
+        "update_ms_mean": 1.7463205500007462,
+        "update_ms_last": 2.311111999915738,
+        "update_ms_max": 2.5373899998157867,
+        "us_per_vertex_last": 21.202862384548055,
+        "max_passes": 19
+       },
+       "30": {
+        "begin_ms": 0.020389999917824753,
+        "update_ms_mean": 3.2040666999970804,
+        "update_ms_last": 5.450602999644616,
+        "update_ms_max": 5.483265000293613,
+        "us_per_vertex_last": 50.00553210683134,
+        "max_passes": 55
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.018554999769548886,
+        "update_ms_mean": 0.605260499924043,
+        "update_ms_last": 0.8162949998222757,
+        "update_ms_max": 0.8162949998222757,
+        "us_per_vertex_last": 7.488944952497942,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.01439200013919617,
+        "update_ms_mean": 1.3911550500324665,
+        "update_ms_last": 2.3348810000243247,
+        "update_ms_max": 2.3348810000243247,
+        "us_per_vertex_last": 21.42092660572775,
+        "max_passes": 19
+       },
+       "30": {
+        "begin_ms": 0.016614999822195387,
+        "update_ms_mean": 3.1314765333263495,
+        "update_ms_last": 5.772471999989648,
+        "update_ms_max": 5.772471999989648,
+        "us_per_vertex_last": 52.95845871550136,
+        "max_passes": 55
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.0019630001588666346,
+        "update_ms_mean": 0.4777677499987476,
+        "update_ms_last": 0.6061859999135777,
+        "update_ms_max": 0.611341999956494,
+        "us_per_vertex_last": 5.561339448748419,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.0012100003914383706,
+        "update_ms_mean": 1.2938887000473187,
+        "update_ms_last": 2.192912999817054,
+        "update_ms_max": 2.192912999817054,
+        "us_per_vertex_last": 20.11846788822985,
+        "max_passes": 19
+       },
+       "30": {
+        "begin_ms": 0.0015129999155760743,
+        "update_ms_mean": 3.027852616681533,
+        "update_ms_last": 5.499883000084083,
+        "update_ms_max": 5.514628000128141,
+        "us_per_vertex_last": 50.457642202606266,
+        "max_passes": 55
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.12528600018413272,
+        "update_ms_mean": 0.4408044999308913,
+        "update_ms_last": 0.5915060000916128,
+        "update_ms_max": 0.5915060000916128,
+        "us_per_vertex_last": 5.4266605512992,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.08586200010540779,
+        "update_ms_mean": 0.4274560000112615,
+        "update_ms_last": 0.39021500015223864,
+        "update_ms_max": 0.6074739999348822,
+        "us_per_vertex_last": 3.5799541298370516,
+        "max_passes": 4
+       },
+       "30": {
+        "begin_ms": 0.08754999998927815,
+        "update_ms_mean": 0.4061737833656783,
+        "update_ms_last": 0.3863169999931415,
+        "update_ms_max": 0.5651980000038748,
+        "us_per_vertex_last": 3.544192660487537,
+        "max_passes": 4
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.004532999810180627,
+        "update_ms_mean": 0.3726322501051982,
+        "update_ms_last": 0.4749340000671509,
+        "update_ms_max": 0.4749340000671509,
+        "us_per_vertex_last": 4.357192661166522,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.003514999662002083,
+        "update_ms_mean": 0.3643545500608525,
+        "update_ms_last": 0.3140050002912176,
+        "update_ms_max": 0.5175000001145236,
+        "us_per_vertex_last": 2.8807798191854825,
+        "max_passes": 4
+       },
+       "30": {
+        "begin_ms": 0.004311999873607419,
+        "update_ms_mean": 0.3558555166591759,
+        "update_ms_last": 0.37392299964267295,
+        "update_ms_max": 0.4853469999943627,
+        "us_per_vertex_last": 3.43048623525388,
+        "max_passes": 4
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.004177999926469056,
+        "update_ms_mean": 1.202406750053342,
+        "update_ms_last": 1.0916119999819784,
+        "update_ms_max": 1.7971659999602707,
+        "us_per_vertex_last": 10.014788990660353,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.004332000116846757,
+        "update_ms_mean": 1.050127100006648,
+        "update_ms_last": 0.9715680002955196,
+        "update_ms_max": 1.4571609999620705,
+        "us_per_vertex_last": 8.913467892619446,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.0048700003389967605,
+        "update_ms_mean": 1.0426774166186685,
+        "update_ms_last": 1.0574450002422964,
+        "update_ms_max": 1.3982929999656335,
+        "us_per_vertex_last": 9.70133027745226,
+        "max_passes": 1
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.0023719999262539204,
+        "update_ms_mean": 1.0391700000127457,
+        "update_ms_last": 1.0055010002361087,
+        "update_ms_max": 1.404321999871172,
+        "us_per_vertex_last": 9.224779818679895,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.0018609998733154498,
+        "update_ms_mean": 0.9850229999756266,
+        "update_ms_last": 0.9797729999263538,
+        "update_ms_max": 1.3535299999603012,
+        "us_per_vertex_last": 8.988743118590403,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.002122999831044581,
+        "update_ms_mean": 0.9837730999758302,
+        "update_ms_last": 0.8942230001593998,
+        "update_ms_max": 1.4193970000633271,
+        "us_per_vertex_last": 8.203880735407338,
+        "max_passes": 1
+       }
+      },
+      "closest_global": {
+       "2": {
+        "begin_ms": 0.0027760002012655605,
+        "update_ms_mean": 5.523887499862212,
+        "update_ms_last": 4.864154999722814,
+        "update_ms_max": 6.11596799990366,
+        "us_per_vertex_last": 44.62527522681481,
+        "max_passes": 0
+       },
+       "10": {
+        "begin_ms": 0.002195999968535034,
+        "update_ms_mean": 4.891816249937619,
+        "update_ms_last": 5.020964999857824,
+        "update_ms_max": 5.102780000015628,
+        "us_per_vertex_last": 46.063899081264445,
+        "max_passes": 0
+       }
+      }
+     }
+    },
+    {
+     "affected": 1001,
+     "radius_rel_edge": 23.582866668701175,
+     "weights_dijkstra_ms": 1.3678450000043085,
+     "transport_frames_ms": 21.021879999807425,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.0413349998780177,
+        "update_ms_mean": 2.668812749902827,
+        "update_ms_last": 2.7238669999860576,
+        "update_ms_max": 2.745154999956867,
+        "us_per_vertex_last": 2.7211458541319256,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.024864999886631267,
+        "update_ms_mean": 4.091531500034762,
+        "update_ms_last": 5.949234000127035,
+        "update_ms_max": 6.299748999936128,
+        "us_per_vertex_last": 5.943290709417617,
+        "max_passes": 20
+       },
+       "30": {
+        "begin_ms": 0.0592490000599355,
+        "update_ms_mean": 8.622129516675159,
+        "update_ms_last": 13.659880999966845,
+        "update_ms_max": 22.87402399997518,
+        "us_per_vertex_last": 13.646234765201642,
+        "max_passes": 56
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.025538000045344234,
+        "update_ms_mean": 2.444705250240986,
+        "update_ms_last": 2.7519260002009105,
+        "update_ms_max": 2.7519260002009105,
+        "us_per_vertex_last": 2.749176823377533,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.023177000002760906,
+        "update_ms_mean": 3.9870994999546383,
+        "update_ms_last": 5.810453999856691,
+        "update_ms_max": 5.810453999856691,
+        "us_per_vertex_last": 5.8046493505061845,
+        "max_passes": 20
+       },
+       "30": {
+        "begin_ms": 0.024385999950027326,
+        "update_ms_mean": 7.962512650033204,
+        "update_ms_last": 13.705021000077977,
+        "update_ms_max": 13.705021000077977,
+        "us_per_vertex_last": 13.691329670407569,
+        "max_passes": 56
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.0020379998204589356,
+        "update_ms_mean": 1.9749547500396147,
+        "update_ms_last": 2.2611760000472714,
+        "update_ms_max": 2.2611760000472714,
+        "us_per_vertex_last": 2.2589170829643073,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.001641999915591441,
+        "update_ms_mean": 3.8196507999373353,
+        "update_ms_last": 5.927757999870664,
+        "update_ms_max": 7.556942999599414,
+        "us_per_vertex_last": 5.921836163706957,
+        "max_passes": 20
+       },
+       "30": {
+        "begin_ms": 0.0018179998733103275,
+        "update_ms_mean": 7.595920600003107,
+        "update_ms_last": 13.10413700002755,
+        "update_ms_max": 13.12539700029447,
+        "us_per_vertex_last": 13.091045954073476,
+        "max_passes": 56
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.18156099986299523,
+        "update_ms_mean": 1.1758042500105148,
+        "update_ms_last": 0.9899159999804397,
+        "update_ms_max": 2.014855000197713,
+        "us_per_vertex_last": 0.9889270729075321,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.1396519996887946,
+        "update_ms_mean": 1.0780173500052115,
+        "update_ms_last": 1.0454939997543988,
+        "update_ms_max": 1.914355999815598,
+        "us_per_vertex_last": 1.0444495502041946,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.14575400018657092,
+        "update_ms_mean": 1.0345689666564795,
+        "update_ms_last": 1.0526719997869805,
+        "update_ms_max": 2.0173459997749887,
+        "us_per_vertex_last": 1.051620379407573,
+        "max_passes": 5
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.008496000191371422,
+        "update_ms_mean": 1.1699147497665763,
+        "update_ms_last": 0.9916479998537397,
+        "update_ms_max": 2.099226999689563,
+        "us_per_vertex_last": 0.9906573425112285,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.009144000159722054,
+        "update_ms_mean": 0.9943306500417748,
+        "update_ms_last": 0.9479589998591109,
+        "update_ms_max": 1.96135200030767,
+        "us_per_vertex_last": 0.9470119878712396,
+        "max_passes": 4
+       },
+       "30": {
+        "begin_ms": 0.008230000275943894,
+        "update_ms_mean": 0.9662963166647387,
+        "update_ms_last": 0.9766640000634652,
+        "update_ms_max": 2.0078880002074584,
+        "us_per_vertex_last": 0.9756883117517134,
+        "max_passes": 4
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.01026800009640283,
+        "update_ms_mean": 7.222756999908597,
+        "update_ms_last": 6.08483999985765,
+        "update_ms_max": 11.098072000095272,
+        "us_per_vertex_last": 6.07876123861903,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.010492999990674434,
+        "update_ms_mean": 6.188171450025948,
+        "update_ms_last": 5.885517000024265,
+        "update_ms_max": 9.65546199995515,
+        "us_per_vertex_last": 5.879637362661604,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.01099600012821611,
+        "update_ms_mean": 6.198760400002357,
+        "update_ms_last": 6.171303000428452,
+        "update_ms_max": 9.509179000360746,
+        "us_per_vertex_last": 6.165137862565886,
+        "max_passes": 1
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.0033000001167238224,
+        "update_ms_mean": 7.0709514999407475,
+        "update_ms_last": 5.747861000145349,
+        "update_ms_max": 9.55171599980531,
+        "us_per_vertex_last": 5.742118881264084,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.003861999630316859,
+        "update_ms_mean": 6.99353094998969,
+        "update_ms_last": 7.366579000063211,
+        "update_ms_max": 14.22063799964235,
+        "us_per_vertex_last": 7.3592197802829284,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.0070840001171745826,
+        "update_ms_mean": 7.674620483339822,
+        "update_ms_last": 7.251841999732278,
+        "update_ms_max": 15.924808000363555,
+        "us_per_vertex_last": 7.244597402329948,
+        "max_passes": 1
+       }
+      },
+      "closest_global": {
+       "2": {
+        "begin_ms": 0.004895999609288992,
+        "update_ms_mean": 76.95627024997975,
+        "update_ms_last": 72.93329499998435,
+        "update_ms_max": 82.83961400002227,
+        "us_per_vertex_last": 72.86043456541894,
+        "max_passes": 0
+       },
+       "10": {
+        "begin_ms": 0.004515999989962438,
+        "update_ms_mean": 71.06468515005417,
+        "update_ms_last": 68.54458499992688,
+        "update_ms_max": 87.32043000009071,
+        "us_per_vertex_last": 68.47610889103585,
+        "max_passes": 0
+       }
+      }
+     }
+    },
+    {
+     "affected": 10001,
+     "radius_rel_edge": 72.92057800292969,
+     "weights_dijkstra_ms": 14.324070999919059,
+     "transport_frames_ms": 218.5806849997789,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.11237599983360269,
+        "update_ms_mean": 22.233960250105156,
+        "update_ms_last": 23.213686999952188,
+        "update_ms_max": 23.213686999952188,
+        "us_per_vertex_last": 2.321136586336585,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.13528399995266227,
+        "update_ms_mean": 37.490407850077645,
+        "update_ms_last": 63.25830200012206,
+        "update_ms_max": 63.25830200012206,
+        "us_per_vertex_last": 6.325197680244181,
+        "max_passes": 24
+       },
+       "30": {
+        "begin_ms": 0.2338139997846156,
+        "update_ms_mean": 66.08977949999068,
+        "update_ms_last": 100.9324009996817,
+        "update_ms_max": 109.06368199994176,
+        "us_per_vertex_last": 10.092230876880482,
+        "max_passes": 69
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.22555499981535831,
+        "update_ms_mean": 24.336802999982865,
+        "update_ms_last": 25.45383100004983,
+        "update_ms_max": 25.45383100004983,
+        "us_per_vertex_last": 2.5451285871462686,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.12975400022696704,
+        "update_ms_mean": 37.50147575003666,
+        "update_ms_last": 69.89926799997193,
+        "update_ms_max": 69.89926799997193,
+        "us_per_vertex_last": 6.989227877209472,
+        "max_passes": 24
+       },
+       "30": {
+        "begin_ms": 0.16808600003059837,
+        "update_ms_mean": 68.96723901670612,
+        "update_ms_last": 117.44869700032723,
+        "update_ms_max": 117.44869700032723,
+        "us_per_vertex_last": 11.743695330499673,
+        "max_passes": 69
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.004203999651508639,
+        "update_ms_mean": 23.8363969999682,
+        "update_ms_last": 25.68382700019356,
+        "update_ms_max": 25.68382700019356,
+        "us_per_vertex_last": 2.5681258874306128,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.0029459997676895,
+        "update_ms_mean": 34.03568969999924,
+        "update_ms_last": 45.36135800026386,
+        "update_ms_max": 45.36135800026386,
+        "us_per_vertex_last": 4.535682231803206,
+        "max_passes": 24
+       },
+       "30": {
+        "begin_ms": 0.0029319999157451093,
+        "update_ms_mean": 62.13887403335624,
+        "update_ms_last": 88.42504999984158,
+        "update_ms_max": 122.05549700001939,
+        "us_per_vertex_last": 8.841620837900368,
+        "max_passes": 69
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.9895570001390297,
+        "update_ms_mean": 9.536421250004423,
+        "update_ms_last": 6.105174999902374,
+        "update_ms_max": 20.262357000319753,
+        "us_per_vertex_last": 0.6104564543448029,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.8366060001208098,
+        "update_ms_mean": 6.95987970002534,
+        "update_ms_last": 6.301710000116145,
+        "update_ms_max": 19.313733000217326,
+        "us_per_vertex_last": 0.6301079892126933,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.8144920002450817,
+        "update_ms_mean": 6.701191749986417,
+        "update_ms_last": 6.852055999843287,
+        "update_ms_max": 19.648040999982186,
+        "us_per_vertex_last": 0.6851370862757011,
+        "max_passes": 5
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.0401689999307564,
+        "update_ms_mean": 9.583108750121028,
+        "update_ms_last": 6.2795670000923565,
+        "update_ms_max": 20.123433000208024,
+        "us_per_vertex_last": 0.6278939106181738,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.04448500021680957,
+        "update_ms_mean": 7.019626249984867,
+        "update_ms_last": 6.303568000021187,
+        "update_ms_max": 20.421191999957955,
+        "us_per_vertex_last": 0.6302937706250562,
+        "max_passes": 4
+       },
+       "30": {
+        "begin_ms": 0.04132000003664871,
+        "update_ms_mean": 8.324707183343586,
+        "update_ms_last": 6.729018999976688,
+        "update_ms_max": 20.78686499999094,
+        "us_per_vertex_last": 0.6728346165360152,
+        "max_passes": 4
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.06470300013461383,
+        "update_ms_mean": 92.34823899998901,
+        "update_ms_last": 82.0294019999892,
+        "update_ms_max": 130.47323699993285,
+        "us_per_vertex_last": 8.20211998800012,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.11866799968629493,
+        "update_ms_mean": 94.4018531999518,
+        "update_ms_last": 116.44827400004942,
+        "update_ms_max": 137.9658619998736,
+        "us_per_vertex_last": 11.643663033701571,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.09356000009574927,
+        "update_ms_mean": 92.30106729999079,
+        "update_ms_last": 98.47024500004409,
+        "update_ms_max": 147.61692599995513,
+        "us_per_vertex_last": 9.846039896014807,
+        "max_passes": 1
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.016196999695239356,
+        "update_ms_mean": 105.9245902499697,
+        "update_ms_last": 95.18573300010758,
+        "update_ms_max": 145.2160079998066,
+        "us_per_vertex_last": 9.517621537856972,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.016536000202904688,
+        "update_ms_mean": 102.85695055001725,
+        "update_ms_last": 114.595188000294,
+        "update_ms_max": 158.47316700001102,
+        "us_per_vertex_last": 11.458372962733128,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.0210130001505604,
+        "update_ms_mean": 92.43395355003183,
+        "update_ms_last": 84.74222099994222,
+        "update_ms_max": 150.82510000002003,
+        "us_per_vertex_last": 8.47337476251797,
+        "max_passes": 1
+       }
+      },
+      "closest_global": {}
+     }
+    }
+   ]
+  },
+  {
+   "name": "gollum_21875",
+   "triangulate_ms": 15.39160099991932,
+   "refsurface_build_ms": 179.66490700018767,
+   "refsurface_build_peak_mb": 53.470322,
+   "refsurface_build_ms_best": 86.0002300000815,
+   "closest_grid_build_ms": 21.400352000000566,
+   "nv": 21875,
+   "nt": 43750,
+   "mean_edge": 0.011435111127858751,
+   "bytes_tracer_arrays": 18156258,
+   "bytes_all_arrays": 20846883,
+   "bytes_closest_grid": 2041448,
+   "bytes_per_vertex_tracer": 830.0003657142857,
+   "edge_graph_ms": 7.620962000146392,
+   "cases": [
+    {
+     "affected": 100,
+     "radius_rel_edge": 5.430728912353516,
+     "weights_dijkstra_ms": 0.17768699990483583,
+     "transport_frames_ms": 2.2826379999969504,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.024139999823091784,
+        "update_ms_mean": 0.6512992500802284,
+        "update_ms_last": 0.6270650001169997,
+        "update_ms_max": 0.7093350000104692,
+        "us_per_vertex_last": 6.270650001169997,
+        "max_passes": 3
+       },
+       "10": {
+        "begin_ms": 0.015103000350791262,
+        "update_ms_mean": 1.539172099978714,
+        "update_ms_last": 2.7201580001019465,
+        "update_ms_max": 2.7201580001019465,
+        "us_per_vertex_last": 27.201580001019465,
+        "max_passes": 23
+       },
+       "30": {
+        "begin_ms": 0.02075300017168047,
+        "update_ms_mean": 4.455957949994627,
+        "update_ms_last": 7.673142999919946,
+        "update_ms_max": 8.718109000255936,
+        "us_per_vertex_last": 76.73142999919946,
+        "max_passes": 71
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.021561999801633647,
+        "update_ms_mean": 0.6052790000694586,
+        "update_ms_last": 0.651915000162262,
+        "update_ms_max": 0.6714969999848108,
+        "us_per_vertex_last": 6.51915000162262,
+        "max_passes": 3
+       },
+       "10": {
+        "begin_ms": 0.01560200007588719,
+        "update_ms_mean": 1.6237545498825057,
+        "update_ms_last": 3.0462319996331644,
+        "update_ms_max": 3.0462319996331644,
+        "us_per_vertex_last": 30.462319996331644,
+        "max_passes": 23
+       },
+       "30": {
+        "begin_ms": 0.02164799980164389,
+        "update_ms_mean": 4.32539654999952,
+        "update_ms_last": 7.7003890000924,
+        "update_ms_max": 8.18279800023447,
+        "us_per_vertex_last": 77.003890000924,
+        "max_passes": 71
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.002217000201198971,
+        "update_ms_mean": 0.506804750102674,
+        "update_ms_last": 0.5703770002583042,
+        "update_ms_max": 0.5703770002583042,
+        "us_per_vertex_last": 5.703770002583042,
+        "max_passes": 3
+       },
+       "10": {
+        "begin_ms": 0.0013439998838293832,
+        "update_ms_mean": 1.5445205999185418,
+        "update_ms_last": 2.9560499997387524,
+        "update_ms_max": 2.9560499997387524,
+        "us_per_vertex_last": 29.560499997387524,
+        "max_passes": 23
+       },
+       "30": {
+        "begin_ms": 0.0018870000531023834,
+        "update_ms_mean": 4.288515516630771,
+        "update_ms_last": 7.512157999826741,
+        "update_ms_max": 9.328361000370933,
+        "us_per_vertex_last": 75.1215799982674,
+        "max_passes": 71
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.14945000020816224,
+        "update_ms_mean": 0.4439040001216199,
+        "update_ms_last": 0.4910370003017306,
+        "update_ms_max": 0.5026260000704497,
+        "us_per_vertex_last": 4.910370003017306,
+        "max_passes": 3
+       },
+       "10": {
+        "begin_ms": 0.14542000008077594,
+        "update_ms_mean": 0.4602019499998278,
+        "update_ms_last": 0.4047910001645505,
+        "update_ms_max": 0.6367000000864209,
+        "us_per_vertex_last": 4.047910001645505,
+        "max_passes": 4
+       },
+       "30": {
+        "begin_ms": 0.10374900011811405,
+        "update_ms_mean": 0.4933637333427517,
+        "update_ms_last": 0.44575600031748763,
+        "update_ms_max": 0.8285640001304273,
+        "us_per_vertex_last": 4.457560003174876,
+        "max_passes": 5
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.007748999905743403,
+        "update_ms_mean": 0.3620327499902487,
+        "update_ms_last": 0.35665999985212693,
+        "update_ms_max": 0.455199000043649,
+        "us_per_vertex_last": 3.5665999985212693,
+        "max_passes": 3
+       },
+       "10": {
+        "begin_ms": 0.02762200028882944,
+        "update_ms_mean": 0.38979450002898375,
+        "update_ms_last": 0.3276669999650039,
+        "update_ms_max": 0.5534429997169354,
+        "us_per_vertex_last": 3.2766699996500392,
+        "max_passes": 4
+       },
+       "30": {
+        "begin_ms": 0.005928000064159278,
+        "update_ms_mean": 0.38463098328520573,
+        "update_ms_last": 0.26790899983097916,
+        "update_ms_max": 0.6188769998516364,
+        "us_per_vertex_last": 2.6790899983097916,
+        "max_passes": 5
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.00648300010652747,
+        "update_ms_mean": 1.6072494997843023,
+        "update_ms_last": 1.3209999997343402,
+        "update_ms_max": 2.1113379998496384,
+        "us_per_vertex_last": 13.209999997343402,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.0061710002228210215,
+        "update_ms_mean": 1.207275049978307,
+        "update_ms_last": 1.132396999764751,
+        "update_ms_max": 1.7696510003588628,
+        "us_per_vertex_last": 11.32396999764751,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.041001000226970064,
+        "update_ms_mean": 1.1858609833401108,
+        "update_ms_last": 1.1169320000590233,
+        "update_ms_max": 1.7597119999663846,
+        "us_per_vertex_last": 11.169320000590233,
+        "max_passes": 1
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.00324099983117776,
+        "update_ms_mean": 1.0790812500545144,
+        "update_ms_last": 1.020761000290804,
+        "update_ms_max": 1.3749919999099802,
+        "us_per_vertex_last": 10.20761000290804,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.00258999989455333,
+        "update_ms_mean": 1.0608376999471147,
+        "update_ms_last": 1.1871689998770307,
+        "update_ms_max": 1.401745999828563,
+        "us_per_vertex_last": 11.871689998770307,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.0031999998100218363,
+        "update_ms_mean": 1.9601357666563974,
+        "update_ms_last": 6.959742000162805,
+        "update_ms_max": 7.666765000067244,
+        "us_per_vertex_last": 69.59742000162805,
+        "max_passes": 19
+       }
+      },
+      "closest_global": {
+       "2": {
+        "begin_ms": 0.005472000339068472,
+        "update_ms_mean": 28.100771249910395,
+        "update_ms_last": 27.926678999847354,
+        "update_ms_max": 29.283026000030077,
+        "us_per_vertex_last": 279.26678999847354,
+        "max_passes": 0
+       },
+       "10": {
+        "begin_ms": 0.005386999873735476,
+        "update_ms_mean": 20.325169300008383,
+        "update_ms_last": 33.68088199977137,
+        "update_ms_max": 33.68088199977137,
+        "us_per_vertex_last": 336.8088199977137,
+        "max_passes": 0
+       }
+      }
+     }
+    },
+    {
+     "affected": 1000,
+     "radius_rel_edge": 17.362190246582028,
+     "weights_dijkstra_ms": 3.549150000253576,
+     "transport_frames_ms": 34.50377200033472,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.0562149998586392,
+        "update_ms_mean": 5.156871000053798,
+        "update_ms_last": 5.896656999993866,
+        "update_ms_max": 5.896656999993866,
+        "us_per_vertex_last": 5.896656999993866,
+        "max_passes": 9
+       },
+       "10": {
+        "begin_ms": 0.027240000235906336,
+        "update_ms_mean": 6.692643949986632,
+        "update_ms_last": 9.9852970001848,
+        "update_ms_max": 9.9852970001848,
+        "us_per_vertex_last": 9.9852970001848,
+        "max_passes": 38
+       },
+       "30": {
+        "begin_ms": 0.02939200021501165,
+        "update_ms_mean": 15.10762960002315,
+        "update_ms_last": 27.553493999675993,
+        "update_ms_max": 28.333568000107334,
+        "us_per_vertex_last": 27.553493999675993,
+        "max_passes": 119
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.03855699969790294,
+        "update_ms_mean": 3.693547499892702,
+        "update_ms_last": 4.107897000267258,
+        "update_ms_max": 4.107897000267258,
+        "us_per_vertex_last": 4.107897000267258,
+        "max_passes": 9
+       },
+       "10": {
+        "begin_ms": 0.029394000193860848,
+        "update_ms_mean": 6.968136549949122,
+        "update_ms_last": 10.393791999831592,
+        "update_ms_max": 12.839644999985467,
+        "us_per_vertex_last": 10.393791999831592,
+        "max_passes": 38
+       },
+       "30": {
+        "begin_ms": 0.030205000257410575,
+        "update_ms_mean": 14.309118316623426,
+        "update_ms_last": 24.63983300003747,
+        "update_ms_max": 24.63983300003747,
+        "us_per_vertex_last": 24.63983300003747,
+        "max_passes": 119
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.00241899988395744,
+        "update_ms_mean": 2.8277147499693456,
+        "update_ms_last": 3.2763899998826673,
+        "update_ms_max": 3.2763899998826673,
+        "us_per_vertex_last": 3.2763899998826673,
+        "max_passes": 9
+       },
+       "10": {
+        "begin_ms": 0.002222999682999216,
+        "update_ms_mean": 5.785405300048296,
+        "update_ms_last": 9.136918999956833,
+        "update_ms_max": 9.136918999956833,
+        "us_per_vertex_last": 9.136918999956833,
+        "max_passes": 38
+       },
+       "30": {
+        "begin_ms": 0.002026999936788343,
+        "update_ms_mean": 12.807531783331191,
+        "update_ms_last": 23.92619400006879,
+        "update_ms_max": 23.92619400006879,
+        "us_per_vertex_last": 23.92619400006879,
+        "max_passes": 119
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.19073099974775687,
+        "update_ms_mean": 1.5511799998648712,
+        "update_ms_last": 1.127869999891118,
+        "update_ms_max": 2.5079639999603387,
+        "us_per_vertex_last": 1.127869999891118,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.1465440000174567,
+        "update_ms_mean": 1.3107081500493223,
+        "update_ms_last": 1.2810939997507376,
+        "update_ms_max": 2.350891000332922,
+        "us_per_vertex_last": 1.2810939997507376,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.15429800032507046,
+        "update_ms_mean": 1.2753956999707345,
+        "update_ms_last": 1.2548869999591261,
+        "update_ms_max": 2.2567199998775322,
+        "us_per_vertex_last": 1.2548869999591261,
+        "max_passes": 7
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.009799000054044882,
+        "update_ms_mean": 1.375881749936525,
+        "update_ms_last": 1.127991999965161,
+        "update_ms_max": 2.2900639996805694,
+        "us_per_vertex_last": 1.127991999965161,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.008179999895219225,
+        "update_ms_mean": 1.1451138499296576,
+        "update_ms_last": 1.125219999721594,
+        "update_ms_max": 2.32395600005475,
+        "us_per_vertex_last": 1.125219999721594,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.00899499991646735,
+        "update_ms_mean": 1.082563399972969,
+        "update_ms_last": 1.0180200001741468,
+        "update_ms_max": 2.3351519998868753,
+        "us_per_vertex_last": 1.0180200001741468,
+        "max_passes": 5
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.011924000318686012,
+        "update_ms_mean": 8.971171999974104,
+        "update_ms_last": 7.8722959997321595,
+        "update_ms_max": 12.733271999877616,
+        "us_per_vertex_last": 7.8722959997321595,
+        "max_passes": 2
+       },
+       "10": {
+        "begin_ms": 0.012211000012030127,
+        "update_ms_mean": 7.940982050058665,
+        "update_ms_last": 7.805121999808762,
+        "update_ms_max": 11.196939000001294,
+        "us_per_vertex_last": 7.805121999808762,
+        "max_passes": 2
+       },
+       "30": {
+        "begin_ms": 0.013607999790110625,
+        "update_ms_mean": 7.952589583351255,
+        "update_ms_last": 8.061016000283416,
+        "update_ms_max": 11.18287400004192,
+        "us_per_vertex_last": 8.061016000283416,
+        "max_passes": 2
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.004286000148567837,
+        "update_ms_mean": 8.42952324990165,
+        "update_ms_last": 7.982144999914453,
+        "update_ms_max": 10.88887000014438,
+        "us_per_vertex_last": 7.982144999914453,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.0042309998207201716,
+        "update_ms_mean": 8.271085200021844,
+        "update_ms_last": 8.472407000226667,
+        "update_ms_max": 10.754219999853376,
+        "us_per_vertex_last": 8.472407000226667,
+        "max_passes": 12
+       },
+       "30": {
+        "begin_ms": 0.004416999672685051,
+        "update_ms_mean": 8.882941133356326,
+        "update_ms_last": 10.096875999806798,
+        "update_ms_max": 10.842516000138858,
+        "us_per_vertex_last": 10.096875999806798,
+        "max_passes": 31
+       }
+      },
+      "closest_global": {
+       "2": {
+        "begin_ms": 0.003504000233078841,
+        "update_ms_mean": 196.76020149995566,
+        "update_ms_last": 191.3788060001025,
+        "update_ms_max": 199.33546299989757,
+        "us_per_vertex_last": 191.3788060001025,
+        "max_passes": 0
+       },
+       "10": {
+        "begin_ms": 0.003671999820653582,
+        "update_ms_mean": 206.3039056000207,
+        "update_ms_last": 262.5311340002554,
+        "update_ms_max": 262.5311340002554,
+        "us_per_vertex_last": 262.53113400025535,
+        "max_passes": 0
+       }
+      }
+     }
+    },
+    {
+     "affected": 10000,
+     "radius_rel_edge": 72.4106864929199,
+     "weights_dijkstra_ms": 13.405706999947142,
+     "transport_frames_ms": 212.29817199991885,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.1311099999838916,
+        "update_ms_mean": 29.988538750103544,
+        "update_ms_last": 32.8298059998815,
+        "update_ms_max": 32.8298059998815,
+        "us_per_vertex_last": 3.28298059998815,
+        "max_passes": 17
+       },
+       "10": {
+        "begin_ms": 0.14316499982669484,
+        "update_ms_mean": 46.98001495000881,
+        "update_ms_last": 68.21603400021559,
+        "update_ms_max": 68.21603400021559,
+        "us_per_vertex_last": 6.821603400021559,
+        "max_passes": 62
+       },
+       "30": {
+        "begin_ms": 0.16820200016809395,
+        "update_ms_mean": 94.82243805003539,
+        "update_ms_last": 169.39036400026453,
+        "update_ms_max": 169.39036400026453,
+        "us_per_vertex_last": 16.939036400026453,
+        "max_passes": 152
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.17666300027485704,
+        "update_ms_mean": 34.78689200005647,
+        "update_ms_last": 42.496475000007194,
+        "update_ms_max": 42.496475000007194,
+        "us_per_vertex_last": 4.2496475000007194,
+        "max_passes": 17
+       },
+       "10": {
+        "begin_ms": 0.25887300034810323,
+        "update_ms_mean": 58.51805235001848,
+        "update_ms_last": 108.31396799994764,
+        "update_ms_max": 108.31396799994764,
+        "us_per_vertex_last": 10.831396799994764,
+        "max_passes": 62
+       },
+       "30": {
+        "begin_ms": 0.25976699998864206,
+        "update_ms_mean": 113.88925044996843,
+        "update_ms_last": 190.42973499972504,
+        "update_ms_max": 190.42973499972504,
+        "us_per_vertex_last": 19.042973499972504,
+        "max_passes": 152
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.0023460002012143377,
+        "update_ms_mean": 33.33868300012455,
+        "update_ms_last": 35.586766000051284,
+        "update_ms_max": 38.342340999861335,
+        "us_per_vertex_last": 3.5586766000051284,
+        "max_passes": 17
+       },
+       "10": {
+        "begin_ms": 0.0023479997253161855,
+        "update_ms_mean": 56.59713685006409,
+        "update_ms_last": 76.11879599971871,
+        "update_ms_max": 99.12326499988922,
+        "us_per_vertex_last": 7.611879599971871,
+        "max_passes": 62
+       },
+       "30": {
+        "begin_ms": 0.003572999958123546,
+        "update_ms_mean": 104.66619046668104,
+        "update_ms_last": 196.4751119999164,
+        "update_ms_max": 198.92099099979532,
+        "us_per_vertex_last": 19.64751119999164,
+        "max_passes": 152
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 1.3055350000286126,
+        "update_ms_mean": 14.483806750149597,
+        "update_ms_last": 9.498061000158486,
+        "update_ms_max": 29.593578999993042,
+        "us_per_vertex_last": 0.9498061000158486,
+        "max_passes": 8
+       },
+       "10": {
+        "begin_ms": 1.1470590002318204,
+        "update_ms_mean": 11.578191300031904,
+        "update_ms_last": 10.602432999803568,
+        "update_ms_max": 28.29463999978543,
+        "us_per_vertex_last": 1.0602432999803568,
+        "max_passes": 8
+       },
+       "30": {
+        "begin_ms": 1.0585660002107034,
+        "update_ms_mean": 8.937150433340927,
+        "update_ms_last": 8.12684500033356,
+        "update_ms_max": 27.98691999987568,
+        "us_per_vertex_last": 0.812684500033356,
+        "max_passes": 9
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.040839999655872816,
+        "update_ms_mean": 11.969799749977028,
+        "update_ms_last": 7.560641000054602,
+        "update_ms_max": 25.23302200006583,
+        "us_per_vertex_last": 0.7560641000054602,
+        "max_passes": 6
+       },
+       "10": {
+        "begin_ms": 0.051717000133066904,
+        "update_ms_mean": 8.329003750031916,
+        "update_ms_last": 7.018387999778497,
+        "update_ms_max": 25.21846900026503,
+        "us_per_vertex_last": 0.7018387999778497,
+        "max_passes": 6
+       },
+       "30": {
+        "begin_ms": 0.04509600012170267,
+        "update_ms_mean": 7.287433349983985,
+        "update_ms_last": 6.636632999743597,
+        "update_ms_max": 24.946603999978834,
+        "us_per_vertex_last": 0.6636632999743597,
+        "max_passes": 6
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.06844299969088752,
+        "update_ms_mean": 110.26782174997152,
+        "update_ms_last": 96.26879600000393,
+        "update_ms_max": 145.9449459998723,
+        "us_per_vertex_last": 9.626879600000393,
+        "max_passes": 3
+       },
+       "10": {
+        "begin_ms": 0.08981299970400869,
+        "update_ms_mean": 101.7961186500088,
+        "update_ms_last": 97.1886520001135,
+        "update_ms_max": 145.61100100036128,
+        "us_per_vertex_last": 9.71886520001135,
+        "max_passes": 3
+       },
+       "30": {
+        "begin_ms": 0.09562800005369354,
+        "update_ms_mean": 106.13820044995919,
+        "update_ms_last": 107.18305399996098,
+        "update_ms_max": 141.83440800024982,
+        "us_per_vertex_last": 10.718305399996098,
+        "max_passes": 3
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.05181300002732314,
+        "update_ms_mean": 124.5177479999029,
+        "update_ms_last": 105.22301100036202,
+        "update_ms_max": 177.7377019998312,
+        "us_per_vertex_last": 10.522301100036202,
+        "max_passes": 7
+       },
+       "10": {
+        "begin_ms": 0.01307399998040637,
+        "update_ms_mean": 95.94894655010648,
+        "update_ms_last": 88.73640100000557,
+        "update_ms_max": 141.9651569999587,
+        "us_per_vertex_last": 8.873640100000557,
+        "max_passes": 17
+       },
+       "30": {
+        "begin_ms": 0.01726099981169682,
+        "update_ms_mean": 89.9525935166442,
+        "update_ms_last": 82.52725500005909,
+        "update_ms_max": 139.1117610000947,
+        "us_per_vertex_last": 8.252725500005909,
+        "max_passes": 34
+       }
+      },
+      "closest_global": {}
+     }
+    }
+   ]
+  },
+  {
+   "name": "gollum_87k_87500",
+   "triangulate_ms": 53.78617199994551,
+   "refsurface_build_ms": 811.2578509999366,
+   "refsurface_build_peak_mb": 213.660702,
+   "refsurface_build_ms_best": 387.06329300021025,
+   "closest_grid_build_ms": 88.41560600012599,
+   "nv": 87500,
+   "nt": 175000,
+   "mean_edge": 0.005699016054881857,
+   "bytes_tracer_arrays": 72625008,
+   "bytes_all_arrays": 83387508,
+   "bytes_closest_grid": 9636296,
+   "bytes_per_vertex_tracer": 830.0000914285714,
+   "edge_graph_ms": 34.63768100027664,
+   "cases": [
+    {
+     "affected": 100,
+     "radius_rel_edge": 5.964973449707032,
+     "weights_dijkstra_ms": 0.18229000033898046,
+     "transport_frames_ms": 2.2780360000069777,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.02084300012938911,
+        "update_ms_mean": 0.6715854998446957,
+        "update_ms_last": 0.8267959997283469,
+        "update_ms_max": 0.8267959997283469,
+        "us_per_vertex_last": 8.26795999728347,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.014046999694983242,
+        "update_ms_mean": 1.3751879999745142,
+        "update_ms_last": 2.3441019998244883,
+        "update_ms_max": 2.3441019998244883,
+        "us_per_vertex_last": 23.441019998244883,
+        "max_passes": 20
+       },
+       "30": {
+        "begin_ms": 0.014433000160352094,
+        "update_ms_mean": 3.591929816669411,
+        "update_ms_last": 7.438158000240946,
+        "update_ms_max": 7.438158000240946,
+        "us_per_vertex_last": 74.38158000240946,
+        "max_passes": 74
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.018636999811860733,
+        "update_ms_mean": 0.6233594998548142,
+        "update_ms_last": 0.8005219997357926,
+        "update_ms_max": 0.8005219997357926,
+        "us_per_vertex_last": 8.005219997357926,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.01341600000159815,
+        "update_ms_mean": 1.3977063500988152,
+        "update_ms_last": 2.430757000183803,
+        "update_ms_max": 2.430757000183803,
+        "us_per_vertex_last": 24.30757000183803,
+        "max_passes": 20
+       },
+       "30": {
+        "begin_ms": 0.01735500018185121,
+        "update_ms_mean": 3.6331703999849196,
+        "update_ms_last": 7.417736999741464,
+        "update_ms_max": 7.417736999741464,
+        "us_per_vertex_last": 74.17736999741464,
+        "max_passes": 74
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.001651000275160186,
+        "update_ms_mean": 0.5080397501160405,
+        "update_ms_last": 0.7234770000650315,
+        "update_ms_max": 0.7234770000650315,
+        "us_per_vertex_last": 7.234770000650315,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.0008799997885944322,
+        "update_ms_mean": 1.2908852000236948,
+        "update_ms_last": 2.2917759997653775,
+        "update_ms_max": 2.2917759997653775,
+        "us_per_vertex_last": 22.917759997653775,
+        "max_passes": 20
+       },
+       "30": {
+        "begin_ms": 0.001583999619469978,
+        "update_ms_mean": 3.5316464499980307,
+        "update_ms_last": 7.275064999703318,
+        "update_ms_max": 7.275064999703318,
+        "us_per_vertex_last": 72.75064999703318,
+        "max_passes": 74
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.12566100031108363,
+        "update_ms_mean": 0.42239774995778134,
+        "update_ms_last": 0.5040579999331385,
+        "update_ms_max": 0.5040579999331385,
+        "us_per_vertex_last": 5.040579999331385,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.08244299988291459,
+        "update_ms_mean": 0.4490048000434399,
+        "update_ms_last": 0.49003399999492103,
+        "update_ms_max": 0.5406609998317435,
+        "us_per_vertex_last": 4.90033999994921,
+        "max_passes": 4
+       },
+       "30": {
+        "begin_ms": 0.08868600025380147,
+        "update_ms_mean": 0.47184800000650284,
+        "update_ms_last": 0.40128000000549946,
+        "update_ms_max": 0.6795369999963441,
+        "us_per_vertex_last": 4.012800000054995,
+        "max_passes": 5
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.006016000043018721,
+        "update_ms_mean": 0.38232550002703647,
+        "update_ms_last": 0.4103320002286637,
+        "update_ms_max": 0.4726799998024944,
+        "us_per_vertex_last": 4.103320002286637,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.002868000137823401,
+        "update_ms_mean": 0.39745800004311604,
+        "update_ms_last": 0.4161900001236063,
+        "update_ms_max": 0.5123250002725399,
+        "us_per_vertex_last": 4.161900001236063,
+        "max_passes": 4
+       },
+       "30": {
+        "begin_ms": 0.0042520000533841085,
+        "update_ms_mean": 0.3817962832651271,
+        "update_ms_last": 0.38447899987659184,
+        "update_ms_max": 0.5839799996465445,
+        "us_per_vertex_last": 3.8447899987659184,
+        "max_passes": 5
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.004929999704472721,
+        "update_ms_mean": 1.191692000020339,
+        "update_ms_last": 1.0456190002514631,
+        "update_ms_max": 1.6435869997621921,
+        "us_per_vertex_last": 10.456190002514631,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.004491000254347455,
+        "update_ms_mean": 1.0639565500014214,
+        "update_ms_last": 1.0710510000535578,
+        "update_ms_max": 1.3256160000310047,
+        "us_per_vertex_last": 10.710510000535578,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.005500000042957254,
+        "update_ms_mean": 1.0791944833499656,
+        "update_ms_last": 1.021205999677477,
+        "update_ms_max": 2.440234000005148,
+        "us_per_vertex_last": 10.21205999677477,
+        "max_passes": 1
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.0025830004233284853,
+        "update_ms_mean": 1.0595470000680507,
+        "update_ms_last": 0.9556190002513176,
+        "update_ms_max": 1.365850999718532,
+        "us_per_vertex_last": 9.556190002513176,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.002148000021406915,
+        "update_ms_mean": 0.9810532000301464,
+        "update_ms_last": 0.9364560000904021,
+        "update_ms_max": 1.3088800001241907,
+        "us_per_vertex_last": 9.36456000090402,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.0022160002117743716,
+        "update_ms_mean": 0.9494887333630686,
+        "update_ms_last": 0.9737180002957757,
+        "update_ms_max": 1.3460140003189736,
+        "us_per_vertex_last": 9.737180002957757,
+        "max_passes": 1
+       }
+      },
+      "closest_global": {
+       "2": {
+        "begin_ms": 0.0030250002964749,
+        "update_ms_mean": 11.250357750100193,
+        "update_ms_last": 10.716036000303575,
+        "update_ms_max": 12.172943000223313,
+        "us_per_vertex_last": 107.16036000303575,
+        "max_passes": 0
+       },
+       "10": {
+        "begin_ms": 0.00333500020133215,
+        "update_ms_mean": 11.52434020000328,
+        "update_ms_last": 14.812470000379108,
+        "update_ms_max": 14.812470000379108,
+        "us_per_vertex_last": 148.12470000379108,
+        "max_passes": 0
+       }
+      }
+     }
+    },
+    {
+     "affected": 1000,
+     "radius_rel_edge": 14.911666870117188,
+     "weights_dijkstra_ms": 1.2028480000481068,
+     "transport_frames_ms": 21.444743999836646,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.033007999718392966,
+        "update_ms_mean": 2.70256999999674,
+        "update_ms_last": 2.85750500006543,
+        "update_ms_max": 2.85750500006543,
+        "us_per_vertex_last": 2.85750500006543,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.022701000034430763,
+        "update_ms_mean": 4.083691199957684,
+        "update_ms_last": 6.13245900012771,
+        "update_ms_max": 6.13245900012771,
+        "us_per_vertex_last": 6.13245900012771,
+        "max_passes": 22
+       },
+       "30": {
+        "begin_ms": 0.028779999865946593,
+        "update_ms_mean": 9.13681928331395,
+        "update_ms_last": 17.340220999813027,
+        "update_ms_max": 17.340220999813027,
+        "us_per_vertex_last": 17.340220999813027,
+        "max_passes": 79
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.02481399997122935,
+        "update_ms_mean": 2.6510659999985364,
+        "update_ms_last": 2.9000629997426586,
+        "update_ms_max": 2.9000629997426586,
+        "us_per_vertex_last": 2.9000629997426586,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.02092000022457796,
+        "update_ms_mean": 4.181613950004248,
+        "update_ms_last": 6.263119999857736,
+        "update_ms_max": 6.263119999857736,
+        "us_per_vertex_last": 6.263119999857736,
+        "max_passes": 22
+       },
+       "30": {
+        "begin_ms": 0.02813299988702056,
+        "update_ms_mean": 9.216638866655558,
+        "update_ms_last": 17.093589999603864,
+        "update_ms_max": 17.093589999603864,
+        "us_per_vertex_last": 17.093589999603864,
+        "max_passes": 79
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.03039600005649845,
+        "update_ms_mean": 2.3254589998487063,
+        "update_ms_last": 2.4938489996202406,
+        "update_ms_max": 2.4988629998006218,
+        "us_per_vertex_last": 2.4938489996202406,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.0023239999791258015,
+        "update_ms_mean": 3.787131850026526,
+        "update_ms_last": 5.932868999934726,
+        "update_ms_max": 5.932868999934726,
+        "us_per_vertex_last": 5.932868999934726,
+        "max_passes": 22
+       },
+       "30": {
+        "begin_ms": 0.002286999915668275,
+        "update_ms_mean": 9.75857639999352,
+        "update_ms_last": 32.26214899996194,
+        "update_ms_max": 32.26214899996194,
+        "us_per_vertex_last": 32.26214899996194,
+        "max_passes": 79
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.2406039998277265,
+        "update_ms_mean": 1.8175434998966011,
+        "update_ms_last": 1.5212789999168308,
+        "update_ms_max": 2.886907999709365,
+        "us_per_vertex_last": 1.5212789999168308,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.25030500000866596,
+        "update_ms_mean": 2.184983199981616,
+        "update_ms_last": 3.037274999769579,
+        "update_ms_max": 3.7437769997268333,
+        "us_per_vertex_last": 3.037274999769579,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.3128169996671204,
+        "update_ms_mean": 1.1686287000202356,
+        "update_ms_last": 1.106073999835644,
+        "update_ms_max": 3.3766629999263387,
+        "us_per_vertex_last": 1.106073999835644,
+        "max_passes": 6
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.008829000307741808,
+        "update_ms_mean": 1.1890394999909404,
+        "update_ms_last": 0.9316069999840693,
+        "update_ms_max": 2.207550000093761,
+        "us_per_vertex_last": 0.9316069999840693,
+        "max_passes": 4
+       },
+       "10": {
+        "begin_ms": 0.00811200015959912,
+        "update_ms_mean": 1.0192391999680694,
+        "update_ms_last": 0.918287999866152,
+        "update_ms_max": 2.1825700000590587,
+        "us_per_vertex_last": 0.918287999866152,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.009038000371219823,
+        "update_ms_mean": 0.9790215832936155,
+        "update_ms_last": 1.0200579999946058,
+        "update_ms_max": 2.130453999598103,
+        "us_per_vertex_last": 1.0200579999946058,
+        "max_passes": 5
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.011627999811025802,
+        "update_ms_mean": 8.35362800000894,
+        "update_ms_last": 6.89586499993311,
+        "update_ms_max": 12.44154999994862,
+        "us_per_vertex_last": 6.89586499993311,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.01153699986389256,
+        "update_ms_mean": 8.151022200036095,
+        "update_ms_last": 9.021988999847963,
+        "update_ms_max": 10.685262999686529,
+        "us_per_vertex_last": 9.021988999847963,
+        "max_passes": 1
+       },
+       "30": {
+        "begin_ms": 0.016604999927949393,
+        "update_ms_mean": 8.647049133302668,
+        "update_ms_last": 7.447664000210352,
+        "update_ms_max": 14.192188000379247,
+        "us_per_vertex_last": 7.447664000210352,
+        "max_passes": 1
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.005188000159250805,
+        "update_ms_mean": 7.953638750109349,
+        "update_ms_last": 7.300783000118827,
+        "update_ms_max": 10.983817000123963,
+        "us_per_vertex_last": 7.300783000118827,
+        "max_passes": 1
+       },
+       "10": {
+        "begin_ms": 0.004677999640989583,
+        "update_ms_mean": 7.800345649980045,
+        "update_ms_last": 8.207378999941284,
+        "update_ms_max": 11.143064999941998,
+        "us_per_vertex_last": 8.207378999941284,
+        "max_passes": 6
+       },
+       "30": {
+        "begin_ms": 0.005136999789101537,
+        "update_ms_mean": 7.7751366833202455,
+        "update_ms_last": 7.569850999971095,
+        "update_ms_max": 11.74841700003526,
+        "us_per_vertex_last": 7.569850999971095,
+        "max_passes": 14
+       }
+      },
+      "closest_global": {
+       "2": {
+        "begin_ms": 0.003509000180201838,
+        "update_ms_mean": 354.9152204999473,
+        "update_ms_last": 390.6917349995638,
+        "update_ms_max": 390.6917349995638,
+        "us_per_vertex_last": 390.6917349995638,
+        "max_passes": 0
+       },
+       "10": {
+        "begin_ms": 0.005220000275585335,
+        "update_ms_mean": 348.8987419999603,
+        "update_ms_last": 365.1003159998254,
+        "update_ms_max": 398.0097250000654,
+        "us_per_vertex_last": 365.10031599982534,
+        "max_passes": 0
+       }
+      }
+     }
+    },
+    {
+     "affected": 10000,
+     "radius_rel_edge": 56.03327560424804,
+     "weights_dijkstra_ms": 19.225918999836722,
+     "transport_frames_ms": 241.959150999719,
+     "updates": {
+      "geodesic_pursuit[transport]": {
+       "2": {
+        "begin_ms": 0.24710399975447217,
+        "update_ms_mean": 37.21670700008417,
+        "update_ms_last": 43.692581000414066,
+        "update_ms_max": 43.692581000414066,
+        "us_per_vertex_last": 4.369258100041407,
+        "max_passes": 13
+       },
+       "10": {
+        "begin_ms": 0.39433999972970923,
+        "update_ms_mean": 63.081334150024304,
+        "update_ms_last": 84.62484700021378,
+        "update_ms_max": 95.86032000015621,
+        "us_per_vertex_last": 8.462484700021378,
+        "max_passes": 49
+       },
+       "30": {
+        "begin_ms": 0.2178119998461625,
+        "update_ms_mean": 118.76325939996757,
+        "update_ms_last": 194.8481479998918,
+        "update_ms_max": 194.8481479998918,
+        "us_per_vertex_last": 19.48481479998918,
+        "max_passes": 110
+       }
+      },
+      "geodesic_pursuit[transport]+phong": {
+       "2": {
+        "begin_ms": 0.21938500003670924,
+        "update_ms_mean": 36.317402750114525,
+        "update_ms_last": 40.77145600012955,
+        "update_ms_max": 40.77145600012955,
+        "us_per_vertex_last": 4.077145600012955,
+        "max_passes": 13
+       },
+       "10": {
+        "begin_ms": 0.17997600025410065,
+        "update_ms_mean": 63.48054664999836,
+        "update_ms_last": 83.60192899999674,
+        "update_ms_max": 84.0637829996922,
+        "us_per_vertex_last": 8.360192899999674,
+        "max_passes": 49
+       },
+       "30": {
+        "begin_ms": 0.22514600004797103,
+        "update_ms_mean": 118.03035248332587,
+        "update_ms_last": 163.9568769996913,
+        "update_ms_max": 243.1102320001628,
+        "us_per_vertex_last": 16.39568769996913,
+        "max_passes": 110
+       }
+      },
+      "geodesic_abs[transport]": {
+       "2": {
+        "begin_ms": 0.002204999873356428,
+        "update_ms_mean": 28.93273974996191,
+        "update_ms_last": 31.556124999951862,
+        "update_ms_max": 31.556124999951862,
+        "us_per_vertex_last": 3.1556124999951862,
+        "max_passes": 13
+       },
+       "10": {
+        "begin_ms": 0.0016529997992620338,
+        "update_ms_mean": 46.64616710008431,
+        "update_ms_last": 68.5093520000919,
+        "update_ms_max": 68.5093520000919,
+        "us_per_vertex_last": 6.850935200009189,
+        "max_passes": 49
+       },
+       "30": {
+        "begin_ms": 0.0031859999580774456,
+        "update_ms_mean": 88.84581954998036,
+        "update_ms_last": 151.49125500010996,
+        "update_ms_max": 151.49125500010996,
+        "us_per_vertex_last": 15.149125500010996,
+        "max_passes": 110
+       }
+      },
+      "geodesic_walk[transport]": {
+       "2": {
+        "begin_ms": 0.8750950000830926,
+        "update_ms_mean": 12.247244000036517,
+        "update_ms_last": 7.866326000112167,
+        "update_ms_max": 25.290426000083244,
+        "us_per_vertex_last": 0.7866326000112167,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.7967249998728221,
+        "update_ms_mean": 8.943990550028502,
+        "update_ms_last": 8.2227560001229,
+        "update_ms_max": 24.29641700018692,
+        "us_per_vertex_last": 0.8222756000122899,
+        "max_passes": 6
+       },
+       "30": {
+        "begin_ms": 0.8143709997057158,
+        "update_ms_mean": 8.549786783320693,
+        "update_ms_last": 8.269380000001547,
+        "update_ms_max": 25.595287999749416,
+        "us_per_vertex_last": 0.8269380000001547,
+        "max_passes": 6
+       }
+      },
+      "geodesic_inc": {
+       "2": {
+        "begin_ms": 0.04463699997359072,
+        "update_ms_mean": 11.499021499957962,
+        "update_ms_last": 7.348262000050454,
+        "update_ms_max": 24.869265999768686,
+        "us_per_vertex_last": 0.7348262000050454,
+        "max_passes": 5
+       },
+       "10": {
+        "begin_ms": 0.044515999888972146,
+        "update_ms_mean": 8.606808049967185,
+        "update_ms_last": 7.603065999774117,
+        "update_ms_max": 24.014540999814926,
+        "us_per_vertex_last": 0.7603065999774117,
+        "max_passes": 5
+       },
+       "30": {
+        "begin_ms": 0.047248000100807985,
+        "update_ms_mean": 7.667448183315173,
+        "update_ms_last": 7.2697669997978664,
+        "update_ms_max": 24.47079700004906,
+        "us_per_vertex_last": 0.7269766999797866,
+        "max_passes": 5
+       }
+      },
+      "tangent_local": {
+       "2": {
+        "begin_ms": 0.06587600000784732,
+        "update_ms_mean": 106.8650790001584,
+        "update_ms_last": 100.88402200017299,
+        "update_ms_max": 144.54016600029718,
+        "us_per_vertex_last": 10.088402200017299,
+        "max_passes": 2
+       },
+       "10": {
+        "begin_ms": 0.08836200004225248,
+        "update_ms_mean": 103.92549094997321,
+        "update_ms_last": 104.59158499998011,
+        "update_ms_max": 138.20074999966891,
+        "us_per_vertex_last": 10.459158499998011,
+        "max_passes": 2
+       },
+       "30": {
+        "begin_ms": 0.09093300013773842,
+        "update_ms_mean": 105.06699116666975,
+        "update_ms_last": 102.8683459999229,
+        "update_ms_max": 140.79575599998861,
+        "us_per_vertex_last": 10.28683459999229,
+        "max_passes": 2
+       }
+      },
+      "closest_local": {
+       "2": {
+        "begin_ms": 0.0137249999170308,
+        "update_ms_mean": 101.94120325002132,
+        "update_ms_last": 95.54988099989714,
+        "update_ms_max": 138.75589500003116,
+        "us_per_vertex_last": 9.554988099989714,
+        "max_passes": 7
+       },
+       "10": {
+        "begin_ms": 0.012724000043817796,
+        "update_ms_mean": 98.69401645000835,
+        "update_ms_last": 95.59324700012439,
+        "update_ms_max": 136.0835830000724,
+        "us_per_vertex_last": 9.55932470001244,
+        "max_passes": 28
+       },
+       "30": {
+        "begin_ms": 0.014159000329527771,
+        "update_ms_mean": 108.71366921667232,
+        "update_ms_last": 99.39450199999555,
+        "update_ms_max": 137.8601480000725,
+        "us_per_vertex_last": 9.939450199999555,
+        "max_passes": 42
+       }
+      },
+      "closest_global": {}
+     }
+    }
+   ]
+  }
+ ]
+}

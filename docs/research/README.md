@@ -35,6 +35,7 @@ This document is the canonical home for the artist-side Character Systems resear
 ## Modeling Workflow & Topologie
 
 - [MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md](MODELING_WORKFLOW_TOPOLOGY_RESEARCH.md) — Modeling-Workflow, Topologie-Grammatik, lokale Topologiekontrolle (Discovery, keine Entscheidungen)
+- [SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md](SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md) — algorithm research for a future Surface Slide tool (2026-11-13, English; research, no decision, no Production change): eleven candidates compared on sphere, cylinder / capsule, a concave U and both Gollum meshes, with symmetry and Soft Selection; measured failure of global projection on concave shapes, drift of incremental and pops of absolute evaluation; recommendation (anchored geodesic slide with speed-limited pursuit), pseudocode and interface proposal. Prototype: `experiments/surface_slide/`
 - [topology/README.md](topology/README.md) — Connect-, Knife-, Face-Cut- und Face-Holes-Discoveries
 
 ## Subdivision Surfaces
