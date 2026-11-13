@@ -1010,3 +1010,45 @@ raw outputs and the reference-PC commands:
 - **Open, reference PC:** the stage-2 tests, the GL tests, `pytest tests` and `experiments/morph_lab/tests` under
   Python 3.12.10 + NumPy 2.2.6; split / D3 / chain before (`10beee7`) and after with the same `.venv312` (commands in the
   results file). Not in this stage: O4, SubD stencils, the HUD during a weight drag, the GPU vertex-buffer upload, D6.
+
+## Addendum — O3 stage 2 on the reference PC (Manu, 2026-11-13)
+
+Raw output and comparison:
+[`experiments/drag_cost/RESULTS_O3_STAGE2_REFERENCE_PC_2026-11-13.md`](../../../experiments/drag_cost/RESULTS_O3_STAGE2_REFERENCE_PC_2026-11-13.md)
+(Python 3.12.10 + NumPy 2.2.6 in `.venv312`, panels on; after = `43d0ef3`, `src/` tree `94addddafd`; before = the
+stage-1 run of the same day — between the two `src/` trees only the NumPy version message of `b7bf49c` changed).
+
+- **Tests [RPC]:** the stage-2 tests and the oracles 140 passed (bit-identical on the Q9550); `tests/test_gl_*.py` in
+  its own process 165 passed (the O2 pixel gate among them); `pytest tests` 6,944 passed, 1 failed (the pre-existing
+  §I.7 file, the same assertion as in the container), 8 skipped — the first complete run under Python 3.12 there, with
+  the container's counts; `experiments/morph_lab/tests` 49 and `experiments/drag_cost/tests` 85 passed.
+- **Measured [RPC]** (87.5k, 15 % region):
+
+| | stage 1 | stage 2 |
+|---|---:|---:|
+| pose step (§E.3 split), p50 | 96.66 ms | **31.34 ms** |
+| of it: skin evaluation | 53.32 ms | **7.88 ms** |
+| of it: `_sync_geometry` (row 2f) | 34.60 (9.50) ms | 22.89 (**0.84**) ms |
+| D3 frame p50 / p95, pose wire off | 117.77 / 122.87 ms | **50.86 / 53.85 ms** |
+| D3 frame p50 / p95, weight wire off | 189.17 / 199.91 ms | **85.10 / 92.37 ms** |
+| D3 frame p50, pose / weight wire ON | 119.07 / 188.21 ms | **51.72 / 85.48 ms** |
+| D3 tick p50, pose / weight | 97.35 / 140.05 ms | **31.11 / 36.04 ms** |
+| D3 stage evaluation p50, pose / weight | 55.53 / 92.37 ms | **8.72 / 13.21 ms** |
+| D3 `on_draw` p50, pose / weight | 20.21 / 49.31 ms | 19.62 / 48.32 ms (unchanged) |
+| new surface `RenderMesh` (87.5k, first weight / pose step) | 3,035 / 3,036 ms | 3,111 / 3,133 ms |
+| process memory after both stages (87.5k) | 619 MiB | 630 MiB |
+
+- **D3 verdict [RPC]: OVER**, p95 1.6× (pose) and 2.8× (weight) the minimum bar (stage 1: 3.7× / 6–8×; before O0:
+  10–12×). A pose frame is now 42 % `_sync_geometry` (stage 1's NumPy kernels, per-call overhead at 13k elements),
+  39 % `on_draw` (≈ 12 ms of it the wait for the GPU's 11.4 ms mesh draw), 17 % the stages; a weight frame adds the
+  HUD (24.9 ms), gizmo / bones (6.7 ms) and a 34 ms whole-buffer vertex upload on the GPU.
+- **A new surface `RenderMesh` is 2.5–5 % slower** (one-time): the array table creates the position tuples the
+  triangulation reads, where the tuple table handed out stored ones (container: 7 → 35 ms at 87.5k; a column-wise
+  variant would recover about a third). Explained in AD-032 §12; not changed in the measured tree.
+- **Reading.** O3 (stages 1 and 2) is complete for the D3 scenario — the SubD stencils are a separate package, SubD
+  being off at this density (D4) — and D3 is unmet on the reference PC. **That is the condition of D2**: O4 is now
+  Manu's decision. For it **[H]** (§E.5 container ratios; the Q9550 ratio for native code is unmeasured): native kernels
+  for the 1-ring data, LBS and morph could take ≈ 25–28 of the ≈ 30 ms the sync and the stages cost per pose frame —
+  ≈ 23–28 ms, within the 33.3 ms minimum, not the 16.7 ms preferred (`on_draw` ≈ 20 ms). The weight frame needs the HUD
+  package and, with a fast CPU side, the GPU vertex-buffer upload as well. O4's cost is the tooling (§G.3 row O4: a
+  compiled binary built for and shipped to Windows; no compiler known on the reference PC).

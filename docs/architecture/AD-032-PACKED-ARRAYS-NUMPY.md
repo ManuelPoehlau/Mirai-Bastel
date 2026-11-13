@@ -2,14 +2,16 @@
 
 **Status:** IMPLEMENTED, stage 1 (2026-11-12) and **stage 2 (2026-11-13**: the morph mix and the skin stage on arrays,
 the O1 table as an n×3 float64 array, its journal as slot chunks, the array hand-over to `RenderMesh` — design §11,
-implementation and container measurements §12; reference PC open). Agent decision within Manu's plan and decisions of 2026-11-11 (O3 after
+implementation and measurements §12; reference PC 2026-11-13: D3 frame pose / weight 117.8 / 189.2 → 50.9 / 85.1 ms p50,
+still over the bar — D2's condition is reached). Agent decision within Manu's plan and decisions of 2026-11-11 (O3 after
 O2 and O1; **D1**: NumPy as a production dependency, pinned `numpy==2.2.6`, Python 3.12.10 the verified runtime on the
 reference PC, no x86-64-v2 requirement, NumPy enters `requirements.txt` with the first O3 stage). Names `PROVISIONAL`.
-No Core change (CORE_V1_FREEZE untouched); `src/core` imports no NumPy. Stage 2 (skin and morph on arrays, the O1
-position table as an n×3 float64 array) and the SubD stencils are **not** part of it (§9).
+No Core change (CORE_V1_FREEZE untouched); `src/core` imports no NumPy. The SubD stencils are part of neither stage
+(§9).
 **Reference PC (Manu, 2026-11-13):** D1 verified — the production import and execution under Python 3.12.10 + NumPy 2.2.6
 on the Q9550, the array tests (normals bit-identical on that CPU) and the GL tests (165, pixel gate) pass; before /
-after measured (§8). Not run there yet: `pytest tests` and `experiments/morph_lab/tests` under 3.12.
+after measured (§8). *(With stage 2, 2026-11-13: `pytest tests` and `experiments/morph_lab/tests` under 3.12 run there
+too, with the container's counts, §12.)*
 **Source:** [audit 2026-11-10](../research/deformation/ARCHITECTURE_PERFORMANCE_AUDIT_2026-11-10.md) §E.3, §E.5, §G.3
 row O3, §H step 5, "Decisions (Manu, 2026-11-11)" D1–D3, the addenda "O1 in the container" / "O1 on the reference PC";
 [AD-025 §18](AD-025-TOPOLOGY-PROVENANCE-AND-POINT-LAYERS.md#18-addendum-2026-11-11-the-evaluated-surface-as-a-position-table-audit-o1)
@@ -402,6 +404,46 @@ signed zeros and `fsum` bit for bit, the mirrored layout, the table path == a fr
 unreported faces, the app-level pose / weight steps). Hand mutations: 13 of 14 caught; the 14th, `slot_moves()` without
 its mapping check, cannot fire (a mapping change always records by id in every watch) — a second guard.
 
+**Reference PC [RPC]** (Manu, 2026-11-13, Python 3.12.10 + NumPy 2.2.6 in `.venv312`, panels on; after = `43d0ef3`,
+`src/` tree `94addddafd`; before = the stage-1 run of the same day, §8 — between the two `src/` trees only the NumPy
+version message changed; [`RESULTS_O3_STAGE2_REFERENCE_PC_2026-11-13.md`](../../experiments/drag_cost/RESULTS_O3_STAGE2_REFERENCE_PC_2026-11-13.md)):
+
+| 87.5k, 15 % region | stage 1 | **stage 2** |
+|---|---:|---:|
+| pose step (split, skin only), p50 | 96.66 ms | **31.34 ms** |
+| of it: skin evaluation / row 2f | 53.32 / 9.50 ms | **7.88 / 0.84 ms** |
+| of it: `_sync_geometry` (rows 2a–2e unchanged) | 34.60 ms | 22.89 ms |
+| D3 frame p50 / p95, pose wire off | 117.77 / 122.87 ms | **50.86 / 53.85 ms** (1.6× the bar) |
+| D3 frame p50 / p95, weight wire off | 189.17 / 199.91 ms | **85.10 / 92.37 ms** (2.8× the bar) |
+| D3 frame p50, pose / weight wire ON | 119.07 / 188.21 ms | **51.72 / 85.48 ms** |
+| D3 tick p50, pose / weight | 97.35 / 140.05 ms | **31.11 / 36.04 ms** |
+| D3 stage evaluation p50, pose / weight | 55.53 / 92.37 ms | **8.72 / 13.21 ms** |
+| next pose / weight step + frame (chain, 87.5k) | 101 / 74 ms | **42 / 32 ms** |
+| new surface `RenderMesh` (first weight / pose step, 87.5k) | 3,035 / 3,036 ms | 3,111 / 3,133 ms (+2.5–3 %) |
+| process memory after both stages (87.5k / 20k) | 619 / 222 MiB | 630 / 229 MiB |
+
+Tests there: the stage-2 tests and oracles 140 passed (bit-identical on the Q9550), `tests/test_gl_*.py` 165 passed (the
+pixel gate among them), `pytest tests` 6,944 passed / 1 failed (the pre-existing §I.7 file, the same assertion as in
+the container) / 8 skipped — the first complete run under 3.12 there —, `experiments/morph_lab/tests` 49 and
+`experiments/drag_cost/tests` 85 passed. The new parts cost ≈ 2× their container time there (stage 1's ≈ 3×); the [H]
+estimate above (pose ≈ 55–60 ms, weight ≈ 95 ms) was slightly pessimistic.
+
+- **D3 [RPC]: OVER** in every row. A pose frame is now 42 % `_sync_geometry` (21.5 ms, stage 1's NumPy kernels:
+  ≈ 80 calls on 13k elements, per-call overhead), 39 % `on_draw` (19.6 ms, ≈ 12 ms of it the wait for the GPU's 11.4 ms
+  mesh draw), 17 % the stages (8.7 ms). A weight frame adds the HUD (24.9 ms), gizmo / bones (6.7 ms) and on the GPU a
+  whole-buffer vertex upload (34.2 ms against 5.8 ms in pose rows for the same bytes).
+- **The new surface `RenderMesh` is 2.5–5 % slower** (all four chain rows): its full build needs every position as a
+  Python tuple for the triangulation; the tuple table handed out stored tuples (container 7 ms at 87.5k), the array
+  table creates them (35 ms). One-time, per newly shown surface; a column-wise variant (`rows.T.tolist()` + `zip`, 24
+  ms) would recover about a third — not applied (the measured tree stays the committed one).
+- **O3 is complete for the D3 scenario and D3 is unmet: the condition of D2 ("O4 only if O3 leaves the D3 bar unmet on
+  the reference PC") is reached.** For that decision **[H]** (`probe_kernels.py`, audit §E.5, container; the Q9550 ratio
+  for native code is unmeasured): native kernels for the 1-ring data, LBS and morph took 1.1 / 0.2 / 0.06 ms where NumPy
+  took 19.5 / 3.2 / 0.63 ms, so O4 could take ≈ 25–28 of the ≈ 30 ms the sync and the stages cost now — a pose frame of
+  ≈ 23–28 ms, under the 33.3 ms minimum, not the 16.7 ms preferred (`on_draw` alone is ≈ 20 ms). The weight frame needs
+  the HUD package as well and, with a fast CPU side, the GPU vertex-buffer upload. O4 needs a compiled kernel built for
+  and shipped to Windows (no compiler known on the reference PC): Manu's decision.
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
@@ -425,7 +467,14 @@ its mapping check, cannot fire (a mapping change always records by id in every w
   die bewegten Positionen als Array statt Punkt für Punkt. Ergebnis wieder bit-gleich zur bisherigen Definition (keine
   Toleranz, kein Core-Eingriff, also kein Haltepunkt für dich). Im Container: Skin-Auswertung 27–29 → 4–5 ms, die ganze
   Auswertung im D3-Frame 36 / 55 → 4 / 7 ms (Pose / Gewicht), der Tick ohne Zeichnen 53–84 → 15–22 ms. D3 bleibt im
-  Container „über" (dort zeichnet die CPU). Auf deinem PC erwarte ich grob 55–60 ms Pose-Frame **[H]** — die Messung
-  brauche ich von dir (Befehle in `experiments/drag_cost/RESULTS_O3_STAGE2_CONTAINER_2026-11-13.md`, wieder mit
-  `.venv312`). Danach entscheidet D2 (O4), ob der Rest (NumPy-Sync ≈ 24 ms, Zeichnen, HUD) kompiliert werden muss.
+  Container „über" (dort zeichnet die CPU).
+- **Auf deinem PC gemessen (2026-11-13, Stufe 2):** Skin-Auswertung 53 → 8 ms, D3-Frame Pose 118 → **51 ms**, Gewicht
+  189 → **85 ms** (p95 54 / 92 ms). Alle Tests grün wie im Container, auch erstmals `pytest tests` komplett unter 3.12
+  (die eine Fehlermeldung ist die bekannte lokale Menü-Testdatei). D3 ist damit noch nicht erreicht (1,6× / 2,8× über
+  33,3 ms). Ein neues Anzeige-Mesh baut sich 2,5–5 % langsamer auf (einmalig, erklärt in §12).
+- **Deine Entscheidung (D2):** O3 ist fertig und D3 trotzdem verfehlt — genau die Bedingung, unter der O4 (kompilierte
+  Rechenkerne statt NumPy) in Frage kommt. Schätzung **[H]**: O4 für Anzeige-Sync und Skin/Morph könnte den Pose-Frame
+  auf etwa 23–28 ms bringen (unter 33,3 ms, nicht unter 16,7 ms). Für das Gewicht-Ziehen braucht es zusätzlich das
+  HUD-Paket (25 ms) und den GPU-Upload (34 ms). O4 heißt: ein kleines C-Modul muss für Windows gebaut und mitgeliefert
+  werden — ja oder nein?
 

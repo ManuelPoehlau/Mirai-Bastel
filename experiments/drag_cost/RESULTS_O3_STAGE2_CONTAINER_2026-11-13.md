@@ -127,6 +127,9 @@ change always records by id in every watch, so the check is a second guard.
 
 ## Commands for the reference PC (PowerShell, from the repo root)
 
+*Run on 2026-11-13 (Manu; the "after" commands, compared with the stage-1 run of the same day):
+[`RESULTS_O3_STAGE2_REFERENCE_PC_2026-11-13.md`](RESULTS_O3_STAGE2_REFERENCE_PC_2026-11-13.md).*
+
 D1: **Python 3.12.10 with `numpy==2.2.6`** in `.venv312` (as for stage 1; not the PowerShell default 3.14). Before
 and after with the same interpreter. GPU numbers only with the NVIDIA setting "Maximale Leistung bevorzugen" for
 `python.exe`.
