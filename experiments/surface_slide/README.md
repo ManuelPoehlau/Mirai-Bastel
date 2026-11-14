@@ -21,6 +21,7 @@ All measured numbers: [`results/SUMMARY.md`](results/SUMMARY.md) (generated).
 | `scenarios.py`, `harness.py`, `metrics.py` | the scenarios, the runner, the measurements |
 | `run_all.py`, `studies.py`, `bench.py`, `summarize.py`, `make_figures.py` | produce `results/` |
 | `tests/` | regression tests (70): what the report claims, as assertions |
+| `audit_2026-11-14/` | probes of the [Production Readiness Audit](../../docs/research/SURFACE_SLIDE_PRODUCTION_READINESS_AUDIT_2026-11-14.md) (drawn triangulation symmetry, capture cost, cursor mapping, thin features, transport continuity) |
 
 The algorithm modules (`refsurf`, `geodesic`, `algorithms`, `fields`, `seam`) need NumPy only: no `core.Mesh`, no
 viewport, no GUI, no mouse. A candidate takes the drag as a world-space vector since the gesture began.

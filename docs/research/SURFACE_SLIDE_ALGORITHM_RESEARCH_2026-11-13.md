@@ -6,6 +6,9 @@ Every number below is in [`experiments/surface_slide/results/SUMMARY.md`](../../
 (generated from the raw JSON next to it) and the claims are pinned by 70 regression tests
 (`python -m pytest experiments/surface_slide/tests -q`).
 
+**Reviewed 2026-11-14:** [Production Readiness Audit](SURFACE_SLIDE_PRODUCTION_READINESS_AUDIT_2026-11-14.md) — its §11
+lists the corrections to this report (drawn triangulation, reference-PC factor, capture cost, transport continuity).
+
 **Markers.** **[M]** measured in this prototype. **[T]** theory or assumption, not measured here.
 **[O]** open decision for Manu. `h` is the mean edge length of the reference mesh; "0.1 h" means a tenth of an edge.
 
