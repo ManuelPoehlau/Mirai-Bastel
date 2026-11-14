@@ -327,3 +327,29 @@ def test_marker_image_lands_on_the_geometric_pupil_edge_in_p1_and_p1b(gl_context
         refr.release()
         p1.release()
     assert [(p.read_bytes(), p.stat().st_mtime_ns) for p in (custom, sidecar) if p.exists()] == before
+
+
+@pytest.mark.parametrize("hold", [True, False])
+def test_hold_outer_color_fills_p1s_parallax_band(gl_context, tmp_path, hold):
+    """P1 sees the iris past the sclera opening (share 0.819) out to ~0.85 in the close-up; with the hold the marker's
+    red iris colour continues there, without it the image's blue background shows (Manu's "A+H", 2026-11-14)."""
+    import json
+
+    from lookdev_eye_lab import iris_fit
+
+    custom = _marker_custom(tmp_path)
+    (tmp_path / iris_fit.SIDECAR_NAME).write_text(
+        json.dumps({"pupil": 0.10, "limbus": 0.48, "hold_outer_color": hold}), encoding="utf-8")
+    p1 = lab_scene.build_scene(ls.LabState(show_references=False, technique="T-B"), tmp_path, CACHE_DIR, W, H)
+    target = gl_lab.Target(gl_context, p1.renderer.res, W, H)
+    try:
+        assert p1.iris_source.fit.hold == hold
+        _view(p1, "front")
+        score = _bands(_render(p1, target), p1.camera, "V1")
+        lt = iris_fit.TARGETS["limbus"]
+        assert score(lt + 0.008, 0.86, RED if hold else BLUE) > 0.9
+        assert pg.drain_errors(gl_context) == []
+    finally:
+        target.release()
+        p1.release()
+    assert custom.exists()

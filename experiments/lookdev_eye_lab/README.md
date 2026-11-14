@@ -173,12 +173,14 @@ shares of half the image width (`iris_fit.py`):
   target knot so the UV interpolation does not blur the knot); P1b samples through `iris_fit.GLSL_SRC`
   (`#define IRIS_FIT`, NumPy twin `iris_fit.uv`, GPU parity case `refraction_parity.fit_case`, also in the probe's
   [P] when a fit is active). The CPU model (`cornea_optics`, [M]) keeps the procedural iris.
-- **OPEN (Manu):** `target` = the visible limbus 0.819 (`DEFAULT_TARGET`, provisional) or the chamber angle 0.779,
-  and `outer` = 1.0 (continue to the image edge, the spec) or hold the iris edge. Found while rendering the choice:
-  P1 has no refraction, so the close-up front view sees the iris through the sclera opening out to ≈ 0.855 (parallax);
-  with `outer` 1.0 that band shows the image's white background (A: a thin white rim, B: a wide ring). Holding the
-  edge (`outer = limbus`) with `limbus` set just inside the white (e.g. 0.88) closes it. Comparison sheets: session of
-  2026-11-14 (not in the repo).
+- **Decision (Manu, 2026-11-14): "A+H"** — the image's iris edge lands on the visible limbus 0.819 (`DEFAULT_TARGET`;
+  the chamber angle 0.779 stays in `TARGETS` for comparisons), and the optional key **`"hold_outer_color": true`**
+  holds the image's iris-edge colour beyond it (absent / false = continue to the image edge, the default). Why the hold:
+  P1 has no refraction, so the close-up front view sees the iris through the sclera opening out to ≈ 0.855
+  (parallax); without the hold that band shows the image's background (a thin white rim for an image with a white
+  outside). With the hold, set `limbus` just inside the background (Manu's texture: `{"pupil": 0.22, "limbus": 0.88,
+  "hold_outer_color": true}`). Approved provisionally on a stand-in image with the measured profile; the aesthetic check
+  is to be repeated with the real `out/iris_custom.png`.
 - `python experiments/lookdev_eye_lab/suggest_iris_fit.py [image.png]` estimates both shares (mean luminance per 1 %
   ring: pupil = first ring > 0.15, iris edge = first ring > 0.85 beyond 0.5; expects a white background) and **prints**
   a suggestion; it writes nothing.
@@ -399,7 +401,7 @@ reflection to the iris in linear light. The reflection therefore looks dimmer th
 | `run_refraction.py` | interactive window: P1's window and keys + `8` / `9` / `0` = V1 / V2 / V3, `J` = ray-class map; `--probe` |
 | `tests/test_cornea_optics.py`, `test_refraction_headless.py`, `test_gl_refraction.py` | 36 + 4 headless, 17 GL (2 for the custom iris) |
 | `tests/test_iris_source.py` | 8 headless: choice, fallbacks, the custom file left untouched |
-| `tests/test_iris_fit.py` + 6 GL in `test_gl_refraction.py` | 26 headless (sidecar validation, remap, mesh, estimate, PNG filters); GL: fit parity (4), marker image in P1 / P1b with and without sidecar (2) |
+| `tests/test_iris_fit.py` + 8 GL in `test_gl_refraction.py` | 33 headless (sidecar validation, remap, mesh, estimate, PNG filters); GL: fit parity (4), marker image in P1 / P1b with and without sidecar (2), the hold in P1's parallax band (2) |
 | `RESULTS_REFRACTION_CONTAINER_2026-11-14.md` | the container validation, the model's numbers, raw output |
 | `RESULTS_REFRACTION_REFERENCE_PC_2026-11-14.md` | Manu's run on the reference PC (`MEASURED [RPC]`), readings, the two test fixes |
 
@@ -452,6 +454,7 @@ button; `J` shows which rays reach iris (red), pupil (green) or limbal tissue (b
   Austauschen während das Fenster läuft wirkt sofort; Hinzufügen oder Entfernen braucht einen Neustart.
 - **Radiale Anpassung:** Liegen Pupillen- und Irisrand deines Bilds woanders, daneben `out\iris_custom.json` legen,
   z. B. `{"pupil": 0.22, "limbus": 0.90}` (Anteile der halben Bildbreite). Die Lab-Geometrie bleibt, das Bild wird
-  radial passend gezogen. `suggest_iris_fit.py` schlägt die Werte vor, schreibt aber nichts. Offen ist deine Wahl,
-  wohin der Irisrand fällt (Limbus 0,819 oder Kammerwinkel 0,779) und ob dahinter der Rand gehalten wird.
+  radial passend gezogen. `suggest_iris_fit.py` schlägt die Werte vor, schreibt aber nichts. Deine Wahl „A+H“:
+  `{"pupil": 0.22, "limbus": 0.88, "hold_outer_color": true}` — Irisrand auf den Limbus, dahinter die Randfarbe halten
+  (ohne den Schlüssel: aus). Das Urteil mit deiner echten Textur steht noch aus.
 

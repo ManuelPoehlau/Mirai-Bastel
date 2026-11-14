@@ -60,6 +60,9 @@ def test_no_sidecar_means_no_fit(tmp_path):
     ({"pupil": 0.0, "limbus": 0.9}, "0 < pupil < limbus <= 1"),
     ({"pupil": 0.5, "limbus": 0.4}, "0 < pupil < limbus <= 1"),
     ({"pupil": 0.2, "limbus": 1.2}, "0 < pupil < limbus <= 1"),
+    ({"pupil": 0.2, "limbus": 0.88, "hold_outer_color": "yes"}, "'hold_outer_color' must be true or false"),
+    ({"pupil": 0.2, "limbus": 0.88, "hold_outer_color": 1}, "'hold_outer_color' must be true or false"),
+    ({"pupil": 0.2, "limbus": 0.88, "hold": True}, "unknown key 'hold'"),
 ])
 def test_an_invalid_sidecar_is_ignored_with_the_reason(tmp_path, content, reason):
     path = _sidecar(tmp_path, content)
@@ -200,3 +203,23 @@ def test_png_reader_undoes_every_filter(tmp_path, kind):
     path.write_bytes(data)
     assert iris_source.inspect(path)[0]
     assert np.array_equal(np.round(iris_fit.read_png_rgb(path) * 255).astype(np.uint8), pixels[..., :3])
+
+
+@pytest.mark.parametrize("content, outer", [
+    ({"pupil": 0.22, "limbus": 0.88}, 1.0),
+    ({"pupil": 0.22, "limbus": 0.88, "hold_outer_color": False}, 1.0),
+    ({"pupil": 0.22, "limbus": 0.88, "hold_outer_color": True}, 0.88),
+])
+def test_hold_outer_color_is_optional_and_off_by_default(tmp_path, content, outer):
+    _sidecar(tmp_path, content)
+    fit, note = iris_fit.load(tmp_path)
+    assert note == "" and fit.outer == outer and fit.hold == (outer != 1.0)
+    assert ("outer colour held" in fit.describe()) == fit.hold
+
+
+def test_hold_keeps_the_iris_edge_colour_beyond_the_target():
+    fit = iris_fit.IrisFit(0.22, 0.88, outer=0.88)
+    lt = fit.lab_knots[1]
+    s = np.linspace(lt, 1.3, 50)
+    assert np.allclose(iris_fit.share_map(s, fit), 0.88)
+    assert iris_fit.share_map(lt - 1e-9, fit) == pytest.approx(0.88, abs=1e-6)  # continuous at the knot
