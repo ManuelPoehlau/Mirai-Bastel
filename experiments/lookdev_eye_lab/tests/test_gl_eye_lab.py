@@ -47,3 +47,23 @@ def test_t_a_is_the_production_draw_pixel_for_pixel(tmp_path):
         target.release()
         scene.release()
         window.close()
+
+
+def test_srgb_section_leaves_the_unpack_alignment_as_found():
+    """[Q5] uploads with GL_UNPACK_ALIGNMENT 1 and must put the old value back (reference PC 2026-11-14: [R] FAIL once a
+    custom iris loaded before it; the pyglet loader had masked it until then)."""
+    from pyglet import gl
+
+    probe = probe_eye.Probe(probe_eye.quick_args())
+    res = pg.Resources(gl)
+    try:
+        for value in (4, 2):
+            gl.glPixelStorei(gl.GL_UNPACK_ALIGNMENT, value)
+            probe.srgb(res)
+            after = gl.GLint()
+            gl.glGetIntegerv(gl.GL_UNPACK_ALIGNMENT, after)
+            assert after.value == value
+    finally:
+        gl.glPixelStorei(gl.GL_UNPACK_ALIGNMENT, 4)
+        res.release_all()
+        probe.window.close()

@@ -216,7 +216,9 @@ def test_undecodable_custom_iris_falls_back_to_the_procedural_one(gl_context, tm
     before = custom.read_bytes()
     scene = rg.build_scene(rg.RefractionState(show_references=False), tmp_path, CACHE_DIR, W, H)
     try:
-        assert not scene.iris_source.custom and "could not decode" in scene.iris_source.note
+        # Caught by the lab's own PNG check (`iris_source.inspect`), the same on every platform: pyglet's Windows
+        # decoder accepted this file on the reference PC (2026-11-14), the Linux one rejects it.
+        assert not scene.iris_source.custom and "does not decompress" in scene.iris_source.note
         assert scene.iris_png.name == iris_source.PROCEDURAL_NAME
     finally:
         scene.release()

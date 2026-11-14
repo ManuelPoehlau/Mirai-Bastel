@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import struct
+import zlib
 
 import pytest
 
@@ -43,11 +44,30 @@ def test_a_custom_png_is_used_and_left_untouched(tmp_path):
     assert "CUSTOM" in source.describe()
 
 
+def _chunk(kind: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+
+def _png(width=8, height=8, colour=2, idat=None, ihdr_kind=b"IHDR", crc_ok=True, iend=True) -> bytes:
+    ihdr = _chunk(ihdr_kind, struct.pack(">IIBBBBB", width, height, 8, colour, 0, 0, 0))
+    if idat is None:
+        idat = zlib.compress(b"".join(b"\x00" + b"\x80" * (3 * width) for _ in range(height)))
+    body = _chunk(b"IDAT", idat)
+    if not crc_ok:
+        body = body[:-1] + bytes([body[-1] ^ 0xFF])
+    return iris_source.PNG_SIGNATURE + ihdr + body + (_chunk(b"IEND", b"") if iend else b"")
+
+
 @pytest.mark.parametrize("content, reason", [
     (b"not a png at all", "signature"),
-    (iris_source.PNG_SIGNATURE + b"\x00\x00\x00\x0dIHDX" + b"\x00" * 17, "IHDR"),
-    (iris_source.PNG_SIGNATURE + struct.pack(">I", 13) + b"IHDR" + struct.pack(">IIBBBBB", 0, 8, 8, 2, 0, 0, 0)
-     + b"\x00" * 4, "zero size"),
+    (_png(ihdr_kind=b"IHDX"), "IHDR"),
+    (_png(width=0), "zero size"),
+    (_png(crc_ok=False), "CRC"),
+    (_png(iend=False), "IEND"),
+    (_png(idat=b"garbage"), "does not decompress"),  # the reference PC's Windows decoder accepted this one
+    (_png(idat=zlib.compress(b"\x00" * 10)), "expected"),  # too little image data
+    (_png(colour=3), "PLTE"),
+    (_png()[:60], "truncated"),
 ])
 def test_an_unusable_custom_file_falls_back_and_is_left_untouched(tmp_path, content, reason):
     custom = tmp_path / iris_source.CUSTOM_NAME
@@ -72,3 +92,23 @@ def test_inspect_reports_png_details(tmp_path):
     path = _write_custom(tmp_path, 16, 16)
     ok, text = iris_source.inspect(path)
     assert ok and text == "16x16, 8-bit RGB"
+
+
+def test_inspect_accepts_interlaced_and_palette_pngs(tmp_path):
+    path = tmp_path / "x.png"
+    # Adam7, 5x3 RGB 8-bit: passes contribute 1+3, 1+3, 1+3, 1+3+1+3, ... bytes - computed by the same rule as pyglet.
+    rows = []
+    for x0, y0, dx, dy in iris_source._ADAM7:
+        w = (5 - x0 + dx - 1) // dx if 5 > x0 else 0
+        h = (3 - y0 + dy - 1) // dy if 3 > y0 else 0
+        rows += [b"\x00" + b"\x10" * (3 * w)] * (h if w else 0)
+    ihdr = _chunk(b"IHDR", struct.pack(">IIBBBBB", 5, 3, 8, 2, 0, 0, 1))
+    path.write_bytes(iris_source.PNG_SIGNATURE + ihdr + _chunk(b"IDAT", zlib.compress(b"".join(rows)))
+                     + _chunk(b"IEND", b""))
+    ok, text = iris_source.inspect(path)
+    assert ok and "interlaced" in text
+    pal = (iris_source.PNG_SIGNATURE + _chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 4, 8, 3, 0, 0, 0))
+           + _chunk(b"PLTE", b"\x00\x00\x00\xff\xff\xff")
+           + _chunk(b"IDAT", zlib.compress(b"".join(b"\x00" + b"\x01" * 4 for _ in range(4)))) + _chunk(b"IEND", b""))
+    path.write_bytes(pal)
+    assert iris_source.inspect(path) == (True, "4x4, 8-bit palette")

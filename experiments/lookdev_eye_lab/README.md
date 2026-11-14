@@ -129,7 +129,9 @@ Added 2026-11-14 (Manu). Used by P1 (`run.py`) and P1b (`run_refraction.py`) ali
   falls back to the procedural iris (`out/iris.png`, generated). The choice is made when the window / probe starts.
 - **The file is only read**: never written, renamed, copied over or deleted. The procedural iris has its own name, and
   its writer refuses the custom name (tested: bytes and modification time unchanged after both labs ran).
-- **Fallback with a reason**: not a PNG, a broken header, a zero size, or an image the texture loader cannot decode →
+- **Fallback with a reason**: the lab checks the PNG itself (signature, chunk CRCs, header, and the image data must
+  inflate to the size the header names — the same verdict on every platform; Windows' own decoder accepted a broken
+  file in the 2026-11-14 test run), then the texture loader must decode it. Not a PNG, broken, truncated →
   procedural iris; the reason is in the HUD, on the console and in the probe report.
 - **Where you see which one**: the console line at start, the HUD (`iris texture: CUSTOM ... sha1 ...` or
   `procedural`), and the probe reports right after the header (the SHA-1 names the exact image in a results file).
@@ -286,7 +288,8 @@ pixel-identical to the production draw.
 ## P1b — Corneal Refraction Lab (2026-11-14)
 
 **Status:** container-validated (`TESTED [C]`, [`RESULTS_REFRACTION_CONTAINER_2026-11-14.md`](RESULTS_REFRACTION_CONTAINER_2026-11-14.md));
-reference-PC timings **OPEN**; no Artist verdict (P1's verdicts also stay open). Brief: Manu 2026-11-14 ("Proceed
+**reference PC 2026-11-14: five PASS** ([`RESULTS_REFRACTION_REFERENCE_PC_2026-11-14.md`](RESULTS_REFRACTION_REFERENCE_PC_2026-11-14.md),
+`MEASURED [RPC]`): T-C V2 costs what P1's T-C C2 costs (±0.04 ms), V3 +0.3–0.6 ms more; no Artist verdict (P1's verdicts also stay open). Brief: Manu 2026-11-14 ("Proceed
 with P1b"). P1 is the unchanged baseline: P1b only **adds** files and derives from P1's classes; no P1 module, test or
 result changed (the P1 tests still pass, and V1 renders P1 pixel for pixel). The later custom iris texture (section
 above) touched P1's scene builder only to choose the image; without `out/iris_custom.png` P1 renders as before.
@@ -368,6 +371,7 @@ reflection to the iris in linear light. The reflection therefore looks dimmer th
 | `tests/test_cornea_optics.py`, `test_refraction_headless.py`, `test_gl_refraction.py` | 36 + 4 headless, 17 GL (2 for the custom iris) |
 | `tests/test_iris_source.py` | 8 headless: choice, fallbacks, the custom file left untouched |
 | `RESULTS_REFRACTION_CONTAINER_2026-11-14.md` | the container validation, the model's numbers, raw output |
+| `RESULTS_REFRACTION_REFERENCE_PC_2026-11-14.md` | Manu's run on the reference PC (`MEASURED [RPC]`), readings, the two test fixes |
 
 ### Commands — reference PC (PowerShell, repository root, `.venv312`; NVIDIA "Maximale Leistung bevorzugen")
 

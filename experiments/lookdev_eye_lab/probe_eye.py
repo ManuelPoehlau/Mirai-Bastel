@@ -207,6 +207,10 @@ class Probe:
         vao = pg.fullscreen_triangle(gl, res)
         fbo, _rb, status = pg.colour_target(gl, res, gl.GL_RGBA32F, 256, 1)
         out = {}
+        # `pg.preserved` restores bindings, not the pixel-store state: the unpack alignment set below is put back by
+        # hand (it went unnoticed until a custom iris loaded earlier, reference PC 2026-11-14).
+        alignment = gl.GLint()
+        gl.glGetIntegerv(gl.GL_UNPACK_ALIGNMENT, alignment)
         for name, internal in (("SRGB8_ALPHA8", gl.GL_SRGB8_ALPHA8), ("RGBA8", gl.GL_RGBA8)):
             tex = res.texture()
             values = np.zeros((1, 256, 4), dtype=np.float32)
@@ -227,6 +231,7 @@ class Probe:
                 gl.glReadPixels(0, 0, 256, 1, gl.GL_RGBA, gl.GL_FLOAT, values.ctypes.data)
             out[name] = values[0, :, 0].astype(np.float64)
             res.delete("texture", tex)
+        gl.glPixelStorei(gl.GL_UNPACK_ALIGNMENT, alignment.value)
         program.delete()
         errors = pg.drain_errors(gl)
         reference = em.srgb_decode(codes / 255.0)
