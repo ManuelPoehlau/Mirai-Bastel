@@ -927,3 +927,16 @@ seamless on). **TESTED [C] only**
 renders without GL error, the shader terms match the NumPy reference in float32, the roughness sweep blurs
 monotonically, hygiene clean. Every GPU time, the corner-seam fix-up on the 9800 GTX and the Artist verdict are
 **OPEN** until §9 step 3 (Manu's run; commands in the lab README). The audit body above is unchanged.
+
+**Reference PC, 2026-11-14 (§9 step 3, probe part; MEASURED [RPC],
+[`RESULTS_REFERENCE_PC_2026-11-14.md`](../../experiments/lookdev_eye_lab/RESULTS_REFERENCE_PC_2026-11-14.md)):**
+
+- All six probe checks PASS on the 9800 GTX, including shader / NumPy parity on NVIDIA's Cg compiler.
+- **Corner seams:** without the fix-up 0.009 / 0.062 / 0.169 at 4² / 2² / 1². With corners equalized and the chain
+  ending at 2², 0 at every level. This replaces the INFERRED fix-up of the 2026-11-13 addendum by a measurement.
+- **GPU time per frame,** eye ≈ 50 % of the frame, background included:
+  - T-C (target): 1.0–1.3 ms at 1024×768 and 2.4–2.9 ms at 1920×1080;
+  - T-A (Worklight, quad normal): 3.6–3.8 ms and 6.9 ms;
+  - T-D (analytic softbox): 1.8–2.4× T-C, so it is no performance fallback.
+- **CPU prefilter:** 40 s per 128² chain on the Q9550 (cached afterwards).
+- **Open:** the Artist verdict (§5.5); D-L3, D-L6 … D-L8 have new input (results file §4) but are not decided.

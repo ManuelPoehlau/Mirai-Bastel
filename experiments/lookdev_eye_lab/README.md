@@ -1,8 +1,10 @@
 # Lookdev P1 — Eye Proof lab (2026-11-14)
 
-**Status:** disposable experiment, **validated in the container** (`TESTED [C]`,
-[`RESULTS_CONTAINER_2026-11-14.md`](RESULTS_CONTAINER_2026-11-14.md)); **ready for Manu's run on the reference PC**
-(everything `[RPC]` is `OPEN`). Main PC: `OPEN` (D-L5 deferred). No change under `src/`, `tests/`, `config/`; no new
+**Status:** disposable experiment. Container: `TESTED [C]`
+([`RESULTS_CONTAINER_2026-11-14.md`](RESULTS_CONTAINER_2026-11-14.md)). **Reference PC: probe run 2026-11-14, six PASS**
+([`RESULTS_REFERENCE_PC_2026-11-14.md`](RESULTS_REFERENCE_PC_2026-11-14.md), `MEASURED [RPC]`): no corner seams with
+the fix-up, T-C 1.0–1.3 ms / 2.4–2.9 ms per frame at 1024×768 / 1920×1080 with the eye at ~50 %, T-D about twice
+that. **Artist verdict: `OPEN`** (the practical test below). Main PC: `OPEN` (D-L5 deferred). No change under `src/`, `tests/`, `config/`; no new
 dependency; no keymap entry.
 **Source:** [Lookdev P0 audit](../../docs/research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §5 (P1 proposal), §8
 (decisions) and its 2026-11-13 addendum; the probe's reading for P1:
@@ -112,6 +114,7 @@ clamp or Reinhard per channel, sRGB encode in the shader; no `GL_FRAMEBUFFER_SRG
 | `parity.py` | shader-vs-NumPy cases (inputs, references, tolerances) for the test and the probe |
 | `tests/` | 35 headless tests + 13 GL tests |
 | `RESULTS_CONTAINER_2026-11-14.md` | the container validation (`TESTED [C]`) with raw output |
+| `RESULTS_REFERENCE_PC_2026-11-14.md` | Manu's probe run on the reference PC (`MEASURED [RPC]`), readings, raw output |
 | `RESULTS_TEMPLATE.md` | format for `RESULTS_REFERENCE_PC_<date>.md` incl. the Artist verdict table |
 | `.gitignore` | `out/` (iris image, prefilter cache, screenshots, probe images) |
 
@@ -181,6 +184,8 @@ studios on the Q9550. The probe's screenshots land in `experiments\lookdev_eye_l
 
 What to check before pasting: the `EVIDENCE:` line says *hardware renderer*; `Source:` names the commit and `src/`
 tree; the Summary lists six `PASS` lines (a `FAIL` is a finding, not a broken run — paste it as it is).
+"measured coverage" should read about 50 % (the run of 2026-11-14 printed 100 % — a probe bug, fixed since; see the
+results file §5).
 
 **The practical test (Manu, interactive window).** Start with `Z` (close-up), then for each technique (`1`–`4`) and
 cornea (`5`–`7`) at front / ¾ / profile (`V`) and while orbiting (left drag), a verdict **KEEP / ITERATE / REJECT** on
@@ -235,8 +240,9 @@ pixel-identical to the production draw.
   Hornhaut-Varianten (C1 undurchsichtig, C2 additive Schale, C3 Fresnel-Schale).
 - **Gebaut wie für später gedacht:** Das Auge sind normale Objekte im Produktions-Viewport; das Lab ersetzt nur das
   Zeichnen. T-A ist pixelgleich mit heute. Nichts in `src/` ist geändert.
-- **Im Container geprüft:** Alles rendert ohne GL-Fehler, die Shader rechnen wie die Python-Referenz, die Rauheit macht
-  die Spiegelung gleichmäßig breiter, keine Nähte. Zeiten aus dem Container sind keine GPU-Zeiten.
+- **Im Container geprüft**, und **auf deinem PC gemessen (2026-11-14):** alles rendert ohne GL-Fehler, die Shader
+  rechnen wie die Python-Referenz, keine Würfelnähte mehr, T-C kostet 1–3 ms pro Bild, T-D etwa das Doppelte.
+  Ergebnis: [`RESULTS_REFERENCE_PC_2026-11-14.md`](RESULTS_REFERENCE_PC_2026-11-14.md). Offen ist dein Urteil.
 - **Dein Lauf:** NVIDIA auf „Maximale Leistung“, dann die vier PowerShell-Befehle oben. Die ersten drei Ausgaben hier
   einfügen und die drei Übersichtsbilder aus `out\probe\` anhängen. Danach im Fenster (`run.py`) je Technik und
   Hornhaut KEEP / ITERATE / REJECT nach den sechs Punkten oben.

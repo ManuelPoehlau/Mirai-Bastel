@@ -4,7 +4,9 @@
 every RPC / MAIN cell is **OPEN**. Mesa **llvmpipe** is a CPU rasterizer: a PASS here shows the lab works and that a
 spec-conformant implementation passes its checks; it says nothing about the GeForce 9800 GTX driver, and its
 `GL_TIME_ELAPSED` values are **not GPU times** (they are in the raw output only to show the timing path works).
-**Format:** [RESULTS_TEMPLATE.md](RESULTS_TEMPLATE.md). **Commands:** [README.md](README.md).
+**Format:** [RESULTS_TEMPLATE.md](RESULTS_TEMPLATE.md). **Commands:** [README.md](README.md). **Reference-PC run:**
+[RESULTS_REFERENCE_PC_2026-11-14.md](RESULTS_REFERENCE_PC_2026-11-14.md) (the OPEN RPC cells below are answered there,
+except the Artist verdict).
 
 ## 1. Run record
 

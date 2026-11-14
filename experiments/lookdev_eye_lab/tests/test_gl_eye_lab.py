@@ -18,6 +18,8 @@ def test_a_small_probe_run_passes_every_check_and_cleans_up(tmp_path):
     for check in ("S seams", "Q5 sRGB", "P parity", "V every variant", "W roughness sweep", "R hygiene"):
         assert any(check in line for line in summary), check
     assert (tmp_path / "sheet_front.png").exists() and len(list(tmp_path.glob("eye_front_*.png"))) == 11
+    coverage = [line for line in lines if "measured coverage" in line]
+    assert coverage and all(30.0 < float(line.rsplit(" ", 1)[1].rstrip("%")) < 70.0 for line in coverage), coverage
 
 
 def test_t_a_is_the_production_draw_pixel_for_pixel(tmp_path):

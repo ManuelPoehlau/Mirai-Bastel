@@ -158,6 +158,19 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
     14,7 ms.
   - Die versteckten 1920×1080-Fenster der Sonden behielten ihre Größe.
 
+**Gemessen auf dem Referenz-PC (Manu, 2026-11-14), Lookdev P1 Augen-Test** — gleiche Umgebung;
+`experiments/lookdev_eye_lab/run.py --probe`, Rohausgabe in
+[`RESULTS_REFERENCE_PC_2026-11-14.md`](../../experiments/lookdev_eye_lab/RESULTS_REFERENCE_PC_2026-11-14.md):
+
+- **Würfelecken:** Mit angeglichenen Ecktexeln und einer Mip-Kette bis 2² ist keine Naht mehr messbar. Ohne diese
+  Korrektur bleiben 0,009 / 0,062 / 0,169 in den Stufen 4² / 2² / 1².
+- **Shader:** Alle Lookdev-Terme rechnen auf dem NVIDIA-Compiler wie die Python-Referenz (float32-Genauigkeit).
+- **GPU-Zeit pro Bild mit dem Auge auf ≈ 50 % der Fläche:**
+  - Lookdev mit Cubemap-Spiegelung (T-C): 1,0–1,3 ms bei 1024×768 und 2,4–2,9 ms bei 1920×1080;
+  - dasselbe Auge im Worklight: 3,6–3,8 bzw. 6,9 ms;
+  - analytische Softbox ohne Cubemap (T-D): etwa das Doppelte von T-C.
+- **CPU:** Das Vorberechnen der Umgebung dauert 25 s (64²), 40 s (128²) bzw. 71 s (256²) je Kette.
+
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 
 ---

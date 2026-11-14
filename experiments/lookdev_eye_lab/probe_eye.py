@@ -52,8 +52,6 @@ WARMUP = 5
 DEFAULT_DRAWS = 30
 SWEEP = (0.0, 0.1, 0.25, 0.5, 0.75, 1.0)
 SEAM_SIZE = 64
-#: The production clear colour as the RGBA8 target stores it (T-A's background): coverage counts the other pixels.
-CLEAR_RGB = (26, 26, 28)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -319,9 +317,14 @@ class Probe:
                             cpu[run].append(c)
                         if round_ == WARMUP + self.args.draws - 1:
                             last[run] = target.read_rgb()
+                # The cleared colour as this driver stores it: the reference PC rounds 0.1 * 255 differently from
+                # Mesa, and a hard-coded (26, 26, 28) made every pixel count as eye there (RPC run 2026-11-14).
+                state.technique, scene.renderer.only_parts = "T-A", set()
+                self._frame(scene, target)
+                clear = target.read_rgb()[0, 0].copy()
                 scene.renderer.only_parts = None
                 reference = last[("T-A", "C1")]
-                eye = np.any(reference != np.array(CLEAR_RGB, dtype=np.uint8), axis=-1)
+                eye = np.any(reference != clear, axis=-1)
                 covered = int(np.sum(eye))
                 self.add(f"    view {view}: measured coverage (T-A C1, non-clear pixels) "
                          f"{covered / (width * height):.1%}")
