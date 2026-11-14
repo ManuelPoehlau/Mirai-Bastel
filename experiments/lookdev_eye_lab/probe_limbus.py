@@ -7,6 +7,8 @@ Sections:
       analytic surfaces, front-facing samples only) the largest luminance step between neighbouring samples (0.05 mm
       apart), median / p95 over the lines, per level and view; plus a key-light sweep (azimuth -60 ... +60) in the 3/4
       view, where the highlight crosses the ring;
+- [F] L3's fast path against its reference (every fragment traced, as first built): largest pixel difference and
+      pixels differing per run, and the GPU time of both, interleaved (Manu 2026-11-14: "mach L3 schneller");
 - [V] GPU time per frame per run (GL_TIME_ELAPSED, runs interleaved, as P1 / P1b);
 - contact sheet: limbus crops, columns L0 | L1 | L2 | L3 | L3 + asymmetry | L3 image colour | L2 + overlap 0.3 mm |
   L2 + overlap 0.3 mm + asymmetry, rows front / 3/4 /
@@ -224,6 +226,53 @@ class LimbusProbe(probe_eye.Probe):
         target.release()
         self.add("")
 
+    def fast_path(self, scene, res: pg.Resources) -> None:
+        gl = self.gl
+        state = scene.renderer.state
+        renderer = scene.renderer
+        self.query = res.query()
+        runs = (("T-C", "V2", 0.0, False), ("T-C", "V2", 0.3, True), ("T-C", "V3", 0.0, False), ("T-B", "V2", 0.0, False),
+                ("T-D", "V2", 0.0, False))
+        self.add(f"[F] L3 fast path vs reference (full trace): pixels and GPU p50 (ms), {self.args.draws} frames after "
+                 f"{probe_eye.WARMUP}, fast / full interleaved")
+        self.add(f"  {'size':<10} {'view':<14} {'run':<22} {'max |diff|':>10} {'px diff':>8} {'full':>7} {'fast':>7} "
+                 f"{'saved':>7}")
+        worst = 0
+        for text in self.args.sizes:
+            width, height = pg.parse_size(text)
+            target = gl_lab.Target(gl, res, width, height)
+            distance = lab_scene.close_up_distance(width, height)
+            for view in self.args.views:
+                scene.apply_view(view, distance)
+                scene.set_aspect(width, height)
+                scene.camera_moved()
+                for tech, refraction, overlap, asym in runs:
+                    state.technique, state.refraction, state.limbus_level = tech, refraction, "L3"
+                    state.overlap_mm, state.asym, state.colour_source = overlap, asym, "shader"
+                    times = {True: [], False: []}
+                    images = {}
+                    for round_ in range(probe_eye.WARMUP + self.args.draws):
+                        for full in (True, False):
+                            renderer.full_trace = full
+                            g, _c = self._frame(scene, target)
+                            if round_ >= probe_eye.WARMUP:
+                                times[full].append(g)
+                            images[full] = target.read_rgb() if round_ == probe_eye.WARMUP + self.args.draws - 1 else None
+                    renderer.full_trace = False
+                    diff = np.abs(images[True].astype(int) - images[False].astype(int))
+                    worst = max(worst, int(diff.max()))
+                    full_ms, fast_ms = statistics.median(times[True]), statistics.median(times[False])
+                    name = f"{tech} {refraction} L3" + (f" ov{overlap:g}" if overlap else "") + (" asym" if asym else "")
+                    self.add(f"  {text:<10} {view:<14} {name:<22} {int(diff.max()):>10} "
+                             f"{int(np.any(diff > 0, -1).sum()):>8} {full_ms:7.2f} {fast_ms:7.2f} {full_ms - fast_ms:7.2f}")
+            target.release()
+        state.overlap_mm, state.asym = 0.0, False
+        status = cm.PASS if worst <= 2 else cm.FAIL
+        self.add(f"  largest pixel difference over every run: {worst} (<= 2 of 255 expected: mip level at the band's "
+                 f"outer edge, where the transmission is ~0)  -> {status}")
+        self.verdict("F L3 fast path = reference (<= 2 / 255)", status)
+        self.add("")
+
     def timings(self, scene, res: pg.Resources) -> None:
         gl = self.gl
         state = scene.renderer.state
@@ -323,6 +372,7 @@ def run(args) -> list[str]:
         probe.guarded("P", probe.parity, res)
         probe.guarded("I", probe.identity, scene, refr, scene.renderer.res)
         probe.guarded("C", probe.continuity_section, scene, scene.renderer.res)
+        probe.guarded("F", probe.fast_path, scene, scene.renderer.res)
         probe.guarded("V", probe.timings, scene, scene.renderer.res)
         if args.images:
             probe.guarded("S", probe.sheet, scene, scene.renderer.res)

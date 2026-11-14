@@ -115,13 +115,22 @@ setting **overlap all round** (0 / 0.15 / 0.3 / 0.5 mm, default 0, key `-`; firs
 Container (TESTED [C], stand-in image + A+H): four PASS; [C] front, L2 → L2 + overlap 0.3 mm: 43.4 / 66.9 → 13.9 / 22.7
 (the iris-to-tissue edge softened all round), with the asymmetry 9.6 / 16.3; no jump along the ring (GL tests).
 
+## Follow-up: L3 fast path (2026-11-14, built; to be measured on the reference PC)
+
+Manu: "mach L3 schneller wie vorgeschlagen". The sclera pass traces only inside the band (transmission exactly 0
+beyond it); in V2 the cornea traces the deep ray only for tissue rays. The first attempt also merged the cornea's two
+texture reads into one: that changed the mip level of iris pixels next to tissue pixels (up to 78 / 255, a few hundred
+px per frame) and was taken back; V3's cornea keeps the full trace (55 / 255 at class borders otherwise). Container
+(TESTED [C]): the reference path renders the previous L3 exactly (36 / 36 runs: T-B / T-C / T-D × V2 / V3 × overlap +
+asymmetry off / on × three views); the fast path differs by ≤ 1 / 255 at ≤ 7 px per 1024×768 frame. The probe's new
+[F] section measures fast vs reference on the GPU.
+
 ## Open
 
 - **Artist verdicts** (Manu): L0–L3, colour source shader / image (and which preset), asymmetry on / off and the
   overlap all round (both to be looked at with the seam fix and the new overlap).
 - **A+H with the real texture:** measured in run 2 (no white rim); Manu's look verdict on it is open.
-- **L3 cost** (technical, an agent's job if wanted): trace the sclera's refracted ray only inside the band (texture
-  sampled outside the branch as now); expected to remove most of the profile-view +0.33 / +0.75 ms (run 2: +0.56 / +1.29 ms); to be measured.
+- **L3 fast path:** built (above); its GPU time on the reference PC ([F] and [V]) is to be measured.
 
 ## Raw output (as pasted by Manu, 2026-11-14)
 
