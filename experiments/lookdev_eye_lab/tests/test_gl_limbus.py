@@ -82,8 +82,8 @@ def test_l0_is_p1b_pixel_for_pixel(scenes, technique):
         for state in (refr.renderer.state, limb.renderer.state):
             state.technique, state.refraction = technique, refraction
         limb.renderer.state.limbus_level = "L0"
-        for asym in (False, True):  # the asymmetry is inert at L0
-            limb.renderer.state.asym = asym
+        for asym, overlap in ((False, 0.0), (True, 0.3)):  # the asymmetry and the overlap are inert at L0
+            limb.renderer.state.asym, limb.renderer.state.overlap_mm = asym, overlap
             for view in ("front", "three_quarter"):
                 _view(refr, view)
                 _view(limb, view)
@@ -250,10 +250,11 @@ def test_limbus_window_keys_and_frames(gl_context):
         sys.path.remove(str(lab))
     window = run_limbus.LimbusWindow(run_limbus.build_parser().parse_args(["--size", "320", "240"]))
     try:
-        for symbol in (key.Q, key.Q, key.Q, key.A, key.O, key.N, key.W, key.D, key.COMMA, key.PERIOD, key.F1):
+        for symbol in (key.Q, key.Q, key.Q, key.A, key.SLASH, key.O, key.N, key.W, key.D, key.COMMA, key.PERIOD,
+                       key.F1):
             assert window.on_key_press(symbol, 0)
             window.on_draw()
-        assert window.state.limbus_level == "L3" and window.state.asym
+        assert window.state.limbus_level == "L3" and window.state.asym and window.state.overlap_mm == 0.15
         assert pg.drain_errors(gl_context) == []
     finally:
         window.scene.release()
@@ -262,6 +263,10 @@ def test_limbus_window_keys_and_frames(gl_context):
 
 @pytest.mark.parametrize("level", ["L1", "L2", "L3"])
 def test_asymmetry_has_no_seam_left_and_right(gl_context, tmp_path, level):
+    _arc_change(gl_context, tmp_path, level, overlap=0.0)
+
+
+def _arc_change(gl_context, tmp_path, level, overlap):
     """Regression (Manu, reference PC 2026-11-14): with the asymmetry on, a seam left and right, centred on the limbus
     edge, clearest in L1 / L2. Along an arc on the cornea just inside the visible iris edge (u -0.22 mm), the change the
     asymmetry makes must fade to 0 toward the horizontal with no jump, and stay in place at top and bottom."""
@@ -280,6 +285,7 @@ def test_asymmetry_has_no_seam_left_and_right(gl_context, tmp_path, level):
         images = {}
         for asym in (False, True):
             limb.renderer.state.asym = asym
+            limb.renderer.state.overlap_mm = overlap if asym else 0.0
             target.bind()
             limb.renderer.frame(limb.viewport, w, h)
             target.unbind()
@@ -296,11 +302,25 @@ def test_asymmetry_has_no_seam_left_and_right(gl_context, tmp_path, level):
         def near(a):
             return diff[np.abs(((deg - a + 180.0) % 360.0) - 180.0) <= 3.0].max()
 
-        assert near(0.0) <= 2.0 and near(180.0) <= 2.0  # nothing changes on the horizontal ...
-        sector = np.abs(((deg + 180.0) % 180.0) - 90.0) >= 75.0  # ... nor within 15 degrees of it ...
-        assert np.abs(np.diff(on))[sector[1:] & sector[:-1]].max() <= np.abs(np.diff(images[False][rows, cols])).max()
+        steps_on = np.abs(np.diff(on))
+        if overlap == 0.0:
+            assert near(0.0) <= 2.0 and near(180.0) <= 2.0  # nothing changes on the horizontal ...
+            sector = np.abs(((deg + 180.0) % 180.0) - 90.0) >= 75.0  # ... nor within 15 degrees of it ...
+            assert steps_on[sector[1:] & sector[:-1]].max() <= np.abs(np.diff(images[False][rows, cols])).max()
+        else:
+            # The overlap covers left and right as well (the soft edge all round) ...
+            assert diff[np.abs(deg) <= 3.0].mean() > 5.0 and diff[np.abs(np.abs(deg) - 180.0) <= 3.0].mean() > 5.0
+            # ... with no jump along the arc (no seam anywhere).
+            assert steps_on.max() <= np.abs(np.diff(images[False][rows, cols])).max()
         assert diff[np.abs(deg - 90.0) <= 3.0].mean() > 5.0  # ... and the cover is there at the top
         assert pg.drain_errors(gl_context) == []
     finally:
         target.release()
         limb.release()
+
+
+@pytest.mark.parametrize("level", ["L1", "L2"])
+def test_overlap_all_round_softens_the_sides_too(gl_context, tmp_path, level):
+    """Manu 2026-11-14: the asymmetry's soft edge only at top / bottom looked artificial at the sides. With the overlap
+    all round (0.3 mm) plus the asymmetry the cover is present everywhere, continuous along the ring."""
+    _arc_change(gl_context, tmp_path, level, overlap=0.3)

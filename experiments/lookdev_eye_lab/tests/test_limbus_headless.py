@@ -134,3 +134,16 @@ def test_run_limbus_parser_and_keys():
     run_limbus.LIMBUS_KEYS["Q"][1](s, False)
     run_limbus.LIMBUS_KEYS["A"][1](s, False)
     assert s.limbus_level == "L1" and s.asym
+
+
+def test_overlap_all_round_is_independent_of_the_asymmetry():
+    side, top = np.array([[1.0, 0.0, 0.0]]), np.array([[0.0, 1.0, 0.0]])
+    ov = lm.LimbusParams(overlap_mm=0.3)
+    both = lm.LimbusParams(overlap_mm=0.3, asym=True)
+    assert lm.asym_shift(side, ov.asym_units, ov.overlap_units)[0] == pytest.approx(0.3 * lm.MM)
+    assert lm.asym_shift(top, ov.asym_units, ov.overlap_units)[0] == pytest.approx(0.3 * lm.MM)
+    assert lm.asym_shift(top, both.asym_units, both.overlap_units)[0] == pytest.approx((0.3 + lm.ASYM_MM) * lm.MM)
+    # The overlap alone covers the sides fully (no fade-out to the horizontal as with the asymmetry alone).
+    assert lm.iris_cover(lm.U0, ov.overlap_units, ov.cover_max) == pytest.approx(1.0)
+    assert lm.iris_cover(lm.U0, both.overlap_units, both.cover_max) > 0.9
+    assert lg.LimbusState(limbus_level="L2", overlap_mm=0.3, asym=True).variant == "T-C_V2_L2_ov0.3_asym"

@@ -8,7 +8,8 @@ Sections:
       apart), median / p95 over the lines, per level and view; plus a key-light sweep (azimuth -60 ... +60) in the 3/4
       view, where the highlight crosses the ring;
 - [V] GPU time per frame per run (GL_TIME_ELAPSED, runs interleaved, as P1 / P1b);
-- contact sheet: limbus crops, columns L0 | L1 | L2 | L3 | L3 + asymmetry | L3 image colour, rows front / 3/4 /
+- contact sheet: limbus crops, columns L0 | L1 | L2 | L3 | L3 + asymmetry | L3 image colour | L2 + overlap 0.3 mm |
+  L2 + overlap 0.3 mm + asymmetry, rows front / 3/4 /
   profile / steep 75 / 3/4 with the key at azimuth -45 (the highlight on the ring);
 - [R] resources and GL state left as found.
 Every run uses the same lighting, exposure and camera per view (the lab defaults; printed in the header).
@@ -42,16 +43,17 @@ from ._paths import CACHE_DIR, OUT_DIR
 
 PROBE_NAME = "Lookdev P1c soft limbus probe (2026-11-14)"
 SHOT_SIZE = (1024, 768)
-#: (technique, refraction, level, asymmetry, colour source)
+#: (technique, refraction, level, asymmetry, colour source[, overlap all round mm])
 RUNS = (("T-C", "V2", "L0", False, "shader"), ("T-C", "V2", "L1", False, "shader"),
         ("T-C", "V2", "L2", False, "shader"), ("T-C", "V2", "L3", False, "shader"),
         ("T-C", "V2", "L3", True, "shader"), ("T-C", "V3", "L0", False, "shader"),
         ("T-C", "V3", "L3", False, "shader"), ("T-B", "V2", "L0", False, "shader"),
         ("T-B", "V2", "L3", False, "shader"), ("T-D", "V2", "L0", False, "shader"),
-        ("T-D", "V2", "L3", False, "shader"))
+        ("T-D", "V2", "L3", False, "shader"), ("T-C", "V2", "L3", True, "shader", 0.3))
 SHEET_RUNS = (("T-C", "V2", "L0", False, "shader"), ("T-C", "V2", "L1", False, "shader"),
               ("T-C", "V2", "L2", False, "shader"), ("T-C", "V2", "L3", False, "shader"),
-              ("T-C", "V2", "L3", True, "shader"), ("T-C", "V2", "L3", False, "image"))
+              ("T-C", "V2", "L3", True, "shader"), ("T-C", "V2", "L3", False, "image"),
+              ("T-C", "V2", "L2", False, "shader", 0.3), ("T-C", "V2", "L2", True, "shader", 0.3))
 SWEEP_AZIMUTHS = (-60.0, -45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0)
 SHEET_KEY_AZIMUTH = -45.0
 LINES, HALF_MM, STEP_MM = 64, 1.5, 0.05
@@ -67,12 +69,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def name_of(run) -> str:
-    tech, refraction, level, asym, source = run
-    return f"{tech} {refraction} {level}" + (" asym" if asym else "") + (" imgcol" if source == "image" else "")
+    tech, refraction, level, asym, source = run[:5]
+    overlap = run[5] if len(run) > 5 else 0.0
+    return (f"{tech} {refraction} {level}" + (f" ov{overlap:g}" if overlap else "") + (" asym" if asym else "")
+            + (" imgcol" if source == "image" else ""))
 
 
 def apply_run(state: lg.LimbusState, run) -> None:
-    state.technique, state.refraction, state.limbus_level, state.asym, state.colour_source = run
+    state.technique, state.refraction, state.limbus_level, state.asym, state.colour_source = run[:5]
+    state.overlap_mm = run[5] if len(run) > 5 else 0.0
 
 
 def limbus_crop(camera, image: np.ndarray, scale: float = 1.35) -> np.ndarray:

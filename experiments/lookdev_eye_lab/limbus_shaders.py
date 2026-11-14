@@ -30,6 +30,7 @@ uniform float u_strength;
 uniform float u_normal_w;
 uniform float u_falloff;
 uniform float u_asym;
+uniform float u_overlap;
 
 float limbus_smooth(float t) {{
     t = clamp(t, 0.0, 1.0);
@@ -45,7 +46,7 @@ float cornea_u(vec3 p) {{
 }}
 // limbus_model.asym_shift
 float asym_shift(vec3 p) {{
-    return u_asym * p.y * p.y / max(dot(p.xy, p.xy), 1e-12);
+    return u_overlap + u_asym * p.y * p.y / max(dot(p.xy, p.xy), 1e-12);
 }}
 // limbus_model.colour_weight
 float colour_weight(float u) {{
@@ -57,9 +58,10 @@ vec3 limbus_tint(float w, vec3 limbal, vec3 sclera) {{
 }}
 // limbus_model.iris_cover
 float iris_cover(float u, float shift) {{
-    if (u_asym <= 0.0) return 0.0;  // uniform: no divergence
+    float amount = u_overlap + u_asym;
+    if (amount <= 0.0) return 0.0;  // uniform: no divergence
     float ramp = limbus_smooth((u - (LIMBUS_U0 - shift)) / max(shift, 1e-9));
-    return ramp * limbus_smooth(shift / (LIMBUS_COVER_FADE * u_asym));
+    return ramp * limbus_smooth(shift / (LIMBUS_COVER_FADE * amount));
 }}
 // limbus_model.normal_blend
 vec3 normal_blend(vec3 n_cornea, vec3 n_sclera, float u) {{

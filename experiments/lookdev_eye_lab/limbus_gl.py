@@ -48,6 +48,7 @@ class LimbusState(rg.RefractionState):
     normal_mm: float = 0.5
     falloff: float = 4.0
     asym: bool = False
+    overlap_mm: float = 0.0
 
     @property
     def level(self) -> int:
@@ -59,12 +60,16 @@ class LimbusState(rg.RefractionState):
 
     @property
     def params(self) -> lm.LimbusParams:
-        return lm.LimbusParams(self.band_mm, self.strength, self.normal_mm, self.falloff, self.asym)
+        return lm.LimbusParams(self.band_mm, self.strength, self.normal_mm, self.falloff, self.asym,
+                               overlap_mm=self.overlap_mm)
 
     @property
     def variant(self) -> str:
         base = super().variant
-        return f"{base}_{self.limbus_level}{'_asym' if self.asym else ''}" if self.limbus_active else base
+        if not self.limbus_active:
+            return base
+        return (f"{base}_{self.limbus_level}" + (f"_ov{self.overlap_mm:g}" if self.overlap_mm > 0 else "")
+                + ("_asym" if self.asym else ""))
 
 
 class LimbusStore(rg.RefractionStore):
@@ -98,7 +103,7 @@ class LimbusRenderer(rg.RefractionRenderer):
     def limbus_uniforms(self) -> dict:
         p = self.state.params
         return {"u_band": p.band, "u_strength": p.strength, "u_normal_w": p.normal_w, "u_falloff": p.falloff,
-                "u_asym": p.asym_units}
+                "u_asym": p.asym_units, "u_overlap": p.overlap_units}
 
     def limbus_program(self, part: str, tech: int, variant: int, level: int, locations: dict) -> gl_lab.LabProgram:
         fit = self.iris_fit is not None
@@ -233,8 +238,8 @@ def describe(state: LimbusState, renderer: LimbusRenderer | None = None) -> list
             source += f" ({renderer.image_note})"
     else:
         source += f" '{state.shader_colour}'"
-    return [f"limbus {state.limbus_level}{active}   colour {source}   asymmetry {'ON' if p.asym else 'off'} "
-            f"({p.asym_mm:.2f} mm)",
+    return [f"limbus {state.limbus_level}{active}   colour {source}   overlap all round "
+            f"{p.overlap_mm:.2f} mm   asymmetry {'ON' if p.asym else 'off'} (+{p.asym_mm:.2f} mm top / bottom)",
             f"band {p.band_mm:.2f} mm   strength {p.strength:.2f}   normal blend +-{p.normal_mm:.2f} mm   "
             f"translucency falloff {p.falloff:.2f}"]
 
@@ -266,7 +271,8 @@ class LimbusParityPass(gl_lab.ParityPass):
             p = self.params
             values = {"u_inputs": pg.SAMPLE_UNIT, "u_width": self.WIDTH, "u_count": count,
                       "u_func": lsh.PARITY_FUNCS[func], "u_band": p.band, "u_strength": p.strength,
-                      "u_normal_w": p.normal_w, "u_falloff": p.falloff, "u_asym": p.asym_units}
+                      "u_normal_w": p.normal_w, "u_falloff": p.falloff, "u_asym": p.asym_units,
+                      "u_overlap": p.overlap_units}
             values.update(rg.geometry_uniforms())
             self.program.set(values)
             gl.glBindVertexArray(self.vao)
