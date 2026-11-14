@@ -30,6 +30,7 @@ from . import cornea_optics as co
 from . import eye_geometry as geo
 from . import eye_math as em
 from . import gl_lab
+from . import iris_source
 from . import lab_scene
 from . import lab_state as ls
 from . import refraction_shaders as rs
@@ -120,6 +121,8 @@ class RefractionRenderer(gl_lab.EyeLabRenderer):
             "u_iris_texture": grs._TEXTURE_UNIT,
         })
         image = GLRenderStore.texture(str(self.iris_png))
+        if image is None:  # replaced by an unreadable file while running: the loader printed why
+            return
         gl.glActiveTexture(gl.GL_TEXTURE0 + grs._TEXTURE_UNIT)
         gl.glBindTexture(image.target, image.id)
         if tech == shaders.TECH_IDS["T-C"]:
@@ -160,7 +163,8 @@ def build_scene(state: RefractionState, out_dir: Path, cache_dir: Path | None, w
     """`lab_scene.build_scene` with `RefractionStore` / `RefractionRenderer`: the same parts, colours, entries,
     insertion order (the cornea a Ghost entry, drawn last), camera and preset."""
     meshes = geo.build_parts()
-    iris_png = geo.write_iris_png(Path(out_dir) / "iris.png")
+    source = iris_source.confirm_loadable(iris_source.choose(out_dir), out_dir)  # the same source as P1
+    iris_png = source.path
     renderer = RefractionRenderer(state, cache_dir, iris_png)
     viewport = Viewport(meshes["grey"], store_type=RefractionStore)
     viewport.set_edit_base_color(ls.WORKLIGHT_COLOURS["grey"])
@@ -179,7 +183,7 @@ def build_scene(state: RefractionState, out_dir: Path, cache_dir: Path | None, w
     renderer.camera = camera
     viewport.bind_camera(camera)
     viewport.on_camera_changed(aspect=width / height)
-    scene = lab_scene.Scene(viewport, camera, renderer, meshes, iris_png)
+    scene = lab_scene.Scene(viewport, camera, renderer, meshes, iris_png, source)
     scene.apply_view(state.view)
     return scene
 

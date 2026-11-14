@@ -157,3 +157,67 @@ def test_small_refraction_probe_run_passes_every_check(gl_context, tmp_path):
     for check in ("P refraction parity", "K GPU ray classes", "D opaque cornea", "V every run", "R hygiene"):
         assert any(check in line for line in summary), check
     assert (tmp_path / "refraction_sheet.png").exists()
+
+
+# -- the iris texture source (P1 and P1b) ----------------------------------------------------------------------------
+
+
+def _red_custom(out_dir):
+    from lookdev_gpu_probe import cube_math as cm
+
+    from lookdev_eye_lab import iris_source
+
+    path = out_dir / iris_source.CUSTOM_NAME
+    cm.write_png(path, np.full((64, 64, 3), (0.9, 0.05, 0.05)))
+    return path
+
+
+def _iris_redness(img, camera):
+    """Mean (R - G) over the pixels whose ray reaches the iris (straight, V1 geometry) - positive for a red iris."""
+    eye, d = co.camera_rays(camera, W, H)
+    mask = co.trace(eye, d, "V1").kind == co.IRIS
+    pix = img[mask].astype(float)
+    return float(np.mean(pix[:, 0] - pix[:, 1]))
+
+
+def test_custom_iris_is_used_by_p1_and_p1b_and_never_changed(gl_context, tmp_path):
+    custom = _red_custom(tmp_path)
+    before = (custom.read_bytes(), custom.stat().st_mtime_ns)
+    p1 = lab_scene.build_scene(ls.LabState(show_references=False, technique="T-B"), tmp_path, CACHE_DIR, W, H)
+    refr = rg.build_scene(rg.RefractionState(show_references=False, technique="T-B", refraction="V2"), tmp_path,
+                          CACHE_DIR, W, H)
+    target = gl_lab.Target(gl_context, refr.renderer.res, W, H)
+    try:
+        assert p1.iris_source.custom and refr.iris_source.custom
+        assert p1.iris_png == refr.iris_png == custom
+        for scene in (p1, refr):
+            _view(scene, "front")
+            assert _iris_redness(_render(scene, target), scene.camera) > 60.0  # the blue-grey procedural iris is < 0
+        assert pg.drain_errors(gl_context) == []
+    finally:
+        target.release()
+        refr.release()
+        p1.release()
+    assert (custom.read_bytes(), custom.stat().st_mtime_ns) == before
+
+
+def test_undecodable_custom_iris_falls_back_to_the_procedural_one(gl_context, tmp_path):
+    import struct
+    import zlib
+
+    from lookdev_eye_lab import iris_source
+
+    custom = tmp_path / iris_source.CUSTOM_NAME
+    ihdr = struct.pack(">IIBBBBB", 32, 32, 8, 2, 0, 0, 0)
+    chunk = lambda kind, data: (struct.pack(">I", len(data)) + kind + data  # noqa: E731
+                                + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF))
+    custom.write_bytes(iris_source.PNG_SIGNATURE + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"garbage")
+                       + chunk(b"IEND", b""))
+    before = custom.read_bytes()
+    scene = rg.build_scene(rg.RefractionState(show_references=False), tmp_path, CACHE_DIR, W, H)
+    try:
+        assert not scene.iris_source.custom and "could not decode" in scene.iris_source.note
+        assert scene.iris_png.name == iris_source.PROCEDURAL_NAME
+    finally:
+        scene.release()
+    assert custom.read_bytes() == before

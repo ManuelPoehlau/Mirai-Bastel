@@ -352,6 +352,8 @@ def run(args) -> list[str]:
         if not args.no_optics:
             probe.guarded("M", probe.optics)
         scene = rg.build_scene(state, OUT_DIR, CACHE_DIR, *SHOT_SIZE)
+        probe.add(scene.iris_source.describe() + " (the CPU model [M] always uses the procedural image)")
+        probe.add("")
         probe.query = res.query()  # `_frame` times every frame, also in [K] / [D]
         probe.guarded("P", probe.parity, res)
         probe.guarded("K", probe.kinds, scene, scene.renderer.res)

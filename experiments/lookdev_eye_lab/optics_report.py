@@ -56,7 +56,7 @@ def report(sizes=SIZES, views=ls.VIEW_ORDER, g: co.CorneaGeometry = co.GEOMETRY)
                    f"{co.visibility_limit(v, co.IRIS, g=g):>13.1f} d")
     out.append("  (traced = virtual pupil edge triangulated from two on-axis cameras; visible to = largest angle off "
                "the eye's axis, sclera occlusion included, no lids)")
-    image = geo.iris_image()
+    image = geo.iris_image()  # always the procedural iris: these numbers depend on no file (iris_source)
     for width, height in sizes:
         distance = lab_scene.close_up_distance(width, height)
         out.append(f"  {width}x{height}, eye ~50 % of the frame (camera distance {distance:.3f}):")

@@ -46,6 +46,7 @@ class RefractionWindow(run.LabWindow):
                                         refraction=args.refraction)
         width, height = self.window.get_framebuffer_size()
         self.scene = rg.build_scene(self.state, OUT_DIR, CACHE_DIR, width, height)
+        print(self.scene.iris_source.describe(), flush=True)
 
     def on_key_press(self, symbol, modifiers):
         name = run.key_name(symbol)

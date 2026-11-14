@@ -17,6 +17,7 @@ from viewport.viewport import Viewport
 
 from . import eye_geometry as geo
 from . import eye_math as em
+from . import iris_source
 from . import lab_state as ls
 from .gl_lab import EyeLabRenderer, EyeLabStore
 
@@ -33,6 +34,7 @@ class Scene:
     renderer: EyeLabRenderer
     meshes: dict
     iris_png: Path
+    iris_source: "iris_source.IrisSource | None" = None
 
     def apply_view(self, name: str, distance: float | None = None) -> None:
         yaw, pitch = ls.VIEWS[name]
@@ -62,7 +64,9 @@ def close_up_distance(width: int, height: int, fov_degrees: float = OrbitCamera.
 def build_scene(state: ls.LabState, out_dir: Path, cache_dir: Path | None, width: int, height: int) -> Scene:
     """Requires a current GL context (the stores build their VertexLists at the first `sync()`)."""
     meshes = geo.build_parts()
-    iris_png = geo.write_iris_png(Path(out_dir) / "iris.png")
+    # `out_dir/iris_custom.png` if it exists and loads, else the procedural iris (`iris_source`; P1b uses the same).
+    source = iris_source.confirm_loadable(iris_source.choose(out_dir), out_dir)
+    iris_png = source.path
     renderer = EyeLabRenderer(state, cache_dir)
     viewport = Viewport(meshes["grey"], store_type=EyeLabStore)
     viewport.set_edit_base_color(ls.WORKLIGHT_COLOURS["grey"])
@@ -81,7 +85,7 @@ def build_scene(state: ls.LabState, out_dir: Path, cache_dir: Path | None, width
     renderer.camera = camera
     viewport.bind_camera(camera)
     viewport.on_camera_changed(aspect=width / height)
-    scene = Scene(viewport, camera, renderer, meshes, iris_png)
+    scene = Scene(viewport, camera, renderer, meshes, iris_png, source)
     scene.apply_view(state.view)
     return scene
 

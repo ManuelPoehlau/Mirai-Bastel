@@ -196,8 +196,11 @@ def iris_image(size: int = IRIS_IMAGE_SIZE, seed: int = 7) -> np.ndarray:
 
 
 def write_iris_png(path: Path) -> Path:
-    """The iris image as an 8-bit PNG (written only when missing or different, so the texture cache keeps its key)."""
+    """The iris image as an 8-bit PNG (written only when missing or different, so the texture cache keeps its key).
+    Never the user's own image (`iris_source.CUSTOM_NAME`): that file is only read."""
     path = Path(path)
+    if path.name == "iris_custom.png":
+        raise ValueError("write_iris_png never writes the custom iris image (iris_source.CUSTOM_NAME)")
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp.png")
     cm.write_png(tmp, iris_image())

@@ -5,7 +5,8 @@
 ([`RESULTS_REFERENCE_PC_2026-11-14.md`](RESULTS_REFERENCE_PC_2026-11-14.md), `MEASURED [RPC]`): no corner seams with
 the fix-up, T-C 1.0–1.3 ms / 2.4–2.9 ms per frame at 1024×768 / 1920×1080 with the eye at ~50 %, T-D about twice
 that. **Artist verdict: `OPEN`** (the practical test below). Main PC: `OPEN` (D-L5 deferred).
-**P1b — Corneal Refraction Lab (2026-11-14):** added on top of P1, P1 unchanged; see [the P1b section](#p1b--corneal-refraction-lab-2026-11-14). No change under `src/`, `tests/`, `config/`; no new
+**P1b — Corneal Refraction Lab (2026-11-14):** added on top of P1, P1 unchanged; see [the P1b section](#p1b--corneal-refraction-lab-2026-11-14).
+**Own iris image:** put it at `out/iris_custom.png`; see [Custom iris texture](#custom-iris-texture-outiris_custompng). No change under `src/`, `tests/`, `config/`; no new
 dependency; no keymap entry.
 **Source:** [Lookdev P0 audit](../../docs/research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §5 (P1 proposal), §8
 (decisions) and its 2026-11-13 addendum; the probe's reading for P1:
@@ -112,12 +113,44 @@ clamp or Reinhard per channel, sRGB encode in the shader; no `GL_FRAMEBUFFER_SRG
 | `eye_geometry.py` | the eye and reference spheres as `core.Mesh`, the iris image |
 | `lab_scene.py` | the scene on the production `Viewport`, camera presets, close-up framing |
 | `lab_state.py` | every control as plain data, materials, the lab-local key table, HUD text |
+| `iris_source.py` | which iris image is used: `out/iris_custom.png` if usable, else the procedural one (P1 and P1b) |
 | `parity.py` | shader-vs-NumPy cases (inputs, references, tolerances) for the test and the probe |
 | `tests/` | 35 headless tests + 13 GL tests |
 | `RESULTS_CONTAINER_2026-11-14.md` | the container validation (`TESTED [C]`) with raw output |
 | `RESULTS_REFERENCE_PC_2026-11-14.md` | Manu's probe run on the reference PC (`MEASURED [RPC]`), readings, raw output |
 | `RESULTS_TEMPLATE.md` | format for `RESULTS_REFERENCE_PC_<date>.md` incl. the Artist verdict table |
 | `.gitignore` | `out/` (iris image, prefilter cache, screenshots, probe images) |
+
+## Custom iris texture (`out/iris_custom.png`)
+
+Added 2026-11-14 (Manu). Used by P1 (`run.py`) and P1b (`run_refraction.py`) alike, and by both probes:
+
+- **If `experiments/lookdev_eye_lab/out/iris_custom.png` exists and loads, it is the iris texture**; otherwise the lab
+  falls back to the procedural iris (`out/iris.png`, generated). The choice is made when the window / probe starts.
+- **The file is only read**: never written, renamed, copied over or deleted. The procedural iris has its own name, and
+  its writer refuses the custom name (tested: bytes and modification time unchanged after both labs ran).
+- **Fallback with a reason**: not a PNG, a broken header, a zero size, or an image the texture loader cannot decode →
+  procedural iris; the reason is in the HUD, on the console and in the probe report.
+- **Where you see which one**: the console line at start, the HUD (`iris texture: CUSTOM ... sha1 ...` or
+  `procedural`), and the probe reports right after the header (the SHA-1 names the exact image in a results file).
+  The probes' CPU ray model (P1b [M]) always uses the procedural iris, so its numbers depend on no file.
+- **Replacing the file while the lab runs** shows at the next frame (the loader's cache is keyed by the file's
+  modification time). Adding or removing it takes a restart. A replacement the loader cannot decode is not caught at
+  that point: P1 then shows a plain grey iris and P1b leaves the cornea out until the file is fixed or the lab
+  restarted (the console names the loader's error).
+
+**How the image lies on the eye** (planar mapping, as the procedural iris; checked with marker images): the image square
+spans the iris disc of radius 7.18 mm (the iris root); image centre = pupil centre; **top of the file = up, right of
+the file = right** in the front view (not mirrored). Measured from the centre as a share of half the image width:
+
+| Share | Radius | What |
+|---|---|---|
+| 26.8 % | 1.92 mm | pupil edge. P1 shows the image inside it; P1b's refraction shows the dark pupil there whatever the image holds, so paint it black at least to here |
+| 78 % | 5.59 mm | the chamber angle: in P1b the iris is not visible beyond it (limbal tissue), magnified on screen by ~1.14 |
+| 82 % | 5.88 mm | the visible limbus in P1; beyond it the image is hidden behind the sclera |
+
+Square images work best (non-square ones are stretched onto the disc). The image is treated as sRGB: T-A shows it as
+it is, T-B … T-D and P1b decode it to linear light. Alpha is ignored. Any size; it is mipmapped.
 
 ## Controls (lab-local; `F1` shows them in the window)
 
@@ -255,7 +288,8 @@ pixel-identical to the production draw.
 **Status:** container-validated (`TESTED [C]`, [`RESULTS_REFRACTION_CONTAINER_2026-11-14.md`](RESULTS_REFRACTION_CONTAINER_2026-11-14.md));
 reference-PC timings **OPEN**; no Artist verdict (P1's verdicts also stay open). Brief: Manu 2026-11-14 ("Proceed
 with P1b"). P1 is the unchanged baseline: P1b only **adds** files and derives from P1's classes; no P1 module, test or
-result changed (the P1 tests still pass, and V1 renders P1 pixel for pixel).
+result changed (the P1 tests still pass, and V1 renders P1 pixel for pixel). The later custom iris texture (section
+above) touched P1's scene builder only to choose the image; without `out/iris_custom.png` P1 renders as before.
 
 ### The three variants
 
@@ -331,7 +365,8 @@ reflection to the iris in linear light. The reflection therefore looks dimmer th
 | `refraction_parity.py` | GPU-vs-NumPy cases with tolerances |
 | `probe_refraction.py` | the probe: [M] model, [P] parity, [K] ray classes GPU vs CPU, [D] depth / blending / order, [V] timings, sheets, [R] hygiene |
 | `run_refraction.py` | interactive window: P1's window and keys + `8` / `9` / `0` = V1 / V2 / V3, `J` = ray-class map; `--probe` |
-| `tests/test_cornea_optics.py`, `test_refraction_headless.py`, `test_gl_refraction.py` | 36 + 4 headless, 15 GL |
+| `tests/test_cornea_optics.py`, `test_refraction_headless.py`, `test_gl_refraction.py` | 36 + 4 headless, 17 GL (2 for the custom iris) |
+| `tests/test_iris_source.py` | 8 headless: choice, fallbacks, the custom file left untouched |
 | `RESULTS_REFRACTION_CONTAINER_2026-11-14.md` | the container validation, the model's numbers, raw output |
 
 ### Commands — reference PC (PowerShell, repository root, `.venv312`; NVIDIA "Maximale Leistung bevorzugen")
@@ -371,4 +406,14 @@ button; `J` shows which rays reach iris (red), pupil (green) or limbal tissue (b
 - **Hornhaut jetzt undurchsichtig gezeichnet** (Tiefe schreiben, kein Mischen), alles in linearem Licht: das behebt
   nebenbei die Überhellung der P1-Schalen C2/C3.
 - **Dein Lauf:** die drei PowerShell-Befehle oben, Ausgabe einfügen, `refraction_sheet.png` anhängen.
+
+## Eigene Iris-Textur (Kurzfassung für Manu, Deutsch)
+
+- **Datei:** `experiments\lookdev_eye_lab\out\iris_custom.png`. Ist sie da und lesbar, nutzen P1 und P1b sie; sonst
+  die berechnete Iris. Die Datei wird nur gelesen, nie verändert.
+- **Wo was liegt:** Bildmitte = Pupillenmitte, oben = oben, rechts = rechts (Frontansicht). Pupillenrand bei 26,8 %
+  der halben Bildbreite (dort schwarz malen), sichtbarer Limbus bei 82 % (in P1b endet die sichtbare Iris schon bei
+  78 %). Quadratisch, sRGB, beliebige Größe.
+- **Kontrolle:** Das HUD zeigt `iris texture: CUSTOM …` oder `procedural` (mit Grund, falls deine Datei nicht ging).
+  Austauschen während das Fenster läuft wirkt sofort; Hinzufügen oder Entfernen braucht einen Neustart.
 

@@ -65,6 +65,7 @@ class LabWindow:
         self.state = ls.LabState(technique=args.technique, cornea=args.cornea, view=args.view)
         width, height = self.window.get_framebuffer_size()
         self.scene = lab_scene.build_scene(self.state, OUT_DIR, CACHE_DIR, width, height)
+        print(self.scene.iris_source.describe(), flush=True)
         self.close_up = False
         self.help = False
         self.queries = [ctypes.c_uint(), ctypes.c_uint()]
@@ -188,6 +189,9 @@ class LabWindow:
         gl = self.gl
         gl.glViewport(0, 0, fw, fh)
         lines = ls.describe(self.state)
+        source = getattr(self.scene, "iris_source", None)
+        if source is not None:
+            lines.append(source.describe())
         lines.append(f"GPU frame {self.gpu_ms:.2f} ms (previous frame, GL_TIME_ELAPSED)   "
                      f"{'close-up' if self.close_up else 'overview'} (Z)   {self.message}")
         if self.help:

@@ -451,6 +451,8 @@ def run(args) -> list[str]:
     res = pg.Resources(gl)
     try:
         scene = lab_scene.build_scene(state, out_dir, CACHE_DIR, *SHOT_SIZE)
+        probe.add(scene.iris_source.describe())  # results depend on the image: name it
+        probe.add("")
         probe.guarded("E", probe.environment, scene.renderer)
         probe.guarded("S", probe.seams, res)
         probe.guarded("Q5", probe.srgb, res)
