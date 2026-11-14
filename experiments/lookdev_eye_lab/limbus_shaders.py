@@ -241,9 +241,13 @@ void main() {
     bool through = sclera_through(p, -v, n_s, through_hit);  // reference path: every sclera fragment
 #else
     // Fast path: only where the band transmits anything; beyond it transmission(us) is exactly 0 and the traced colour
-    // was multiplied by 0 (the sclera covers most of the eye on screen; the band is ~1 mm).
+    // was multiplied by 0 (the sclera covers most of the eye on screen; the band is ~1 mm). The margin of 2 pixels
+    // (fwidth, computed in uniform control flow) keeps every 2x2 quad at the band's edge fully traced, so the texture's
+    // derivatives - its mip level - are those of the reference path: without it, up to 3 / 255 at the edge
+    // (reference PC, 320x240, 2026-11-14).
     bool through = false;
-    if (us < u_band) {
+    float margin = 2.0 * fwidth(us);
+    if (us - margin < u_band) {
         through = sclera_through(p, -v, n_s, through_hit);
     }
 #endif
