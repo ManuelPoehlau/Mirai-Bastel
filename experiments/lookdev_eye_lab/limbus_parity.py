@@ -2,7 +2,7 @@
 `limbus_shaders.LIMBUS_LIB_SRC` (GL-free). Used by `tests/test_gl_limbus.py` and the probe's [P] section.
 
 Inputs are float32 (as the GPU sees them), the reference runs in float64 on those values. `PARAMS` sets the uniforms;
-the asymmetry is on so `asym_shift` / `iris_cover` are exercised (with it off they are 0 by construction).
+the overlap and the asymmetry are on so `asym_shift` / `iris_cover` are exercised (0 by construction while off).
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from . import cornea_optics as co
 from . import limbus_model as lm
 from .refraction_parity import N, Case, _f32, _pack
 
-PARAMS = lm.LimbusParams(band_mm=1.2, strength=0.8, normal_mm=0.6, falloff=3.0, asym=True)
+PARAMS = lm.LimbusParams(band_mm=1.2, strength=0.8, normal_mm=0.6, falloff=3.0, asym=True, overlap_mm=0.2)
 
 
 def _sclera_points(rng, n):
@@ -30,16 +30,16 @@ def cases(params: lm.LimbusParams = PARAMS, seed: int = 11) -> list[Case]:
     p = _sclera_points(rng, N)
     x = _pack(p)
     a = _f32(x)
-    ref = np.stack([lm.sclera_u(a[:, 0:3]), lm.cornea_u(a[:, 0:3]), lm.asym_shift(a[:, 0:3], params.asym_units),
+    ref = np.stack([lm.sclera_u(a[:, 0:3]), lm.cornea_u(a[:, 0:3]), lm.asym_shift(a[:, 0:3], params.asym_units, params.overlap_units),
                     np.zeros(N)], -1)
     # acos near the ring (polar ~29 degrees) in float32: ~1e-6.
     out.append(Case("coords", x, ref, [0, 1, 2], 5e-6))
 
     u = rng.uniform(-0.06, 0.15, N)
-    shift = rng.choice([0.0, params.asym_units, 0.5 * params.asym_units], N)
+    shift = rng.choice([0.0, 1e-4 * params.cover_max, params.overlap_units, 0.5 * params.cover_max, params.cover_max], N)
     x = _pack(u, u + rng.uniform(-0.02, 0.0, N), shift, rng.uniform(-0.06, 0.15, N))
     a = _f32(x)
-    ref = np.stack([lm.colour_weight(a[:, 0], params.band), lm.iris_cover(a[:, 1], a[:, 2], params.asym_units),
+    ref = np.stack([lm.colour_weight(a[:, 0], params.band), lm.iris_cover(a[:, 1], a[:, 2], params.cover_max),
                     lm.transmission(a[:, 3], params.band, params.falloff), np.zeros(N)], -1)
     out.append(Case("weights", x, ref, [0, 1, 2], 2e-5))
 

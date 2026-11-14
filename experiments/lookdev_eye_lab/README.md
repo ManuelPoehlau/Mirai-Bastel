@@ -474,7 +474,8 @@ switch (default off). P1 and P1b code is unchanged; P1c is new files deriving fr
 | **L1** colour band | one gradient from the limbal colour at the chamber angle (0.29 mm inside the ring) to the sclera albedo `band` (1.0 mm) outside the ring, on P1b's limbal tissue and on the sclera; `strength` scales it. The sclera beyond the band is unchanged (≤ 1 LSB, tested) |
 | **L2** normal blend | the shading normal goes from the cornea sphere's to the sclera sphere's across ±0.5 mm around the ring (halfway on the ring), on both passes: the 19.6° kink no longer makes highlights / reflections jump. Refraction and ray classes keep the true surfaces |
 | **L3** translucent limbus | the limbal tissue and the sclera band transmit `(1 − t)^falloff` of what lies behind (1 at the chamber angle, 0 at the band edge): the cornea's tissue rays continue (anterior refraction) to the iris; sclera fragments refract into the tissue (n 1.376) and see the iris root |
-| asymmetry (switch) | the band starts `0.55 mm · sin²(azimuth)` further over the cornea (visible iris ~11.7 × 10.6 mm): wider at top and bottom; cornea rays that still reach the iris there are covered by tissue (L3: translucent), the cover faded in with the shift (full from ~30° off the horizontal) — fix of 2026-11-14 for a seam left and right that Manu found on the reference PC. Inert at L0 |
+| overlap all round (setting, 0 / 0.15 / 0.3 / 0.5 mm, default 0) | the limbal tissue reaches that far over the cornea **all round**: the colour band and the transmission move inward by it, and cornea rays that still reach the iris within it are covered by tissue (L3: translucent) — a soft iris-to-tissue edge at the sides as well. Added 2026-11-14 after Manu: the asymmetry's soft edge only at top / bottom left the sides hard, "unnatürlich/künstlich". Anatomical anchor: the topographic limbus lies ~0.33 mm outside the visible iris edge (plan sources). Inert at L0 |
+| asymmetry (switch, default off) | adds `0.55 mm · sin²(azimuth)` on top of the overlap (visible iris ~11.7 × 10.6 mm): wider at top and bottom. The cover fades in with the total shift, so it is continuous everywhere (the seam left / right of the first version is fixed, 2026-11-14). Inert at L0 |
 
 Limbal colour: **shader** = a preset (`P1b dark` = P1b's limbal colour, default; `grey-blue`, `grey-brown` as comparison
 points) or **image** = the linear mean of the iris image's ring `edge − 0.05 … edge` (edge = the fit's `limbus`, else
@@ -496,6 +497,7 @@ per L3 fragment). Every Artist verdict is open.
 ### Controls (P1c window, in addition to P1 / P1b's)
 
 `Q` level L0 → L3 (shift: back) · `O` colour source shader / image · `N` shader colour preset · `A` asymmetry on / off ·
+`/` overlap all round 0 / 0.15 / 0.3 / 0.5 mm ·
 `W` band ±0.25 mm · `D` strength ±0.1 · `,` normal blend ±0.1 mm · `.` translucency falloff ×/÷1.25 (shift = the
 other direction). Lab-local; no `config/keymap.json` entry (D-L9). The levels act with V2 / V3 and T-B … T-D.
 
@@ -509,7 +511,7 @@ other direction). Lab-local; no `config/keymap.json` entry (D-L9). The levels ac
 | `limbus_parity.py` | GPU-vs-NumPy cases with tolerances |
 | `probe_limbus.py` | [P] parity, [I] L0 = P1b, [C] continuity numbers + key sweep, [V] timings, contact sheet, [R] hygiene |
 | `run_limbus.py` | the window (P1b's + the keys above); `--probe` |
-| `tests/test_limbus_headless.py`, `tests/test_gl_limbus.py` | 9 headless; 19 GL (parity ×5, L0 = P1b ×3 techniques, band per level, asymmetry, no seam left / right ×3 levels, colour source, fallback, GL state, ray-class map / V1, probe run, window) |
+| `tests/test_limbus_headless.py`, `tests/test_gl_limbus.py` | 10 headless; 21 GL (parity ×5, L0 = P1b ×3 techniques incl. overlap / asymmetry, band per level, asymmetry, no seam left / right ×3 levels, overlap all round ×2 levels, colour source, fallback, GL state, ray-class map / V1, probe run, window) |
 
 ### Commands — reference PC (PowerShell, repository root, `.venv312`; NVIDIA "Maximale Leistung bevorzugen")
 
@@ -528,7 +530,8 @@ $py = (Resolve-Path .\.venv312\Scripts\python.exe).Path
 ```
 
 Paste the output of the first two; attach `experiments\lookdev_eye_lab\out\limbus\limbus_sheet.png` (limbus crops,
-columns L0 | L1 | L2 | L3 | L3 + asymmetry | L3 image colour; rows front / ¾ / profile / steep 75 / ¾ with the key at
+columns L0 | L1 | L2 | L3 | L3 + asymmetry | L3 image colour | L2 + overlap 0.3 mm | L2 + overlap 0.3 mm + asymmetry;
+rows front / ¾ / profile / steep 75 / ¾ with the key at
 −45°, the highlight on the ring). With your `out\iris_custom.png` and
 `out\iris_custom.json` = `{"pupil": 0.22, "limbus": 0.88, "hold_outer_color": true}` in place, the probe and the window
 use them (the probe names the image and the fit in its header). Check: `EVIDENCE: hardware renderer`, four `PASS`.
@@ -536,7 +539,7 @@ use them (the probe names the image and the fit in its header). Check: `EVIDENCE
 ### Kurzfassung für Manu (Deutsch)
 
 - **Gebaut:** L0 (= P1b V2, pixelgleich) → L1 Farbband → L2 + Normalen-Übergang → L3 + durchscheinender Limbus;
-  Asymmetrie oben/unten als eigener Schalter (aus); Limbusfarbe aus Shader-Einstellung oder aus dem Außenring deiner
+  Überlappung rundum (`/`, 0 … 0,5 mm) und Asymmetrie oben/unten (`A`) als eigene Einstellungen (beide aus); Limbusfarbe aus Shader-Einstellung oder aus dem Außenring deiner
   Textur (Taste `O`). P1 und P1b unverändert.
 - **Im Fenster:** `run_limbus.py`, `Z` Nahansicht, `Q` Stufe, `A` Asymmetrie, `O` Farbquelle, `N` Farbvorgabe,
   `W` / `D` / `,` / `.` Parameter (Shift = rückwärts). Urteile sind deine.

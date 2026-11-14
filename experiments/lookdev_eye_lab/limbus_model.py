@@ -16,10 +16,13 @@ the arc distance from the ring along the sphere (`sclera_u`), on the cornea the 
 (`cornea_u`, negative inside). Both are 0 on the shared ring vertices, so the band is continuous across the seam.
 `U0` = the chamber angle's radius minus the ring's (-0.29 mm): where P1b's limbal tissue begins.
 
-**Asymmetry** (switch, default off): the sclera reaches further over the cornea at top and bottom (visible iris
-~11.7 mm wide, ~10.6 mm high: ~0.55 mm per side). `asym_shift` = A sin^2(azimuth) is added to u for the colour band
-and the transmission, and cornea rays that still reach the iris are covered by tissue within that shift
-(`iris_cover`, 0 everywhere while the switch is off; faded in with the shift, so it is continuous left and right).
+**Overlap and asymmetry** (two independent settings, both off by default): the limbal tissue reaches over the cornea
+by `asym_shift` = B + A sin^2(azimuth): B = the **overlap all round** (`overlap_mm`, added 2026-11-14 after Manu: the
+soft transition the asymmetry gave at top and bottom "wirkt ... an den Seiten ... hart ... unnatürlich/künstlich";
+the true limbus lies ~0.33 mm outside the visible iris edge, white-to-white vs topographic limbus, plan sources),
+A = the extra at **top and bottom** (`asym`, visible iris ~11.7 x 10.6 mm: ~0.55 mm per side). The shift is added to
+u for the colour band and the transmission, and cornea rays that still reach the iris are covered by tissue within it
+(`iris_cover`; 0 while both are off; faded in with the shift, so it is continuous where the shift goes to 0).
 """
 
 from __future__ import annotations
@@ -45,6 +48,8 @@ COLOUR_SOURCES = ("shader", "image")
 SHADER_COLOURS = {"P1b dark": (0.10, 0.11, 0.13), "grey-blue": (0.36, 0.41, 0.48), "grey-brown": (0.40, 0.36, 0.32)}
 #: Visible iris ~11.7 x 10.6 mm (horizontal x vertical): the sclera overlaps ~0.55 mm more at top and bottom.
 ASYM_MM = 0.55
+#: Overlap-all-round steps for the window key (mm); 0.3 ~ the topographic limbus outside the visible iris edge.
+OVERLAP_STEPS = (0.0, 0.15, 0.3, 0.5)
 #: The cover fades in over shifts 0 .. COVER_FADE x the full shift (sin^2 = 0.25: 30 degrees off the horizontal).
 COVER_FADE = 0.25
 
@@ -58,6 +63,7 @@ class LimbusParams:
     falloff: float = 4.0  # transmission (1 - t)^falloff
     asym: bool = False
     asym_mm: float = ASYM_MM
+    overlap_mm: float = 0.0  # all round, independent of the asymmetry
 
     @property
     def band(self) -> float:
@@ -70,6 +76,15 @@ class LimbusParams:
     @property
     def asym_units(self) -> float:
         return self.asym_mm * MM if self.asym else 0.0
+
+    @property
+    def overlap_units(self) -> float:
+        return self.overlap_mm * MM
+
+    @property
+    def cover_max(self) -> float:
+        """The largest shift (top / bottom): the reference of the cover's fade-in."""
+        return self.overlap_units + self.asym_units
 
 
 def _smooth(t):
@@ -88,10 +103,11 @@ def cornea_u(p):
     return np.hypot(p[..., 0], p[..., 1]) - RING_RADIUS
 
 
-def asym_shift(p, amount: float):
+def asym_shift(p, amount: float, base: float = 0.0):
+    """How far the limbal tissue reaches over the cornea at this azimuth: `base` all round + `amount` sin^2."""
     p = np.asarray(p, dtype=np.float64)
     rr = p[..., 0] ** 2 + p[..., 1] ** 2
-    return amount * p[..., 1] ** 2 / np.maximum(rr, 1e-12)
+    return base + amount * p[..., 1] ** 2 / np.maximum(rr, 1e-12)
 
 
 def colour_weight(u, band: float):
@@ -106,7 +122,8 @@ def tint(weight, limbal, sclera, strength: float):
 
 
 def iris_cover(u, shift, amount: float):
-    """How much tissue covers a cornea ray that still reaches the iris (asymmetry only; `amount` = the full shift A).
+    """How much tissue covers a cornea ray that still reaches the iris (`amount` = the largest shift, overlap +
+    asymmetry; 0 = both off).
 
     The ramp from `U0 - shift` to `U0` is faded in by `smooth(shift / (COVER_FADE * amount))`, so the cover is a
     continuous function of the azimuth: 0 left / right (shift 0), full from ~30 degrees off the horizontal. Without the

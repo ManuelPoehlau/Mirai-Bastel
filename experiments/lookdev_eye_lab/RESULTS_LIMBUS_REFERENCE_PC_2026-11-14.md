@@ -106,10 +106,19 @@ continuity, GL ×3 levels) fail on the old shader and pass on the new one. **The
 with this fix** (its effect now fades out toward the horizontal instead of covering the band there); the reference-PC
 runs above were made before it.
 
+## Follow-up: overlap all round (2026-11-14, built; not yet run on the reference PC)
+
+Manu after the seam fix: "Dadurch das es in die Cornea hineinragt, bekommt man diesen schönen weichen Übergang,
+allerdings wirkt es etwas komisch, dass der Effekt nur oben und unten richtig wirkt und an den Seiten nicht so, und
+dort der Übergang dann hart bleibt, was an den Seiten etwas unnatürlich/künstlich wirkt". Built as an independent
+setting **overlap all round** (0 / 0.15 / 0.3 / 0.5 mm, default 0, key `/`); the asymmetry adds on top of it.
+Container (TESTED [C], stand-in image + A+H): four PASS; [C] front, L2 → L2 + overlap 0.3 mm: 43.4 / 66.9 → 13.9 / 22.7
+(the iris-to-tissue edge softened all round), with the asymmetry 9.6 / 16.3; no jump along the ring (GL tests).
+
 ## Open
 
-- **Artist verdicts** (Manu): L0–L3, colour source shader / image (and which preset), asymmetry on / off (to be
-  looked at again after the seam fix).
+- **Artist verdicts** (Manu): L0–L3, colour source shader / image (and which preset), asymmetry on / off and the
+  overlap all round (both to be looked at with the seam fix and the new overlap).
 - **A+H with the real texture:** measured in run 2 (no white rim); Manu's look verdict on it is open.
 - **L3 cost** (technical, an agent's job if wanted): trace the sclera's refracted ray only inside the band (texture
   sampled outside the branch as now); expected to remove most of the profile-view +0.33 / +0.75 ms (run 2: +0.56 / +1.29 ms); to be measured.
