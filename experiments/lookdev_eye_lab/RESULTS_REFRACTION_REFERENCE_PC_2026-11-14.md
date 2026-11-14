@@ -28,7 +28,7 @@ or (measurably) the timings. **Artist verdict: OPEN** (not given; P1 verdicts al
 | Interpreter | `.venv312`: Python 3.12.10, numpy 2.2.6, pyglet 2.1.19 |
 | GL | 3.3.0 / NVIDIA / GLSL 3.30 via Cg, core profile; `EVIDENCE:` hardware renderer |
 | Iris image | custom, 512×512 8-bit RGBA, sha1 `beff016e0ff3` |
-| Lab tests | **2 failed, 111 passed** (211 s) — both failures analysed and fixed in §4 |
+| Lab tests | **2 failed, 111 passed** (211 s) — both failures analysed and fixed in §4; re-run after the fixes (`4d37107`): **121 passed** (Manu, 2026-11-14) |
 
 ## 2. Probe verdicts
 
