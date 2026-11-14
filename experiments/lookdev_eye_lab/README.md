@@ -4,7 +4,8 @@
 ([`RESULTS_CONTAINER_2026-11-14.md`](RESULTS_CONTAINER_2026-11-14.md)). **Reference PC: probe run 2026-11-14, six PASS**
 ([`RESULTS_REFERENCE_PC_2026-11-14.md`](RESULTS_REFERENCE_PC_2026-11-14.md), `MEASURED [RPC]`): no corner seams with
 the fix-up, T-C 1.0–1.3 ms / 2.4–2.9 ms per frame at 1024×768 / 1920×1080 with the eye at ~50 %, T-D about twice
-that. **Artist verdict: `OPEN`** (the practical test below). Main PC: `OPEN` (D-L5 deferred). No change under `src/`, `tests/`, `config/`; no new
+that. **Artist verdict: `OPEN`** (the practical test below). Main PC: `OPEN` (D-L5 deferred).
+**P1b — Corneal Refraction Lab (2026-11-14):** added on top of P1, P1 unchanged; see [the P1b section](#p1b--corneal-refraction-lab-2026-11-14). No change under `src/`, `tests/`, `config/`; no new
 dependency; no keymap entry.
 **Source:** [Lookdev P0 audit](../../docs/research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §5 (P1 proposal), §8
 (decisions) and its 2026-11-13 addendum; the probe's reading for P1:
@@ -246,3 +247,128 @@ pixel-identical to the production draw.
 - **Dein Lauf:** NVIDIA auf „Maximale Leistung“, dann die vier PowerShell-Befehle oben. Die ersten drei Ausgaben hier
   einfügen und die drei Übersichtsbilder aus `out\probe\` anhängen. Danach im Fenster (`run.py`) je Technik und
   Hornhaut KEEP / ITERATE / REJECT nach den sechs Punkten oben.
+
+---
+
+## P1b — Corneal Refraction Lab (2026-11-14)
+
+**Status:** container-validated (`TESTED [C]`, [`RESULTS_REFRACTION_CONTAINER_2026-11-14.md`](RESULTS_REFRACTION_CONTAINER_2026-11-14.md));
+reference-PC timings **OPEN**; no Artist verdict (P1's verdicts also stay open). Brief: Manu 2026-11-14 ("Proceed
+with P1b"). P1 is the unchanged baseline: P1b only **adds** files and derives from P1's classes; no P1 module, test or
+result changed (the P1 tests still pass, and V1 renders P1 pixel for pixel).
+
+### The three variants
+
+| Id | Ray after the anterior corneal surface |
+|---|---|
+| **V1** | none: P1 as it is (straight rays to the iris mesh, P1's cornea treatment C1 / C2 / C3) |
+| **V2** | one effective refractive surface, air → **n = 1.3375** (keratometric index), then straight to the iris |
+| **V3** | two interfaces: air **1.0** → cornea **1.376** (anterior), cornea → aqueous **1.336** (posterior), then to the iris |
+
+V2 / V3 apply to T-B, T-C and T-D (T-A is the production Worklight: it has no refraction and draws P1's T-A).
+
+### Order of work (as asked)
+
+1. **CPU ray model first** (`cornea_optics.py`, `optics_report.py`): geometry, refraction, intersections, and the
+   numbers below, before any GLSL.
+2. **Geometry:** anterior = P1's cap (r 7.80 mm, rim = the sclera's limbus ring); posterior sphere r 6.60 mm,
+   0.55 mm thick at the centre, 0.79 mm at the limbus; the anterior chamber closes where the posterior sphere meets
+   P1's iris cone (r 5.59 mm); between that angle and the anterior rim the ray ends in **limbal tissue**, shaded with a
+   blend from a dark limbal colour (at the angle) to the sclera (at the rim). V2 uses the same posterior sphere only as
+   that boundary, so V2 and V3 hide the same tissue.
+3. **Fragment shader** (`refraction_shaders.py`) with GPU-vs-NumPy parity (`refraction_parity.py`).
+
+### What the CPU model measured (COMPUTED, the same on every machine; details in the results file)
+
+- **Front magnification of the pupil:** V2 1.136, V3 1.135 (traced; paraxial 1.144 / 1.143), the virtual pupil
+  0.63 mm in front of the real one. At the close-up the pupil's screen area grows by a factor 1.17² (front) and
+  1.28–1.30² (¾).
+- **V1 → V2/V3 is large:** iris features move 23–52 px (median) at front / ¾, up to 247 px at ¾ (1920×1080).
+- **V2 → V3 is small — measured:** iris features ≤ 1.75 px (median 0.1–0.5 px); the visible difference is in the
+  limbal band (0.1–0.7 % of the cornea's pixels change between iris and tissue, up to 89 levels there).
+- **Side views:** the profile preset (90°, close-up) shows no iris in any variant. Just before it (supplementary 75°
+  view) P1 shows none, V2/V3 an iris crescent. Seen from afar, the pupil stays visible to 92.6° off-axis with
+  refraction and to 79.6° without.
+
+### The opaque cornea pass
+
+In V2 / V3 the cornea entry is drawn by `RefractionRenderer.draw_cornea`: **depth test on (`GL_LESS`), depth write on,
+blending off**, back faces culled, drawn last by the viewport (it is P1's Ghost entry; as an opaque pass the order does
+not matter, tested). Per fragment: the view ray meets the analytic anterior sphere (the mesh is the raster footprint),
+refracts, and is traced to P1's iris cone, the pupil or the limbal tissue. Colour = (1 − F) · T_inner · L_inside +
+reflection, all in linear light, then P1's colour path. F / the reflection use P1's cornea F0 (IOR 1.376) in every
+variant, so the reflection equals P1's; only the transmitted part changes. The iris mesh is not drawn in V2 / V3 (every
+view of the iris goes through the cornea); tests show that drawing it anyway changes nothing.
+
+This pass also removes P1's C2 / C3 limitation (shells blended in the display-encoded framebuffer): V2 / V3 add the
+reflection to the iris in linear light. The reflection therefore looks dimmer than in P1's C2, which over-brightens.
+
+### Approximations and limitations (honest list)
+
+- **Spherical cornea**, both surfaces; real corneas flatten toward the periphery (asphericity Q ≈ −0.25). The
+  wide-angle results (iris visible to 115°) depend on that, and there are no lids.
+- **No tear film** as a layer (its index ~1.337 ≈ V2's), **no dispersion**.
+- **The iris is lit as in P1**, straight from the key: light is not refracted on its way *in*, no caustics, no shadow
+  of the limbus on the iris, no inter-reflection.
+- **The pupil** is a constant dark colour (P1's); behind it nothing is modelled (lens, retina, red reflex).
+- **Limbal tissue** is a lit, opaque blend (dark limbal colour → sclera), not translucent scattering.
+- **The iris** is P1's cone (an annulus concave toward the pupil); its depth (3.9 mm behind the apex) is on the deep
+  side of real eyes, which makes the refraction effect slightly larger.
+- **Reflection** stays P1's: P1's cornea F0 and roughness, Schlick / split sum; the posterior interface reflects
+  2·10⁻⁴ (only as a transmission loss, no ghost reflection).
+- **Aliasing**: no anti-aliasing (as P1); the refracted iris can shimmer at steep angles.
+- **float32**: GPU positions differ from the float64 model by up to ~1 µm at grazing incidence (parity tolerances
+  documented in `refraction_parity.py`).
+
+### Files (P1b)
+
+| File | What |
+|---|---|
+| `cornea_optics.py` | the CPU ray model: geometry, refraction, intersections, traces, magnification, visibility, per-view metrics |
+| `optics_report.py` | prints the model's numbers (section [M]); GL-free |
+| `refraction_shaders.py` | GLSL: the ray functions (twins of `cornea_optics`), the opaque cornea program, the parity program |
+| `refraction_gl.py` | `RefractionState`, `RefractionStore`, `RefractionRenderer`, `build_scene`, the parity pass (all derived from P1's) |
+| `refraction_parity.py` | GPU-vs-NumPy cases with tolerances |
+| `probe_refraction.py` | the probe: [M] model, [P] parity, [K] ray classes GPU vs CPU, [D] depth / blending / order, [V] timings, sheets, [R] hygiene |
+| `run_refraction.py` | interactive window: P1's window and keys + `8` / `9` / `0` = V1 / V2 / V3, `J` = ray-class map; `--probe` |
+| `tests/test_cornea_optics.py`, `test_refraction_headless.py`, `test_gl_refraction.py` | 36 + 4 headless, 15 GL |
+| `RESULTS_REFRACTION_CONTAINER_2026-11-14.md` | the container validation, the model's numbers, raw output |
+
+### Commands — reference PC (PowerShell, repository root, `.venv312`; NVIDIA "Maximale Leistung bevorzugen")
+
+```powershell
+git pull
+$py = (Resolve-Path .\.venv312\Scripts\python.exe).Path
+& $py -m pytest experiments\lookdev_eye_lab\tests -q
+```
+
+```powershell
+& $py experiments\lookdev_eye_lab\run_refraction.py --probe
+```
+
+```powershell
+& $py experiments\lookdev_eye_lab\run_refraction.py
+```
+
+Paste the output of the first two. Estimate (not measured): tests a few minutes (P1's took 167 s there), the probe
+5–10 minutes, most of it the CPU model ([M]) on the Q9550; `--no-optics` skips it (its numbers are the container's
+anyway, they do not depend on the machine). Attach `experiments\lookdev_eye_lab\out\refraction\refraction_sheet.png`
+(cornea crops: columns T-C V1 C2 = P1 | T-C V2 | T-C V3 | |V3 − V2| × 8; rows front, ¾, profile, steep 75°).
+Check: `EVIDENCE: hardware renderer`, five `PASS` lines in the Summary.
+
+In the window: `Z` close-up, `9` / `0` for V2 / V3, `8` back to P1 (V1), `V` for the views, orbit with the left
+button; `J` shows which rays reach iris (red), pupil (green) or limbal tissue (blue).
+
+### Kurzfassung für Manu (Deutsch)
+
+- **Drei Varianten:** V1 = P1 ohne Brechung, V2 = eine Ersatzfläche mit n = 1,3375, V3 = zwei Grenzflächen
+  (Luft → Hornhaut 1,376 → Kammerwasser 1,336) mit echter Hornhautdicke (0,55 mm Mitte, 0,79 mm am Limbus) und
+  Limbus-Übergang.
+- **Erst gerechnet, dann gebaut:** Brechung vergrößert die Pupille frontal um 13,6 % und holt sie 0,6 mm nach vorn;
+  in der Dreiviertelansicht verschiebt sie die Iris um bis zu 250 Pixel. V2 und V3 unterscheiden sich um höchstens
+  1,75 Pixel, sichtbar nur am Limbusrand.
+- **Seitenansicht:** im 90°-Profil sieht man in keiner Variante Iris; bei 75° zeigt P1 keine, V2/V3 eine Sichel.
+- **Hornhaut jetzt undurchsichtig gezeichnet** (Tiefe schreiben, kein Mischen), alles in linearem Licht: das behebt
+  nebenbei die Überhellung der P1-Schalen C2/C3.
+- **Dein Lauf:** die drei PowerShell-Befehle oben, Ausgabe einfügen, `refraction_sheet.png` anhängen.
+
