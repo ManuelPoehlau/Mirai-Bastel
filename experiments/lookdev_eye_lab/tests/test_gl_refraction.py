@@ -223,3 +223,107 @@ def test_undecodable_custom_iris_falls_back_to_the_procedural_one(gl_context, tm
     finally:
         scene.release()
     assert custom.read_bytes() == before
+
+
+# -- the radial fit of the custom iris (`out/iris_custom.json`, `iris_fit`) ------------------------------------------
+
+
+@pytest.mark.parametrize("target, outer", [("limbus", 1.0), ("angle", 1.0), ("limbus", 0.90), ("angle", 0.90)])
+def test_iris_fit_glsl_matches_the_python_model(gl_context, target, outer):
+    from lookdev_eye_lab import iris_fit
+
+    fit = iris_fit.IrisFit(0.22, 0.90, target, outer)
+    res = pg.Resources(gl_context)
+    pp = rg.RefractionParityPass(gl_context, res, fit)
+    try:
+        case = rp.fit_case(fit)
+        err, bad, compared = case.errors(pp.run(case.func, case.inputs))
+        assert pg.drain_errors(gl_context) == []
+        assert compared == len(case.inputs) and bad == 0, f"max abs error {err:.3g}"
+    finally:
+        pp.release()
+        res.release_all()
+    assert res.leaks() == []
+
+
+#: Marker image (shares of half the image width): black pupil < 0.10, green ring 0.10-0.20 (starts at the image's
+#: pupil edge), red 0.20-0.50, blue beyond the image's iris edge 0.50. Deliberately far from the lab's 0.268 / 0.819,
+#: so fitted and planar differ everywhere.
+MARKER_FIT = {"pupil": 0.10, "limbus": 0.50}
+GREEN, RED, BLUE = 1, 0, 2
+
+
+def _marker_custom(out_dir, size=512):
+    from lookdev_gpu_probe import cube_math as cm
+
+    from lookdev_eye_lab import iris_source
+
+    c = (np.arange(size) + 0.5) / size * 2.0 - 1.0
+    y, x = np.meshgrid(c, c, indexing="ij")
+    rho = np.hypot(x, y)
+    rgb = np.empty((size, size, 3))
+    rgb[...] = (0.05, 0.05, 0.9)
+    rgb[rho < 0.50] = (0.9, 0.05, 0.05)
+    rgb[rho < 0.20] = (0.05, 0.9, 0.05)
+    rgb[rho < 0.10] = 0.01
+    path = out_dir / iris_source.CUSTOM_NAME
+    cm.write_png(path, rgb)
+    return path
+
+
+def _bands(img, camera, variant):
+    """{expected channel: dominant-channel share} over iris pixels in lab-share bands away from the band edges."""
+    eye, d = co.camera_rays(camera, W, H)
+    tr = co.trace(eye, d, variant)
+    iris = (tr.kind == co.IRIS) & ~co.sclera_occludes(eye, d)
+    share = np.hypot(tr.hit[..., 0], tr.hit[..., 1]) / co.GEOMETRY.iris_radius
+    dominant = np.argmax(img.astype(int), axis=-1)
+    bright = img.max(axis=-1) > 20
+
+    def score(lo, hi, channel):
+        m = iris & (share > lo) & (share < hi)
+        assert m.sum() > 40, (lo, hi, int(m.sum()))
+        return float(np.mean((dominant[m] == channel) & bright[m]))
+
+    return score
+
+
+@pytest.mark.parametrize("with_sidecar", [True, False])
+def test_marker_image_lands_on_the_geometric_pupil_edge_in_p1_and_p1b(gl_context, tmp_path, with_sidecar):
+    import json
+
+    from lookdev_eye_lab import iris_fit
+
+    custom = _marker_custom(tmp_path)
+    sidecar = tmp_path / iris_fit.SIDECAR_NAME
+    if with_sidecar:
+        sidecar.write_text(json.dumps(MARKER_FIT), encoding="utf-8")
+    before = [(p.read_bytes(), p.stat().st_mtime_ns) for p in (custom, sidecar) if p.exists()]
+    p1 = lab_scene.build_scene(ls.LabState(show_references=False, technique="T-B"), tmp_path, CACHE_DIR, W, H)
+    refr = rg.build_scene(rg.RefractionState(show_references=False, technique="T-B", refraction="V2"), tmp_path,
+                          CACHE_DIR, W, H)
+    target = gl_lab.Target(gl_context, refr.renderer.res, W, H)
+    lp, lt = iris_fit.LAB_PUPIL_SHARE, iris_fit.TARGETS[iris_fit.DEFAULT_TARGET]
+    # Lab shares of the marker's band edges (image 0.20 -> lab), fitted or planar.
+    green_end = lp + (0.20 - 0.10) / (0.50 - 0.10) * (lt - lp) if with_sidecar else 0.20
+    try:
+        assert (p1.iris_source.fit is not None) == with_sidecar == (refr.iris_source.fit is not None)
+        for scene, variant in ((p1, "V1"), (refr, "V2")):
+            _view(scene, "front")
+            score = _bands(_render(scene, target), scene.camera, variant)
+            if with_sidecar:
+                # The image's pupil edge (its green ring starts there) is the geometric pupil edge: the iris begins
+                # green right outside the pupil, no black image pupil on the iris; then red out to the limbus.
+                assert score(lp + 0.005, green_end - 0.02, GREEN) > 0.95, variant
+                assert score(green_end + 0.02, 0.74, RED) > 0.95, variant
+            else:
+                # Planar: the lab's iris starts at 0.268, already past the image's green ring (0.10-0.20); red to
+                # 0.50, blue beyond.
+                assert score(lp + 0.005, 0.48, RED) > 0.95, variant
+                assert score(0.52, 0.74, BLUE) > 0.95, variant
+        assert pg.drain_errors(gl_context) == []
+    finally:
+        target.release()
+        refr.release()
+        p1.release()
+    assert [(p.read_bytes(), p.stat().st_mtime_ns) for p in (custom, sidecar) if p.exists()] == before

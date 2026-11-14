@@ -95,12 +95,13 @@ class RefractionProbe(probe_eye.Probe):
             self.add(line)
         self.add("")
 
-    def parity(self, res: pg.Resources) -> None:
-        pp = rg.RefractionParityPass(self.gl, res)
+    def parity(self, res: pg.Resources, iris_fit=None) -> None:
+        pp = rg.RefractionParityPass(self.gl, res, iris_fit)
         self.add(f"[P] refraction GLSL vs cornea_optics (refraction_parity.py, float32 inputs; read-back {pp.status})")
         self.add(f"  {'function':<16} {'max abs err':>12} {'failed':>7} {'compared':>9} {'tolerance':>22}")
         ok = True
-        for case in rp.cases():
+        # With a radial fit (`out/iris_custom.json`) its GLSL is compared too.
+        for case in rp.cases() + ([rp.fit_case(iris_fit)] if iris_fit is not None else []):
             err, bad, compared = case.errors(pp.run(case.func, case.inputs))
             ok &= bad == 0
             tol = f"{case.abs_tol:g}" + (f" + {case.rel_tol:g}|x|" if case.rel_tol else "")
@@ -355,7 +356,7 @@ def run(args) -> list[str]:
         probe.add(scene.iris_source.describe() + " (the CPU model [M] always uses the procedural image)")
         probe.add("")
         probe.query = res.query()  # `_frame` times every frame, also in [K] / [D]
-        probe.guarded("P", probe.parity, res)
+        probe.guarded("P", probe.parity, res, scene.iris_source.fit)
         probe.guarded("K", probe.kinds, scene, scene.renderer.res)
         probe.guarded("D", probe.depth, scene, scene.renderer.res)
         probe.guarded("V", probe.variants, scene, scene.renderer.res)

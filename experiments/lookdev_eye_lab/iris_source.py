@@ -19,7 +19,8 @@ spans the iris disc of radius `IRIS_RADIUS` (7.18 mm, the iris root), its centre
 - pupil edge 26.8 % (r 1.92 mm; P1b's refraction treats rays inside this radius as the dark pupil, whatever the image
   shows there; P1 shows the image there),
 - visible limbus 82 % (r 5.88 mm; beyond it the image is hidden behind the sclera / limbal tissue).
-Non-square images are stretched to the square. The image is sRGB: P1's T-A shows it as it is (display-referred),
+Non-square images are stretched to the square. An optional `out/iris_custom.json` moves the custom image's own pupil
+edge / iris edge onto these radii (`iris_fit`, radial remap). The image is sRGB: P1's T-A shows it as it is (display-referred),
 T-B ... T-D and P1b decode it to linear light. Alpha is ignored. The texture loader keys its cache by the file's
 modification time, so a file replaced while the lab runs shows at the next frame (the choice custom / procedural itself
 is made when the scene is built).
@@ -34,6 +35,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import eye_geometry as geo
+from . import iris_fit
 
 CUSTOM_NAME = "iris_custom.png"
 PROCEDURAL_NAME = "iris.png"
@@ -49,9 +51,17 @@ class IrisSource:
     path: Path
     custom: bool
     note: str  # one line for the HUD / the probe header
+    #: The radial fit from `out/iris_custom.json` (custom image only); None = the planar mapping above.
+    fit: "iris_fit.IrisFit | None" = None
+    fit_note: str = ""  # why a sidecar that exists was not used
 
     def describe(self) -> str:
-        return f"iris texture: {'CUSTOM' if self.custom else 'procedural'} {self.path.name} - {self.note}"
+        text = f"iris texture: {'CUSTOM' if self.custom else 'procedural'} {self.path.name} - {self.note}"
+        if self.fit is not None:
+            text += f"; {self.fit.describe()}"
+        elif self.fit_note:
+            text += f"; {iris_fit.SIDECAR_NAME} ignored: {self.fit_note}"
+        return text
 
 
 _CHANNELS = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
@@ -137,14 +147,17 @@ def procedural(out_dir: Path, reason: str = "") -> IrisSource:
 
 
 def choose(out_dir: Path) -> IrisSource:
-    """The custom image if `out_dir/iris_custom.png` exists and looks like a usable PNG, else the procedural one."""
+    """The custom image if `out_dir/iris_custom.png` exists and looks like a usable PNG, else the procedural one. With
+    the custom image, `out_dir/iris_custom.json` (if present and valid) adds the radial fit (`iris_fit`); the
+    procedural iris never uses it."""
     custom = Path(out_dir) / CUSTOM_NAME
     if not custom.exists():
         return procedural(out_dir)
     usable, text = inspect(custom)
     if not usable:
         return procedural(out_dir, text)
-    return IrisSource(custom, True, f"{text}, sha1 {fingerprint(custom)}")
+    fit, fit_note = iris_fit.load(out_dir)  # read-only, like the image
+    return IrisSource(custom, True, f"{text}, sha1 {fingerprint(custom)}", fit, fit_note)
 
 
 def confirm_loadable(source: IrisSource, out_dir: Path) -> IrisSource:
