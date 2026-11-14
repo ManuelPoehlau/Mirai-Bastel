@@ -125,6 +125,14 @@ px per frame) and was taken back; V3's cornea keeps the full trace (55 / 255 at 
 asymmetry off / on × three views); the fast path differs by ≤ 1 / 255 at ≤ 7 px per 1024×768 frame. The probe's new
 [F] section measures fast vs reference on the GPU.
 
+**Reference PC, first test run with the fast path (Manu, 2026-11-14, MEASURED [RPC]):** 198 passed, 1 failed — the
+small probe run's [F] at 320×240 found up to **3 / 255 at ≤ 5 px** (3/4 view; the check allows 2). Cause: 2×2 quads at
+the band's outer edge, half traced, half not — the untraced pixels' texture coordinate jumps and changes the mip level
+of the traced ones; at a low resolution a pixel spans more of the band. Fix: the sclera also traces a margin of
+2 × `fwidth(us)` (two pixels) beyond the band, so every edge quad is traced completely. Container after the fix: 216
+comparisons (stand-in + procedural iris, 320×240 / 640×480 / 1024×768, T-B / T-C / T-D, V2 / V3, overlap + asymmetry
+off / on, three views): **0 at 320×240**, at most 1 / 255 at ≤ 3 px elsewhere (rounding).
+
 ## Open
 
 - **Artist verdicts** (Manu): L0–L3, colour source shader / image (and which preset), asymmetry on / off and the
