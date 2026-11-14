@@ -5,6 +5,7 @@ pupil edge ≈ 0.22, iris edge ≈ 0.90 of half the image width; the lab: pupil 
 sidecar next to the image says where they are:
 
     out/iris_custom.json   {"pupil": 0.22, "limbus": 0.90}
+                           {"pupil": 0.22, "limbus": 0.88, "hold_outer_color": true}   (Manu's choice "A+H")
 
 Both numbers are shares of half the image width, measured from the image centre. The file is **only read** (like
 `iris_source.CUSTOM_NAME`); it applies only to the custom image; without it the mapping is exactly the planar one of
@@ -13,8 +14,12 @@ Both numbers are shares of half the image width, measured from the image centre.
 **The remap** (the standard pupil-dilation remap, so a later pupil-size control can reuse it): piecewise linear in the
 lab's radius share s = r / `IRIS_RADIUS`, the angle kept:
 `[0, s_pupil] -> [0, pupil]`, `[s_pupil, s_target] -> [pupil, limbus]`, `[s_target, 1] -> [limbus, outer]` (continued
-with the same slope beyond 1; `outer` 1.0 = on to the image edge, = `limbus` holds the iris edge). `s_pupil` = the lab's pupil edge (0.268); `s_target` = where the image's iris edge
-goes: the visible limbus (0.819) or the P1b chamber angle (0.779) - `TARGETS`, chosen by Manu (`DEFAULT_TARGET`).
+with the same slope beyond 1). `s_pupil` = the lab's pupil edge (0.268); `s_target` = where the image's iris edge goes:
+the visible limbus 0.819 (`DEFAULT_TARGET`, Manu 2026-11-14: "A"; the P1b chamber angle 0.779 stays in `TARGETS` for
+comparisons). `outer` = 1.0 continues to the image edge (default); the optional key `"hold_outer_color": true` sets
+`outer = limbus`, so beyond the target the image's iris-edge colour is held and no background shows where P1's
+parallax (close-up: out to ~0.855) or P1b's tissue band looks past the target. Set `limbus` just inside the
+background then (e.g. 0.88 for an iris edge at 0.90), or the held colour is the edge's blend with the background.
 
 Twins: `share_map` / `uv` (NumPy, P1's mesh UVs via `eye_geometry.iris_mesh`) and `GLSL_SRC` (P1b's cornea pass,
 compiled with `#define IRIS_FIT`); compared on the GPU by `refraction_parity.fit_case`.
@@ -40,11 +45,12 @@ from . import eye_geometry as geo
 
 SIDECAR_NAME = "iris_custom.json"
 KEYS = ("pupil", "limbus")
+OPTIONAL_KEYS = ("hold_outer_color",)
 #: The lab's pupil edge as a share of the iris disc (the image's pupil edge lands here).
 LAB_PUPIL_SHARE = geo.PUPIL_RADIUS / geo.IRIS_RADIUS
 #: Where the image's iris edge can land: P1's visible limbus, or P1b's chamber angle (beyond it P1b shows limbal tissue).
 TARGETS = {"limbus": geo.LIMBUS_RADIUS / geo.IRIS_RADIUS, "angle": co.GEOMETRY.angle[0] / geo.IRIS_RADIUS}
-#: OPEN until Manu chooses (handoff Task 1); the comparison picture renders both.
+#: Manu 2026-11-14: "A+H" - the image's iris edge on the visible limbus (with `hold_outer_color`, a sidecar setting).
 DEFAULT_TARGET = "limbus"
 
 
@@ -53,10 +59,13 @@ class IrisFit:
     pupil: float  # the image's pupil edge, share of half the image width
     limbus: float  # the image's iris edge
     target: str = DEFAULT_TARGET
-    #: The image share the lab's iris root (share 1) samples: 1.0 = continue to the image edge (the spec); = `limbus`
-    #: holds the image's iris edge beyond the target (no background shows where P1's parallax or P1b's tissue band
-    #: looks past the target). OPEN, asked together with the target.
+    #: The image share the lab's iris root (share 1) samples: 1.0 = continue to the image edge; = `limbus` holds the
+    #: image's iris-edge colour beyond the target (`"hold_outer_color": true` in the sidecar).
     outer: float = 1.0
+
+    @property
+    def hold(self) -> bool:
+        return self.outer == self.limbus
 
     @property
     def lab_knots(self) -> tuple[float, float]:
@@ -65,7 +74,7 @@ class IrisFit:
     def describe(self) -> str:
         lp, lt = self.lab_knots
         return (f"radial fit {SIDECAR_NAME}: image pupil {self.pupil:.3f} -> {lp:.3f}, image iris edge "
-                f"{self.limbus:.3f} -> {lt:.3f} ({self.target})")
+                f"{self.limbus:.3f} -> {lt:.3f} ({self.target})" + (", outer colour held" if self.hold else ""))
 
     def uniforms(self) -> dict:
         lp, lt = self.lab_knots
@@ -73,12 +82,13 @@ class IrisFit:
 
 
 def validate(data) -> tuple[IrisFit | None, str]:
-    """(fit, "") or (None, reason). Exactly the keys `pupil` and `limbus`, finite numbers, 0 < pupil < limbus <= 1."""
+    """(fit, "") or (None, reason). The keys `pupil` and `limbus` (finite numbers, 0 < pupil < limbus <= 1) and
+    optionally `hold_outer_color` (true / false; absent = false); no other key."""
     if not isinstance(data, dict):
         return None, "not a JSON object"
-    unknown = sorted(set(data) - set(KEYS))
+    unknown = sorted(set(data) - set(KEYS) - set(OPTIONAL_KEYS))
     if unknown:
-        return None, f"unknown key {unknown[0]!r} (allowed: pupil, limbus)"
+        return None, f"unknown key {unknown[0]!r} (allowed: pupil, limbus, hold_outer_color)"
     missing = [k for k in KEYS if k not in data]
     if missing:
         return None, f"missing {missing[0]!r}"
@@ -91,7 +101,10 @@ def validate(data) -> tuple[IrisFit | None, str]:
     pupil, limbus = values
     if not 0.0 < pupil < limbus <= 1.0:
         return None, f"needs 0 < pupil < limbus <= 1 (got pupil {pupil:g}, limbus {limbus:g})"
-    return IrisFit(pupil, limbus), ""
+    hold = data.get("hold_outer_color", False)
+    if not isinstance(hold, bool):
+        return None, "'hold_outer_color' must be true or false"
+    return IrisFit(pupil, limbus, outer=limbus if hold else 1.0), ""
 
 
 def load(out_dir: Path) -> tuple[IrisFit | None, str]:

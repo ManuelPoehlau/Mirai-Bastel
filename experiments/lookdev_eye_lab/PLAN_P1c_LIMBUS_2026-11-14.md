@@ -1,6 +1,13 @@
-# P1c — soft limbus transition: plan (2026-11-14, waiting for Manu's OK)
+# P1c — soft limbus transition: plan (2026-11-14)
 
-Handoff Task 2. **Nothing is built yet.** Manu: "Dieser weiche Übergang am Limbus ist etwas, was ein Auge nochmal
+**Status: approved and built the same day** — see README "P1c". Manu's answers to the six questions below: (1) cumulative,
+yes; (2) P1b V2 as the baseline, V3 selectable, L0 pixel-identical to P1b V2; (3) L2 shader only, a sulcus later as a
+separate task; (4) shader colour by default **and** the image's outer ring as a switch; (5) asymmetry as an independent
+switch, initially off, separate from L0–L3; (6) Task 1 "A+H" with `hold_outer_color` as an explicit sidecar key.
+Deviation from the plan: the L3 transmission is `(1 − t)^falloff` (reaches 0 at the band edge) instead of
+`1 − exp(−σ d)`, which never reaches 0 and would have leaked the iris onto the whole sclera.
+
+Handoff Task 2. Manu: "Dieser weiche Übergang am Limbus ist etwas, was ein Auge nochmal
 wesentlich realistischer erscheinen lässt als ein harter Übergang." This plan names the variants, how they are
 compared and measured, and the decisions Manu makes before the build. No Artist verdicts here.
 
