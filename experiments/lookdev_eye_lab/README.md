@@ -6,7 +6,7 @@
 the fix-up, T-C 1.0–1.3 ms / 2.4–2.9 ms per frame at 1024×768 / 1920×1080 with the eye at ~50 %, T-D about twice
 that. **Artist verdict: `OPEN`** (the practical test below). Main PC: `OPEN` (D-L5 deferred).
 **P1b — Corneal Refraction Lab (2026-11-14):** added on top of P1, P1 unchanged; see [the P1b section](#p1b--corneal-refraction-lab-2026-11-14).
-**Next session:** [`HANDOFF_2026-11-14.md`](HANDOFF_2026-11-14.md) (radial fit of the custom iris, soft limbus plan). Soft limbus plan: [`PLAN_P1c_LIMBUS_2026-11-14.md`](PLAN_P1c_LIMBUS_2026-11-14.md).
+**P1c — soft limbus (2026-11-14):** L0–L3 on top of P1b, P1 / P1b unchanged; see [the P1c section](#p1c--soft-limbus-2026-11-14) (plan: [`PLAN_P1c_LIMBUS_2026-11-14.md`](PLAN_P1c_LIMBUS_2026-11-14.md)).
 **Own iris image:** put it at `out/iris_custom.png`; see [Custom iris texture](#custom-iris-texture-outiris_custompng). No change under `src/`, `tests/`, `config/`; no new
 dependency; no keymap entry.
 **Source:** [Lookdev P0 audit](../../docs/research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §5 (P1 proposal), §8
@@ -457,4 +457,79 @@ button; `J` shows which rays reach iris (red), pupil (green) or limbal tissue (b
   radial passend gezogen. `suggest_iris_fit.py` schlägt die Werte vor, schreibt aber nichts. Deine Wahl „A+H“:
   `{"pupil": 0.22, "limbus": 0.88, "hold_outer_color": true}` — Irisrand auf den Limbus, dahinter die Randfarbe halten
   (ohne den Schlüssel: aus). Das Urteil mit deiner echten Textur steht noch aus.
+
+## P1c — soft limbus (2026-11-14)
+
+Handoff Task 2, built after Manu's decisions of 2026-11-14 (plan: [`PLAN_P1c_LIMBUS_2026-11-14.md`](PLAN_P1c_LIMBUS_2026-11-14.md)):
+cumulative variants, **P1b V2 as the baseline** (V3 selectable), shader only (no geometry change), limbal colour from
+a shader setting (default) **or** the iris image's own outer ring (a switch), top / bottom asymmetry as an independent
+switch (default off). P1 and P1b code is unchanged; P1c is new files deriving from P1b's classes.
+
+| Level | What it adds (each level includes the ones before) |
+|---|---|
+| **L0** | nothing — P1b's own code draws (tested and probed: pixel for pixel P1b V2 / V3, every technique, also with the asymmetry switched on) |
+| **L1** colour band | one gradient from the limbal colour at the chamber angle (0.29 mm inside the ring) to the sclera albedo `band` (1.0 mm) outside the ring, on P1b's limbal tissue and on the sclera; `strength` scales it. The sclera beyond the band is unchanged (≤ 1 LSB, tested) |
+| **L2** normal blend | the shading normal goes from the cornea sphere's to the sclera sphere's across ±0.5 mm around the ring (halfway on the ring), on both passes: the 19.6° kink no longer makes highlights / reflections jump. Refraction and ray classes keep the true surfaces |
+| **L3** translucent limbus | the limbal tissue and the sclera band transmit `(1 − t)^falloff` of what lies behind (1 at the chamber angle, 0 at the band edge): the cornea's tissue rays continue (anterior refraction) to the iris; sclera fragments refract into the tissue (n 1.376) and see the iris root |
+| asymmetry (switch) | the band starts `0.55 mm · sin²(azimuth)` further over the cornea (visible iris ~11.7 × 10.6 mm): wider at top and bottom; cornea rays that still reach the iris there are covered by tissue (L3: translucent). Inert at L0 |
+
+Limbal colour: **shader** = a preset (`P1b dark` = P1b's limbal colour, default; `grey-blue`, `grey-brown` as comparison
+points) or **image** = the linear mean of the iris image's ring `edge − 0.05 … edge` (edge = the fit's `limbus`, else
+0.819); an image that cannot be read falls back to the shader colour with the reason in the HUD. All widths and
+the falloff are PROVISIONAL working values (keys below). No Artist verdict.
+
+**Measured in the container** (`TESTED [C]`, llvmpipe — timings there are not GPU times): parity of every limbus
+function (max error ≤ 3e-6), L0 = P1b, GL state / resources clean. The probe's [C] section gives edge-continuity
+numbers per level (no verdict); GPU time per level: on the reference PC. Details and raw output:
+[`RESULTS_LIMBUS_CONTAINER_2026-11-14.md`](RESULTS_LIMBUS_CONTAINER_2026-11-14.md).
+
+### Controls (P1c window, in addition to P1 / P1b's)
+
+`Q` level L0 → L3 (shift: back) · `O` colour source shader / image · `N` shader colour preset · `A` asymmetry on / off ·
+`W` band ±0.25 mm · `D` strength ±0.1 · `,` normal blend ±0.1 mm · `.` translucency falloff ×/÷1.25 (shift = the
+other direction). Lab-local; no `config/keymap.json` entry (D-L9). The levels act with V2 / V3 and T-B … T-D.
+
+### Files (P1c)
+
+| File | What |
+|---|---|
+| `limbus_model.py` | the NumPy reference of every limbus function, the parameters, the image ring colour |
+| `limbus_shaders.py` | GLSL: `LIMBUS_LIB_SRC` (twins), the P1c cornea and sclera programs, the parity program |
+| `limbus_gl.py` | `LimbusState`, `LimbusStore`, `LimbusRenderer` (L0 → P1b's code), `build_scene`, the parity pass |
+| `limbus_parity.py` | GPU-vs-NumPy cases with tolerances |
+| `probe_limbus.py` | [P] parity, [I] L0 = P1b, [C] continuity numbers + key sweep, [V] timings, contact sheet, [R] hygiene |
+| `run_limbus.py` | the window (P1b's + the keys above); `--probe` |
+| `tests/test_limbus_headless.py`, `tests/test_gl_limbus.py` | 8 headless; 16 GL (parity ×5, L0 = P1b ×3 techniques, band per level, asymmetry, colour source, fallback, GL state, ray-class map / V1, probe run, window) |
+
+### Commands — reference PC (PowerShell, repository root, `.venv312`; NVIDIA "Maximale Leistung bevorzugen")
+
+```powershell
+git pull
+$py = (Resolve-Path .\.venv312\Scripts\python.exe).Path
+& $py -m pytest experiments\lookdev_eye_lab\tests -q
+```
+
+```powershell
+& $py experiments\lookdev_eye_lab\run_limbus.py --probe
+```
+
+```powershell
+& $py experiments\lookdev_eye_lab\run_limbus.py
+```
+
+Paste the output of the first two; attach `experiments\lookdev_eye_lab\out\limbus\limbus_sheet.png` (limbus crops,
+columns L0 | L1 | L2 | L3 | L3 + asymmetry | L3 image colour; rows front / ¾ / profile / steep 75 / ¾ with the key at
+−45°, the highlight on the ring). With your `out\iris_custom.png` and
+`out\iris_custom.json` = `{"pupil": 0.22, "limbus": 0.88, "hold_outer_color": true}` in place, the probe and the window
+use them (the probe names the image and the fit in its header). Check: `EVIDENCE: hardware renderer`, four `PASS`.
+
+### Kurzfassung für Manu (Deutsch)
+
+- **Gebaut:** L0 (= P1b V2, pixelgleich) → L1 Farbband → L2 + Normalen-Übergang → L3 + durchscheinender Limbus;
+  Asymmetrie oben/unten als eigener Schalter (aus); Limbusfarbe aus Shader-Einstellung oder aus dem Außenring deiner
+  Textur (Taste `O`). P1 und P1b unverändert.
+- **Im Fenster:** `run_limbus.py`, `Z` Nahansicht, `Q` Stufe, `A` Asymmetrie, `O` Farbquelle, `N` Farbvorgabe,
+  `W` / `D` / `,` / `.` Parameter (Shift = rückwärts). Urteile sind deine.
+- **Bitte auf deinem PC:** die drei Befehle oben, Ausgabe der ersten beiden und `limbus_sheet.png` schicken — dann
+  stehen die GPU-Zeiten pro Stufe fest.
 
