@@ -6,6 +6,7 @@
 the fix-up, T-C 1.0–1.3 ms / 2.4–2.9 ms per frame at 1024×768 / 1920×1080 with the eye at ~50 %, T-D about twice
 that. **Artist verdict: `OPEN`** (the practical test below). Main PC: `OPEN` (D-L5 deferred).
 **P1b — Corneal Refraction Lab (2026-11-14):** added on top of P1, P1 unchanged; see [the P1b section](#p1b--corneal-refraction-lab-2026-11-14).
+**Handoff of 2026-11-14:** done, [handoff](../../docs/archive/handoffs_2026-11/EYE_LAB_HANDOFF_2026-11-14.md).
 **P1c — soft limbus (2026-11-14):** L0–L3 on top of P1b, P1 / P1b unchanged; see [the P1c section](#p1c--soft-limbus-2026-11-14) (plan: [`PLAN_P1c_LIMBUS_2026-11-14.md`](PLAN_P1c_LIMBUS_2026-11-14.md)).
 **Own iris image:** put it at `out/iris_custom.png`; see [Custom iris texture](#custom-iris-texture-outiris_custompng). No change under `src/`, `tests/`, `config/`; no new
 dependency; no keymap entry.
@@ -463,7 +464,7 @@ button; `J` shows which rays reach iris (red), pupil (green) or limbal tissue (b
 
 ## P1c — soft limbus (2026-11-14)
 
-Handoff Task 2, built after Manu's decisions of 2026-11-14 (plan: [`PLAN_P1c_LIMBUS_2026-11-14.md`](PLAN_P1c_LIMBUS_2026-11-14.md)):
+Handoff Task 2 ([handoff](../../docs/archive/handoffs_2026-11/EYE_LAB_HANDOFF_2026-11-14.md), archived), built after Manu's decisions of 2026-11-14 (plan: [`PLAN_P1c_LIMBUS_2026-11-14.md`](PLAN_P1c_LIMBUS_2026-11-14.md)):
 cumulative variants, **P1b V2 as the baseline** (V3 selectable), shader only (no geometry change), limbal colour from
 a shader setting (default) **or** the iris image's own outer ring (a switch), top / bottom asymmetry as an independent
 switch (default off). P1 and P1b code is unchanged; P1c is new files deriving from P1b's classes.
