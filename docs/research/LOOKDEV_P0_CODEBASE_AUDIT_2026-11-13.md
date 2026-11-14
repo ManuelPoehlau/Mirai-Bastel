@@ -914,3 +914,16 @@ The capability and fill-rate probe of §9 step 1 / §10 is
   and 26.8 ms (1920×1080)**, and 2.9 / 5.0 ms without face data. Cost per covered pixel falls with coverage, so the
   13 % figure cannot be extrapolated linearly. This is input for D-L6 and D-L8.
 - **§2.2:** pyglet's default context on the reference PC is a **core** profile, as read from the source.
+
+## Addendum — 2026-11-14: §9 step 2, the P1 lab (container)
+
+The Eye Proof lab is [`experiments/lookdev_eye_lab/`](../../experiments/lookdev_eye_lab/README.md), built as §5
+proposes (D-L1, D-L2, D-L4; D-L3 / D-L6 … D-L9 stay open, the lab's colour path and normals are lab-local). It draws the
+eye parts as production object entries through `Viewport(store_type=EyeLabStore)`; T-A is the unchanged production
+draw (pixel-identical, tested), T-B … T-D draw the same VertexList with a lab program. The environment follows
+the reference PC's recipe (RGBA16F 128², CPU prefilter in `cube_math`'s face order, corners equalized, chain to 2²,
+seamless on). **TESTED [C] only**
+([`RESULTS_CONTAINER_2026-11-14.md`](../../experiments/lookdev_eye_lab/RESULTS_CONTAINER_2026-11-14.md)): every variant
+renders without GL error, the shader terms match the NumPy reference in float32, the roughness sweep blurs
+monotonically, hygiene clean. Every GPU time, the corner-seam fix-up on the 9800 GTX and the Artist verdict are
+**OPEN** until §9 step 3 (Manu's run; commands in the lab README). The audit body above is unchanged.
