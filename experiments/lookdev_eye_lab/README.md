@@ -6,7 +6,7 @@
 the fix-up, T-C 1.0–1.3 ms / 2.4–2.9 ms per frame at 1024×768 / 1920×1080 with the eye at ~50 %, T-D about twice
 that. **Artist verdict: `OPEN`** (the practical test below). Main PC: `OPEN` (D-L5 deferred).
 **P1b — Corneal Refraction Lab (2026-11-14):** added on top of P1, P1 unchanged; see [the P1b section](#p1b--corneal-refraction-lab-2026-11-14).
-**Next session:** [`HANDOFF_2026-11-14.md`](HANDOFF_2026-11-14.md) (radial fit of the custom iris, soft limbus plan).
+**Next session:** [`HANDOFF_2026-11-14.md`](HANDOFF_2026-11-14.md) (radial fit of the custom iris, soft limbus plan). Soft limbus plan: [`PLAN_P1c_LIMBUS_2026-11-14.md`](PLAN_P1c_LIMBUS_2026-11-14.md).
 **Own iris image:** put it at `out/iris_custom.png`; see [Custom iris texture](#custom-iris-texture-outiris_custompng). No change under `src/`, `tests/`, `config/`; no new
 dependency; no keymap entry.
 **Source:** [Lookdev P0 audit](../../docs/research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §5 (P1 proposal), §8
