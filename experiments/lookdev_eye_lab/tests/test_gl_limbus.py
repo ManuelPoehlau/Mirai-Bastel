@@ -230,7 +230,7 @@ def test_small_limbus_probe_run_passes_every_check(gl_context, tmp_path):
     text = "\n".join(lines)
     summary = lines[lines.index("Summary (raw verdicts - label them by machine in the results file):") + 1:]
     assert summary and all(line.split()[0] == "PASS" for line in summary), text
-    for check in ("P limbus parity", "I L0 = P1b", "V every run", "R hygiene"):
+    for check in ("P limbus parity", "I L0 = P1b", "F L3 fast path", "V every run", "R hygiene"):
         assert any(check in line for line in summary), check
     assert any(line.startswith("[C] continuity") for line in lines)
     assert (tmp_path / "limbus_sheet.png").exists()
@@ -324,3 +324,34 @@ def test_overlap_all_round_softens_the_sides_too(gl_context, tmp_path, level):
     """Manu 2026-11-14: the asymmetry's soft edge only at top / bottom looked artificial at the sides. With the overlap
     all round (0.3 mm) plus the asymmetry the cover is present everywhere, continuous along the ring."""
     _arc_change(gl_context, tmp_path, level, overlap=0.3)
+
+
+
+@pytest.mark.parametrize("refraction", ["V2", "V3"])
+def test_l3_fast_path_equals_the_full_trace(gl_context, tmp_path, refraction):
+    """Manu 2026-11-14: "mach L3 schneller". The fast path traces the sclera's ray only inside the band and the
+    cornea's deep ray only for tissue rays (V2); it must render what the reference (every fragment traced) renders."""
+    w, h = 640, 480
+    limb = lg.build_scene(lg.LimbusState(show_references=False, technique="T-C", refraction=refraction,
+                                         limbus_level="L3"), tmp_path, CACHE_DIR, w, h)
+    target = gl_lab.Target(gl_context, limb.renderer.res, w, h)
+    try:
+        for view in ("front", "three_quarter", "profile"):
+            for overlap, asym in ((0.0, False), (0.3, True)):
+                limb.renderer.state.overlap_mm, limb.renderer.state.asym = overlap, asym
+                limb.apply_view(view, lab_scene.close_up_distance(w, h))
+                limb.set_aspect(w, h)
+                limb.camera_moved()
+                images = []
+                for full in (True, False):
+                    limb.renderer.full_trace = full
+                    target.bind()
+                    limb.renderer.frame(limb.viewport, w, h)
+                    target.unbind()
+                    images.append(target.read_rgb().astype(int))
+                diff = np.abs(images[0] - images[1])
+                assert diff.max() <= 2 and np.any(diff > 0, -1).sum() <= 0.001 * w * h, (view, overlap, asym)
+        assert pg.drain_errors(gl_context) == []
+    finally:
+        target.release()
+        limb.release()

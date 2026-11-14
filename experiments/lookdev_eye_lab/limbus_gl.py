@@ -90,6 +90,8 @@ class LimbusRenderer(rg.RefractionRenderer):
         self.image_colour = image_colour
         self.image_note = image_note
         self.limbus_programs: dict = {}
+        #: L3's reference path (every fragment traced, as first built) instead of the fast path - for the comparison.
+        self.full_trace = False
 
     def limbus_drawn(self) -> bool:
         return self.state.limbus_active and not self.debug_kind
@@ -107,10 +109,11 @@ class LimbusRenderer(rg.RefractionRenderer):
 
     def limbus_program(self, part: str, tech: int, variant: int, level: int, locations: dict) -> gl_lab.LabProgram:
         fit = self.iris_fit is not None
-        key = (part, tech, variant, level, fit)
+        full = self.full_trace and level >= 3
+        key = (part, tech, variant, level, fit, full)
         if key not in self.limbus_programs:
-            sources = (lsh.cornea_sources(locations, tech, variant, level, fit) if part == "cornea"
-                       else lsh.sclera_sources(locations, tech, level, fit))
+            sources = (lsh.cornea_sources(locations, tech, variant, level, fit, full) if part == "cornea"
+                       else lsh.sclera_sources(locations, tech, level, fit, full))
             self.limbus_programs[key] = gl_lab.LabProgram(sources)
         return self.limbus_programs[key]
 

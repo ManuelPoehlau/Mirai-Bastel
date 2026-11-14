@@ -475,6 +475,7 @@ switch (default off). P1 and P1b code is unchanged; P1c is new files deriving fr
 | **L2** normal blend | the shading normal goes from the cornea sphere's to the sclera sphere's across ±0.5 mm around the ring (halfway on the ring), on both passes: the 19.6° kink no longer makes highlights / reflections jump. Refraction and ray classes keep the true surfaces |
 | **L3** translucent limbus | the limbal tissue and the sclera band transmit `(1 − t)^falloff` of what lies behind (1 at the chamber angle, 0 at the band edge): the cornea's tissue rays continue (anterior refraction) to the iris; sclera fragments refract into the tissue (n 1.376) and see the iris root |
 | overlap all round (setting, 0 / 0.15 / 0.3 / 0.5 mm, default 0) | the limbal tissue reaches that far over the cornea **all round**: the colour band and the transmission move inward by it, and cornea rays that still reach the iris within it are covered by tissue (L3: translucent) — a soft iris-to-tissue edge at the sides as well. Added 2026-11-14 after Manu: the asymmetry's soft edge only at top / bottom left the sides hard, "unnatürlich/künstlich". Anatomical anchor: the topographic limbus lies ~0.33 mm outside the visible iris edge (plan sources). Inert at L0 |
+| L3 fast path (2026-11-14, Manu: "mach L3 schneller") | the sclera traces its ray into the tissue only inside the band (beyond it the transmission is exactly 0), and in V2 the cornea traces the ray behind the tissue only for tissue rays. The reference path (every fragment traced, as first built) stays switchable (`LimbusRenderer.full_trace`): tests and the probe's [F] show ≤ 1 / 255 difference at a few pixels (the mip level at the band's outer edge); V3's cornea keeps the full trace (its deep point differs from the iris hit, which changed the mip level at class borders by up to 55 / 255) |
 | asymmetry (switch, default off) | adds `0.55 mm · sin²(azimuth)` on top of the overlap (visible iris ~11.7 × 10.6 mm): wider at top and bottom. The cover fades in with the total shift, so it is continuous everywhere (the seam left / right of the first version is fixed, 2026-11-14). Inert at L0 |
 
 Limbal colour: **shader** = a preset (`P1b dark` = P1b's limbal colour, default; `grey-blue`, `grey-brown` as comparison
@@ -509,9 +510,9 @@ other direction). Lab-local; no `config/keymap.json` entry (D-L9). The levels ac
 | `limbus_shaders.py` | GLSL: `LIMBUS_LIB_SRC` (twins), the P1c cornea and sclera programs, the parity program |
 | `limbus_gl.py` | `LimbusState`, `LimbusStore`, `LimbusRenderer` (L0 → P1b's code), `build_scene`, the parity pass |
 | `limbus_parity.py` | GPU-vs-NumPy cases with tolerances |
-| `probe_limbus.py` | [P] parity, [I] L0 = P1b, [C] continuity numbers + key sweep, [V] timings, contact sheet, [R] hygiene |
+| `probe_limbus.py` | [P] parity, [I] L0 = P1b, [C] continuity numbers + key sweep, [F] L3 fast path vs reference (pixels + time), [V] timings, contact sheet, [R] hygiene |
 | `run_limbus.py` | the window (P1b's + the keys above); `--probe` |
-| `tests/test_limbus_headless.py`, `tests/test_gl_limbus.py` | 10 headless; 21 GL (parity ×5, L0 = P1b ×3 techniques incl. overlap / asymmetry, band per level, asymmetry, no seam left / right ×3 levels, overlap all round ×2 levels, colour source, fallback, GL state, ray-class map / V1, probe run, window) |
+| `tests/test_limbus_headless.py`, `tests/test_gl_limbus.py` | 10 headless; 23 GL (L3 fast path = reference ×2, parity ×5, L0 = P1b ×3 techniques incl. overlap / asymmetry, band per level, asymmetry, no seam left / right ×3 levels, overlap all round ×2 levels, colour source, fallback, GL state, ray-class map / V1, probe run, window) |
 
 ### Commands — reference PC (PowerShell, repository root, `.venv312`; NVIDIA "Maximale Leistung bevorzugen")
 
@@ -534,7 +535,7 @@ columns L0 | L1 | L2 | L3 | L3 + asymmetry | L3 image colour | L2 + overlap 0.3 
 rows front / ¾ / profile / steep 75 / ¾ with the key at
 −45°, the highlight on the ring). With your `out\iris_custom.png` and
 `out\iris_custom.json` = `{"pupil": 0.22, "limbus": 0.88, "hold_outer_color": true}` in place, the probe and the window
-use them (the probe names the image and the fit in its header). Check: `EVIDENCE: hardware renderer`, four `PASS`.
+use them (the probe names the image and the fit in its header). Check: `EVIDENCE: hardware renderer`, five `PASS` (with [F] since 2026-11-14).
 
 ### Kurzfassung für Manu (Deutsch)
 

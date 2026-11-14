@@ -163,16 +163,37 @@ void main() {
         n = normalize(v_world_pos - u_ant_centre);
         kind = KIND_LIMBUS;
     }
-#if LIMBUS_LEVEL >= 3
-    // Behind the limbal tissue: the anterior refraction continued to the iris (P1c L3).
+#if LIMBUS_LEVEL >= 3 && defined(LIMBUS_FULL_TRACE)
+    // Reference path (the first L3, 2026-11-14): the deep ray for every fragment, two texture reads.
     vec3 deep_dir = normalize(refract(dir, n, N_AIR / (VARIANT == 2 ? N_EFFECTIVE : N_CORNEA)));
     float deep_t;
     float deep_r;
     bool deep = iris_cone_hit(entry, deep_dir, deep_t, deep_r) && deep_r <= u_iris_radius;
     vec3 deep_hit = entry + max(deep_t, 0.0) * deep_dir;
     vec3 deep_albedo = srgb_decode(texture(u_iris_texture, iris_st(deep_hit.xy)).rgb);
-#endif
     vec3 iris_albedo = srgb_decode(texture(u_iris_texture, iris_st(hit.xy)).rgb);
+#elif LIMBUS_LEVEL >= 3
+    // Fast path: the ray behind the limbal tissue (the anterior refraction continued to the iris) only for tissue
+    // rays, the only ones that use it; the others keep their iris hit there (in V2 the same point the reference
+    // path traces). Both texture reads stay as in the reference path: merging them into one changed the mip level of
+    // iris pixels next to tissue pixels (up to 78 / 255 at class borders, container 2026-11-14).
+    // V3: every fragment, as the reference: its deep point (anterior refraction only) differs from the iris hit (both
+    // refractions), and the tissue pixels' mip level depends on their neighbours' deep points (55 / 255 at borders
+    // otherwise, container 2026-11-14). VARIANT is a #define: no run-time branch for this.
+    vec3 deep_hit = hit;
+    bool deep = false;
+    if (VARIANT == 3 || kind == KIND_LIMBUS) {
+        vec3 deep_dir = normalize(refract(dir, n, N_AIR / (VARIANT == 2 ? N_EFFECTIVE : N_CORNEA)));
+        float deep_t;
+        float deep_r;
+        deep = iris_cone_hit(entry, deep_dir, deep_t, deep_r) && deep_r <= u_iris_radius;
+        deep_hit = entry + max(deep_t, 0.0) * deep_dir;
+    }
+    vec3 deep_albedo = srgb_decode(texture(u_iris_texture, iris_st(deep_hit.xy)).rgb);  // uniform control flow
+    vec3 iris_albedo = srgb_decode(texture(u_iris_texture, iris_st(hit.xy)).rgb);
+#else
+    vec3 iris_albedo = srgb_decode(texture(u_iris_texture, iris_st(hit.xy)).rgb);
+#endif
     vec3 v = -dir;
     float u = cornea_u(entry);
     float shift = asym_shift(entry);
@@ -215,9 +236,18 @@ void main() {
     float u = sclera_u(p);
     float us = u + asym_shift(p);
 #if LIMBUS_LEVEL >= 3
-    vec3 through_hit;
-    bool through = sclera_through(p, -v, n_s, through_hit);
-    vec3 through_albedo = srgb_decode(texture(u_iris_texture, iris_st(through_hit.xy)).rgb);
+    vec3 through_hit = vec3(0.0);
+#ifdef LIMBUS_FULL_TRACE
+    bool through = sclera_through(p, -v, n_s, through_hit);  // reference path: every sclera fragment
+#else
+    // Fast path: only where the band transmits anything; beyond it transmission(us) is exactly 0 and the traced colour
+    // was multiplied by 0 (the sclera covers most of the eye on screen; the band is ~1 mm).
+    bool through = false;
+    if (us < u_band) {
+        through = sclera_through(p, -v, n_s, through_hit);
+    }
+#endif
+    vec3 through_albedo = srgb_decode(texture(u_iris_texture, iris_st(through_hit.xy)).rgb);  // uniform control flow
 #endif
 #if LIMBUS_LEVEL >= 2
     vec3 n = normal_blend(normalize(p - u_ant_centre), n_s, u);
@@ -271,24 +301,27 @@ void main() {
 PARITY_FUNCS = {"coords": 0, "weights": 1, "normal_blend": 2, "sclera_through": 3, "tint": 4}
 
 
-def _lib(tech, variant, level, fit) -> str:
+def _lib(tech, variant, level, fit, full_trace=False) -> str:
     # IRIS_FIT's source needs u_iris_radius (REFRACTION_LIB_SRC), so the header's fit source goes after it.
     head = "#version 330 core\n" + "".join(f"#define {k} {v}\n" for k, v in
                                           (("TECH", tech), ("VARIANT", variant), ("LIMBUS_LEVEL", level)))
     if fit:
         head += "#define IRIS_FIT 1\n"
+    if full_trace:
+        head += "#define LIMBUS_FULL_TRACE 1\n"
     return (head + shaders.LIB_SRC + rs.REFRACTION_LIB_SRC + (iris_fit.GLSL_SRC if fit else "")
             + LIMBUS_LIB_SRC)
 
 
-def cornea_sources(locations: dict[str, int], tech: int, variant: int, level: int, fit: bool):
+def cornea_sources(locations: dict[str, int], tech: int, variant: int, level: int, fit: bool, full_trace=False):
+    """`full_trace`: L3's reference path (every fragment traced), for the fast path's comparison."""
     return [(shaders.SURFACE_VERTEX_SRC.format(**locations), "vertex"),
-            (_lib(tech, variant, level, fit) + CORNEA_FRAGMENT_BODY, "fragment")]
+            (_lib(tech, variant, level, fit, full_trace) + CORNEA_FRAGMENT_BODY, "fragment")]
 
 
-def sclera_sources(locations: dict[str, int], tech: int, level: int, fit: bool):
+def sclera_sources(locations: dict[str, int], tech: int, level: int, fit: bool, full_trace=False):
     return [(shaders.SURFACE_VERTEX_SRC.format(**locations), "vertex"),
-            (_lib(tech, 2, level, fit) + SCLERA_FRAGMENT_BODY, "fragment")]
+            (_lib(tech, 2, level, fit, full_trace) + SCLERA_FRAGMENT_BODY, "fragment")]
 
 
 def parity_sources():
