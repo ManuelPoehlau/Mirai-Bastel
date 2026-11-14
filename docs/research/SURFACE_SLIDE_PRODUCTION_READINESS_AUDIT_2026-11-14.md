@@ -1,6 +1,7 @@
 # Surface Slide — Production Readiness Audit (2026-11-14)
 
-**Status:** audit, English with a German summary. **No decision, no Production change.** It reviews the research
+**Status:** audit, English with a German summary. No Production change. **Phase 0 closed 2026-11-14: Manu's
+decisions are recorded in §5.1**; Phase 1 starts from the handoff in §13. It reviews the research
 [SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md](SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md) (commit `ec3816d`) and
 its prototype [`experiments/surface_slide/`](../../experiments/surface_slide/README.md) against the current Production
 code at `main` @ `6282cd5`. New measurements come from six small probes in
@@ -397,6 +398,31 @@ No algorithmic blocker was found: the region-safety and exactness claims hold ag
 | E10 | Shape correction for far drags of fully selected patches | none / decal / relaxation | none in V1; after the practical test | V1.1 |
 | E11 | (optional, renderer) mirror-equivariant drawn triangulation | keep fan / shorter diagonal | keep (separate topic) | — |
 
+### 5.1 Phase 0 — Manu's decisions (2026-11-14)
+
+**Manu (chat, entered by the agent):** „Ich würde die vorgeschlagenen Defaults E1–E3, E5 und E8–E11 übernehmen. E4, E7
+und E10 behalten wir als Punkte für deinen Praxistest. E6 entscheiden wir erst bei der tatsächlichen
+Bedienungsintegration. Damit können wir Phase 0 sauber abschließen und anschließend Phase 1 umsetzen.“
+
+| # | Decision | Status |
+|---|---|---|
+| E1 | Reference **per gesture, flat** evaluation (the drawn geometry); no Phong, no kept reference in V1 | **decided** |
+| E2 | With a morph target dialled in: slide on the **base (rest) surface**; the cursor is mapped at the drawn depth (§15 mapping) | **decided** |
+| E3 | **No crossing** of the mirror plane: driven vertices stop short of the seam (back-off, precedent 98 %) | **decided** |
+| E4 | V1 without pivot-under-cursor, mapping M1 | **default for the build; verdict in the practical test (Phase 5)** |
+| E5 | Vertices on open boundaries **slide along the boundary** (edge-chain walker, as the seam) | **decided** |
+| E6 | Binding / tool entry | **open until the operational integration (Phase 3)**; no `keymap.json` entry before Manu's explicit approval |
+| E7 | Lagging vertex at release: commit as shown | **default for the build; verdict in the practical test** |
+| E8 | SubD preview on: slide on the cage | **decided** |
+| E9 | Direction model `transport` | **decided** |
+| E10 | No shape correction in V1 | **decided for V1; whether V1.1 needs one is judged in the practical test** |
+| E11 | Drawn triangulation unchanged (fan); no renderer change for this tool | **decided** |
+
+**Reading** (`PROVISIONAL`, Manu corrects in one sentence): "Phase 0 sauber abschließen" includes accepting the
+technical specs B1–B3 of §4 (drawn triangles; driven half on the drawn surface, passive half exact mirror; straddling
+faces refused; region-limited capture; one driver per mirror pair, the pivot's half plus the seam). E10 appears in
+both lists of the quote: read as "the default (none in V1) holds, the practical test decides about later".
+
 ---
 
 ## 6. Recommended V1 scope
@@ -481,7 +507,7 @@ Soft Move at that size.
 
 | Phase | Content | Gate (must pass before the next phase) |
 |---|---|---|
-| **0 — Decisions** | E1, E2, E3, E5 answered; this audit's B1–B3 specs accepted; E6 when Phase 3 starts | Manu's answers recorded in this file |
+| **0 — Decisions** | E1, E2, E3, E5 answered; this audit's B1–B3 specs accepted; E6 when Phase 3 starts | Manu's answers recorded in this file — **done 2026-11-14 (§5.1)** |
 | **1 — Pure core** | Port `reference`, `tracer`, `curves`, pursuit to `src/mirai/surface_slide/` on index arrays; transport per §3.2 | **G1**: on the report's 76 scenarios the port matches the prototype (oracle, like `knife_oracle`) to ≤ 1e-12 h for every geodesic candidate kept; prototype claims re-asserted (0 region jumps, step ratio ≤ 2, exact zero restore, weight 0 untouched, tracked deviation ≤ 1e-12 h); new tests: thin fin, boundary hit, near-zero loop, chase degenerate gap, transport jump metric (direct vs tree), antipodal normals |
 | **2 — Plan, capture, symmetry** | `plan_surface_slide`, region capture from `core.Mesh` with `triangulate_mesh_face`, seam / boundary chains, barrier back-off, refusals | **G2**: on the Gollum cage and `examples/meshes/head_basemesh.obj`: mirror pairs bitwise exact, seam coordinate exactly 0, no `AMBIGUOUS` after a barrier stop, every driven vertex on the *drawn* triangles of its face (≤ 1e-12 h), region capture == full capture bit for bit, `tests/mesh_invariants.py` after every gesture, refusals tested |
 | **3 — Gesture** | `SurfaceSlideGesture`, M1 mapping at the drawn depth, morph-mix rule (E2, tested on `scenes/Gollum_Head_01_Morphs.mirai.json`), binding (E6) | **G3**: one history entry; Undo / Redo exact; Esc and zero drag bit-exact (`export_state` equality); held-gesture refusals; posed refusal; mix 0 % ≡ no target; `pytest tests` fully and GL tests in their own process (AGENTS.md §8a), `experiments/morph_lab/tests`, the Knife oracle (shared triangulation untouched) |
@@ -492,6 +518,8 @@ Soft Move at that size.
 ---
 
 ## 10. Open-problem register
+
+Since 2026-11-14 the **AD** rows are settled as recorded in §5.1 (E4, E7, E10 by the practical test, E6 at Phase 3).
 
 | Problem | Class |
 |---|---|
@@ -534,7 +562,43 @@ Soft Move at that size.
 
 ---
 
-## 12. Reproduce
+## 13. Handoff: Phase 1 (pure core)
+
+Mode (M5): Production, a new package; no existing behaviour changes. Decisions: §5.1. Read this file §3.1, §3.2,
+§3.5–§3.7, §7, §9 and the report §4, §14.4–§14.5; the prototype source is the reference implementation.
+
+**Build** `src/mirai/surface_slide/` on index arrays (no `core.Mesh`, no camera, no GUI); NumPy only through
+`viewport.packed_geometry` (AD-032):
+
+- `reference.py` — `SlideReference` from `V (n, 3)`, `T (m, 3)` (the caller supplies the drawn triangles) and edge sets
+  that act as barriers (seam, hidden) or as the capture border; immutable arrays; flat evaluation only (E1). Not
+  ported: closest-point grid, ray intersection, Phong, `refsurf.triangulate` / `_ear_clip`, the mirrored triangulation.
+- `tracer.py` — port of `geodesic.py` with distinct flags `BOUNDARY`, `BARRIER`, `CAPTURE`, `BLOCKED`, `STUCK`,
+  `MAXITER`; a blocked boundary start no longer drops the along-boundary component (handled by the chain walker, E5).
+- `curves.py` — `EdgeChain`: the `seam.py` walker generalised to any chain of edges (declared seam, open boundary
+  loops, E5); the seam's plane coordinate stays exact.
+- `slide.py` — `SurfaceSlide`: transport by the direct minimal rotation with a fallback where `n_pivot · n_i < −0.5`
+  (§3.2), frames also injectable (for the oracle); pursuit gain 1 with the snap guard (§3.7 item 2), the degenerate-gap
+  fallback (item 3), exact reset at zero tangent, `settle()`; barrier stop with back-off (E3); per-vertex flags incl.
+  `LAGGING`; `SlideFrame(positions, flags, lagging)`.
+
+**Not in Phase 1:** planning from a `core.Mesh`, region capture, the symmetry driver rule (Phase 2); the gesture,
+mapping and binding (Phase 3, E6).
+
+**Tests.** `tests/test_surface_slide_*.py`, self-contained (nothing in `tests/` imports `experiments/`, AGENTS.md §8a):
+small generated sphere / cylinder / U / thin fin; exact unrolled geodesics on the U, zero drag bit-exact, weight 0
+untouched, step ≤ (1 + gain) × tangent change, tracked deviation ≤ 1e-12 h, read-only arrays, boundary and barrier stops
+(back-off strictly off the plane), chain walker on a seam (coordinate exactly 0) and on a boundary loop, transport
+continuity and the antipodal fallback, near-zero loop lag bound, no skip through the fin, flags. **Gate G1** lives
+beside the prototype, like the Knife oracle: `experiments/surface_slide/tests/` compares the Production modules with
+the prototype on the 76 scenarios (injected tree frames: ≤ 1e-12 h; direct frames: the report's metrics no worse than
+§3.2's table). Runs: the new files, `experiments/surface_slide/tests`, `tests/test_packed_geometry.py` (NumPy import
+rule).
+
+**Done means:** G1 green; the package docstring states the contract (report §14.4 as amended here); an implementation
+note appended to this section. No `ATELIER.md` entry (nothing visible yet).
+
+## 14. Reproduce
 
 ```bash
 python -m pytest experiments/surface_slide/tests -q
