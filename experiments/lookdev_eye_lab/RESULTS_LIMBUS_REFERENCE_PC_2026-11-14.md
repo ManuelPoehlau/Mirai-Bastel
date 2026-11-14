@@ -133,12 +133,40 @@ of the traced ones; at a low resolution a pixel spans more of the band. Fix: the
 comparisons (stand-in + procedural iris, 320×240 / 640×480 / 1024×768, T-B / T-C / T-D, V2 / V3, overlap + asymmetry
 off / on, three views): **0 at 320×240**, at most 1 / 255 at ≤ 3 px elsewhere (rounding).
 
+## Run 3 — L3 fast path with the 2-pixel margin (MEASURED [RPC], Manu, 2026-11-14)
+
+Source `9e9e366560` (local; contains `3512f16`), same texture and A+H sidecar, overlap / asymmetry as in the runs.
+Tests **199 passed** (366 s). Probe: **five PASS** — P parity, I L0 = P1b, **F fast path = reference: 0 / 255 in
+every run** (1024×768 and 1920×1080, front / 3/4 / profile, T-B / T-C / T-D, V2 / V3, overlap + asymmetry), V, R.
+[C] unchanged from run 2 for L0–L3 (the fast path renders the same pixels).
+
+[F], GPU p50 (ms), reference (every fragment traced) → fast path, interleaved:
+
+| Size, view | T-C V2 L3 | T-C V2 L3 ov0.3 asym | T-C V3 L3 | T-B V2 L3 | T-D V2 L3 |
+|---|---|---|---|---|---|
+| 1024×768 front | 2.15 → 2.00 | 2.17 → 2.00 | 2.07 → 1.99 | 1.86 → 1.74 | 3.14 → 3.00 |
+| 1024×768 3/4 | 1.86 → 1.70 | 1.87 → 1.70 | 1.75 → 1.63 | 1.63 → 1.49 | 2.78 → 2.64 |
+| 1024×768 profile | 1.35 → 1.17 | 1.35 → 1.17 | 1.33 → 1.16 | 1.22 → 1.05 | 2.08 → 1.90 |
+| 1920×1080 front | 4.63 → 4.29 | 4.67 → 4.30 | 4.78 → 4.64 | 4.14 → 3.81 | 6.61 → 6.28 |
+| 1920×1080 3/4 | 4.08 → 3.72 | 4.11 → 3.71 | 4.09 → 3.83 | 3.65 → 3.30 | 6.02 → 5.67 |
+| 1920×1080 profile | 3.21 → 2.78 | 3.21 → 2.78 | 3.18 → 2.76 | 2.91 → 2.49 | 4.86 → 4.44 |
+
+Reading (COMPUTED, no verdict):
+- The fast path saves **0.12–0.18 ms at 1024×768 and 0.33–0.43 ms at 1920×1080** (V3 front less: its cornea keeps
+  the full trace), the same pixels.
+- L3's extra cost over L0 (T-C V2, 1920×1080): front +1.68 → **+1.41 ms** (4.29 vs 2.88 ms, +49 %); profile +1.29 →
+  **+0.88 ms**. Over L2 it is still +1.0 ms (front) / +0.54 ms (profile).
+- What remains is not located by a measurement. Candidates (untested): the second iris-texture read that every sclera
+  and cornea fragment still makes (kept in uniform control flow for the mip level), the transmission's `pow`, and the
+  cornea's work per fragment. Further gains would need a per-pass timing first.
+
 ## Open
 
 - **Artist verdicts** (Manu): L0–L3, colour source shader / image (and which preset), asymmetry on / off and the
   overlap all round (both to be looked at with the seam fix and the new overlap).
 - **A+H with the real texture:** measured in run 2 (no white rim); Manu's look verdict on it is open.
-- **L3 fast path:** built (above); its GPU time on the reference PC ([F] and [V]) is to be measured.
+- **L3 fast path:** measured (run 3): same pixels, −0.15 / −0.4 ms; L3 stays the expensive level (+1.4 ms over L0 at
+  1920×1080, T-C front). A further cut would start with per-pass timing.
 
 ## Raw output (as pasted by Manu, 2026-11-14)
 

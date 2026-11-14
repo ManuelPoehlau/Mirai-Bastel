@@ -494,6 +494,8 @@ L0 1.17 / 2.78 ms, L1 1.28 / 3.04, L2 1.35 / 3.18, **L3 1.89 / 4.17**, asymmetry
 sclera pass tracing every sclera fragment (it remains in the profile view). Run 1 with Manu's texture without
 `iris_custom.json`, run 2 with A+H (no white rim; L3 then 2.10 / 4.56 ms, the fit's remap is sampled up to three times
 per L3 fragment). Every Artist verdict is open.
+Run 3 (L3 fast path): five PASS, fast path = reference pixel for pixel; L3 T-C V2 front 2.00 / 4.29 ms (was 2.10 /
+4.56), i.e. +0.84 / +1.41 ms over L0.
 
 ### Controls (P1c window, in addition to P1 / P1b's)
 
