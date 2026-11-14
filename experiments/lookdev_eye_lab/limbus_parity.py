@@ -39,7 +39,7 @@ def cases(params: lm.LimbusParams = PARAMS, seed: int = 11) -> list[Case]:
     shift = rng.choice([0.0, params.asym_units, 0.5 * params.asym_units], N)
     x = _pack(u, u + rng.uniform(-0.02, 0.0, N), shift, rng.uniform(-0.06, 0.15, N))
     a = _f32(x)
-    ref = np.stack([lm.colour_weight(a[:, 0], params.band), lm.iris_cover(a[:, 1], a[:, 2]),
+    ref = np.stack([lm.colour_weight(a[:, 0], params.band), lm.iris_cover(a[:, 1], a[:, 2], params.asym_units),
                     lm.transmission(a[:, 3], params.band, params.falloff), np.zeros(N)], -1)
     out.append(Case("weights", x, ref, [0, 1, 2], 2e-5))
 

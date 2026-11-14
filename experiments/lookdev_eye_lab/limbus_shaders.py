@@ -23,6 +23,7 @@ LIMBUS_LIB_SRC = f"""
 const float LIMBUS_RING_RADIUS = {lm.RING_RADIUS!r};
 const float LIMBUS_THETA_RING = {lm.THETA_RING!r};
 const float LIMBUS_U0 = {lm.U0!r};
+const float LIMBUS_COVER_FADE = {lm.COVER_FADE!r};
 const float SCLERA_R = {1.0!r};
 uniform float u_band;
 uniform float u_strength;
@@ -56,7 +57,9 @@ vec3 limbus_tint(float w, vec3 limbal, vec3 sclera) {{
 }}
 // limbus_model.iris_cover
 float iris_cover(float u, float shift) {{
-    return shift > 1e-6 ? limbus_smooth((u - (LIMBUS_U0 - shift)) / max(shift, 1e-9)) : 0.0;
+    if (u_asym <= 0.0) return 0.0;  // uniform: no divergence
+    float ramp = limbus_smooth((u - (LIMBUS_U0 - shift)) / max(shift, 1e-9));
+    return ramp * limbus_smooth(shift / (LIMBUS_COVER_FADE * u_asym));
 }}
 // limbus_model.normal_blend
 vec3 normal_blend(vec3 n_cornea, vec3 n_sclera, float u) {{

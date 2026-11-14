@@ -474,7 +474,7 @@ switch (default off). P1 and P1b code is unchanged; P1c is new files deriving fr
 | **L1** colour band | one gradient from the limbal colour at the chamber angle (0.29 mm inside the ring) to the sclera albedo `band` (1.0 mm) outside the ring, on P1b's limbal tissue and on the sclera; `strength` scales it. The sclera beyond the band is unchanged (≤ 1 LSB, tested) |
 | **L2** normal blend | the shading normal goes from the cornea sphere's to the sclera sphere's across ±0.5 mm around the ring (halfway on the ring), on both passes: the 19.6° kink no longer makes highlights / reflections jump. Refraction and ray classes keep the true surfaces |
 | **L3** translucent limbus | the limbal tissue and the sclera band transmit `(1 − t)^falloff` of what lies behind (1 at the chamber angle, 0 at the band edge): the cornea's tissue rays continue (anterior refraction) to the iris; sclera fragments refract into the tissue (n 1.376) and see the iris root |
-| asymmetry (switch) | the band starts `0.55 mm · sin²(azimuth)` further over the cornea (visible iris ~11.7 × 10.6 mm): wider at top and bottom; cornea rays that still reach the iris there are covered by tissue (L3: translucent). Inert at L0 |
+| asymmetry (switch) | the band starts `0.55 mm · sin²(azimuth)` further over the cornea (visible iris ~11.7 × 10.6 mm): wider at top and bottom; cornea rays that still reach the iris there are covered by tissue (L3: translucent), the cover faded in with the shift (full from ~30° off the horizontal) — fix of 2026-11-14 for a seam left and right that Manu found on the reference PC. Inert at L0 |
 
 Limbal colour: **shader** = a preset (`P1b dark` = P1b's limbal colour, default; `grey-blue`, `grey-brown` as comparison
 points) or **image** = the linear mean of the iris image's ring `edge − 0.05 … edge` (edge = the fit's `limbus`, else
@@ -509,7 +509,7 @@ other direction). Lab-local; no `config/keymap.json` entry (D-L9). The levels ac
 | `limbus_parity.py` | GPU-vs-NumPy cases with tolerances |
 | `probe_limbus.py` | [P] parity, [I] L0 = P1b, [C] continuity numbers + key sweep, [V] timings, contact sheet, [R] hygiene |
 | `run_limbus.py` | the window (P1b's + the keys above); `--probe` |
-| `tests/test_limbus_headless.py`, `tests/test_gl_limbus.py` | 8 headless; 16 GL (parity ×5, L0 = P1b ×3 techniques, band per level, asymmetry, colour source, fallback, GL state, ray-class map / V1, probe run, window) |
+| `tests/test_limbus_headless.py`, `tests/test_gl_limbus.py` | 9 headless; 19 GL (parity ×5, L0 = P1b ×3 techniques, band per level, asymmetry, no seam left / right ×3 levels, colour source, fallback, GL state, ray-class map / V1, probe run, window) |
 
 ### Commands — reference PC (PowerShell, repository root, `.venv312`; NVIDIA "Maximale Leistung bevorzugen")
 

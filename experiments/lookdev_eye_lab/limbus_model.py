@@ -19,7 +19,7 @@ the arc distance from the ring along the sphere (`sclera_u`), on the cornea the 
 **Asymmetry** (switch, default off): the sclera reaches further over the cornea at top and bottom (visible iris
 ~11.7 mm wide, ~10.6 mm high: ~0.55 mm per side). `asym_shift` = A sin^2(azimuth) is added to u for the colour band
 and the transmission, and cornea rays that still reach the iris are covered by tissue within that shift
-(`iris_cover`, 0 everywhere while the switch is off).
+(`iris_cover`, 0 everywhere while the switch is off; faded in with the shift, so it is continuous left and right).
 """
 
 from __future__ import annotations
@@ -45,6 +45,8 @@ COLOUR_SOURCES = ("shader", "image")
 SHADER_COLOURS = {"P1b dark": (0.10, 0.11, 0.13), "grey-blue": (0.36, 0.41, 0.48), "grey-brown": (0.40, 0.36, 0.32)}
 #: Visible iris ~11.7 x 10.6 mm (horizontal x vertical): the sclera overlaps ~0.55 mm more at top and bottom.
 ASYM_MM = 0.55
+#: The cover fades in over shifts 0 .. COVER_FADE x the full shift (sin^2 = 0.25: 30 degrees off the horizontal).
+COVER_FADE = 0.25
 
 
 @dataclass(frozen=True)
@@ -103,11 +105,18 @@ def tint(weight, limbal, sclera, strength: float):
     return np.asarray(sclera) * (1.0 - strength) + gradient * strength
 
 
-def iris_cover(u, shift):
-    """How much tissue covers a cornea ray that still reaches the iris (asymmetry only): 0 while `shift` is 0."""
+def iris_cover(u, shift, amount: float):
+    """How much tissue covers a cornea ray that still reaches the iris (asymmetry only; `amount` = the full shift A).
+
+    The ramp from `U0 - shift` to `U0` is faded in by `smooth(shift / (COVER_FADE * amount))`, so the cover is a
+    continuous function of the azimuth: 0 left / right (shift 0), full from ~30 degrees off the horizontal. Without the
+    fade any shift > 0 covered the whole band between the chamber angle and the visible iris edge, and only the exact
+    horizontal line (shift 0) did not: a seam left and right (Manu, reference PC 2026-11-14)."""
     u, shift = np.asarray(u, dtype=np.float64), np.asarray(shift, dtype=np.float64)
-    safe = np.maximum(shift, 1e-9)
-    return np.where(shift > 1e-6, _smooth((u - (U0 - shift)) / safe), 0.0)
+    if amount <= 0.0:
+        return np.zeros(np.broadcast(u, shift).shape)
+    ramp = _smooth((u - (U0 - shift)) / np.maximum(shift, 1e-9))
+    return ramp * _smooth(shift / (COVER_FADE * amount))
 
 
 def normal_blend(n_cornea, n_sclera, u, w: float):

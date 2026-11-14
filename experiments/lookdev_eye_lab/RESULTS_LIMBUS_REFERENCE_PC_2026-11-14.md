@@ -91,9 +91,25 @@ Key sweep (3/4, p95, azimuth −60 … +60): L0 101–120, L1 65–87, L2 56–8
 L0's sharpest step is on the ring; from L1 on it is not; in the front view L1 / L2 sharpen the iris-to-tissue edge
 with the dark default colour (p95 ~102–105 vs 85), L3 softens it (29).
 
+## Finding after run 2: a seam with the asymmetry on (fixed 2026-11-14)
+
+Manu: "es gibt noch ein Problem bei Asymmetry on. Sieht man vor allem gut bei L1 und L2, bei L3 wirds teilweise
+kaschiert, aber dennoch sichtbar, dort ist links und rechts, mittig auf dem Limbusrand ein Seam zu sehen".
+
+Cause (verified in the container, TESTED [C]): `iris_cover` covered every cornea ray between the chamber angle and
+the visible iris edge as soon as the shift was > 0 — and the shift `A sin²(azimuth)` is 0 only on the exact horizontal.
+So the asymmetry changed that band all round except on a one-pixel line left and right: |on − off| along an arc at
+−0.22 mm was 0 at 0° and ~50 at ±0.25° (L1 / L2; ~6 in L3, where the tissue is translucent there). Fix: the cover is
+faded in with the shift (`smooth(shift / (0.25 A))`, full from ~30° off the horizontal; top / bottom unchanged), in
+both twins. After the fix: |on − off| ≤ 2 within 3° of the horizontal, no jump along the arc; new tests (headless
+continuity, GL ×3 levels) fail on the old shader and pass on the new one. **The asymmetry's look left / right changes
+with this fix** (its effect now fades out toward the horizontal instead of covering the band there); the reference-PC
+runs above were made before it.
+
 ## Open
 
-- **Artist verdicts** (Manu): L0–L3, colour source shader / image (and which preset), asymmetry on / off.
+- **Artist verdicts** (Manu): L0–L3, colour source shader / image (and which preset), asymmetry on / off (to be
+  looked at again after the seam fix).
 - **A+H with the real texture:** measured in run 2 (no white rim); Manu's look verdict on it is open.
 - **L3 cost** (technical, an agent's job if wanted): trace the sclera's refracted ray only inside the band (texture
   sampled outside the branch as now); expected to remove most of the profile-view +0.33 / +0.75 ms (run 2: +0.56 / +1.29 ms); to be measured.
