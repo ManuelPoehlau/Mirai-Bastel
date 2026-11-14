@@ -480,8 +480,14 @@ the falloff are PROVISIONAL working values (keys below). No Artist verdict.
 
 **Measured in the container** (`TESTED [C]`, llvmpipe — timings there are not GPU times): parity of every limbus
 function (max error ≤ 3e-6), L0 = P1b, GL state / resources clean. The probe's [C] section gives edge-continuity
-numbers per level (no verdict); GPU time per level: on the reference PC. Details and raw output:
+numbers per level (no verdict). Details and raw output:
 [`RESULTS_LIMBUS_CONTAINER_2026-11-14.md`](RESULTS_LIMBUS_CONTAINER_2026-11-14.md).
+
+**Reference PC, 2026-11-14** (`MEASURED [RPC]`, [`RESULTS_LIMBUS_REFERENCE_PC_2026-11-14.md`](RESULTS_LIMBUS_REFERENCE_PC_2026-11-14.md)):
+186 tests passed, probe four PASS (L0 = P1b pixel for pixel there too). GPU p50, T-C V2 front, 1024×768 / 1920×1080:
+L0 1.17 / 2.78 ms, L1 1.28 / 3.04, L2 1.35 / 3.18, **L3 1.89 / 4.17**, asymmetry +0.0. L3's extra cost is mostly the
+sclera pass tracing every sclera fragment (it remains in the profile view). Run with Manu's texture but without
+`iris_custom.json` (planar mapping): the A+H look check and every Artist verdict are open.
 
 ### Controls (P1c window, in addition to P1 / P1b's)
 
