@@ -11,7 +11,8 @@ Keys: every P1 / P1b key (README "Controls", `8` / `9` / `0` = V1 / V2 / V3, `J`
     O          limbal colour source shader / image (the iris image's outer ring)
     N          shader colour preset (P1b dark / grey-blue / grey-brown)
     A          top / bottom asymmetry on / off (independent of the level)
-    SLASH      overlap all round 0 / 0.15 / 0.3 / 0.5 mm (independent of the level and the asymmetry)
+    MINUS      overlap all round 0 / 0.15 / 0.3 / 0.5 mm (independent of the level and the asymmetry; the '-' key on
+               QWERTY and QWERTZ alike - '/' is shift+7 on a German layout, which pyglet reports as '7')
     W          band width +0.25 mm (shift: -0.25)
     D          strength +0.1 (shift: -0.1)
     COMMA      normal blend half width +0.1 mm (shift: -0.1)
@@ -49,7 +50,7 @@ LIMBUS_KEYS = {
     "N": ("shader colour preset", lambda s, shift: setattr(s, "shader_colour", ls.cycle(lm.SHADER_COLOURS,
                                                                                          s.shader_colour))),
     "A": ("top / bottom asymmetry on / off", lambda s, shift: setattr(s, "asym", not s.asym)),
-    "SLASH": ("overlap all round 0 / 0.15 / 0.3 / 0.5 mm (shift: back)",
+    "MINUS": ("overlap all round 0 / 0.15 / 0.3 / 0.5 mm (shift: back)",
               lambda s, shift: setattr(s, "overlap_mm", ls.cycle(lm.OVERLAP_STEPS, s.overlap_mm, -1 if shift else 1))),
     "W": ("band width +0.25 mm (shift: -0.25)",
           lambda s, shift: setattr(s, "band_mm", round(_clamp(s.band_mm + (-0.25 if shift else 0.25), 0.25, 4.0), 2))),

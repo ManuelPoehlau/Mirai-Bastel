@@ -250,7 +250,7 @@ def test_limbus_window_keys_and_frames(gl_context):
         sys.path.remove(str(lab))
     window = run_limbus.LimbusWindow(run_limbus.build_parser().parse_args(["--size", "320", "240"]))
     try:
-        for symbol in (key.Q, key.Q, key.Q, key.A, key.SLASH, key.O, key.N, key.W, key.D, key.COMMA, key.PERIOD,
+        for symbol in (key.Q, key.Q, key.Q, key.A, key.MINUS, key.O, key.N, key.W, key.D, key.COMMA, key.PERIOD,
                        key.F1):
             assert window.on_key_press(symbol, 0)
             window.on_draw()

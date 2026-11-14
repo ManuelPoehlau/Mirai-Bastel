@@ -497,7 +497,7 @@ per L3 fragment). Every Artist verdict is open.
 ### Controls (P1c window, in addition to P1 / P1b's)
 
 `Q` level L0 → L3 (shift: back) · `O` colour source shader / image · `N` shader colour preset · `A` asymmetry on / off ·
-`/` overlap all round 0 / 0.15 / 0.3 / 0.5 mm ·
+`-` overlap all round 0 / 0.15 / 0.3 / 0.5 mm (Minus-Taste; `/` war Shift+7 auf QWERTZ = Taste `7`) ·
 `W` band ±0.25 mm · `D` strength ±0.1 · `,` normal blend ±0.1 mm · `.` translucency falloff ×/÷1.25 (shift = the
 other direction). Lab-local; no `config/keymap.json` entry (D-L9). The levels act with V2 / V3 and T-B … T-D.
 
@@ -539,7 +539,7 @@ use them (the probe names the image and the fit in its header). Check: `EVIDENCE
 ### Kurzfassung für Manu (Deutsch)
 
 - **Gebaut:** L0 (= P1b V2, pixelgleich) → L1 Farbband → L2 + Normalen-Übergang → L3 + durchscheinender Limbus;
-  Überlappung rundum (`/`, 0 … 0,5 mm) und Asymmetrie oben/unten (`A`) als eigene Einstellungen (beide aus); Limbusfarbe aus Shader-Einstellung oder aus dem Außenring deiner
+  Überlappung rundum (`-`, 0 … 0,5 mm) und Asymmetrie oben/unten (`A`) als eigene Einstellungen (beide aus); Limbusfarbe aus Shader-Einstellung oder aus dem Außenring deiner
   Textur (Taste `O`). P1 und P1b unverändert.
 - **Im Fenster:** `run_limbus.py`, `Z` Nahansicht, `Q` Stufe, `A` Asymmetrie, `O` Farbquelle, `N` Farbvorgabe,
   `W` / `D` / `,` / `.` Parameter (Shift = rückwärts). Urteile sind deine.

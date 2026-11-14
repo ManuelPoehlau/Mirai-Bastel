@@ -111,7 +111,7 @@ runs above were made before it.
 Manu after the seam fix: "Dadurch das es in die Cornea hineinragt, bekommt man diesen schönen weichen Übergang,
 allerdings wirkt es etwas komisch, dass der Effekt nur oben und unten richtig wirkt und an den Seiten nicht so, und
 dort der Übergang dann hart bleibt, was an den Seiten etwas unnatürlich/künstlich wirkt". Built as an independent
-setting **overlap all round** (0 / 0.15 / 0.3 / 0.5 mm, default 0, key `/`); the asymmetry adds on top of it.
+setting **overlap all round** (0 / 0.15 / 0.3 / 0.5 mm, default 0, key `-`; first `/`, which a German layout cannot reach); the asymmetry adds on top of it.
 Container (TESTED [C], stand-in image + A+H): four PASS; [C] front, L2 → L2 + overlap 0.3 mm: 43.4 / 66.9 → 13.9 / 22.7
 (the iris-to-tissue edge softened all round), with the asymmetry 9.6 / 16.3; no jump along the ring (GL tests).
 
