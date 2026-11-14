@@ -546,6 +546,6 @@ use them (the probe names the image and the fit in its header). Check: `EVIDENCE
   Textur (Taste `O`). P1 und P1b unverändert.
 - **Im Fenster:** `run_limbus.py`, `Z` Nahansicht, `Q` Stufe, `A` Asymmetrie, `O` Farbquelle, `N` Farbvorgabe,
   `W` / `D` / `,` / `.` Parameter (Shift = rückwärts). Urteile sind deine.
-- **Bitte auf deinem PC:** die drei Befehle oben, Ausgabe der ersten beiden und `limbus_sheet.png` schicken — dann
-  stehen die GPU-Zeiten pro Stufe fest.
+- **Stand 2026-11-14:** auf deinem PC gemessen (Läufe 1–3, `RESULTS_LIMBUS_REFERENCE_PC_2026-11-14.md`); deine
+  Entscheidung: „alles erstmal so drin lassen als Einstellungen“ — keine Voreinstellung geändert, Urteile offen.
 

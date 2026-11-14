@@ -160,10 +160,15 @@ Reading (COMPUTED, no verdict):
   and cornea fragment still makes (kept in uniform control flow for the mip level), the transmission's `pow`, and the
   cornea's work per fragment. Further gains would need a per-pass timing first.
 
+## Decision so far (Manu, 2026-11-14)
+
+"ja, ich würde alles erstmal so drin lassen als einstellungen" — every P1c option stays as a setting (levels
+L0–L3, colour source and presets, overlap all round, asymmetry, the parameters); no default is changed and none is
+chosen as *the* look. The window still starts at L0 = P1b V2.
+
 ## Open
 
-- **Artist verdicts** (Manu): L0–L3, colour source shader / image (and which preset), asymmetry on / off and the
-  overlap all round (both to be looked at with the seam fix and the new overlap).
+- **Artist verdicts** (Manu), deferred by his decision above: which level, colour source / preset, overlap, asymmetry.
 - **A+H with the real texture:** measured in run 2 (no white rim); Manu's look verdict on it is open.
 - **L3 fast path:** measured (run 3): same pixels, −0.15 / −0.4 ms; L3 stays the expensive level (+1.4 ms over L0 at
   1920×1080, T-C front). A further cut would start with per-pass timing.
