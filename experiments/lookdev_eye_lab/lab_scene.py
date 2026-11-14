@@ -17,6 +17,7 @@ from viewport.viewport import Viewport
 
 from . import eye_geometry as geo
 from . import eye_math as em
+from . import iris_fit
 from . import iris_source
 from . import lab_state as ls
 from .gl_lab import EyeLabRenderer, EyeLabStore
@@ -61,11 +62,18 @@ def close_up_distance(width: int, height: int, fov_degrees: float = OrbitCamera.
     return em.distance_for_coverage(CLOSE_UP_COVERAGE, geo.SCLERA_RADIUS, fov_degrees, width, height)
 
 
+def iris_mesh_mapping(source: "iris_source.IrisSource") -> tuple:
+    """`eye_geometry.build_parts`'s iris arguments: the radial fit's UVs and knot rings, or () = the planar mapping."""
+    if source.fit is None:
+        return ()
+    return iris_fit.mesh_uv(source.fit), iris_fit.mesh_extra_radii(source.fit)
+
+
 def build_scene(state: ls.LabState, out_dir: Path, cache_dir: Path | None, width: int, height: int) -> Scene:
     """Requires a current GL context (the stores build their VertexLists at the first `sync()`)."""
-    meshes = geo.build_parts()
     # `out_dir/iris_custom.png` if it exists and loads, else the procedural iris (`iris_source`; P1b uses the same).
     source = iris_source.confirm_loadable(iris_source.choose(out_dir), out_dir)
+    meshes = geo.build_parts(*iris_mesh_mapping(source))
     iris_png = source.path
     renderer = EyeLabRenderer(state, cache_dir)
     viewport = Viewport(meshes["grey"], store_type=EyeLabStore)

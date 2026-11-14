@@ -13,6 +13,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from . import cornea_optics as co
+from . import eye_geometry as geo
+from . import iris_fit
 
 N = 1024
 G = co.GEOMETRY
@@ -142,3 +144,20 @@ def cases(seed: int = 3) -> list[Case]:
         out.append(Case("trace_entry", x, np.concatenate([tr.entry, tr.transmit_inner[:, None]], -1), [0, 1, 2, 3],
                         2e-4, ok & (tr.kind != co.MISS)))
     return out
+
+
+def fit_case(fit: "iris_fit.IrisFit", seed: int = 5) -> Case:
+    """`iris_fit.GLSL_SRC` against `iris_fit.uv` / `share_map` (needs `RefractionParityPass(..., iris_fit=fit)`):
+    planar points over the iris disc and a bit beyond (incl. the centre and both knots), shares 0 .. 1.2."""
+    rng = np.random.default_rng(seed)
+    r = geo.IRIS_RADIUS * np.sqrt(rng.uniform(0.0, 1.3, N))
+    knots = np.array(fit.lab_knots) * geo.IRIS_RADIUS
+    r[:7] = [0.0, 1e-7, *knots, *(knots * (1 + 1e-6)), geo.IRIS_RADIUS]
+    phi = rng.uniform(0.0, 2.0 * np.pi, N)
+    share = rng.uniform(0.0, 1.2, N)
+    share[:4] = [0.0, *fit.lab_knots, 1.0]
+    x = _pack(np.stack([r * np.cos(phi), r * np.sin(phi)], -1), share)
+    a = _f32(x)
+    ref = np.concatenate([iris_fit.uv(a[:, 0:2], fit), iris_fit.share_map(a[:, 2], fit)[:, None], np.zeros((N, 1))],
+                         -1)
+    return Case("iris_fit", x, ref, [0, 1, 2], 2e-6)

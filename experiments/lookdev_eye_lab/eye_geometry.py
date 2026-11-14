@@ -118,12 +118,18 @@ def iris_uv(x: float, y: float) -> tuple[float, float]:
     return 0.5 + x / (2.0 * IRIS_RADIUS), 0.5 + y / (2.0 * IRIS_RADIUS)
 
 
-def iris_mesh(segments: int = SEGMENTS, rings: int = 12) -> Mesh:
+def iris_mesh(segments: int = SEGMENTS, rings: int = 12, uv=None, extra_radii: tuple = ()) -> Mesh:
+    """`uv` (x, y) -> (u, v) replaces the planar `iris_uv` (the radial fit, `iris_fit.mesh_uv`); `extra_radii` adds
+    rings at those radii (the fit's knots). Both default to the original mesh, unchanged."""
     mesh = Mesh()
+    uv = iris_uv if uv is None else uv
     radii = [PUPIL_RADIUS + (IRIS_RADIUS - PUPIL_RADIUS) * r / rings for r in range(rings + 1)]
+    if extra_radii:
+        radii = sorted(set(radii) | {r for r in extra_radii if PUPIL_RADIUS < r < IRIS_RADIUS
+                                     and min(abs(r - q) for q in radii) > 1e-6})
     rings_xyz = [_ring(radius, iris_z(radius), segments) for radius in radii]
     ids = [[mesh.add_vertex(p) for p in ring] for ring in rings_xyz]
-    uvs = [[iris_uv(p[0], p[1]) for p in ring] for ring in rings_xyz]
+    uvs = [[uv(p[0], p[1]) for p in ring] for ring in rings_xyz]
     # Seen from +Z the annulus winds counter-clockwise like the sphere strips (smaller ring first): normal +Z.
     for r in range(rings):
         _strip(mesh, ids[r], ids[r + 1], uvs[r], uvs[r + 1])
@@ -149,10 +155,10 @@ def sphere_mesh(centre, radius: float = REFERENCE_RADIUS, segments: int = 48, ri
     return mesh
 
 
-def build_parts() -> dict[str, Mesh]:
+def build_parts(iris_uv_map=None, iris_extra_radii: tuple = ()) -> dict[str, Mesh]:
     return {
         "sclera": sclera_mesh(),
-        "iris": iris_mesh(),
+        "iris": iris_mesh(uv=iris_uv_map, extra_radii=iris_extra_radii),
         "cornea": cornea_mesh(),
         "chrome": sphere_mesh(CHROME_CENTRE),
         "grey": sphere_mesh(GREY_CENTRE),

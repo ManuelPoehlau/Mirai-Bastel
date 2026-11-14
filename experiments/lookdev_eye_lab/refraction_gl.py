@@ -30,6 +30,7 @@ from . import cornea_optics as co
 from . import eye_geometry as geo
 from . import eye_math as em
 from . import gl_lab
+from . import iris_fit as iris_fit_module
 from . import iris_source
 from . import lab_scene
 from . import lab_state as ls
@@ -77,9 +78,12 @@ class RefractionStore(gl_lab.EyeLabStore):
 
 
 class RefractionRenderer(gl_lab.EyeLabRenderer):
-    def __init__(self, state: RefractionState, cache_dir=None, iris_png: Path | None = None) -> None:
+    def __init__(self, state: RefractionState, cache_dir=None, iris_png: Path | None = None,
+                 iris_fit: "iris_fit_module.IrisFit | None" = None) -> None:
         super().__init__(state, cache_dir)
         self.iris_png = iris_png
+        #: The radial fit of the custom image (`iris_fit`); None = the planar mapping.
+        self.iris_fit = iris_fit
         self.cornea_programs: dict = {}
         #: Draw the ray-class map instead of colour (red iris, green pupil, blue limbal tissue): the GPU / CPU check.
         self.debug_kind = False
@@ -92,10 +96,10 @@ class RefractionRenderer(gl_lab.EyeLabRenderer):
         return super().part_visible(part)
 
     def cornea_program(self, tech: int, variant: int, locations: dict) -> gl_lab.LabProgram:
-        key = (tech, variant, self.debug_kind)
+        key = (tech, variant, self.debug_kind, self.iris_fit is not None)
         if key not in self.cornea_programs:
             self.cornea_programs[key] = gl_lab.LabProgram(rs.cornea_sources(locations, tech, variant,
-                                                                             self.debug_kind))
+                                                                             self.debug_kind, self.iris_fit is not None))
         return self.cornea_programs[key]
 
     def draw_cornea(self, store: RefractionStore, group: str) -> None:
@@ -120,6 +124,8 @@ class RefractionRenderer(gl_lab.EyeLabRenderer):
             "u_pupil_albedo": PUPIL_ALBEDO,
             "u_iris_texture": grs._TEXTURE_UNIT,
         })
+        if self.iris_fit is not None:
+            values.update(self.iris_fit.uniforms())
         image = GLRenderStore.texture(str(self.iris_png))
         if image is None:  # replaced by an unreadable file while running: the loader printed why
             return
@@ -162,10 +168,10 @@ def build_scene(state: RefractionState, out_dir: Path, cache_dir: Path | None, w
                 height: int) -> lab_scene.Scene:
     """`lab_scene.build_scene` with `RefractionStore` / `RefractionRenderer`: the same parts, colours, entries,
     insertion order (the cornea a Ghost entry, drawn last), camera and preset."""
-    meshes = geo.build_parts()
     source = iris_source.confirm_loadable(iris_source.choose(out_dir), out_dir)  # the same source as P1
+    meshes = geo.build_parts(*lab_scene.iris_mesh_mapping(source))  # the radial fit, as P1
     iris_png = source.path
-    renderer = RefractionRenderer(state, cache_dir, iris_png)
+    renderer = RefractionRenderer(state, cache_dir, iris_png, source.fit)
     viewport = Viewport(meshes["grey"], store_type=RefractionStore)
     viewport.set_edit_base_color(ls.WORKLIGHT_COLOURS["grey"])
     for part in ("sclera", "iris", "chrome", "cornea"):
@@ -191,10 +197,11 @@ def build_scene(state: RefractionState, out_dir: Path, cache_dir: Path | None, w
 class RefractionParityPass(gl_lab.ParityPass):
     """P1's parity pass with the refraction program (inputs: three vec4 per sample, output one vec4)."""
 
-    def __init__(self, gl, res: pg.Resources) -> None:
+    def __init__(self, gl, res: pg.Resources, iris_fit: "iris_fit_module.IrisFit | None" = None) -> None:
         super().__init__(gl, res)
         self.program.delete()
-        self.program = gl_lab.LabProgram(rs.parity_sources())
+        self.iris_fit = iris_fit  # compiles `iris_fit.GLSL_SRC` in and sets its uniforms (the "iris_fit" case)
+        self.program = gl_lab.LabProgram(rs.parity_sources(iris_fit is not None))
 
     def run(self, func: str, inputs: np.ndarray) -> np.ndarray:
         gl = self.gl
@@ -214,6 +221,8 @@ class RefractionParityPass(gl_lab.ParityPass):
             values = {"u_inputs": pg.SAMPLE_UNIT, "u_width": self.WIDTH, "u_count": count,
                       "u_func": rs.PARITY_FUNCS[func]}
             values.update(geometry_uniforms())
+            if self.iris_fit is not None:
+                values.update(self.iris_fit.uniforms())
             self.program.set(values)
             gl.glBindVertexArray(self.vao)
             gl.glDrawArrays(gl.GL_TRIANGLES, 0, 3)

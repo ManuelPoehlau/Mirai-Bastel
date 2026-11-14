@@ -6,7 +6,7 @@
 the fix-up, T-C 1.0–1.3 ms / 2.4–2.9 ms per frame at 1024×768 / 1920×1080 with the eye at ~50 %, T-D about twice
 that. **Artist verdict: `OPEN`** (the practical test below). Main PC: `OPEN` (D-L5 deferred).
 **P1b — Corneal Refraction Lab (2026-11-14):** added on top of P1, P1 unchanged; see [the P1b section](#p1b--corneal-refraction-lab-2026-11-14).
-**Next session:** [`HANDOFF_2026-11-14.md`](HANDOFF_2026-11-14.md) (radial fit of the custom iris, soft limbus plan).
+**Next session:** [`HANDOFF_2026-11-14.md`](HANDOFF_2026-11-14.md) (radial fit of the custom iris, soft limbus plan). Soft limbus plan: [`PLAN_P1c_LIMBUS_2026-11-14.md`](PLAN_P1c_LIMBUS_2026-11-14.md).
 **Own iris image:** put it at `out/iris_custom.png`; see [Custom iris texture](#custom-iris-texture-outiris_custompng). No change under `src/`, `tests/`, `config/`; no new
 dependency; no keymap entry.
 **Source:** [Lookdev P0 audit](../../docs/research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §5 (P1 proposal), §8
@@ -115,6 +115,7 @@ clamp or Reinhard per channel, sRGB encode in the shader; no `GL_FRAMEBUFFER_SRG
 | `lab_scene.py` | the scene on the production `Viewport`, camera presets, close-up framing |
 | `lab_state.py` | every control as plain data, materials, the lab-local key table, HUD text |
 | `iris_source.py` | which iris image is used: `out/iris_custom.png` if usable, else the procedural one (P1 and P1b) |
+| `iris_fit.py`, `suggest_iris_fit.py` | the radial fit of the custom image (`out/iris_custom.json`): validation, remap + GLSL twin, the estimate |
 | `parity.py` | shader-vs-NumPy cases (inputs, references, tolerances) for the test and the probe |
 | `tests/` | 35 headless tests + 13 GL tests |
 | `RESULTS_CONTAINER_2026-11-14.md` | the container validation (`TESTED [C]`) with raw output |
@@ -154,6 +155,33 @@ the file = right** in the front view (not mirrored). Measured from the centre as
 
 Square images work best (non-square ones are stretched onto the disc). The image is treated as sRGB: T-A shows it as
 it is, T-B … T-D and P1b decode it to linear light. Alpha is ignored. Any size; it is mipmapped.
+
+### Radial fit (`out/iris_custom.json`, 2026-11-14)
+
+An image whose pupil edge / iris edge are not at the lab's radii (Manu's texture: ≈ 0.22 / ≈ 0.90) gets an optional
+sidecar next to it, e.g. `{"pupil": 0.22, "limbus": 0.90}` — where *the image's* pupil edge and iris edge lie, as
+shares of half the image width (`iris_fit.py`):
+
+- **Read only**, applies to the custom image only. Exactly the keys `pupil` and `limbus`, numbers,
+  `0 < pupil < limbus <= 1`; anything else → ignored, the reason in the HUD / console / probe line
+  (`iris_custom.json ignored: …`). **No sidecar → the planar mapping above, unchanged** (the P1 pixel tests and
+  V1 = P1 still hold). A valid one shows as `radial fit iris_custom.json: image pupil 0.220 -> 0.268, …`.
+- **Remap** (radius only, the angle kept; the standard pupil-dilation remap): lab share `[0, 0.268] → [0, pupil]`,
+  `[0.268, target] → [pupil, limbus]`, `[target, 1] → [limbus, outer]`. The image's pupil edge lands on the geometric
+  pupil edge in P1 and P1b alike (GL test with a marker image).
+- **Where:** P1 bakes it into the iris mesh UVs (`eye_geometry.iris_mesh(uv=…, extra_radii=…)`: one extra ring at the
+  target knot so the UV interpolation does not blur the knot); P1b samples through `iris_fit.GLSL_SRC`
+  (`#define IRIS_FIT`, NumPy twin `iris_fit.uv`, GPU parity case `refraction_parity.fit_case`, also in the probe's
+  [P] when a fit is active). The CPU model (`cornea_optics`, [M]) keeps the procedural iris.
+- **OPEN (Manu):** `target` = the visible limbus 0.819 (`DEFAULT_TARGET`, provisional) or the chamber angle 0.779,
+  and `outer` = 1.0 (continue to the image edge, the spec) or hold the iris edge. Found while rendering the choice:
+  P1 has no refraction, so the close-up front view sees the iris through the sclera opening out to ≈ 0.855 (parallax);
+  with `outer` 1.0 that band shows the image's white background (A: a thin white rim, B: a wide ring). Holding the
+  edge (`outer = limbus`) with `limbus` set just inside the white (e.g. 0.88) closes it. Comparison sheets: session of
+  2026-11-14 (not in the repo).
+- `python experiments/lookdev_eye_lab/suggest_iris_fit.py [image.png]` estimates both shares (mean luminance per 1 %
+  ring: pupil = first ring > 0.15, iris edge = first ring > 0.85 beyond 0.5; expects a white background) and **prints**
+  a suggestion; it writes nothing.
 
 ## Controls (lab-local; `F1` shows them in the window)
 
@@ -371,6 +399,7 @@ reflection to the iris in linear light. The reflection therefore looks dimmer th
 | `run_refraction.py` | interactive window: P1's window and keys + `8` / `9` / `0` = V1 / V2 / V3, `J` = ray-class map; `--probe` |
 | `tests/test_cornea_optics.py`, `test_refraction_headless.py`, `test_gl_refraction.py` | 36 + 4 headless, 17 GL (2 for the custom iris) |
 | `tests/test_iris_source.py` | 8 headless: choice, fallbacks, the custom file left untouched |
+| `tests/test_iris_fit.py` + 6 GL in `test_gl_refraction.py` | 26 headless (sidecar validation, remap, mesh, estimate, PNG filters); GL: fit parity (4), marker image in P1 / P1b with and without sidecar (2) |
 | `RESULTS_REFRACTION_CONTAINER_2026-11-14.md` | the container validation, the model's numbers, raw output |
 | `RESULTS_REFRACTION_REFERENCE_PC_2026-11-14.md` | Manu's run on the reference PC (`MEASURED [RPC]`), readings, the two test fixes |
 
@@ -421,4 +450,8 @@ button; `J` shows which rays reach iris (red), pupil (green) or limbal tissue (b
   78 %). Quadratisch, sRGB, beliebige Größe.
 - **Kontrolle:** Das HUD zeigt `iris texture: CUSTOM …` oder `procedural` (mit Grund, falls deine Datei nicht ging).
   Austauschen während das Fenster läuft wirkt sofort; Hinzufügen oder Entfernen braucht einen Neustart.
+- **Radiale Anpassung:** Liegen Pupillen- und Irisrand deines Bilds woanders, daneben `out\iris_custom.json` legen,
+  z. B. `{"pupil": 0.22, "limbus": 0.90}` (Anteile der halben Bildbreite). Die Lab-Geometrie bleibt, das Bild wird
+  radial passend gezogen. `suggest_iris_fit.py` schlägt die Werte vor, schreibt aber nichts. Offen ist deine Wahl,
+  wohin der Irisrand fällt (Limbus 0,819 oder Kammerwinkel 0,779) und ob dahinter der Rand gehalten wird.
 

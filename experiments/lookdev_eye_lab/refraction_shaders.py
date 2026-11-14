@@ -16,12 +16,14 @@ P1, `VARIANT` 2 / 3, `DEBUG_KIND` for the ray-class map):
   P1's cornea F0 (IOR 1.376 by default) so the reflection equals P1's shells; L_inside is the iris (P1's image, sRGB
   decoded, lit by the key and the studio ambient on the cone's normal - light is not refracted on its way in) or the
   limbal tissue (dark limbal colour -> sclera by `limbus_weight`); a ray into the pupil sees P1's pupil colour.
-- the iris image is sampled before any branch (implicit derivatives are undefined in non-uniform control flow).
+- the iris image is sampled before any branch (implicit derivatives are undefined in non-uniform control flow);
+  with a radial fit (`out/iris_custom.json`, `#define IRIS_FIT`) through `iris_fit.GLSL_SRC`, else planar.
 """
 
 from __future__ import annotations
 
 from . import cornea_optics as co
+from . import iris_fit as fit
 from . import shaders
 
 VARIANT_IDS = {"V2": 2, "V3": 3}
@@ -204,7 +206,11 @@ void main() {
         kind = KIND_LIMBUS;
     }
     // Sampled before any branch: implicit derivatives need uniform control flow.
+#ifdef IRIS_FIT
+    vec3 iris_albedo = srgb_decode(texture(u_iris_texture, iris_fit_uv(hit.xy)).rgb);
+#else
     vec3 iris_albedo = srgb_decode(texture(u_iris_texture, vec2(0.5) + hit.xy / (2.0 * u_iris_radius)).rgb);
+#endif
 #ifdef DEBUG_KIND
     out_color = vec4(kind == KIND_IRIS ? 1.0 : 0.0, kind == KIND_PUPIL ? 1.0 : 0.0, kind == KIND_LIMBUS ? 1.0 : 0.0,
                      1.0);
@@ -266,23 +272,37 @@ void main() {
         int kind = trace_cornea(a.xyz, b.xyz, int(c.x + 0.5), entry, n, hit, tin);
         o = u_func == 4 ? vec4(hit, float(kind)) : vec4(entry, tin);
     }
+#ifdef IRIS_FIT
+    if (u_func == 6) {
+        o.xy = iris_fit_uv(a.xy);
+        o.z = iris_fit_share(a.z);
+    }
+#endif
     out_value = o;
 }
 """
 
 PARITY_FUNCS = {"refract": 0, "sphere_entry": 1, "iris_cone_hit": 2, "limbus_schlick": 3, "trace_hit": 4,
-                "trace_entry": 5}
+                "trace_entry": 5, "iris_fit": 6}
 
 
-def cornea_sources(locations: dict[str, int], tech: int, variant: int, debug_kind: bool = False):
+def _fit_src(iris_fit: bool) -> str:
+    return "#define IRIS_FIT 1\n" + fit.GLSL_SRC if iris_fit else ""
+
+
+def cornea_sources(locations: dict[str, int], tech: int, variant: int, debug_kind: bool = False,
+                   iris_fit: bool = False):
+    """`iris_fit`: sample the iris image through the radial fit (`iris_fit.GLSL_SRC`); off = the planar mapping, the
+    program text as before."""
     header = "#version 330 core\n" + "".join(
         f"#define {k} {v}\n" for k, v in (("TECH", tech), ("VARIANT", variant)) if v is not None)
     if debug_kind:
         header += "#define DEBUG_KIND 1\n"
-    fragment = header + shaders.LIB_SRC + REFRACTION_LIB_SRC + CORNEA_FRAGMENT_BODY
+    fragment = header + shaders.LIB_SRC + REFRACTION_LIB_SRC + _fit_src(iris_fit) + CORNEA_FRAGMENT_BODY
     return [(shaders.SURFACE_VERTEX_SRC.format(**locations), "vertex"), (fragment, "fragment")]
 
 
-def parity_sources():
+def parity_sources(iris_fit: bool = False):
     return [(shaders.FULLSCREEN_VERTEX_SRC, "vertex"),
-            ("#version 330 core\n" + shaders.LIB_SRC + REFRACTION_LIB_SRC + PARITY_FRAGMENT_BODY, "fragment")]
+            ("#version 330 core\n" + shaders.LIB_SRC + REFRACTION_LIB_SRC + _fit_src(iris_fit)
+             + PARITY_FRAGMENT_BODY, "fragment")]
