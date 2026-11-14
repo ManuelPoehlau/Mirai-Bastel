@@ -457,6 +457,9 @@ button; `J` shows which rays reach iris (red), pupil (green) or limbal tissue (b
   radial passend gezogen. `suggest_iris_fit.py` schlägt die Werte vor, schreibt aber nichts. Deine Wahl „A+H“:
   `{"pupil": 0.22, "limbus": 0.88, "hold_outer_color": true}` — Irisrand auf den Limbus, dahinter die Randfarbe halten
   (ohne den Schlüssel: aus). Das Urteil mit deiner echten Textur steht noch aus.
+- **Die JSON legst du selbst an** (das Lab schreibt sie nie; `out\` ist nicht im Repo). PowerShell, Repo-Wurzel:
+  `Set-Content -Path experiments\lookdev_eye_lab\out\iris_custom.json -Value '{"pupil": 0.22, "limbus": 0.88, "hold_outer_color": true}'`
+  UTF-8 (mit / ohne BOM) und UTF-16 werden gelesen.
 
 ## P1c — soft limbus (2026-11-14)
 

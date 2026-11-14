@@ -223,3 +223,15 @@ def test_hold_keeps_the_iris_edge_colour_beyond_the_target():
     s = np.linspace(lt, 1.3, 50)
     assert np.allclose(iris_fit.share_map(s, fit), 0.88)
     assert iris_fit.share_map(lt - 1e-9, fit) == pytest.approx(0.88, abs=1e-6)  # continuous at the knot
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "utf-16", "utf-16-le-bom"])
+def test_the_sidecar_is_read_in_the_encodings_windows_tools_write(tmp_path, encoding):
+    text = '{"pupil": 0.22, "limbus": 0.88, "hold_outer_color": true}'
+    path = tmp_path / iris_fit.SIDECAR_NAME
+    if encoding == "utf-16-le-bom":  # Windows PowerShell 5.1: `>` / Out-File
+        path.write_bytes(b"\xff\xfe" + text.encode("utf-16-le"))
+    else:
+        path.write_bytes(text.encode(encoding))
+    fit, note = iris_fit.load(tmp_path)
+    assert note == "" and fit == iris_fit.IrisFit(0.22, 0.88, outer=0.88)
