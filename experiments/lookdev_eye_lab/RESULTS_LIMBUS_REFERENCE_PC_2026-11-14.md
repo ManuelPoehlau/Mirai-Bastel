@@ -56,14 +56,47 @@ Reading (COMPUTED from the table, no verdict):
   rise (its outer iris is darker).
 - **Key sweep (3/4, p95 per azimuth −60 … +60):** L0 102–117, L1 70–79, L2 62–84, L3 62–75.
 
+## Run 2 — the same texture with A+H (MEASURED [RPC], 2026-11-14)
+
+Manu created `out\iris_custom.json` = `{"pupil": 0.22, "limbus": 0.88, "hold_outer_color": true}` and ran the probe
+again. Header: `iris texture: CUSTOM iris_custom.png - 512x512, 8-bit RGBA, sha1 beff016e0ff3; radial fit
+iris_custom.json: image pupil 0.220 -> 0.268, image iris edge 0.880 -> 0.819 (limbus), outer colour held`. Same source
+line (`6c012fc0ca`, working tree MODIFIED). Four PASS again: parity, **L0 = P1b pixel for pixel with the same fit**,
+no GL error, hygiene. Contact sheet (`out\limbus\limbus_sheet.png`): no white rim at the iris edge in any view.
+
+GPU p50 (ms), T-C unless named, run 2 (run 1 without the sidecar in brackets):
+
+| View, size | L0 | L1 | L2 | L3 | L3 asym | V3 L0 → L3 | T-B L0 → L3 | T-D L0 → L3 |
+|---|---|---|---|---|---|---|---|---|
+| front 1024×768 | 1.21 (1.17) | 1.32 | 1.39 | **2.10 (1.89)** | 2.10 | 1.68 → 2.05 | 1.06 → 1.86 | 1.96 → 3.04 |
+| 3/4 1024×768 | 1.03 (1.01) | 1.13 | 1.19 | 1.82 (1.66) | 1.82 | 1.38 → 1.75 | 0.90 → 1.62 | 1.79 → 2.70 |
+| profile 1024×768 | 0.78 (0.78) | 0.87 | 0.93 | 1.34 (1.25) | 1.34 | 0.83 → 1.33 | 0.68 → 1.21 | 1.47 → 2.06 |
+| front 1920×1080 | 2.88 (2.78) | 3.14 | 3.28 | **4.56 (4.17)** | 4.58 | 3.53 → 4.76 | 2.56 → 4.13 | 4.49 → 6.47 |
+| 3/4 1920×1080 | 2.45 (2.39) | 2.69 | 2.83 | 4.03 (3.70) | 4.04 | 2.94 → 4.08 | 2.15 → 3.64 | 4.15 → 5.92 |
+| profile 1920×1080 | 1.90 (1.90) | 2.11 | 2.24 | 3.19 (2.98) | 3.19 | 1.96 → 3.17 | 1.65 → 2.90 | 3.49 → 4.83 |
+
+- The fit's remap costs little where it is evaluated once per fragment (L0 +0.04 / +0.10 ms, front) and more in L3,
+  which samples the iris image up to three times per fragment through it (+0.2 / +0.4 ms over run 1). **T-C V2 L3 at
+  1920×1080: 4.56 ms vs 2.88 ms for L0 (+58 %).** The asymmetry still costs nothing measurable.
+
+[C] (1024×768, T-C V2; median / p95 @ position, mm):
+
+| View | L0 | L1 | L2 | L3 | L3 asym | L3 image colour |
+|---|---|---|---|---|---|---|
+| front | 53.5 / 85.3 @ −0.17 | 45.2 / 104.7 @ −0.17 | 26.0 / 101.6 @ −0.17 | 17.3 / 29.1 @ −0.30 | 16.2 / 27.2 @ −1.00 | 18.9 / 27.9 @ −0.30 |
+| 3/4 | 76.5 / 118.1 @ −0.02 | 40.5 / 72.0 @ −0.87 | 40.0 / 61.4 @ −0.80 | 36.0 / 61.4 @ −0.87 | 33.2 / 60.3 @ −1.07 | 38.9 / 61.4 @ −0.72 |
+| steep 75 | 66.0 / 110.4 @ −0.02 | 42.1 / 60.3 @ −0.27 | 42.1 / 59.4 @ −0.27 | 42.1 / 59.4 @ −0.27 | 37.3 / 48.6 @ −0.37 | 42.1 / 59.4 @ −0.17 |
+
+Key sweep (3/4, p95, azimuth −60 … +60): L0 101–120, L1 65–87, L2 56–81, L3 56–65. The pattern of run 1 holds:
+L0's sharpest step is on the ring; from L1 on it is not; in the front view L1 / L2 sharpen the iris-to-tissue edge
+with the dark default colour (p95 ~102–105 vs 85), L3 softens it (29).
+
 ## Open
 
 - **Artist verdicts** (Manu): L0–L3, colour source shader / image (and which preset), asymmetry on / off.
-- **A+H with the real texture:** write `out\iris_custom.json` = `{"pupil": 0.22, "limbus": 0.88,
-  "hold_outer_color": true}` and look again (window `run_limbus.py`, or the probe for a new sheet); the HUD / probe
-  header then shows `radial fit iris_custom.json: … outer colour held`.
+- **A+H with the real texture:** measured in run 2 (no white rim); Manu's look verdict on it is open.
 - **L3 cost** (technical, an agent's job if wanted): trace the sclera's refracted ray only inside the band (texture
-  sampled outside the branch as now); expected to remove most of the profile-view +0.33 / +0.75 ms; to be measured.
+  sampled outside the branch as now); expected to remove most of the profile-view +0.33 / +0.75 ms (run 2: +0.56 / +1.29 ms); to be measured.
 
 ## Raw output (as pasted by Manu, 2026-11-14)
 

@@ -489,8 +489,9 @@ numbers per level (no verdict). Details and raw output:
 **Reference PC, 2026-11-14** (`MEASURED [RPC]`, [`RESULTS_LIMBUS_REFERENCE_PC_2026-11-14.md`](RESULTS_LIMBUS_REFERENCE_PC_2026-11-14.md)):
 186 tests passed, probe four PASS (L0 = P1b pixel for pixel there too). GPU p50, T-C V2 front, 1024×768 / 1920×1080:
 L0 1.17 / 2.78 ms, L1 1.28 / 3.04, L2 1.35 / 3.18, **L3 1.89 / 4.17**, asymmetry +0.0. L3's extra cost is mostly the
-sclera pass tracing every sclera fragment (it remains in the profile view). Run with Manu's texture but without
-`iris_custom.json` (planar mapping): the A+H look check and every Artist verdict are open.
+sclera pass tracing every sclera fragment (it remains in the profile view). Run 1 with Manu's texture without
+`iris_custom.json`, run 2 with A+H (no white rim; L3 then 2.10 / 4.56 ms, the fit's remap is sampled up to three times
+per L3 fragment). Every Artist verdict is open.
 
 ### Controls (P1c window, in addition to P1 / P1b's)
 
