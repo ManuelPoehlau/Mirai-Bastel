@@ -114,7 +114,9 @@ def load(out_dir: Path) -> tuple[IrisFit | None, str]:
     if not path.exists():
         return None, ""
     try:
-        text = path.read_text(encoding="utf-8")  # read-only
+        raw = path.read_bytes()  # read-only
+        # Windows editors / PowerShell write UTF-8 with a BOM or UTF-16 (`>` / Out-File in Windows PowerShell 5.1).
+        text = raw.decode("utf-16") if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw.decode("utf-8-sig")
     except (OSError, UnicodeDecodeError) as exc:
         return None, f"cannot be read ({exc.__class__.__name__})"
     try:

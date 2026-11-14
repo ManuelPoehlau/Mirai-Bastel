@@ -258,3 +258,49 @@ def test_limbus_window_keys_and_frames(gl_context):
     finally:
         window.scene.release()
         window.window.close()
+
+
+@pytest.mark.parametrize("level", ["L1", "L2", "L3"])
+def test_asymmetry_has_no_seam_left_and_right(gl_context, tmp_path, level):
+    """Regression (Manu, reference PC 2026-11-14): with the asymmetry on, a seam left and right, centred on the limbus
+    edge, clearest in L1 / L2. Along an arc on the cornea just inside the visible iris edge (u -0.22 mm), the change the
+    asymmetry makes must fade to 0 toward the horizontal with no jump, and stay in place at top and bottom."""
+    import math
+
+    from lookdev_eye_lab import probe_refraction
+
+    w, h = 1024, 768
+    limb = lg.build_scene(lg.LimbusState(show_references=False, technique="T-B", limbus_level=level), tmp_path,
+                          CACHE_DIR, w, h)
+    target = gl_lab.Target(gl_context, limb.renderer.res, w, h)
+    try:
+        limb.apply_view("front", lab_scene.close_up_distance(w, h))
+        limb.set_aspect(w, h)
+        limb.camera_moved()
+        images = {}
+        for asym in (False, True):
+            limb.renderer.state.asym = asym
+            target.bind()
+            limb.renderer.frame(limb.viewport, w, h)
+            target.unbind()
+            images[asym] = target.read_rgb().astype(float) @ np.array([0.2126, 0.7152, 0.0722])
+        deg = np.arange(-180.0, 180.0, 0.5)
+        r = lm.RING_RADIUS - 0.22 * lm.MM
+        z = float(co.GEOMETRY.anterior_z(r))
+        px = [probe_refraction.project(limb.camera, (r * math.cos(math.radians(a)), r * math.sin(math.radians(a)), z),
+                                       w, h)[:2] for a in deg]
+        rows, cols = np.array([int(round(y)) for _, y in px]), np.array([int(round(x)) for x, _ in px])
+        diff = np.abs(images[True][rows, cols] - images[False][rows, cols])
+        on = images[True][rows, cols]
+
+        def near(a):
+            return diff[np.abs(((deg - a + 180.0) % 360.0) - 180.0) <= 3.0].max()
+
+        assert near(0.0) <= 2.0 and near(180.0) <= 2.0  # nothing changes on the horizontal ...
+        sector = np.abs(((deg + 180.0) % 180.0) - 90.0) >= 75.0  # ... nor within 15 degrees of it ...
+        assert np.abs(np.diff(on))[sector[1:] & sector[:-1]].max() <= np.abs(np.diff(images[False][rows, cols])).max()
+        assert diff[np.abs(deg - 90.0) <= 3.0].mean() > 5.0  # ... and the cover is there at the top
+        assert pg.drain_errors(gl_context) == []
+    finally:
+        target.release()
+        limb.release()

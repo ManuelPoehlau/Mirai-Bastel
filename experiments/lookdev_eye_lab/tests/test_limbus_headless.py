@@ -58,8 +58,24 @@ def test_asymmetry_is_zero_when_off_and_largest_at_top_and_bottom():
     assert np.all(lm.asym_shift(pts, lm.LimbusParams().asym_units) == 0.0)
     on = lm.asym_shift(pts, lm.LimbusParams(asym=True).asym_units) / lm.MM
     assert on == pytest.approx([0.0, lm.ASYM_MM, lm.ASYM_MM, lm.ASYM_MM / 2])
-    assert np.all(lm.iris_cover(np.linspace(-0.1, 0.0, 9), 0.0) == 0.0)  # no cover without the shift
-    assert lm.iris_cover(lm.U0, lm.ASYM_MM * lm.MM) == pytest.approx(1.0)
+    amount = lm.ASYM_MM * lm.MM
+    assert np.all(lm.iris_cover(np.linspace(-0.1, 0.0, 9), 0.0, amount) == 0.0)  # no cover without the shift
+    assert np.all(lm.iris_cover(np.linspace(-0.1, 0.0, 9), amount, 0.0) == 0.0)  # switch off
+    assert lm.iris_cover(lm.U0, amount, amount) == pytest.approx(1.0)
+
+
+def test_iris_cover_is_continuous_across_the_horizontal():
+    """Regression (Manu, reference PC 2026-11-14): with the asymmetry on, a seam left and right on the limbus - the
+    cover jumped from 0 (exactly horizontal) to 1 (any shift > 0) for rays between the chamber angle and the iris edge."""
+    amount = lm.ASYM_MM * lm.MM
+    phi = np.radians(np.linspace(-20.0, 20.0, 1601))
+    p = np.stack([np.cos(phi), np.sin(phi), np.zeros_like(phi)], -1)
+    shift = lm.asym_shift(p, amount)
+    for u_mm in (-0.28, -0.22, -0.17, -0.05):
+        cover = lm.iris_cover(u_mm * lm.MM, shift, amount)
+        assert cover[800] == 0.0 and np.max(np.abs(np.diff(cover))) < 0.01, u_mm
+    top = np.array([[0.0, 1.0, 0.0]])
+    assert lm.iris_cover(lm.U0 - 0.5 * amount, lm.asym_shift(top, amount), amount)[0] == pytest.approx(0.5)
 
 
 def test_the_sclera_band_sees_the_iris_root_through_the_tissue():
