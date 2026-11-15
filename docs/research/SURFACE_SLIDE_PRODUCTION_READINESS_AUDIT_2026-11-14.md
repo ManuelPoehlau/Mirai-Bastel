@@ -2,7 +2,7 @@
 
 **Status:** audit, English with a German summary. No Production change. **Phase 0 closed 2026-11-14: Manu's
 decisions are recorded in §5.1**; **Phase 1 (pure core `src/mirai/surface_slide/`) done 2026-11-15, gate G1 green:
-implementation note §13.1; Phase 2 (plan, region capture, symmetry) done 2026-11-15, gate G2 green: §13.3.** It reviews the research
+implementation note §13.1; Phase 2 (plan, region capture, symmetry) done 2026-11-15, gate G2 green: §13.3; Phase 3 handoff: §13.4.** It reviews the research
 [SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md](SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md) (commit `ec3816d`) and
 its prototype [`experiments/surface_slide/`](../../experiments/surface_slide/README.md) against the current Production
 code at `main` @ `6282cd5`. New measurements come from six small probes in
@@ -799,6 +799,80 @@ rounding), so a symmetric Surface Slide refuses there, as every symmetric tool; 
 (create at the press, write `SlideStep.positions` through the journal, status line from the flags and `lagging`),
 the M1 mapping at the drawn pivot depth, the morph-mix rule (E2: the plan already reads the base positions), the live
 radius change (replan + replay), the binding (E6).
+
+### 13.4 Handoff: Phase 3 (gesture)
+
+Mode (M5): Production; wires the Phase 2 API into the gesture layer. Read §3.4, §3.5 (rows Soft, Topology, Morph mix,
+Pose, Hidden / mask, Input), §9 (row 3, gate G3), §13.3 and the docstrings of `surface_slide/plan.py` and
+`controllers/gestures.py` (`_SlideGesture`, `VertexSlideGesture`, `shown_shift`). `SlideSession` is the base, do not
+re-plan or re-capture inside the gesture.
+
+**Stop first (E6, §5.1):** ask Manu which key / mode starts Surface Slide. `G` and every modifier of `G` are taken
+(Loop / Vertex Slide, the region keys). Until he answers: the command exists **without a default binding** — nothing in
+`interaction/bindings.py`, nothing in `config/keymap.json`; tests bind a test key (`app.bindings.bind`, as
+`tests/test_layer_gate.py`). His answer goes into `keymap.json` with `"set"` and his wording in the commit message
+(CLAUDE.md, AD-013 addendum). G3 does not wait for it.
+
+**Build:**
+
+- **Command** `commands.SURFACE_SLIDE`: a hold command (`HOLD_COMMANDS`), classified **position-only** in
+  `layer_declarations` (`_POSITION_ONLY_COMMANDS`; this also gives the posed refusal of AD-028 §7.1 through
+  `edits_positions_or_topology`, and `test_every_command_constant_is_classified` demands it), in `GESTURE_REFUSES` like
+  the other hold keys, not in `_TOPOLOGY_COMMANDS` (positions only; hidden faces are walls, not a refusal).
+  `Application._transform_arm` routes it to `GestureController.arm_surface_slide`.
+- **Arm** (`arm_surface_slide`, refusals at the press as `_arm_vertex_slide`): seeds = selection resolved to vertices
+  (`resolve_selection_vertices`, edge / face selections too, §6), else the hovered vertex; pivot = the hovered vertex
+  if it is a seed, else the plan's default. `plan_surface_slide(mesh, seeds, pivot=, influence=services.soft_settings,
+  mask=services.mask_values(seeds), hidden_faces=...)`; a new `AppServices.hidden_faces()` (same pattern and reason
+  line as `hidden_vertices`). `SurfaceSlideRefused` → `services.status(str(exc))`, no gesture. Create the
+  `SlideSession` here, at the press (it captures from the press state). Arm status line: count, Soft / symmetry hint,
+  "release KEY to commit".
+- **Gesture** `SurfaceSlideGesture(_SlideGesture)` (journal from the first motion, release = one `MeshDeltaCommand`,
+  Esc = `rollback_change`, cleanup inherited; `_write` takes `SlideStep.positions`). `step(dx, dy)`: sum the pixel drag
+  since the press; **M1 mapping** (E4): `services.edit_camera.screen_delta_to_world(p, sum_dx, sum_dy, w, h)` once per
+  motion with the *absolute* sum, `p` = the pivot's press position plus `shown_shift` (the drawn depth, §15) —
+  linear in the pixels, so a sum that is exactly 0 gives the exact zero vector; a sum within 1e-9 px of 0 counts as 0
+  (the Vertex Slide rule for float sums). `session.update(delta)` → `_write`. Shift precision as Move
+  (`PRECISION_GAIN`, add the command to that tuple in `motion`). Constraint keys do nothing
+  (`UNCONSTRAINED_GESTURES`).
+- **Morph mix (E2):** the plan reads the base (`scene.mesh`), so it slides on the rest surface; only the mapping point
+  is drawn (`shown_shift`). Mix 0 % or no target: `shown_shift` is None, identical to no morph. The target's
+  *editing view* (AD-025 §15, H4): check what W/E/R do there and follow it; test it either way.
+- **Soft live** (`soft_live`, `reweight`, wheel / flow keys as `SmoothGesture.reweight`): write `plan.origins` back,
+  re-plan from the press with the new settings (same seeds and pivot), new `SlideSession`, one `update` with the
+  current delta; a refusal keeps the old plan. Show the weights (`show_weights`) at arm and after a reweight.
+- **Status line per frame** (`PROVISIONAL`): the drag length in `h`, and the flags summarised — rows stopped at a wall
+  (`BOUNDARY | BARRIER`), at a chain end, still lagging (`SlideStep.lagging`); "region grew" is not shown.
+- **Release (E7 default):** commit what is shown; no `settle` (verdict in the practical test). `settle` is not wired.
+
+**Not in Phase 3:** performance work (Phase 4: P1 arm time, the growth-replay hitch, §13.3), the practical test
+(Phase 5), the cursor mapping M2, Phong, a kept reference, any change to `surface_slide/` beyond what wiring needs
+(if the gesture needs an API change, keep G2 green).
+
+**Gate G3** (§9) in `tests/test_surface_slide_gesture.py` (headless `Application`, as `tests/test_symmetric_ops.py`
+and `tests/test_vertex_slide.py`: `init_scene`, `set_viewport_size`, a bound test key, `key_press` / `pointer_motion` /
+`key_release`):
+
+- one History entry per gesture; Undo / Redo exact (`export_state()` equality); Esc after motion and a drag back to
+  the press pixel both bit-exact; a press without motion: no entry, nothing written;
+- a held gesture refuses Undo / Redo / topology / mode commands (`BEGUN_GESTURE_REFUSES`, `GESTURE_REFUSES`); a second
+  hold key is refused;
+- refusals at the press reach the status line and leave no session (nothing selected, masked, no partner, …);
+- posed, bound edit mesh: refused (AD-028); object mode: refused;
+- morph mix on `scenes/Gollum_Head_01_Morphs.mirai.json`: at 0 % the result equals the same gesture without a target
+  bit for bit; at 100 % the base vertices stay on the base surface (the drawn triangles of the press base,
+  ≤ 1e-12 h) and the pivot's screen motion is mapped at the drawn depth;
+- under symmetry on the Gollum cage: after release the mesh is still `SymmetryState.VALID`, mirror pairs bitwise;
+- Soft live radius during the gesture: weights change, still one History entry, Esc exact;
+- hidden faces: never entered (anchors), the rest of the mesh unchanged.
+
+Runs: the new file, `tests/test_surface_slide_*.py`, the G1 oracle, then **`pytest tests` fully** and the GL tests in
+their own process (`xvfb-run -a python -m pytest tests/test_gl_*.py -q`, AGENTS.md §8a; the shared files
+`gestures.py`, `application.py`, `layer_declarations.py`, `commands.py` change), `experiments/morph_lab/tests`, the
+Knife oracle (`experiments/knife_oracle`, the triangulation is untouched — confirm).
+
+**Done means:** G3 green; E6 asked (bound only if Manu answered); docs in the same commit — `docs/ATELIER.md` entry only
+once it has a key (it is then visible), the gesture list of `AD-027-INTERACTION-LAYER-SESSION-SLOT.md`, `docs/research/README.md`; an implementation note §13.5.
 
 ## 14. Reproduce
 
