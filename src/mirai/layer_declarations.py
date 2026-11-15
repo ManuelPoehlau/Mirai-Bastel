@@ -146,6 +146,7 @@ _NON_MESH_COMMANDS = (
     commands.CONSTRAIN_AXIS_X, commands.CONSTRAIN_AXIS_Y, commands.CONSTRAIN_AXIS_Z,
     commands.CONSTRAIN_PLANE_XY, commands.CONSTRAIN_PLANE_XZ, commands.CONSTRAIN_PLANE_YZ,
     commands.TOGGLE_TRANSFORM_SPACE, commands.CONSTRAINT_MODE_TOGGLE, commands.GIZMO_SIZE_CYCLE,
+    commands.PINCH_DIRECTION_CYCLE,  # a sticky gesture setting, never mesh data
     commands.PIVOT_PLACE,  # app state: the Working Pivot is a point, never mesh data
     commands.ORBIT, commands.PAN, commands.ZOOM, commands.TOGGLE_ORTHO,
     commands.CYCLE_DISPLAY_MODE, commands.TOGGLE_WIREFRAME_OVERLAY, commands.SET_SHADED,
@@ -181,7 +182,8 @@ _NON_MESH_COMMANDS = (
 #: W/E/R are the object gesture (placement only).
 _POSITION_ONLY_COMMANDS = (
     commands.MOVE, commands.ROTATE, commands.SCALE, commands.TWEAK, commands.LOOP_SLIDE,
-    commands.SURFACE_SLIDE, commands.SMOOTH, commands.RELAX, commands.RESYMMETRIZE, commands.SEAM_TO_PLANE,
+    commands.SURFACE_SLIDE, commands.SMOOTH, commands.RELAX, commands.INFLATE, commands.PINCH, commands.RESYMMETRIZE,
+    commands.SEAM_TO_PLANE,
 )
 
 #: Locked: constants no `Application` path handles (fail-closed). Phase 5 lifted the H1 locks.

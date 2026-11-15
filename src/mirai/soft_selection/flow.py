@@ -81,9 +81,14 @@ class _Topology:
 
 
 def _dijkstra(
-    topo: _Topology, seeds: set[VertexId], radius: float, cost: dict[EdgeId, float] | None = None
+    topo: _Topology,
+    seeds: set[VertexId],
+    radius: float,
+    cost: dict[EdgeId, float] | None = None,
+    within: set[VertexId] | None = None,
 ) -> dict[VertexId, float]:
-    """Multi-source Dijkstra pruned at `radius`; edge cost = length x `cost.get(edge, 1.0)`."""
+    """Multi-source Dijkstra pruned at `radius`; edge cost = length x `cost.get(edge, 1.0)`. `within` (optional)
+    = the only vertices it may enter (`flow_families_within`)."""
     mesh = topo.mesh
     dist: dict[VertexId, float] = {s: 0.0 for s in seeds}
     heap: list[tuple[float, VertexId]] = [(0.0, s) for s in seeds]
@@ -96,7 +101,7 @@ def _dijkstra(
         done.add(vid)
         p = mesh.vertex_position(vid)
         for other, eid in topo.neighbours(vid):
-            if other in done:
+            if other in done or (within is not None and other not in within):
                 continue
             q = mesh.vertex_position(other)
             # The arithmetic of `influence._geodesic_distances`, so the cost-free run is that field.
@@ -226,6 +231,19 @@ def flow_families(mesh: Mesh, seeds, radius: float) -> dict[EdgeId, int]:
     topo = _Topology(mesh)
     start = _seed_labels(topo, valid)
     return _families(topo, start, _dijkstra(topo, valid, radius)) if start else {}
+
+
+def flow_families_within(mesh: Mesh, seeds, region) -> dict[EdgeId, int]:
+    """`flow_families` over an explicit vertex region instead of a radius: the labels spread in the order of the
+    isotropic edge distance inside `region` (the seeds always count as part of it), so every quad touching a
+    reached vertex can be labelled - whatever metric made the region (Pinch Loop / Ring, `topology.inflate_pinch`)."""
+    valid = {s for s in seeds if mesh.is_valid_vertex(s)}
+    topo = _Topology(mesh)
+    start = _seed_labels(topo, valid)
+    if not start:
+        return {}
+    iso = _dijkstra(topo, valid, math.inf, within=set(region) | valid)
+    return _families(topo, start, iso)
 
 
 def _families(topo: _Topology, start: dict[EdgeId, int], iso: dict[VertexId, float]) -> dict[EdgeId, int]:

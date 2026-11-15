@@ -83,6 +83,8 @@ _TOOL_NAMES = {
     commands.SURFACE_SLIDE: "Surface Slide",
     commands.SMOOTH: "Smooth",
     commands.RELAX: "Relax",
+    commands.INFLATE: "Inflate",
+    commands.PINCH: "Pinch",
     commands.INSET: "Inset",
     commands.BEVEL: "Bevel",
 }

@@ -25,7 +25,7 @@ import it), and no Core private member (AD-020 §3, §9).
 from .bands import BAND_COUNT, EMPTY_BANDS, SoftBands, band_index
 from .gl_bands import BAND_LAYERS, GLSoftBandOverlay
 from .gl_shading import GLSoftShadingOverlay
-from .flow import flow_families, has_flow_direction
+from .flow import LOOP, RING, flow_families, flow_families_within, has_flow_direction
 from .influence import CURVES, METRICS, compute_influence, custom_curve, primary_pivot
 from .ops import SoftMoveOperation, SoftRotateOperation, SoftScaleOperation
 from .symmetric import SoftSymmetryRefusal, SymmetricInfluence, symmetric_influence
@@ -53,11 +53,13 @@ __all__ = [
     "DEFAULT_RADIUS_STEP",
     "FLOW_STEPS",
     "LOOKS",
+    "LOOP",
     "EMPTY_BANDS",
     "GLSoftBandOverlay",
     "GLSoftShadingOverlay",
     "METRICS",
     "RADIUS_STEPS_PERCENT",
+    "RING",
     "SoftBands",
     "SoftMoveOperation",
     "SoftRotateOperation",
@@ -70,6 +72,7 @@ __all__ = [
     "compute_influence",
     "custom_curve",
     "flow_families",
+    "flow_families_within",
     "has_flow_direction",
     "primary_pivot",
     "shading_color",

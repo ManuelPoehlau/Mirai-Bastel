@@ -12,6 +12,7 @@ flipped as listed in AD-SYM-05 §5.3; `scale_formula`/`"power"` left `src`. Non-
 **Hover preview and display modes (2026-10-22, see "Hover preview and display modes" below):** the influence preview now follows the hovered component when nothing is selected, and has a second, exclusive display mode (face shading) next to the vertex bands; `PROVISIONAL`, Artist test open.
 **Live radius (2026-10-22, see "Live radius during a running gesture" below):** the wheel changes the radius of a running Soft Move/Rotate/Scale; the gesture is re-evaluated from its start geometry. Narrows the §4.3 per-gesture rule for the radius only; `PROVISIONAL`, Artist test open (ATELIER B12).
 **Smooth / Relax (2026-10-24, see "Soft Smooth / Relax" below):** with Soft on, the held S / Alt+S smooths the whole influence field, each point's step scaled by its weight; same field, display and live wheel as W/E/R. `PROVISIONAL`.
+**Inflate / Pinch (2026-11-15, see "Soft Inflate / Pinch" below):** two deformations in the Smooth family (hold Shift+I / Shift+P): along the press normals, and towards the selection - radial, or across / along the Loop / Ring families of the flow; same field, symmetry, display and live wheel. `PROVISIONAL`, keys and Loop / Ring meaning open for Manu.
 **Loop / Ring flow (2026-10-22, see "Loop / Ring flow" below):** a topology-oriented anisotropic geodesic field - the reach along the seeds' edge loops vs. across their edge rings is adjustable (Ctrl+Shift+wheel), sticky and live in a running gesture like the radius; neutral = the isotropic field bit for bit. `PROVISIONAL`, Artist test open (ATELIER B15).
 **Finer radius steps and display look (2026-10-22, see "Finer radius steps and display look" below):** about 10-15 % per wheel notch; the influence display has three looks (`mono` default, `tint`, `color`) on Ctrl+Shift+O; `PROVISIONAL`, Artist test open (ATELIER B12).
 **Soft + symmetry runs (2026-10-14, AD-SYM-04 slice SS2, [note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)):** §8 items 1 and 2 (the `Application` refusal and the op backstop) are superseded; what still refuses is listed there.
@@ -334,6 +335,59 @@ follow-up ([plan](../WP_TOOLBOX_GAPS_PLAN.md) C2).
 - Soft off: unchanged (selection only).
 - Tests: `tests/test_application_smooth.py` (falloff, weight ratio, bands, live radius armed and dragging, Esc, symmetry).
 
+## Soft Inflate / Pinch (2026-11-15, `PROVISIONAL`)
+
+Task brief (Manu, 2026-11-15): localized volume and pinch adjustments in the polygon workflow, on the Soft Selection
+radius / falloff / symmetry / Undo, Pinch with Radial, Loop and Ring directions, no separate sculpting system. Built in
+the Smooth / Relax family; the module docstring of `src/mirai/topology/inflate_pinch.py` is the detailed contract.
+
+- **One system.** The press plans on the selection (else the hovered element) exactly as Smooth / Relax does: the Soft
+  field from `GestureController.smooth_soft_weights` (the W/E/R function and arguments, symmetric field under a
+  definition, Loop / Ring flow balance included), Mask Geometry, the symmetry refusals (exact axis plane, every seed
+  paired). The gesture is `DeformGesture`, a `SmoothGesture` with a signed amount: journal from the first motion, one
+  `MeshDeltaCommand` at the release, Esc = rollback, the bands / faces show the gesture's weights, the wheel (and the
+  held key's own Shift+wheel) steps the radius / flow live with re-plan from the press geometry. No new brush, no
+  second field, no Core change; positions only (`layer_declarations`: position-only, layers bit-identical, tested).
+- **Per motion.** The plan stores one displacement per vertex in the press geometry; a frame is `start + amount *
+  offset` (written mirrors set to the exact mirror of their driver, seam points projected onto the plane). Linear in
+  the amount: no drift, a drag back to 0 is the press state bit for bit, a motion costs one pass over the moving points.
+- **Inflate.** Offset = weight x the area-weighted vertex normal (press geometry); amount in world units per pixel at
+  the seeds' depth (as Inset / Bevel). Right = out, left = in. The falloff curve is the displacement profile, so the
+  influence boundary is as smooth as the curve (C1 for `smooth`); nothing outside the field moves.
+- **Pinch.** Amount = share of the way to the target, clamped to [-1, 0.9] (`PINCH_MAX`: 1 would collapse full-weight
+  points onto it); right = together, left = apart; 300 px per unit. Direction is a sticky setting, Alt+P cycles it,
+  read at the press:
+  - **Radial** - towards the influence centre (the seeds' centroid; under symmetry the symmetric W/E/R default
+    pivot, mirrored for the other side), projected onto each point's tangent plane (no dent on a curved surface).
+  - **Loop** - across the edge loops onto the selected line: each point moves along its local **ring** edge
+    direction onto the line through its nearest seed in the local loop direction (oblique decomposition, clamped to
+    the distance), so a skewed grid is followed along its real edges. A crease / lip / eyelid line gets tighter.
+  - **Ring** - along the edge loops towards the selection: the same with the families swapped; the loops bunch up.
+  - Loop / Ring are the families of the Soft **flow** (section below), which already define Mirai's loop / ring
+    meaning relative to the selection: the selected edges of an edge loop are Loop, those of an edge ring are Ring,
+    and a region extends along Loop. The labels cover the influenced region (`flow.flow_families_within`, a small
+    extension: the same propagation over an explicit vertex region instead of a radius, so a euclidean field is
+    covered too). The nearest seed is the geodesic one over the region's edges.
+  - Refusals (status line, nothing changes): Loop / Ring with Soft off (the selection is the line; nothing else would
+    move), and seeds without a direction (one vertex, one quad, scattered points - the flow rule); never a silent
+    fallback to Radial. Points with no labelled edge (all-triangle / n-gon patches, behind a pole where two label
+    fronts meet) keep their place in Loop / Ring.
+- **Keys (`PROVISIONAL` engineering keys in `bindings.py`, not in `config/keymap.json`):** hold **Shift+I** = Inflate,
+  hold **Shift+P** = Pinch, **Alt+P** = next Pinch direction. All three were free in the code defaults and in
+  `keymap.json`; I and P keep Loop Insert / Inset and the Working Pivot. Shift as the hold modifier keeps Shift+wheel
+  (= radius) under the hand.
+- **Verified by tests** (`tests/test_inflate_pinch.py`, `tests/test_application_inflate_pinch.py`, pins in
+  `test_layer_gate.py`, `test_keymap_config.py`): sphere (radial growth, falloff = displacement, tangential pinch stays
+  on the sphere), cylinder (Inflate only across the axis; Loop / Ring along / around the tube for a ring and a column
+  seed), regular and skewed planes (Radial / Loop / Ring move along different axes; Loop follows sheared edges), an
+  edge-ring selection, irregular topology (jitter, triangles, a 6-gon: finite, local, unlabelled points stay), head
+  basemesh and the Gollum cage (lips, cheek, nose, eye: pairs bitwise mirrored, seam on the plane, no new
+  unpaired / ambiguous points, topology unchanged, mesh invariants), the three directions measurably different on the
+  Gollum lips; in the app: bindings, one History entry, Undo / Redo exact, drag back to zero / tap / Esc record
+  nothing, gates (held W, mode `4`, nothing selected), the direction cycle, live radius == a gesture begun at that
+  radius, symmetric gestures on both paired assets, layers bit-identical. **Not Artist-validated:** the feel, the step
+  sizes, the keys, whether Loop / Ring match the intent on a face.
+
 ## Loop / Ring flow (2026-10-22, `PROVISIONAL`)
 
 Task brief (Manu, 2026-10-22): an influence that spreads farther along the edge-loop flow or farther across successive
@@ -408,6 +462,14 @@ the seed rules match intent (e.g. the edge-ring and single-face cases), the step
 ---
 
 ## Kurzfassung für Manu (Deutsch)
+
+> **Nachtrag 2026-11-15 (Inflate / Pinch, `PROVISIONAL`):** Zwei neue Haltewerkzeuge wie S (Smooth), mit Soft Selection,
+> Symmetrie, Maske und Undo wie gewohnt: **Shift+I halten + Maus rechts/links** = aufblasen / eindellen entlang der
+> Normalen; **Shift+P halten** = zusammenziehen (rechts) / auseinanderdrücken (links). **Alt+P** wechselt die Pinch-Richtung:
+> *radial* (zur Mitte der Auswahl), *loop* (quer über die Loops auf die gewählte Linie, z. B. Lippen- oder Lidkante
+> schärfen) und *ring* (entlang der Loops zur Auswahl hin). Loop/Ring brauchen Soft an und eine Auswahl mit Richtung
+> (Kante, Kantenzug, Face-Streifen) – sonst eine klare Ablehnung in der Statuszeile. Mausrad = Radius live. Die Tasten sind
+> Vorschläge (nicht in `keymap.json`). Offene Fragen an dich: siehe Abschnitt „Soft Inflate / Pinch“.
 
 > **Nachtrag 2026-10-22 (Loop / Ring, `PROVISIONAL`):** Die Wirkungszone kann jetzt entlang des Edge-Flusses gestreckt
 > werden: `Strg+Shift+Mausrad` hoch = weiter entlang der Loops, runter = weiter quer über die Ringe (Stufen bis 4:1, Mitte 1:1 =

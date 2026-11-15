@@ -486,7 +486,7 @@ def test_apply_transform_of_a_plain_object_is_not_refused_by_a_layered_edit_mesh
 
 
 @pytest.mark.parametrize("command", [commands.MOVE, commands.ROTATE, commands.SCALE, commands.SMOOTH,
-                                     commands.RELAX, commands.LOOP_SLIDE])
+                                     commands.RELAX, commands.INFLATE, commands.PINCH, commands.LOOP_SLIDE])
 def test_position_only_commands_keep_layers_bit_identical(command):
     app = _app(3)
     mesh = app.scene.mesh

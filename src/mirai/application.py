@@ -143,6 +143,7 @@ from .controllers.services import AppServices
 from .controllers.gestures import (
     CONSTRAINT_ONE_SHOT,
     SMOOTH_COMMANDS,
+    DEFORM_COMMANDS,
     TRANSFORM_COMMANDS,
     TWEAK_KEY,
     TWEAK_TRANSFORMS,
@@ -1191,6 +1192,7 @@ class Application:
         add(CONSTRAINT_SPACES, key_only(lambda command, input: gestures.constrain(CONSTRAINT_SPACES[command])))
         add((commands.CANCEL,), key_only(lambda command, input: self._cancel()))
         add((commands.TOGGLE_TRANSFORM_SPACE,), plain(lambda command: gestures.toggle_orientation()))
+        add((commands.PINCH_DIRECTION_CYCLE,), plain(lambda command: gestures.cycle_pinch_direction()))
         add((commands.TOGGLE_ORTHO,), plain(lambda command: self._toggle_ortho()))
         add(_DISPLAY_COMMANDS, plain(self._display_command))
         add(_LOOK_COMMANDS, plain(self._look_command))
@@ -2398,6 +2400,8 @@ class Application:
             return self._gestures.arm_surface_slide(key, origin)
         if command in SMOOTH_COMMANDS:
             return self._gestures.arm_smooth(command, key, origin)
+        if command in DEFORM_COMMANDS:
+            return self._gestures.arm_deform(command, key, origin)
         if command == commands.INSET:
             return self._gestures.arm_inset(key, origin)
         if command == commands.BEVEL:

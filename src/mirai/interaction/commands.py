@@ -326,6 +326,14 @@ EXTRUDE = "Extrude"
 SMOOTH = "Smooth"
 RELAX = "Relax"
 
+# INFLATE / PINCH (2026-11-15, `PROVISIONAL`): global hold keys in the Smooth family. Hold + drag right/left = the
+# signed amount live (inflate / deflate along the normals; pinch / spread towards the selection), release commits, Esc
+# restores (`mirai.topology.inflate_pinch`, `controllers.gestures.DeformGesture`). PINCH_DIRECTION_CYCLE steps the
+# sticky Pinch direction radial -> loop -> ring. Keys Shift+I / Shift+P / Alt+P are engineering keys, not in keymap.json.
+INFLATE = "Inflate"
+PINCH = "Pinch"
+PINCH_DIRECTION_CYCLE = "PinchDirectionCycle"
+
 # INSET / BEVEL (2026-10-29, Manu "Inset (Polygons), Chamfer/Bevel (Edges, Vertices)", Grundfunktion;
 # `PROVISIONAL`): global hold keys like T. Hold + drag right/left = width, release commits, Esc restores
 # (`mirai.topology.inset` / `mirai.topology.bevel`, `Application._offset_*`). INSET has no default binding:
@@ -456,7 +464,8 @@ RIG_COMMANDS = (
 #: of that key's value, which only a `key` input has, so a keymap entry may bind them to `kind: "key"` only.
 HOLD_COMMANDS = frozenset(
     {
-        MOVE, ROTATE, SCALE, EXTRUDE, LOOP_SLIDE, SURFACE_SLIDE, SMOOTH, RELAX, INSET, BEVEL, LASSO_ARM, LIGHT_DRAG,
+        MOVE, ROTATE, SCALE, EXTRUDE, LOOP_SLIDE, SURFACE_SLIDE, SMOOTH, RELAX, INFLATE, PINCH, INSET, BEVEL, LASSO_ARM,
+        LIGHT_DRAG,
         MORPH_WEIGHT_DRAG, PIVOT_PLACE, WEIGHTS_FROM_GROUP, WEIGHT_SET,
     }
 )

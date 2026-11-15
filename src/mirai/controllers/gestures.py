@@ -14,6 +14,7 @@ Behaviour as it was inside `Application` (AD-027 M6 moves it, nothing else). The
 - `LoopSlideGesture`, `VertexSlideGesture` - hold G in edge / vertex mode, a journal from the first motion;
 - `SurfaceSlideGesture` - Surface Slide (hold J): the vertices slide across the drawn surface (`mirai.surface_slide`);
 - `SmoothGesture` - Smooth / Relax (hold S / Alt+S), a tap is one step; Soft live radius as W/E/R;
+- `DeformGesture` - Inflate / Pinch (hold Shift+I / Shift+P), the Smooth gesture with a signed amount;
 - `OffsetGesture` - Inset (hold I in face mode) / Bevel (hold Ctrl+B), topology built once past the threshold.
 
 The axis / plane constraint, its mode (one-shot / sticky) and the transform space (World / Normal) are sticky
@@ -65,6 +66,17 @@ from ..topology.bevel import BEVEL_LABEL, BevelRefused, build_bevel, plan_bevel
 from ..topology.connect_per_face import TopologyToolError
 from ..topology.inset import INSET_LABEL, InsetRefused, build_inset, plan_inset
 from ..topology.offset_build import OffsetBuild, OffsetRefused
+from ..topology.inflate_pinch import (
+    INFLATE_LABEL,
+    PINCH_DIRECTIONS,
+    PINCH_LABEL,
+    PINCH_PX_PER_UNIT,
+    DeformPlan,
+    DeformRefused,
+    pinch_label,
+    plan_inflate,
+    plan_pinch,
+)
 from ..topology.smooth import PX_PER_STEP as SMOOTH_PX_PER_STEP, TAP_AMOUNT as SMOOTH_TAP_AMOUNT
 from ..topology.smooth import RELAX_LABEL, SMOOTH_LABEL, SmoothPlan, SmoothRefused, plan_smooth
 from ..topology.loop_slide import LOOP_SLIDE_LABEL, LoopSlideRefused, SlidePlan, plan_loop_slide, slide_positions
@@ -91,6 +103,9 @@ TRANSFORM_COMMANDS: dict[str, tuple[str, str, str]] = {
     # WP Toolbox Gaps C2: hold S / Alt+S, same family (a tap is one step).
     commands.SMOOTH: ("Smooth", "smooth", "smoothed"),
     commands.RELAX: ("Relax", "relax", "relaxed"),
+    # Inflate / Pinch (2026-11-15, `PROVISIONAL`): hold Shift+I / Shift+P, the Smooth family with a signed amount.
+    commands.INFLATE: (INFLATE_LABEL, "inflate", "inflated"),
+    commands.PINCH: (PINCH_LABEL, "pinch", "pinched"),
     # 2026-10-29 (Manu: Inset, Bevel, Grundfunktion): hold I in face mode / hold Ctrl+B, the T family.
     commands.INSET: ("Inset", "inset", "inset"),
     commands.BEVEL: ("Bevel", "bevel", "beveled"),
@@ -100,6 +115,8 @@ TRANSFORM_COMMANDS: dict[str, tuple[str, str, str]] = {
 OFFSET_COMMANDS = (commands.INSET, commands.BEVEL)
 #: WP Toolbox Gaps C2: the two hold keys of `mirai.topology.smooth`.
 SMOOTH_COMMANDS = (commands.SMOOTH, commands.RELAX)
+#: Inflate / Pinch (`mirai.topology.inflate_pinch`): the Smooth gesture with a signed amount (`DeformGesture`).
+DEFORM_COMMANDS = (commands.INFLATE, commands.PINCH)
 #: The transforms the gizmo drag (and the hold-key Tweak) can use (`Application.tweak_command`).
 TWEAK_TRANSFORMS = (commands.MOVE, commands.ROTATE, commands.SCALE)
 
@@ -178,7 +195,10 @@ BEGUN_GESTURE_REFUSES = frozenset({commands.UNDO, commands.REDO, commands.TOGGLE
 #: The gestures that ignore the constraint keys: Extrude is normal-only, Loop Slide runs along its edges, Smooth /
 #: Relax and Inset / Bevel have no axis - neither the gesture nor the pending constraint changes.
 UNCONSTRAINED_GESTURES = frozenset(
-    {commands.EXTRUDE, commands.LOOP_SLIDE, commands.SURFACE_SLIDE, *SMOOTH_COMMANDS, *OFFSET_COMMANDS}
+    {
+        commands.EXTRUDE, commands.LOOP_SLIDE, commands.SURFACE_SLIDE, *SMOOTH_COMMANDS, *DEFORM_COMMANDS,
+        *OFFSET_COMMANDS,
+    }
 )
 
 #: Surface Slide: a summed pixel drag within this of 0 is the press point (float sums of the motion; Vertex Slide's
@@ -965,12 +985,37 @@ class SmoothGesture(GestureSession):
             self.before = services.scene.mesh.begin_change()
             self.selection_before = services.selection_snapshot()
             self.begun = True
-        self.amount = max(0.0, self.amount + dx / SMOOTH_PX_PER_STEP)
+        self._advance(dx)
         moved = self._write(self.amount)
         services.invalidate_picks()
         services.notify_vertices_moved(moved)
-        services.status(f"{plan.label}: strength {self.amount:.2f} steps")
+        services.status(self._running_text())
         return True
+
+    # -- what Inflate / Pinch (`DeformGesture`) change ---------------------------------------------------------
+
+    #: The plan refusals a live re-plan swallows (the seeds did not change: the old field stays).
+    replan_refusals: tuple = (SmoothRefused, SoftSymmetryRefusal)
+
+    def _advance(self, dx: float) -> None:
+        self.amount = max(0.0, self.amount + dx / SMOOTH_PX_PER_STEP)
+
+    def _running_text(self) -> str:
+        return f"{self.plan.label}: strength {self.amount:.2f} steps"
+
+    def _committed_text(self) -> str:
+        return f"{self.plan.label} committed ({self.amount:.2f} steps)"
+
+    def _tap(self) -> None:
+        services = self.services
+        plan = self.plan
+        changed = services.mesh_transaction(
+            plan.label, lambda _mesh: self._write(SMOOTH_TAP_AMOUNT), moved_of=lambda moved: moved
+        ).changed
+        services.status(f"{plan.label}: one step" if changed else f"{plan.label}: no change")
+
+    def _replan(self, mesh, weights, mask):
+        return plan_smooth(mesh, self.seeds, relax=self.plan.relax, weights=weights, mask=mask)
 
     def release(self) -> None:
         """A drag commits its journal as one entry; a tap (no motion) is one fixed step (`TAP_AMOUNT`) through the
@@ -981,10 +1026,7 @@ class SmoothGesture(GestureSession):
             return
         mesh = services.scene.mesh
         if not self.begun:
-            changed = services.mesh_transaction(
-                plan.label, lambda _mesh: self._write(SMOOTH_TAP_AMOUNT), moved_of=lambda moved: moved
-            ).changed
-            services.status(f"{plan.label}: one step" if changed else f"{plan.label}: no change")
+            self._tap()
             return
         before, self.before = self.before, None
         delta = mesh.end_change(before)
@@ -994,7 +1036,7 @@ class SmoothGesture(GestureSession):
         services.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=plan.label))
         services.record_selection_history(self.selection_before)
         services.soft_preview_refresh()
-        services.status(f"{plan.label} committed ({self.amount:.2f} steps)")
+        services.status(self._committed_text())
 
     def abort(self) -> None:
         before, self.before = self.before, None
@@ -1025,8 +1067,8 @@ class SmoothGesture(GestureSession):
                 mesh.set_vertex_position(vid, old.start[vid])
         try:
             weights = self._controller.smooth_soft_weights(self.seeds, settings)
-            plan = plan_smooth(mesh, self.seeds, relax=old.relax, weights=weights, mask=services.mask_values(self.seeds))
-        except (SmoothRefused, SoftSymmetryRefusal):
+            plan = self._replan(mesh, weights, services.mask_values(self.seeds))
+        except self.replan_refusals:
             plan = old  # the seeds did not change: keep the field it had
         self.plan = plan
         self.target = plan.movable
@@ -1035,6 +1077,53 @@ class SmoothGesture(GestureSession):
         services.invalidate_picks()
         services.notify_vertices_moved(set(old.movable) | set(plan.movable))
         self.show_weights(self.plan.weights)
+
+
+class DeformGesture(SmoothGesture):
+    """Inflate / Pinch (`mirai.topology.inflate_pinch`, `PROVISIONAL`): the Smooth / Relax gesture with a signed
+    amount - the plan on the press selection, every motion `plan.positions(amount)` from the press state (right = inflate /
+    pinch, left = deflate / spread; Pinch clamped to the plan's range), the journal from the first motion, one History
+    entry at the release, Esc exact. A tap changes nothing (the sign needs a drag). With Soft on the wheel steps the
+    radius / flow live (re-plan from the press geometry, the amount replayed). `per_px` = amount per pointer pixel
+    (Inflate: world units at the seeds' depth; Pinch: `1 / PINCH_PX_PER_UNIT`); `direction` = the Pinch direction the
+    gesture runs with (None for Inflate)."""
+
+    replan_refusals = (DeformRefused, SoftSymmetryRefusal)
+
+    def __init__(self, controller: "GestureController", command: str, key: str, plan: DeformPlan, seeds, origin,
+                 per_px: float, direction: str | None = None) -> None:
+        super().__init__(controller, command, key, plan, seeds, origin)
+        self.per_px = per_px
+        self.direction = direction
+
+    def _advance(self, dx: float) -> None:
+        self.amount = self.plan.clamp(self.amount + dx * self.per_px)
+
+    def _running_text(self) -> str:
+        return f"{self.plan.label}: {self.amount:+.3f}"
+
+    def _committed_text(self) -> str:
+        return f"{self.plan.label} committed ({self.amount:+.3f})"
+
+    def _tap(self) -> None:
+        _, verb, _ = TRANSFORM_COMMANDS[self.command]
+        self.services.status(f"{self.plan.label}: drag right / left to {verb} - no change")
+
+    def _replan(self, mesh, weights, mask):
+        if self.command == commands.INFLATE:
+            return plan_inflate(mesh, self.seeds, weights=weights, mask=mask)
+        return plan_pinch(mesh, self.seeds, self.direction, weights=weights, mask=mask)
+
+
+def world_per_px(services, vertices) -> float:
+    """World units per horizontal pointer pixel at the depth where the centroid of `vertices` is drawn (§15: the query
+    mesh); the Inset / Bevel width and the Inflate amount."""
+    mesh = services.query_mesh
+    n = len(vertices)
+    centre = tuple(sum(mesh.vertex_position(v)[i] for v in vertices) / n for i in range(3))
+    width, height = services.viewport_size
+    step = services.edit_camera.screen_delta_to_world(centre, 1.0, 0.0, width, height)
+    return math.sqrt(sum(c * c for c in step)) or 0.01
 
 
 class OffsetGesture(GestureSession):
@@ -1051,13 +1140,7 @@ class OffsetGesture(GestureSession):
     def __init__(self, controller: "GestureController", command: str, key: str, origin, op_label: str, build,
                  symmetric: SymmetricOffset | None, residue, anchor_vertices) -> None:
         super().__init__(controller, command, key, anchor_vertices, origin)
-        services = self.services
-        mesh = services.query_mesh  # §15: the width per pixel at the depth where the anchor is drawn
-        n = len(anchor_vertices)
-        centre = tuple(sum(mesh.vertex_position(v)[i] for v in anchor_vertices) / n for i in range(3))
-        width, height = services.viewport_size
-        step = services.edit_camera.screen_delta_to_world(centre, 1.0, 0.0, width, height)
-        self.world_per_px = math.sqrt(sum(c * c for c in step)) or 0.01
+        self.world_per_px = world_per_px(self.services, anchor_vertices)
         self.op_label = op_label
         self.build: Callable[[Mesh], OffsetBuild] = build
         self.symmetric = symmetric
@@ -1160,6 +1243,9 @@ class GestureController:
         # WP Toolbox Gaps C1 (`PROVISIONAL`): what the constraints mean - world axes or the selection's normal frame
         # (`mirai.transform_space`). Sticky (never one-shot), read at `begin()` and by the gizmo; not saved.
         self.orientation: str = transform_space.WORLD
+        # Inflate / Pinch (`PROVISIONAL`): the Pinch direction (radial / loop / ring), sticky, read at the press of
+        # Pinch; not saved.
+        self.pinch_direction: str = PINCH_DIRECTIONS[0]
 
     @property
     def session(self) -> GestureSession | None:
@@ -1383,6 +1469,57 @@ class GestureController:
             f"{plan.label}: {len(plan.movable)} points{soft_note} - tap for one step, or drag right/left for"
             f" more/less, release {key.upper()} to commit"
         )
+        return True
+
+    def arm_deform(self, command: str, key: str, origin) -> bool:
+        """Hold Shift+I / Shift+P (Inflate / Pinch, `PROVISIONAL`): as `arm_smooth` - the plan on the resolved selection
+        (else the hovered element) with the Soft field and the mask of the press; refusals are posted now. Pinch runs
+        with the sticky `pinch_direction`. Nothing moves before the first motion."""
+        services = self.services
+        mesh = services.scene.mesh
+        selection = services.selection
+        target = resolve_selection_vertices(mesh, selection, selection.mode)
+        if not target and selection.hovered is not None:
+            target = element_vertices(mesh, selection.hovered)
+        soft_settings = services.soft_settings
+        soft = soft_settings if soft_settings.enabled else None
+        inflate = command == commands.INFLATE
+        direction = None if inflate else self.pinch_direction
+        label = INFLATE_LABEL if inflate else pinch_label(direction)
+        try:
+            weights = None if soft is None or not target else self.smooth_soft_weights(target, soft)
+            mask = services.mask_values(target)
+            if inflate:
+                plan = plan_inflate(mesh, target, weights=weights, mask=mask)
+            else:
+                plan = plan_pinch(mesh, target, direction, weights=weights, mask=mask)
+        except (DeformRefused, SoftSymmetryRefusal) as exc:
+            text = str(exc)
+            services.status(text if text.startswith(label) else f"{label}: refused — {text}")
+            return False
+        per_px = world_per_px(services, target) if inflate else 1.0 / PINCH_PX_PER_UNIT
+        gesture = DeformGesture(self, command, key, plan, target, origin, per_px, direction)
+        services.interaction.start(gesture)
+        services.set_hovered(None)
+        if soft is not None:
+            gesture.soft = soft
+            gesture.soft_reference = soft.world_radius * 100.0 / soft.radius_percent
+            gesture.show_weights(plan.weights)
+        soft_note = " (Soft: wheel = radius)" if soft is not None else ""
+        verbs = "inflate / deflate" if inflate else "pinch / spread"
+        services.status(
+            f"{plan.label}: {len(plan.movable)} points{soft_note} - drag right / left to {verbs},"
+            f" release {key.upper()} to commit"
+        )
+        return True
+
+    def cycle_pinch_direction(self) -> bool:
+        """Radial -> Loop -> Ring (sticky, `PROVISIONAL`); a Pinch already held keeps the direction it began with."""
+        index = PINCH_DIRECTIONS.index(self.pinch_direction)
+        self.pinch_direction = PINCH_DIRECTIONS[(index + 1) % len(PINCH_DIRECTIONS)]
+        session = self.session
+        held = session is not None and session.command == commands.PINCH
+        self.services.status(f"Pinch direction: {self.pinch_direction}" + (" (next Pinch)" if held else ""))
         return True
 
     def arm_inset(self, key: str, origin) -> bool:

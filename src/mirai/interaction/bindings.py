@@ -333,6 +333,12 @@ def build_default_bindings() -> BindingSet:
     # WP Toolbox Gaps C2: hold S = Smooth, hold Alt+S = Relax (hold + drag: Manu 2026-10-23; keys PROVISIONAL).
     bs.set_default(_key("s"), cmd.SMOOTH)
     bs.set_default(_key("s", "alt"), cmd.RELAX)
+    # Inflate / Pinch (2026-11-15, `PROVISIONAL` engineering keys, not in config/keymap.json; free in both): hold
+    # Shift+I / Shift+P (I and P stay Loop Insert / Inset and the Working Pivot); Shift keeps the wheel's Soft radius
+    # step under the hand while held. Alt+P cycles the Pinch direction (radial / loop / ring).
+    bs.set_default(_key("i", "shift"), cmd.INFLATE)
+    bs.set_default(_key("p", "shift"), cmd.PINCH)
+    bs.set_default(_key("p", "alt"), cmd.PINCH_DIRECTION_CYCLE)
     # Selection steps (WP Toolbox Gaps A1): Shift+arrows = Manu 2026-10-23; Ctrl++ / Ctrl+-
     # (main keys and keypad, both "plus" / "minus") = Blender's Select More / Less, PROVISIONAL.
     bs.set_default(_key("plus", "ctrl"), cmd.SELECT_GROW)
