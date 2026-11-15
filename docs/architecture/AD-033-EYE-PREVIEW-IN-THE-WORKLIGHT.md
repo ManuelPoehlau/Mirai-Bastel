@@ -1,9 +1,9 @@
 # AD-033 — Eye preview in the Worklight: a parametric eye object with the Eye-Lab shading (Lookdev step 1)
 
-**Status:** **PROPOSED — draft for Manu (2026-11-15). Nothing built.** Two stop points (Development System §5): a
-**promotion** from `experiments/lookdev_eye_lab/` to `src/` (M3, Manu decides) and a **Core field + scene format
-version** (CORE_V1_FREEZE §7, precedent AD-024). Names, numbers and defaults below are `PROVISIONAL` unless marked as
-Manu's decision.
+**Status:** **DECIDED (Manu, 2026-11-15)**: "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm" — promotion of
+the eye shading (M3) and the Core field + format v9 approved; Q-E3 … Q-E5 as proposed; Q-E6: one scene unit = 1 cm
+(decision record at the end). Implementation in phases E-1 … E-4 (§9). Names and numbers not covered by a decision stay
+`PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
 §8 (decisions incl. those of 2026-11-14 / 15); [eye lab README](../../experiments/lookdev_eye_lab/README.md) (P1, P1b,
@@ -211,4 +211,13 @@ measured**: well under 1 ms. E-4 measures it with the reference head, two eyes, 
 
 ## Decision record
 
-*(empty — filled when Manu answers §10)*
+**Manu, 2026-11-15:** "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm".
+
+| Question | Answer |
+|---|---|
+| Q-E1 promotion | **yes** — the eye shading moves to `src/`, the lab is frozen as the oracle |
+| Q-E2 Core | **yes** — `SceneObject.eye`, scene format v9 |
+| Q-E3 what is saved | as proposed: the eye's values per eye, saved, Undo; preview on / off and the quality tier as view state (not saved, no Undo) |
+| Q-E4 reflection | as proposed: the cornea reflects the studio environment by default; key highlight only as a setting |
+| Q-E5 editing | as proposed: component editing of an eye is refused (its shape comes from its values) |
+| Q-E6 size | **one scene unit = 1 cm**: a new eye is 2.4 units across (sclera radius 1.2 = the object's uniform scale; eye-local 1 = the sclera radius) |
