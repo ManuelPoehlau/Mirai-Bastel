@@ -27,6 +27,8 @@ The goal is not to reproduce every feature of a large commercial renderer. It is
 
 The main PC model and its exact CPU, GPU, VRAM, driver and graphics API capabilities are not yet recorded. See [Reference Hardware](../architecture/REFERENCE_HARDWARE.md); that file remains the hardware source of truth.
 
+**Update 2026-11-14 (Manu, Lookdev decision D-L5):** for now the reference PC *is* the main PC — it is the only machine; a new PC is future and its model unknown. The dual-PC goal above stays; until the second machine exists, every target is verified on the reference PC only.
+
 ## 2. Core product principle
 
 > **Mirai owns the Artist's intent and scene description. A renderer consumes that intent and turns it into an image.**
