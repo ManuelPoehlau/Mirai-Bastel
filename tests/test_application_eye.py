@@ -143,3 +143,25 @@ def test_iris_image_with_its_fit_file_is_one_undo_step(app, tmp_path):
     (tmp_path / "iris_custom.json").write_text('{"pupil": 0.9, "limbus": 0.5}')
     assert app.set_eye_iris_image(image) is False and "0 < pupil < limbus" in app.status_message
     assert app.set_eye_iris_image(tmp_path / "missing.png") is False and "not found" in app.status_message
+
+
+def test_eye_view_state_is_not_an_undo_step_and_reaches_the_viewport(app):
+    eye = app.add_eye()
+    depth = len(app._selection_undo_stack)
+    assert app.set_eye_display(reflection="key", refraction="V3") is True
+    assert app.viewport.eye_display.reflection == "key" and app.viewport.eye_display.refraction == "V3"
+    assert app.set_eye_display(preview=False) is True and app.viewport.eye_display.preview is False
+    assert len(app._selection_undo_stack) == depth  # view state: no Undo step
+    assert app.set_eye_display(reflection="mirror") is False and "Eye view" in app.status_message
+    assert app.set_eye_display(preview=False) is False  # unchanged
+
+
+def test_the_eye_entry_carries_its_values_and_iris_image(app, tmp_path):
+    eye = app.add_eye()
+    draw = app.viewport._eye_entries[eye.id]
+    assert draw.spec == DEFAULT_EYE and draw.texture is None and draw.cornea_triangles == 64 + 15 * 64 * 2
+    image = tmp_path / "iris.png"
+    image.write_bytes(b"\x89PNG")
+    app.set_eye_iris_image(image)
+    assert app.viewport._eye_entries[eye.id].texture == str(image)
+    assert app.viewport.object_entries[eye.id].material.texture is None  # the Worklight store never loads it

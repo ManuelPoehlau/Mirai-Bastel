@@ -95,6 +95,8 @@ class ImguiLayer:
         self.goz_open = False
         self.morph = None  # AD-030 §13: das Morph-Panel (Knopf „Morph“, Standard offen)
         self.morph_open = True
+        self.eye = None  # AD-033 §6: das Augen-Panel (Knopf „Auge“, Standard zu)
+        self.eye_open = False
         self.popup_open = False  # ein Menü/Dialog des Layers ist offen: ihm gehört die ganze Maus (letzter Frame)
 
         self._blocked = blocked or (lambda: False)
@@ -135,6 +137,9 @@ class ImguiLayer:
         from .morph_panel import MorphPanel
 
         self.morph = MorphPanel(imgui, self.app, self)
+        from .eye_panel import EyePanel
+
+        self.eye = EyePanel(imgui, self.app, self)
         if self.services is not None:
             from .goz_panel import GozPanel
             from .menus import Menus
@@ -362,6 +367,10 @@ class ImguiLayer:
             if imgui.small_button("Morph " + ("[-]" if self.morph_open else "[+]")):
                 self.morph_open = not self.morph_open
             self._remember("toggle", "morph")
+        if self.eye is not None:
+            imgui.same_line()
+            if imgui.small_button("Auge " + ("[-]" if self.eye_open else "[+]")):
+                self.eye_open = not self.eye_open
         pos, size = imgui.get_window_pos(), imgui.get_window_size()
         rects.append((pos.x, pos.y, size.x, size.y))
         imgui.end()
@@ -392,6 +401,15 @@ class ImguiLayer:
             imgui.begin("Morph", None, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
                         | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
             self.morph.draw()
+            pos, size = imgui.get_window_pos(), imgui.get_window_size()
+            imgui.end()
+            rects.append((pos.x, pos.y, size.x, size.y))
+        if self.eye is not None and self.eye_open:
+            w = self.window.get_size()[0]
+            imgui.set_next_window_pos(imgui.ImVec2(max(8.0, w - 400.0), self.PANEL_POS[1] + 220.0), imgui.Cond_.first_use_ever)
+            imgui.begin("Auge", None, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
+                        | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
+            self.eye.draw()
             pos, size = imgui.get_window_pos(), imgui.get_window_size()
             imgui.end()
             rects.append((pos.x, pos.y, size.x, size.y))

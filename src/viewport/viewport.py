@@ -153,6 +153,8 @@ Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from core import Mesh, Selection, VertexId
 
 from .gl_line_overlay import WIRE_LAYER
@@ -194,6 +196,7 @@ def _mat4_mul(a: list[float], b: list[float]) -> list[float]:
         for row in range(4):
             out[col * 4 + row] = sum(a[k * 4 + row] * b[col * 4 + k] for k in range(4))
     return out
+from .eye_pass import EyeDisplay, EyeDraw
 from .light_rig import DEFAULT_PRESET, PRESETS, SPACE_WORLD, LightRig, resolve
 from .material import DEFAULT_FINISH, Material, SurfaceFinish
 from .render_mesh import RenderMesh
@@ -224,6 +227,11 @@ class Viewport:
         self.object_entries: dict = {}
         # AD-021 M2-0: je Eintrag (alpha, ignores_wireframe).
         self._entry_display: dict = {}
+        # AD-033: the entries that are eyes (key -> `eye_pass.EyeDraw`), the eye view state and the pass (created on
+        # the first eye drawn; with no eye nothing of it exists and the Worklight draws exactly as before).
+        self._eye_entries: dict = {}
+        self.eye_display = EyeDisplay()
+        self._eye_pass = None
         # AD-021 M2-1: Objekt -> Welt des Edit-Objekts (None = Identität).
         self.model_matrix: list[float] | None = None
         # Optional (None = headless/TraceStore: es entsteht kein GL-Objekt).
@@ -338,10 +346,12 @@ class Viewport:
         ignores_wireframe: bool = False,
         finish: SurfaceFinish | None = None,
         texture: str | None = None,
+        eye: EyeDraw | None = None,
     ) -> bool:
         """Legt den Eintrag `key` für `mesh` an oder aktualisiert Farbe, Glanz (None = der von
         `set_surface_finish`), Matrix und Anzeige. Ein anderes Mesh unter demselben Schlüssel ersetzt
-        den Eintrag. True = etwas hat sich geändert. Nie mit `SelectionOverlay` (Modul-Docstring)."""
+        den Eintrag. True = etwas hat sich geändert. Nie mit `SelectionOverlay` (Modul-Docstring).
+        AD-033: `eye` = the entry is an eye, drawn by the eye pass while `eye_display.preview` is on."""
         color = tuple(base_color) if base_color is not None else DEFAULT_BASE_COLOR
         finish = self.surface_finish if finish is None else finish
         display = (float(alpha), bool(ignores_wireframe))
@@ -373,12 +383,33 @@ class Viewport:
             entry.bind_material(Material(color, finish, texture))
             entry.mark_material_dirty()
             changed = True
+        if self._eye_entries.get(key) != eye:
+            if eye is None:
+                self._eye_entries.pop(key, None)
+            else:
+                self._eye_entries[key] = eye
+            changed = True
         return changed
+
+    def set_eye_display(self, **changes) -> EyeDisplay:
+        """AD-033 §6: the eye view state (`preview`, `reflection`, `refraction`) - not saved, no Undo."""
+        self.eye_display = replace(self.eye_display, **changes)
+        return self.eye_display
+
+    @property
+    def eye_pass(self):
+        """The eye pass (created on first use; GL objects only once an eye is drawn)."""
+        if self._eye_pass is None:
+            from .eye_pass import EyePass
+
+            self._eye_pass = EyePass()
+        return self._eye_pass
 
     def remove_object_entry(self, key) -> bool:
         """Entfernt den Eintrag `key` und gibt seine GPU-Objekte frei. True = es gab ihn."""
         entry = self.object_entries.pop(key, None)
         self._entry_display.pop(key, None)
+        self._eye_entries.pop(key, None)
         self._release_entry_surface(key)
         if entry is None:
             return False
@@ -985,7 +1016,13 @@ class Viewport:
         # Edge-Highlight, Tool-Linien, Zusatz-Overlays, Punkte.
         if self.show_faces:
             drawn.render(self.render_mesh.camera)
+        eye_preview = self.eye_display.preview
         for key in self._entry_draw_order():
+            # AD-033: an eye entry through the eye pass (False = not drawable yet: drawn as usual).
+            eye = self._eye_entries.get(key) if eye_preview else None
+            if eye is not None and key not in self.entry_surface_render_meshes:
+                if self.eye_pass.draw(self.object_entries[key], eye, light, self.eye_display):
+                    continue
             # H7-E: die Ersatzfläche des Eintrags, wenn der Provider eine nennt.
             self.entry_surface_render_meshes.get(key, self.object_entries[key]).render(self.render_mesh.camera)
         if (

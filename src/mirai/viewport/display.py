@@ -71,6 +71,11 @@ class DisplayState:
         self.region_tint: bool = True
         # Textures (AD-026, 2026-10-29): an object's texture shows on its UVs (SPACE menu row toggles).
         self.show_texture: bool = True
+        # AD-033 §6 (Q-E3): the eye preview - view state like the display mode, not saved, no Undo. `eye_reflection`
+        # "studio" (Q-E4, the default) or "key"; `eye_refraction` "V2" (the baseline) or "V3".
+        self.eye_preview: bool = True
+        self.eye_reflection: str = "studio"
+        self.eye_refraction: str = "V2"
 
     # -- Übergänge ----------------------------------------------------------
 

@@ -389,3 +389,28 @@ def test_second_rename_after_enter_works_without_touching_the_viewport(env):
     _enter_slow(window)
     assert app.scene.objects[second].name == "Molar"
     assert calls["key"] == 0 and calls["key_release"] == 0  # das Enter-Release ging an ImGui, nicht an Application
+
+
+def test_eye_panel_draws_an_eye_and_leaves_gl_state_as_found():
+    """AD-033 §6: the eye panel opens, shows the selected eye's values, and the frame with an eye drawn by the eye pass
+    leaves the GL state as found (the layer's guard and the pass's own restore)."""
+    try:
+        window, app, layer = run.build(argv=["cube"])
+    except Exception as exc:
+        pytest.skip(f"kein GL/Display: {exc}")
+    try:
+        eye = app.add_eye()
+        layer.eye_open = True
+        run.render_frame(window)  # first frame: the eye program, the procedural iris and the panel are created
+        run.render_frame(window)
+        before = snapshot_gl_state()
+        run.render_frame(window)  # a whole frame with the eye pass and the open eye panel
+        assert snapshot_gl_state() == before
+        before = snapshot_gl_state()
+        layer.draw()
+        assert snapshot_gl_state() == before
+        assert any(r for r in layer.panel_rects)  # the eye window is among the panel rectangles
+        assert app.viewport._eye_entries[eye.id].spec == eye.eye
+    finally:
+        layer.close()
+        window.close()

@@ -32,10 +32,20 @@ from core import (
 from core.operations import MeshDeltaCommand, record_mesh_change
 from core.scene import IDENTITY_TRANSFORM
 
+from viewport.eye_pass import EyeDraw
 from viewport.gl_render_store import DEFAULT_BASE_COLOR
 
 from .. import object_space
-from ..eye_object import DEFAULT_EYE, eye_transform, read_fit_sidecar, shape_changed, shell_mesh, with_changes
+from ..eye_object import (
+    DEFAULT_EYE,
+    cornea_triangles,
+    eye_material,
+    eye_transform,
+    read_fit_sidecar,
+    shape_changed,
+    shell_mesh,
+    with_changes,
+)
 from ..interaction import commands
 from ..interaction.dial import PRECISION_GAIN, DialAngle
 from ..interaction.tools.rotate import RotateTool
@@ -381,6 +391,7 @@ class ObjectController:
         obj = scene.add_object(shell_mesh(DEFAULT_EYE), name=name)
         obj.eye = DEFAULT_EYE
         obj.transform = eye_transform()
+        obj.material = eye_material()
         services.history.push(AddObjectCommand(scene, obj))
         selection.mode = SelectionMode.OBJECT
         selection.clear()
@@ -1171,17 +1182,24 @@ class ObjectController:
         highlighted = self.highlighted()
         for oid, obj in others.items():
             reference = obj.state is ObjectState.REFERENCE
+            colour = selected_color(obj, DEFAULT_BASE_COLOR) if oid in highlighted else object_base_color(obj)
+            finish = object_finish(obj, display.surface_finish)
+            # AD-033: a Normal eye is drawn by the eye pass (its iris image goes there, not to the Worklight store).
+            eye = None
+            if obj.eye is not None and not reference:
+                eye = EyeDraw(obj.eye, obj.texture, tuple(colour), finish, cornea_triangles())
             viewport.set_object_entry(
                 oid,
                 obj.mesh,
-                selected_color(obj, DEFAULT_BASE_COLOR) if oid in highlighted else object_base_color(obj),
+                colour,
                 model_matrix=object_space.model_matrix(obj),
                 # M2-0 (§7.3): RD-1 Ghost for every Reference on `Alt+D`; RD-3 a Reference is drawn in Wireframe too -
                 # a Normal object follows the display mode.
                 alpha=REFERENCE_GHOST_ALPHA if reference and self.reference_ghost else 1.0,
                 ignores_wireframe=reference,
-                finish=object_finish(obj, display.surface_finish),
-                texture=self._shown_texture(obj, oid in highlighted),
+                finish=finish,
+                texture=None if eye is not None else self._shown_texture(obj, oid in highlighted),
+                eye=eye,
             )
         edit = scene.edit_object
         viewport.set_edit_base_color(

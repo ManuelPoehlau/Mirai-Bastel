@@ -98,18 +98,22 @@ def add_named_reference(app, name: str) -> bool:
     return obj is not None
 
 
+#: AD-033: the parametric eye, after the primitives (`Application.add_eye`; name `PROVISIONAL`).
+EYE_ENTRY = "eye"
+
+
 def add_mesh_entries() -> tuple[str, ...]:
-    """Einträge des Menüs "Add Mesh": die Primitive, in Menü-Reihenfolge."""
+    """Einträge des Menüs "Add Mesh": die Primitive, in Menü-Reihenfolge, dann das Auge (AD-033)."""
     from mirai.scene_factory import primitive_names
 
-    return primitive_names()
+    return primitive_names() + (EYE_ENTRY,)
 
 
 def add_primitive_named(app, name: str) -> bool:
     """Primitiv per Menü-Name hinzufügen (`Application.add_primitive`). True = hinzugefügt; ein Fehler
     wird als Statuszeile gemeldet. Status bei Erfolg bzw. Ablehnung setzt `add_primitive`."""
     try:
-        obj = app.add_primitive(name)
+        obj = app.add_eye() if name == EYE_ENTRY else app.add_primitive(name)
     except Exception as exc:
         app.set_status(f"Add {name!r} failed: {exc}")
         return False

@@ -1,5 +1,11 @@
 # Lookdev P1 — Eye Proof lab (2026-11-14)
 
+> **Frozen as the oracle of the production eye (2026-11-15, AD-033 Q-E1, Manu: "Q-E1 ja").** The eye shading moved to
+> `src/` (`viewport/eye_optics.py`, `eye_shaders.py`, `eye_pass.py`; the eye object in `mirai/eye_object.py`).
+> `tests/test_oracle_production.py` checks the production twins against this lab; change the lab only to keep it
+> running, never to follow production. New eye work happens in production. See
+> [AD-033](../../docs/architecture/AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md).
+
 **Status:** disposable experiment. Container: `TESTED [C]`
 ([`RESULTS_CONTAINER_2026-11-14.md`](RESULTS_CONTAINER_2026-11-14.md)). **Reference PC: probe run 2026-11-14, six PASS**
 ([`RESULTS_REFERENCE_PC_2026-11-14.md`](RESULTS_REFERENCE_PC_2026-11-14.md), `MEASURED [RPC]`): no corner seams with

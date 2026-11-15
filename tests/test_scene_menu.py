@@ -235,8 +235,17 @@ def test_refresh_replaces_the_entries_on_every_open():
 # -- Add Mesh (Track A1, 2026-10-23) ---------------------------------------------------------
 
 
-def test_add_mesh_entries_are_the_four_primitives_in_order():
-    assert add_mesh_entries() == ("plane", "cube", "sphere", "cylinder")
+def test_add_mesh_entries_are_the_four_primitives_in_order_then_the_eye():
+    assert add_mesh_entries() == ("plane", "cube", "sphere", "cylinder", "eye")
+
+
+def test_add_primitive_named_eye_adds_an_eye():
+    app = Application()
+    app.init_scene("cube")
+    app.set_viewport_size(800, 600)
+    assert add_primitive_named(app, "eye") is True
+    eyes = [obj for obj in app.scene.objects.values() if obj.eye is not None]
+    assert len(eyes) == 1 and app.status_message.startswith("Added eye")
 
 
 def test_add_primitive_named_adds_a_selected_normal_object():

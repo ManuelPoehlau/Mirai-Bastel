@@ -2,8 +2,9 @@
 
 **Status:** **DECIDED (Manu, 2026-11-15)**: "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm" — promotion of
 the eye shading (M3) and the Core field + format v9 approved; Q-E3 … Q-E5 as proposed; Q-E6: one scene unit = 1 cm
-(decision record at the end). Implementation in phases E-1 … E-4 (§9). Names and numbers not covered by a decision stay
-`PROVISIONAL`.
+(decision record at the end). **IMPLEMENTED E-1 … E-3 (2026-11-15, container: TESTED)**, as built in §11 (with the
+deviations from the draft, each with its reason); **E-4 (cost on the reference PC) open**. Names and numbers not covered
+by a decision stay `PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
 §8 (decisions incl. those of 2026-11-14 / 15); [eye lab README](../../experiments/lookdev_eye_lab/README.md) (P1, P1b,
@@ -208,6 +209,56 @@ measured**: well under 1 ms. E-4 measures it with the reference head, two eyes, 
   switching off for that eye?
 - **Q-E6 (size on creation):** what size should a new eye have in scene units — what is one unit for you (mm, cm)?
   A real eye is ~24 mm across.
+
+## 11. As built (2026-11-15, E-1 … E-3)
+
+**Files.** Core: `core/scene.py` (`EyeSpec`, `SceneObject.eye`), `core/serialization.py` (v9), CORE_V1_FREEZE §7.1.
+App: `mirai/eye_object.py` (`DEFAULT_EYE`, `shell_mesh`, `cornea_triangles`, `eye_material`, `read_fit_sidecar`),
+`mirai/controllers/objects.py` (`add_eye`, `set_eye`, `set_eye_iris_image`, the refusals, `EyeDraw` in `sync_views`),
+`mirai/scene_objects.py` (`ObjectEyeCommand`, `replace_scene`), `mirai/application.py` (`add_eye`, `set_eye`,
+`set_eye_display`, `set_eye_iris_image`, Attach refusal), `mirai/viewport/display.py` (view state),
+`mirai/layer_declarations.py`. Viewport: `viewport/eye_optics.py` (geometry + every NumPy twin), `viewport/eye_shaders.py`
+(GLSL), `viewport/eye_pass.py` (`EyeDraw`, `EyeDisplay`, `EyePass`), `viewport/viewport.py` (eye entries, the switch in
+`render()`). UI: `scene_menu.py` (entry "eye" in Add Mesh / Shift+A and SPACE "Add +"), `gui/eye_model.py` +
+`gui/eye_panel.py` (panel "Auge", button in the toggle bar), `gui/imgui_layer.py`. Measurement:
+`experiments/drag_cost/probe_eye_preview.py`. Oracle: `experiments/lookdev_eye_lab/tests/test_oracle_production.py`.
+
+**Deviations from the draft (agent decisions, `PROVISIONAL`; none changes a decision of Manu's):**
+
+| Draft | Built | Why |
+|---|---|---|
+| §5.3: the studio as the prefiltered cube (lab T-C) | the **analytic studio** in the shader (lab T-D: the same softbox / strip / backdrop, the lobe fitted to the cube prefilter within 16 % RMS) | no prefilter at start-up (the lab's CPU prefilter took ≈ 6 s per chain in the container, more on the Q9550) and no cache files; per-pixel cost is ≈ 2× T-C's in the lab, but an eye covers few pixels in the modeller. Q-E4 (the studio by default) holds |
+| §5.4: linear shading + a calibration of the eye against the Worklight | the eye's **diffuse light is the Worklight's own** (ambient + key / fill with wrap, the same uniforms) on display-referred albedos; only the cornea's reflection (GGX key + studio, Schlick) is linear and added Reinhard + sRGB encoded, like P1's C2 shell | no calibration constant to keep in sync; tested: away from the limbus the sclera matches the same shell drawn by the Worklight within mean ≤ 2 / p99 ≤ 8 levels (`test_gl_eye_pass.py`) |
+| §5.1: a public binding accessor on `GLRenderStore` | none needed: the pass uses `vertex_list()` / `uniform_data()` (public, as the lab and the GPU picker do); cornea vs sclera is decided **per triangle by `gl_PrimitiveID`** (the shell's first `cornea_triangles()` triangles are the cap) | the store is unchanged; the per-triangle split keeps texture derivatives defined in every 2×2 quad (a per-fragment position test would mix branches at the ring) |
+| §5.3: the studio rotated with the Worklight key | the studio is in **view space** (moves with the camera, like the Worklight's default camera-relative lights) | the wet highlight stays where the artist expects it while orbiting; the direct key highlight follows the Worklight key (and `L`-drag) |
+| §6: an "Eye" section in the Look panel; `step_eye` rows | a separate panel **"Auge"** (no imgui Look panel exists yet); sliders apply on release (one Undo step per change); no `step_eye`, no keys (D-L9) | the Look rows are arrow keys + HUD today |
+| §5.5: the selection tint on the sclera | as drafted: the sclera colour is the eye's object material (AD-024; a new eye gets the lab's sclera colour) and takes the selection tint like any object | |
+
+**Not built (out of scope here):** an eye parented to a head bone (AD-028); an eye as the edit object (refused, Q-E5); a
+Reference eye draws as a Worklight object (no preview); the full Lookdev mode.
+
+**Verified (container, TESTED [C], Mesa llvmpipe):** `tests/test_eye_object.py` (23), `tests/test_application_eye.py`
+(12), `tests/test_gui_eye_model.py` (3), `tests/test_gl_eye_pass.py` (29: GPU ray classes vs the CPU trace for V2 / V3
+in two views ≥ 99.5 % per pixel, the Worklight match, preview off = the Worklight's draw byte for byte, all 16 variants
+draw with the GL state left as found, GPU parity of every GLSL function), `tests/test_gui_imgui_window.py` (the panel
+in the real window, GL state), the eye lab's `test_oracle_production.py` (7: `eye_optics` = the lab bit for bit or within
+1e-12). Full runs: `tests/` headless, all `tests/test_gl_*.py` in their own process (the Worklight pixel gates unchanged),
+`experiments/morph_lab/tests`, the eye lab's tests — counts in the commit messages.
+
+### Praxistest für Manu (Deutsch, ca. 15 Minuten)
+
+1. App starten (`python src/main.py`), Kopf laden oder hinzufügen (SPACE › Add + › Basehead).
+2. **Auge anlegen:** SPACE › Add + › **eye** (oder Shift+A › eye). Es erscheint am Ursprung, 2,4 cm groß, ausgewählt in
+   Modus 4. Mit W/E/R in die Augenhöhle setzen; Shift+M (Spiegelkopie über X) für das zweite Auge.
+3. **Panel „Auge“** (Knopf oben links): Vorschau an/aus, V2/V3, „Studio + Key“ / „nur Key-Glanz“; für das gewählte
+   Auge Limbus L0–L3, Farbquelle, Limbusfarbe, Asymmetrie, Pupille, Band, Stärke, Normalen-Übergang, Durchscheinen,
+   Überlappung.
+4. **Deine Iris:** im Panel den Pfad zu `iris_custom.png` eintragen, „Iris-Bild laden“. Liegt `iris_custom.json` daneben
+   (gleicher Name), kommt die Anpassung (A+H) mit.
+5. **Prüfen:** Modellieren / Morphen am Kopf mit sichtbaren Augen; Undo / Redo der Augen-Werte; Speichern / Laden.
+6. **Messen (E-4):** `python experiments\drag_cost\probe_eye_preview.py` und mit `--size 1920 1080`; Ausgabe schicken.
+
+Melde dich, wenn etwas stört — keine Abhakliste (Development System §7).
 
 ## Decision record
 

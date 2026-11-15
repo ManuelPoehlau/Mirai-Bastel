@@ -849,6 +849,29 @@ class Application:
         """Set eye values (`core.EyeSpec` fields) on every selected eye; one Undo step. See `ObjectController.set_eye`."""
         return self._objects.set_eye(**changes)
 
+    def set_eye_display(self, **changes) -> bool:
+        """The eye view state (AD-033 §6, Q-E3): any of `preview` (bool), `reflection` ("studio" / "key"),
+        `refraction` ("V2" / "V3"). Not saved, no Undo step. An invalid value is refused with the reason; True = it
+        changed."""
+        from viewport.eye_pass import EyeDisplay
+
+        display = self.display
+        current = dict(preview=display.eye_preview, reflection=display.eye_reflection,
+                       refraction=display.eye_refraction)
+        try:
+            wanted = EyeDisplay(**{**current, **changes})
+        except (TypeError, ValueError) as exc:
+            self._set_status(f"Eye view: {exc}")
+            return False
+        if dataclasses.asdict(wanted) == current:
+            return False
+        display.eye_preview, display.eye_reflection = bool(wanted.preview), wanted.reflection
+        display.eye_refraction = wanted.refraction
+        self._apply_display()
+        self._set_status(f"Eye view: preview {'on' if wanted.preview else 'off'}, {wanted.reflection}, "
+                         f"{wanted.refraction}")
+        return True
+
     def set_eye_iris_image(self, path: str | Path | None) -> bool:
         """The iris image of every selected eye (AD-033 §4.1: the object's texture, AD-026), one Undo step. A JSON beside
         the image with the same name (the eye lab's `iris_custom.json` format: `pupil`, `limbus`, optional
@@ -2187,6 +2210,11 @@ class Application:
         )
         self.viewport.set_region_tint(self.display.region_tint)
         self.viewport.set_light(self.display.light_rig)
+        self.viewport.set_eye_display(
+            preview=self.display.eye_preview,
+            reflection=self.display.eye_reflection,
+            refraction=self.display.eye_refraction,
+        )
         if self.viewport.set_surface_finish(self.display.surface_finish):
             # The global finish resets every entry; the objects' own materials go back on (AD-024 §4).
             self._objects.sync_views()

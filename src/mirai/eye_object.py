@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
-from core import EyeSpec, Mesh, ObjectTransform
+from core import EyeSpec, Mesh, ObjectMaterial, ObjectTransform
 
 from viewport.eye_optics import EyeGeometry
 
@@ -24,6 +24,9 @@ EYE_SCALE_CM = 1.2
 SEGMENTS = 64
 SCLERA_RINGS = 36
 CORNEA_RINGS = 16
+#: The lab's sclera colour (sRGB): a new eye's material base colour (AD-024), so it also reads as a sclera with the
+#: preview off; specular / glossiness are the Worklight's default finish (`PROVISIONAL`).
+SCLERA_COLOUR = (0.86, 0.83, 0.79)
 #: P1b's limbal colour (the procedural iris's outer colour), sRGB.
 DEFAULT_LIMBAL_COLOUR = (0.10, 0.11, 0.13)
 
@@ -51,6 +54,18 @@ DEFAULT_EYE = EyeSpec(
 
 #: The values whose change rebuilds the shell (the rest only changes the shading).
 SHAPE_FIELDS = ("cornea_radius", "limbus_radius")
+
+
+def eye_material() -> ObjectMaterial:
+    from viewport.material import DEFAULT_FINISH
+
+    return ObjectMaterial(SCLERA_COLOUR, specular=DEFAULT_FINISH.specular, glossiness=DEFAULT_FINISH.glossiness)
+
+
+def cornea_triangles(segments: int = SEGMENTS, cornea_rings: int = CORNEA_RINGS) -> int:
+    """How many leading triangles of the shell's VertexList are the corneal cap: the apex fan, then the cap's quads
+    (two triangles each) - `shell_mesh` adds them first, and the store keeps the face order of a fresh mesh."""
+    return segments + (cornea_rings - 1) * segments * 2
 
 
 def eye_transform(translation=(0.0, 0.0, 0.0)) -> ObjectTransform:
