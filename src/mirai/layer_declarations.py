@@ -244,6 +244,11 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "pointer_scroll": "commands",
         "set_ctrl_held": "commands",
         "add_primitive": "new mesh",
+        # AD-033: a new eye (a generated shell, no layers); its values may rebuild that shell (a new ID space, no
+        # layers - an eye is never edited by hand); the iris image is the texture path and the fit values only
+        "add_eye": "new mesh",
+        "set_eye": "new mesh",
+        "set_eye_iris_image": "non-mesh",
         "add_reference": "new mesh",
         "import_obj": "new mesh",
         "init_scene": "new mesh",

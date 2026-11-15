@@ -1,11 +1,20 @@
 # Lookdev P1 — Eye Proof lab (2026-11-14)
 
+> **Frozen as the oracle of the production eye (2026-11-15, AD-033 Q-E1, Manu: "Q-E1 ja").** The eye shading moved to
+> `src/` (`viewport/eye_optics.py`, `eye_shaders.py`, `eye_pass.py`; the eye object in `mirai/eye_object.py`).
+> `tests/test_oracle_production.py` checks the production twins against this lab; change the lab only to keep it
+> running, never to follow production. New eye work happens in production. See
+> [AD-033](../../docs/architecture/AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md).
+
 **Status:** disposable experiment. Container: `TESTED [C]`
 ([`RESULTS_CONTAINER_2026-11-14.md`](RESULTS_CONTAINER_2026-11-14.md)). **Reference PC: probe run 2026-11-14, six PASS**
 ([`RESULTS_REFERENCE_PC_2026-11-14.md`](RESULTS_REFERENCE_PC_2026-11-14.md), `MEASURED [RPC]`): no corner seams with
 the fix-up, T-C 1.0–1.3 ms / 2.4–2.9 ms per frame at 1024×768 / 1920×1080 with the eye at ~50 %, T-D about twice
-that. **Artist verdict: `OPEN`** (the practical test below). Main PC: `OPEN` (D-L5 deferred).
+that. **Artist verdict: `OPEN`** (the practical test below). Main PC: **= the reference PC** (D-L5, Manu 2026-11-14:
+the only machine; a new PC is future, model unknown). Next: the eye preview in the Worklight mode with a parametric eye
+object (Manu 2026-11-14 / 15), AD-033 draft.
 **P1b — Corneal Refraction Lab (2026-11-14):** added on top of P1, P1 unchanged; see [the P1b section](#p1b--corneal-refraction-lab-2026-11-14).
+**Handoff of 2026-11-14:** done, [handoff](../../docs/archive/handoffs_2026-11/EYE_LAB_HANDOFF_2026-11-14.md).
 **P1c — soft limbus (2026-11-14):** L0–L3 on top of P1b, P1 / P1b unchanged; see [the P1c section](#p1c--soft-limbus-2026-11-14) (plan: [`PLAN_P1c_LIMBUS_2026-11-14.md`](PLAN_P1c_LIMBUS_2026-11-14.md)).
 **Own iris image:** put it at `out/iris_custom.png`; see [Custom iris texture](#custom-iris-texture-outiris_custompng). No change under `src/`, `tests/`, `config/`; no new
 dependency; no keymap entry.
@@ -463,7 +472,7 @@ button; `J` shows which rays reach iris (red), pupil (green) or limbal tissue (b
 
 ## P1c — soft limbus (2026-11-14)
 
-Handoff Task 2, built after Manu's decisions of 2026-11-14 (plan: [`PLAN_P1c_LIMBUS_2026-11-14.md`](PLAN_P1c_LIMBUS_2026-11-14.md)):
+Handoff Task 2 ([handoff](../../docs/archive/handoffs_2026-11/EYE_LAB_HANDOFF_2026-11-14.md), archived), built after Manu's decisions of 2026-11-14 (plan: [`PLAN_P1c_LIMBUS_2026-11-14.md`](PLAN_P1c_LIMBUS_2026-11-14.md)):
 cumulative variants, **P1b V2 as the baseline** (V3 selectable), shader only (no geometry change), limbal colour from
 a shader setting (default) **or** the iris image's own outer ring (a switch), top / bottom asymmetry as an independent
 switch (default off). P1 and P1b code is unchanged; P1c is new files deriving from P1b's classes.
@@ -494,6 +503,8 @@ L0 1.17 / 2.78 ms, L1 1.28 / 3.04, L2 1.35 / 3.18, **L3 1.89 / 4.17**, asymmetry
 sclera pass tracing every sclera fragment (it remains in the profile view). Run 1 with Manu's texture without
 `iris_custom.json`, run 2 with A+H (no white rim; L3 then 2.10 / 4.56 ms, the fit's remap is sampled up to three times
 per L3 fragment). Every Artist verdict is open.
+Run 3 (L3 fast path): five PASS, fast path = reference pixel for pixel; L3 T-C V2 front 2.00 / 4.29 ms (was 2.10 /
+4.56), i.e. +0.84 / +1.41 ms over L0.
 
 ### Controls (P1c window, in addition to P1 / P1b's)
 
@@ -544,6 +555,6 @@ use them (the probe names the image and the fit in its header). Check: `EVIDENCE
   Textur (Taste `O`). P1 und P1b unverändert.
 - **Im Fenster:** `run_limbus.py`, `Z` Nahansicht, `Q` Stufe, `A` Asymmetrie, `O` Farbquelle, `N` Farbvorgabe,
   `W` / `D` / `,` / `.` Parameter (Shift = rückwärts). Urteile sind deine.
-- **Bitte auf deinem PC:** die drei Befehle oben, Ausgabe der ersten beiden und `limbus_sheet.png` schicken — dann
-  stehen die GPU-Zeiten pro Stufe fest.
+- **Stand 2026-11-14:** auf deinem PC gemessen (Läufe 1–3, `RESULTS_LIMBUS_REFERENCE_PC_2026-11-14.md`); deine
+  Entscheidung: „alles erstmal so drin lassen als Einstellungen“ — keine Voreinstellung geändert, Urteile offen.
 

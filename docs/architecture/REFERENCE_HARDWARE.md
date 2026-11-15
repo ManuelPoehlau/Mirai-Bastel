@@ -20,6 +20,8 @@
 
 **Einordnung (Angabe des Artists, 2026-09-30):** Das ist derzeit der **einzige** PC, auf dem getestet wird. Eine Aufrüstung ist geplant, das Modell ist offen. Der neue PC wird in jedem Fall schneller sein als dieser.
 
+**Haupt-PC = dieser PC (Manu, 2026-11-14, Lookdev-Entscheidung D-L5):** „D-L5 Haupt-PC = der aktuelle Referenz PC. Ich habe nur diesen. Neuer PC ist noch Zukunftsmusik und welcher das wird, kann ich jetzt noch nicht sagen.“ Bis ein neuer PC da ist, ist dieser PC Referenz- **und** Haupt-PC: Messungen hier sind die einzigen Hardware-Messungen, und Leistungsziele gelten für diesen PC. Kommt ein neuer PC, wird er hier ergänzt (Abschnitt 5).
+
 Bewusst **nicht** aufgenommen: Gerätename, Geräte-ID und Produkt-ID. Das Repository ist öffentlich, und diese Angaben helfen keiner technischen Entscheidung.
 
 ---

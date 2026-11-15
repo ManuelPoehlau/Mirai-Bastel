@@ -142,6 +142,7 @@ def replace_scene(scene: Scene, loaded: Scene) -> SceneObject:
         obj.material = source.material
         obj.texture = source.texture
         obj.hidden = source.hidden
+        obj.eye = source.eye  # AD-033
         new_ids[source.id] = obj.id
         if source.id == loaded.edit_object_id:
             edit = obj
@@ -454,6 +455,25 @@ class ObjectMaterialCommand:
     def redo(self) -> None:
         for obj, _, after in self.changes:
             obj.material = after
+
+
+class ObjectEyeCommand:
+    """The values of one or more eyes as one Undo step (AD-033 §4.3). `changes` = `(obj, before, after, mesh_before,
+    mesh_after)` per eye: the `EyeSpec`s and the shell meshes (the same instance when only the shading changed). The
+    caller records the step with `object_meshes` = the eyes whose shell changed, so Undo / Redo rebuild their entries
+    and re-project their pick caches."""
+
+    def __init__(self, changes: list, description: str) -> None:
+        self.changes = list(changes)
+        self.description = description
+
+    def undo(self) -> None:
+        for obj, before, _, mesh_before, _ in reversed(self.changes):
+            obj.eye, obj.mesh = before, mesh_before
+
+    def redo(self) -> None:
+        for obj, _, after, _, mesh_after in self.changes:
+            obj.eye, obj.mesh = after, mesh_after
 
 
 class ObjectTextureCommand:

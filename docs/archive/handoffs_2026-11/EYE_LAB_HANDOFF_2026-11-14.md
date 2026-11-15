@@ -1,25 +1,36 @@
 # Eye lab — handoff to the next session (2026-11-14)
 
+> **Archived 2026-11-14** (moved from `experiments/lookdev_eye_lab/HANDOFF_2026-11-14.md`, Manu: "ja, verschieb es nach
+> docs/archive"). Historical: both tasks it hands over are done — the radial iris fit and the P1c soft limbus. Current
+> state: [`experiments/lookdev_eye_lab/README.md`](../../../experiments/lookdev_eye_lab/README.md) (sections "Radial fit"
+> and "P1c") and `RESULTS_LIMBUS_REFERENCE_PC_2026-11-14.md` there. Paths below are as they were in the lab folder.
+
 Written at the end of the session that built P1, P1b and the custom iris texture, because its context was full. It is
 the starting point for the next session: **(1) radial fit of the custom iris (`out/iris_custom.json`), approved by Manu;
 (2) plan, then build, a soft limbus transition** (Manu: "Dieser weiche Übergang am Limbus ist etwas, was ein Auge nochmal
 wesentlich realistischer erscheinen lässt als ein harter Übergang"). Move this file to `docs/archive/` or delete it
 once both are done.
 
-## Status 2026-11-14 (later session)
+## Status 2026-11-14 (later session) — both tasks done
+
+Both tasks are built, tested and measured on the reference PC (`RESULTS_LIMBUS_REFERENCE_PC_2026-11-14.md`, runs 1–3).
+Manu: "ja, ich würde alles erstmal so drin lassen als einstellungen" — every option stays a setting, no verdict yet.
+This handoff is done and was moved to `docs/archive/handoffs_2026-11/` with Manu's OK.
+
 
 - **Task 1 built** (`iris_fit.py`, README "Radial fit"); Manu chose "A+H" (limbus target, optional
   `hold_outer_color` key); the aesthetic check with his real texture is still to come.
 - **Task 2 built** as P1c (README "P1c", `run_limbus.py`), after Manu's OK on the plan; reference-PC run done
-  (`RESULTS_LIMBUS_REFERENCE_PC_2026-11-14.md`: 186 passed, four PASS, L3 +0.7 / +1.4 ms over L0). Open: every Artist
-  verdict, the A+H look with the real texture (its sidecar was not in place), optionally the L3 sclera-trace cost. Both tasks are done on the agent side: this handoff can move to
+  (`RESULTS_LIMBUS_REFERENCE_PC_2026-11-14.md`: 186 passed, four PASS, L3 +0.7 / +1.4 ms over L0). Since then: A+H measured
+  with the real texture, the asymmetry seam fixed, overlap all round added, L3 fast path measured (run 3). Open: every
+  Artist verdict. Both tasks are done on the agent side: this handoff can move to
   `docs/archive/` once Manu has run P1c on the reference PC.
 
 ## Where things stand
 
 - Branch `ccr-b9573f5a-a1shci` at `4d37107` (pushed; P1 merged to main earlier via PR #67; P1b and the iris work are
   not merged yet).
-- Read first, in this order: this file, [`README.md`](README.md) (P1 sections, "Custom iris texture", "P1b"), then the
+- Read first, in this order: this file, [`README.md`](../../../experiments/lookdev_eye_lab/README.md) (P1 sections, "Custom iris texture", "P1b"), then the
   code named below. The results files hold the measurements; read them only if a number is needed.
 - **Results so far:** P1 probe on the reference PC (RPC) six PASS; P1b probe on the RPC five PASS
   (`RESULTS_REFRACTION_REFERENCE_PC_2026-11-14.md`): T-C V2 costs what P1's T-C C2 costs, V3 +0.3–0.6 ms, V2→V3 image
