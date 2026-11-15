@@ -1,7 +1,8 @@
 # Surface Slide — Production Readiness Audit (2026-11-14)
 
 **Status:** audit, English with a German summary. No Production change. **Phase 0 closed 2026-11-14: Manu's
-decisions are recorded in §5.1**; Phase 1 starts from the handoff in §13. It reviews the research
+decisions are recorded in §5.1**; **Phase 1 (pure core `src/mirai/surface_slide/`) done 2026-11-15, gate G1 green:
+implementation note §13.1.** It reviews the research
 [SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md](SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md) (commit `ec3816d`) and
 its prototype [`experiments/surface_slide/`](../../experiments/surface_slide/README.md) against the current Production
 code at `main` @ `6282cd5`. New measurements come from six small probes in
@@ -597,6 +598,80 @@ rule).
 
 **Done means:** G1 green; the package docstring states the contract (report §14.4 as amended here); an implementation
 note appended to this section. No `ATELIER.md` entry (nothing visible yet).
+
+### 13.1 Implementation note — Phase 1 done (2026-11-15)
+
+**Built** (Production, new package, no app wiring, no binding, no `keymap.json` entry, no `ATELIER.md` entry):
+`src/mirai/surface_slide/` — `reference.py` (`SlideReference`), `tracer.py` (`trace`, launches, flags, `back_off`),
+`curves.py` (`EdgeChain`), `slide.py` (`SurfaceSlide`, `SlideFrame`, `direct_frames`, `tree_frames`, `frame_jumps`);
+the contract is the package docstring. NumPy only through `viewport.packed_geometry`; nothing imports `core`, a camera
+or the GUI. Nothing in `src/` or `tests/` imports `experiments/`.
+
+**Gate G1: green** [M] (container, NumPy 2.5.3). Oracle `experiments/surface_slide/tests/test_production_oracle.py`
+(209 tests, ≈ 18 s) on all 76 scenarios; scenarios without a prototype transport (independent probes, which the report
+ran with `project`) get the prototype's tree frames from their first vertex:
+
+| Check | Result |
+|---|---|
+| Port with the prototype's tree frames injected vs `GeodesicPursuit("transport")`, every frame | **bit-identical** (max deviation 0 h; asserted ≤ 1e-12 h), same anchor triangles, same lagging rows, same wall stops; zero drag afterwards = start, bit for bit |
+| Port with its own direct transport, 76 scenarios | 0 region jumps; step ratio ≤ 2 (2.00 on the cage loops); tracked deviation ≤ 1e-12 h; closure exactly 0 on all six loops; no `STUCK` / `MAXITER`; weight-0 rows untouched |
+| Edge distortion direct vs tree, 47 soft / rigid scenarios | within 4 points everywhere (worst +1.6 points `D_hires_lip_down`, best −4.2 `D_cage_nose_to_cheek`) |
+| Rigid patches (§3.2 table) | identical to the audit's direct column (sphere 3 / 8 edges 2.0 / 8.1 % and 12.7 / 41.8 %, cage cheek 8.0 / 19.6 %, forehead 3.0 / 7.9 %, brow 13.8 / 62.8 %, cylinder 0.05 / 0.11 %) |
+| Neighbour direction jump, cage r = 0.15, polygon edges (nose tip / lid / lip) | tree 67.6 / 73.4 / 39.9°, direct **27.6 / 49.4 / 38.9°**; brow, nose side: direct ≤ tree |
+| `EdgeChain` vs the prototype's `SeamCurve`, every cage seam vertex × 4 drags | same points (≤ 1e-15), plane coordinate exactly 0, same end stops |
+| Seam rows in a slide (cage, seam = chain + barrier, drag across the plane) | seam rows x == 0 exactly, driven rows x > 0 in every frame |
+
+**Production tests** (self-contained, generated sphere / cone / U / thin fin / sheets / tube, `tests/surface_slide_fixtures.py`):
+`tests/test_surface_slide_core.py` (14: adjacency, read-only arrays, edge codes and refusals, exact unrolled geodesics on
+the U incl. round the bend, boundary / barrier / capture stops, back-off strictly off the plane, blocked starts,
+inconsistent winding, seam chain exactly on the plane, boundary loop, chain ends) and
+`tests/test_surface_slide_slide.py` (18: zero drag bit-exact, function of the drag alone, weights / weight 0, step
+≤ (1 + gain) × Δtangent and positions == anchors on the surface every frame, transport continuity on a cone (tree > 90°,
+direct < 25°), antipodal fallback on a narrow U ("down wall A" becomes "up wall B"), loop round an apex tears, is
+limited and closes exactly, loop ending near zero catches up, `settle` lands exactly on the target, no skip through a
+2 % fin, snap guard, degenerate-gap chase, barrier back-off, boundary rows along the rim (E5) vs blocked without the
+chain, seam rows on the plane under a turning drag, capture flag, refusals). The snap-guard test fails with the guard
+removed; the fin test passes either way (as `probe_thin`: 0 skips observed). Runs: the two files,
+`experiments/surface_slide/tests` (70 prototype + 209 oracle), `tests/test_packed_geometry.py`: **330 passed**.
+
+**Decisions made while building (DI), deviations from the handoff:**
+
+1. **`update(delta)` takes a world 3-vector**, projected into the pivot's start tangent plane exactly as the prototype
+   does (that is what keeps G1 bit-identical, and what the M1 mapping produces); `tangent_of(delta)` gives the 2D pivot
+   coordinates of report §14.4 for display.
+2. **Snap guard:** a row takes its target when the chord gap is within the budget *and* the target triangle shares a
+   corner with the current one — or a chase over the chord lands next to the target. §3.7 item 2 said "not lagging and
+   shares a vertex with the previous target's"; that would never let a lagging row catch up exactly, and would make a
+   fast frame that crosses several triangles lag (G1 would no longer be bit-identical).
+3. **Barrier back-off:** the stop is pulled towards the triangle's opposite corner, to 98 % of the way from that corner
+   (`BARRIER_MAX_AMOUNT`, the Vertex Slide precedent). A convex combination, so always inside the triangle and strictly
+   off the barrier edge; "along the incoming direction" can leave the triangle when the hit is near a corner. Cost:
+   when a target first reaches the barrier it steps back by ≤ 2 % of that triangle (the pursuit limits it).
+4. **Antipodal fallback** (`n_pivot · n_i < −0.5`): the rotation is composed along the shortest triangle-edge path,
+   starting from the last vertex on the path that still has a direct rotation, only for those rows and their antipodal
+   ancestors, batched by depth; the search stays inside the rows' triangles unless a path leaves them.
+5. **Chain rows pursue in arc length** (1D), so the speed limit holds for seam and boundary rows too; a closed loop stops
+   where it started, an end or branch flags `CHAIN_END`. Chains are passed by the caller (seam before boundary):
+   `EdgeChain.boundary(reference)` is the E5 boundary chain; without it a boundary row keeps the prototype rule
+   (blocked when pointing out) — that is how the oracle runs.
+6. **Vertex normals:** the prototype's angle-weighted normals by default (G1 needs them), injectable
+   (`vertex_normals=`). With flat evaluation (E1) they only steer launches, tangent planes and the transport; whether
+   Phase 2 passes `PackedGeometry` normals is open there.
+7. **`h`** (`edge_scale`, the unit of the 1e-12 / 1e-14 tolerances) defaults to the mean *triangle* edge; the oracle
+   passes the prototype's polygon mean edge. Phase 2 should pass the polygon mean edge too.
+8. **Flags** are `uint16`: `BOUNDARY 1, STUCK 2, BLOCKED 4, MAXITER 8, BARRIER 16, CAPTURE 32, CHAIN_END 64,
+   LAGGING 128`; a frame carries target and chase flags. A blocked start on a capture border also gets `CAPTURE`
+   (Phase 2 grows the capture there).
+
+**Container costs** [M] (indicative only; P1–P8 are Phase 4, reference PC ≈ × 3): reference build on the 21.9k Gollum
+triangles 45–53 ms, 907 bytes per vertex (P8 ≤ 1 KB); direct frames 0.26 ms for 1 125 rows, 40 ms for 10 276 rows
+(717 of them antipodal: the Python Dijkstra of the fallback dominates; the first version spent 417 ms composing every
+settled vertex, now only the paths needed); `update` 1 125 rows 2.7–3.1 ms median at a 2 h drag, 4.5–5.0 ms at 10 h
+(max 8 ms); 10 276 rows 26–32 / 47–59 ms.
+
+**Open for Phase 2** (unchanged scope): `plan_surface_slide` from a `core.Mesh` (VertexId ↔ row, weights, mask,
+hidden faces as barriers), region capture with growth on `CAPTURE`, the symmetry driver rule (B3) and the mirrored
+writes, refusals (straddling faces, bowtie vertices), the normal source and `h` (items 6–7).
 
 ## 14. Reproduce
 

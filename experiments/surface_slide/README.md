@@ -4,6 +4,10 @@
 Production behaviour changed. The question: *which algorithm lets mesh vertices slide across a reference surface so
 that they stay on it, stay in the surface region they belong to, and keep a recognisable shape?*
 
+**Since 2026-11-15** the prototype is also the frozen reference implementation of the Production core
+`src/mirai/surface_slide/` (Phase 1 of the audit): `tests/test_production_oracle.py` compares the two (gate G1). A
+change to `refsurf`, `geodesic`, `algorithms`, `fields`, `seam` or `scenarios` changes the oracle.
+
 Result and recommendation: [`docs/research/SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md`](../../docs/research/SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md).
 All measured numbers: [`results/SUMMARY.md`](results/SUMMARY.md) (generated).
 
@@ -20,7 +24,7 @@ All measured numbers: [`results/SUMMARY.md`](results/SUMMARY.md) (generated).
 | `mirai_io.py` | read-only loader for the Gollum scene (`scenes/Gollum_Head_01.mirai.json`, through `core.serialization`) and the OBJ assets — the only module that imports from `src/` |
 | `scenarios.py`, `harness.py`, `metrics.py` | the scenarios, the runner, the measurements |
 | `run_all.py`, `studies.py`, `bench.py`, `summarize.py`, `make_figures.py` | produce `results/` |
-| `tests/` | regression tests (70): what the report claims, as assertions |
+| `tests/` | regression tests (70): what the report claims, as assertions; plus `test_production_oracle.py` (209): gate G1, the Production core `src/mirai/surface_slide/` against this prototype on the 76 scenarios ([audit §13.1](../../docs/research/SURFACE_SLIDE_PRODUCTION_READINESS_AUDIT_2026-11-14.md)) |
 | `audit_2026-11-14/` | probes of the [Production Readiness Audit](../../docs/research/SURFACE_SLIDE_PRODUCTION_READINESS_AUDIT_2026-11-14.md) (drawn triangulation symmetry, capture cost, cursor mapping, thin features, transport continuity) |
 
 The algorithm modules (`refsurf`, `geodesic`, `algorithms`, `fields`, `seam`) need NumPy only: no `core.Mesh`, no
@@ -31,7 +35,7 @@ viewport, no GUI, no mouse. A candidate takes the drag as a world-space vector s
 From the repo root (NumPy is the only requirement; Pillow only for the pictures):
 
 ```bash
-python -m pytest experiments/surface_slide/tests -q      # 70 tests, under 10 s; not part of the bare `pytest` run
+python -m pytest experiments/surface_slide/tests -q      # 70 tests + 209 oracle tests (G1), about 25 s; not in the bare `pytest` run
 ```
 
 ```bash
