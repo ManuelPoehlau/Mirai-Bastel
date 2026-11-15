@@ -35,6 +35,7 @@ from core.scene import IDENTITY_TRANSFORM
 from viewport.gl_render_store import DEFAULT_BASE_COLOR
 
 from .. import object_space
+from ..eye_object import DEFAULT_EYE, eye_transform, read_fit_sidecar, shape_changed, shell_mesh, with_changes
 from ..interaction import commands
 from ..interaction.dial import PRECISION_GAIN, DialAngle
 from ..interaction.tools.rotate import RotateTool
@@ -77,6 +78,8 @@ from ..scene_objects import (
     subtree_depth_first,
     unique_object_name,
     without_riders,
+    ObjectEyeCommand,
+    ObjectTextureCommand,
 )
 from ..viewport.look_controls import clamp_material_values, material_row
 from ..viewport.picking import pick_object
@@ -363,6 +366,126 @@ class ObjectController:
         services.status(f"Added {obj.name!r} - selected (Object mode); W/E/R place it, 1/2/3 edit it")
         return obj
 
+    # -- eyes (AD-033) --------------------------------------------------------------------------------------------
+
+    def add_eye(self, name: str) -> SceneObject | None:
+        """A new eye (AD-033 §4): the default eye values, its generated shell, 2.4 units across (Q-E6: 1 unit = 1 cm),
+        at the origin looking down +Z. Like `add_mesh_object`: mode `4`, the eye is the object selection, the edit
+        object stays (an eye never becomes the edit object, Q-E5). One Undo step."""
+        label = "Add eye"
+        if self.refused_during_interaction(label) or self.layer_refused("add_primitive", ()):
+            return None
+        services = self.services
+        scene, selection = services.scene, services.selection
+        before = services.selection_snapshot()
+        obj = scene.add_object(shell_mesh(DEFAULT_EYE), name=name)
+        obj.eye = DEFAULT_EYE
+        obj.transform = eye_transform()
+        services.history.push(AddObjectCommand(scene, obj))
+        selection.mode = SelectionMode.OBJECT
+        selection.clear()
+        selection.objects = {obj.id}
+        selection.hovered = None
+        services.record_selection_history(before, mesh_step=False)
+        services.viewport.on_selection_changed()
+        services.soft_preview_refresh()
+        self.sync_views()
+        services.refresh_hover()
+        services.status(f"Added eye {obj.name!r} - selected (Object mode); W/E/R place it")
+        return obj
+
+    def eye_targets(self, label: str) -> list[SceneObject] | None:
+        """The selected eyes (mode `4`; a selected group stands for its members). None (refusal posted) while an
+        interaction owns the keys or no eye is selected."""
+        services = self.services
+        owner = services.interaction_owner
+        if owner is not None or services.drag_select is not None:
+            services.status(f"{label}: not while the {owner or 'selection'} interaction runs")
+            return None
+        eyes = [obj for obj in group_leaves(services.scene, services.selection.objects) if obj.eye is not None]
+        if services.selection.mode is not SelectionMode.OBJECT or not eyes:
+            services.status(f"{label}: select an eye first (press 4 and click it)")
+            return None
+        return eyes
+
+    def set_eye(self, label: str = "Eye", **changes) -> bool:
+        """Set any `EyeSpec` values on every selected eye; one Undo step. A change of the anatomy that shapes the shell
+        (`eye_object.SHAPE_FIELDS`) rebuilds the shell. An invalid combination is refused with the reason (status line)
+        and nothing changes. True = an eye changed."""
+        eyes = self.eye_targets(label)
+        if eyes is None:
+            return False
+        services = self.services
+        planned = []
+        for obj in eyes:
+            try:
+                after = with_changes(obj.eye, **changes)
+            except ValueError as exc:
+                services.status(f"{label}: {exc}")
+                return False
+            if after == obj.eye:
+                continue
+            mesh_after = shell_mesh(after) if shape_changed(obj.eye, after) else obj.mesh
+            planned.append((obj, obj.eye, after, obj.mesh, mesh_after))
+        if not planned:
+            services.status(f"{label}: unchanged")
+            return False
+        before = services.selection_snapshot()
+        for obj, _, after, _, mesh_after in planned:
+            obj.eye, obj.mesh = after, mesh_after
+        names = ", ".join(repr(obj.name) for obj, *_ in planned)
+        services.history.push(ObjectEyeCommand(planned, f"{label} {names}"))
+        rebuilt = frozenset(obj.id for obj, _, _, mesh_before, mesh_after in planned if mesh_before is not mesh_after)
+        services.record_selection_history(before, mesh_step=False, object_meshes=rebuilt)
+        self.meshes_changed(rebuilt)
+        self.sync_views()
+        services.status(f"{label}: {names}")
+        return True
+
+    def set_eye_iris_image(self, path: Path | None) -> bool:
+        """The iris image of every selected eye (its texture, AD-026) and the radial fit from a same-name JSON beside it
+        (`eye_object.read_fit_sidecar`; none = planar), one Undo step. An unreadable or invalid JSON is refused with the
+        reason. None removes the image. True = something changed."""
+        label = "Iris image"
+        eyes = self.eye_targets(label)
+        if eyes is None:
+            return False
+        services = self.services
+        texture = None if path is None else str(path)
+        if path is not None and not path.is_file():
+            services.status(f"{label}: {path} not found")
+            return False
+        fit, note = (None, "") if path is None else read_fit_sidecar(path)
+        if note:
+            services.status(f"{label}: {note}")
+            return False
+        fit_values = dict(fit_pupil=None, fit_limbus=None, hold_outer_color=False) if fit is None else fit
+        planned, textures = [], []
+        for obj in eyes:
+            after = with_changes(obj.eye, **fit_values)
+            if after != obj.eye:
+                planned.append((obj, obj.eye, after, obj.mesh, obj.mesh))
+            if obj.texture != texture:
+                textures.append(ObjectTextureCommand(obj, obj.texture, texture, label))
+        if not planned and not textures:
+            services.status(f"{label}: unchanged")
+            return False
+        before = services.selection_snapshot()
+        steps = []
+        if planned:
+            for obj, _, after, _, _ in planned:
+                obj.eye = after
+            steps.append(ObjectEyeCommand(planned, label))
+        for command in textures:
+            command.obj.texture = command.after
+            steps.append(command)
+        services.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, label))
+        services.record_selection_history(before, mesh_step=False)
+        self.sync_views()
+        fit_text = "planar" if fit is None else f"fit pupil {fit['fit_pupil']:g} / iris edge {fit['fit_limbus']:g}"
+        services.status(f"{label}: {'removed' if texture is None else Path(texture).name} ({fit_text})")
+        return True
+
     def export_obj(self, path: str | Path) -> bool:
         """The edit object in world space (object transform applied), one `o` record. True = written."""
         from ..obj_export import mesh_to_obj
@@ -500,8 +623,15 @@ class ObjectController:
         except MirrorRefused as exc:
             services.status(f"{label}: {exc}")
             return None
+        if source.eye is not None and normal[2] != 0.0:
+            services.status(f"{label}: {source.name!r} is an eye - mirrored front to back it would look backwards")
+            return None
         before = services.selection_snapshot()
-        obj = scene.add_object(mirror_mesh(source.mesh, normal), name=unique_object_name(scene, source.name))
+        # AD-033: an eye's copy gets a fresh shell (rotationally symmetric about the eye's axis, so the mirrored
+        # placement alone mirrors it for the X / Y planes) and the source's eye values.
+        mesh = mirror_mesh(source.mesh, normal) if source.eye is None else shell_mesh(source.eye)
+        obj = scene.add_object(mesh, name=unique_object_name(scene, source.name))
+        obj.eye = source.eye
         obj.transform, obj.pivot = mirror_placement(source, normal, offset)
         obj.material = source.material  # AD-024 Q-M2: the copy keeps the source's material
         obj.texture = source.texture  # AD-026: and its texture (the UVs come with the mesh)
@@ -541,6 +671,9 @@ class ObjectController:
             )
             return False
         driver, follower = selected
+        if normal[2] != 0.0 and (driver.eye is not None or follower.eye is not None):
+            services.status(f"{label}: an eye mirrored front to back would look backwards - pair across X or Y")
+            return False
         before = services.selection_snapshot()
         try:
             command = pair_existing_command(services.scene, driver, follower, normal, offset)
@@ -996,6 +1129,7 @@ class ObjectController:
                 parent=parent,
             )
             obj.transform, obj.pivot, obj.material, obj.hidden = source.transform, source.pivot, source.material, source.hidden
+            obj.eye = source.eye  # AD-033: a copied eye stays an eye
             copies[source.id] = obj
             steps.append(AddObjectCommand(scene, obj))
         services.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, f"{label} {len(steps)} objects"))
@@ -1093,7 +1227,8 @@ class ObjectController:
             self.highlighted(),
             scene.edit_object_id,
             tuple(
-                (oid, obj.state, obj.material, obj.texture, obj.hidden, obj.parent) for oid, obj in scene.objects.items()
+                (oid, obj.state, obj.material, obj.texture, obj.hidden, obj.parent, obj.eye, id(obj.mesh))
+                for oid, obj in scene.objects.items()
             ),
         )
 
@@ -1158,6 +1293,9 @@ class ObjectController:
             return f" · {obj.name!r} is a group - still editing {edit.name!r}"
         if obj.state is ObjectState.REFERENCE:
             return f" · {obj.name!r} is a Reference - still editing {edit.name!r}"
+        if obj.eye is not None:
+            # AD-033 Q-E5: an eye's shape comes from its values; component editing is refused.
+            return f" · {obj.name!r} is an eye - its shape comes from its eye values - still editing {edit.name!r}"
         if obj.id == edit.id:
             return f" · editing {edit.name!r}"
         owner = services.interaction_owner
@@ -1343,6 +1481,12 @@ class ObjectController:
         placed = [obj for obj in targets if not object_space.is_identity(obj.transform)]
         if not placed:
             services.status(f"{label}: nothing to do - {objects_text(targets)} not placed")
+            return False
+        eyes = [obj for obj in placed if obj.eye is not None]
+        if eyes and command != commands.CLEAR_TRANSFORM:
+            # AD-033 §4.3: the eye pass works in the eye's own space (eye-local 1 = the sclera radius); baking the
+            # placement into the shell would break that.
+            services.status(f"{label}: {eyes[0].name!r} is an eye - its placement stays an object transform")
             return False
         paired = [obj for obj in placed if services.scene.mirror_pair_of(obj.id) is not None]
         if paired:

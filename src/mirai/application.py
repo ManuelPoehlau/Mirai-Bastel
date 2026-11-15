@@ -836,6 +836,26 @@ class Application:
             lambda: PRIMITIVES[kind](), name or unique_object_name(self.scene, kind), f"Add {kind}"
         )
 
+    # -- eyes (AD-033) ------------------------------------------------------------------------------------------
+
+    def add_eye(self, name: str | None = None) -> SceneObject | None:
+        """Add an eye (AD-033 §4): a parametric eye object with the default eye values and its generated shell,
+        2.4 units across (1 unit = 1 cm), selected in mode `4`; one Undo step. See `ObjectController.add_eye`."""
+        if self.viewport is None:
+            raise RuntimeError("add_eye() before init_scene()")
+        return self._objects.add_eye(name or unique_object_name(self.scene, "Eye"))
+
+    def set_eye(self, **changes) -> bool:
+        """Set eye values (`core.EyeSpec` fields) on every selected eye; one Undo step. See `ObjectController.set_eye`."""
+        return self._objects.set_eye(**changes)
+
+    def set_eye_iris_image(self, path: str | Path | None) -> bool:
+        """The iris image of every selected eye (AD-033 §4.1: the object's texture, AD-026), one Undo step. A JSON beside
+        the image with the same name (the eye lab's `iris_custom.json` format: `pupil`, `limbus`, optional
+        `hold_outer_color`) sets the radial fit in the same step; without one the fit is cleared (planar). None removes
+        the image. True = something changed."""
+        return self._objects.set_eye_iris_image(None if path is None else Path(path))
+
     def select_objects(self, object_ids) -> bool:
         """Outliner click (AD-030): the object selection becomes exactly `object_ids` (mode `4` only; hidden and
         unknown ids are left out). True = it changed. See `ObjectController.select_objects`."""
@@ -3297,6 +3317,8 @@ class Application:
         for src in sources:
             if src.state is ObjectState.REFERENCE:
                 return plan(dst, sources, f"{label}: {src.name!r} is a Reference - locked (Alt+R makes it Normal)")
+            if src.eye is not None:
+                return plan(dst, sources, f"{label}: {src.name!r} is an eye - it stays its own object (AD-033)")
         provider = self._morph.display.provider
         involved = (dst, *sources)
         for obj in involved:

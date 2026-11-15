@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-11-15 (AD-033 eyes: `EyeSpec`, `SceneObject.eye`, format version 9); previously 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -455,6 +455,27 @@ untouched: every existing signature's behaviour on a mesh without UVs (export: o
 vertex record shapes, point layers; (5) tests `tests/test_core_face_uvs.py` (every primitive incl. seams, journal
 exactness, file validation, random sequences against U1 and exact Undo), `tests/mesh_invariants.assert_uv_invariants`,
 `tests/test_obj_uvs.py`, `tests/test_point_layers.py` (the pinned export key list now ends with `"face_uvs"`).
+
+**Decision:** AD-033 eye object, Core part (2026-11-15; [AD-033](AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md) §4; Manu:
+"Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm")
+
+Freeze rule (§7): (1) requirement — a parametric eye object whose values (anatomy, iris fit, limbus look) survive Undo /
+Redo, save / load, duplicate, delete / undo and the scene reset (AD-033 §1, §4); (2) not solvable with the public API:
+`SceneObject` has `__slots__`, a side table keyed by `ObjectId` would live outside the file format and need a remap on
+every load (AD-024 §1.2); (3) documented in AD-033; (4) smallest extension, **data only**: `src/core/scene.py` gains
+`EyeSpec` (frozen, 17 fields, every value validated with `ValueError`: the anatomy in eye-local units with its
+geometric constraints, the iris fit (both or neither, `0 < pupil < limbus <= 1`), the limbus look (`limbus_level` 0–3,
+`colour_source` "shader" / "image", `limbal_colour` in [0, 1], positive widths, `strength` in [0, 1], `overlap_mm` >= 0,
+booleans as booleans); `to_dict` / `from_dict` with exactly the field names) and `SceneObject.eye: EyeSpec | None =
+None` (one slot, one keyword argument; `None` = not an eye; no default numbers in the Core — the app's defaults are
+`mirai.eye_object.DEFAULT_EYE`). `src/core/serialization.py` writes **version 9** only when an object is an eye
+(`"eye": {...}`, absent = not an eye; else 4–8 as before) and reads 2–9; an invalid eye makes the file invalid. Exported
+from `core`. The shell mesh, the refusals (component editing, Apply transform, Attach, a front-to-back mirror), the
+Undo command (`ObjectEyeCommand`) and the drawing live in `src/mirai` / `src/viewport`. Not touched: `Mesh`,
+`Operation`, `HistoryStack`, `ObjectTransform`, `Selection`. Existing tests unchanged except the assertion that pinned 9
+as an unknown version (`test_rig.py::test_versions_2_to_8_are_read`: now 10). (5) contract tests `tests/test_eye_object.py`
+(value, validation, default None, v9 round trip, v8 without eyes, invalid eye refused, the shell) and
+`tests/test_application_eye.py` (the app path).
 
 **Decision:** AD-028 skeleton and skinning, Core part (2026-11-02; [AD-028](AD-028-SKELETON-AND-SKINNING.md) §3, §9;
 Manu's go 2026-11-02: "Go for AD-028 and the Core change with C1–C3; S1–S8 as recommended")

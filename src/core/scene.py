@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from enum import Enum
 from types import MappingProxyType
 
@@ -144,6 +144,112 @@ class ObjectMaterial:
         object.__setattr__(self, "glossiness", _unit(self.glossiness, "glossiness"))
 
 
+#: AD-033 §4.1: the eye's limbus levels and colour sources (names the file stores).
+EYE_LIMBUS_LEVELS = (0, 1, 2, 3)
+EYE_COLOUR_SOURCES = ("shader", "image")
+
+
+def _finite(value, what: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{what}: expected a number, got {value!r}") from None
+    if isinstance(value, bool) or not math.isfinite(number):
+        raise ValueError(f"{what}: expected a finite number, got {value!r}")
+    return number
+
+
+@dataclass(frozen=True)
+class EyeSpec:
+    """A parametric eye (AD-033 §4.1): the object is an eyeball whose shell mesh `src/mirai` generates from these values
+    and which the viewport shades as an eye. Data only, validated (`ValueError`); no default numbers in the Core (the
+    app's defaults live in `src/mirai/eye_object.py`), `None` at the object = not an eye.
+
+    Eye-local units: 1 = the sclera radius; the eye looks down +Z. `*_mm` values are millimetres at the reference eye
+    (sclera radius 12 mm) and scale with the eye. The iris image is the object's `texture` (AD-026); `fit_pupil` /
+    `fit_limbus` say where the image's own pupil edge / iris edge lie (shares of half the image width; both None = the
+    planar mapping), `hold_outer_color` holds the iris-edge colour beyond the limbus."""
+
+    cornea_radius: float
+    limbus_radius: float
+    iris_root_z: float
+    iris_concavity: float
+    pupil_radius: float
+    fit_pupil: float | None
+    fit_limbus: float | None
+    hold_outer_color: bool
+    limbus_level: int
+    colour_source: str
+    limbal_colour: Vec3
+    band_mm: float
+    strength: float
+    normal_mm: float
+    falloff: float
+    overlap_mm: float
+    asymmetry: bool
+
+    def __post_init__(self) -> None:
+        put = lambda name, value: object.__setattr__(self, name, value)  # noqa: E731
+        for name in ("cornea_radius", "limbus_radius", "iris_root_z", "iris_concavity", "pupil_radius", "band_mm",
+                     "strength", "normal_mm", "falloff", "overlap_mm"):
+            put(name, _finite(getattr(self, name), name))
+        if not 0.0 < self.limbus_radius < 1.0:
+            raise ValueError(f"limbus_radius: needs 0 < r < 1 (the sclera radius), got {self.limbus_radius}")
+        if not self.limbus_radius < self.cornea_radius:
+            raise ValueError("cornea_radius: the cornea sphere must be larger than the limbus circle")
+        limbus_z = math.sqrt(1.0 - self.limbus_radius ** 2)
+        if not 0.0 < self.iris_root_z < limbus_z:
+            raise ValueError(f"iris_root_z: needs 0 < z < {limbus_z:.6g} (behind the limbus plane), got {self.iris_root_z}")
+        iris_radius = math.sqrt(1.0 - self.iris_root_z ** 2)
+        if not 0.0 <= self.iris_concavity < self.iris_root_z:
+            raise ValueError(f"iris_concavity: needs 0 <= c < iris_root_z, got {self.iris_concavity}")
+        if not 0.0 < self.pupil_radius < min(self.limbus_radius, iris_radius):
+            raise ValueError(f"pupil_radius: needs 0 < r < the limbus / iris radius, got {self.pupil_radius}")
+        if (self.fit_pupil is None) != (self.fit_limbus is None):
+            raise ValueError("fit_pupil / fit_limbus: both or neither")
+        if self.fit_pupil is not None:
+            put("fit_pupil", _finite(self.fit_pupil, "fit_pupil"))
+            put("fit_limbus", _finite(self.fit_limbus, "fit_limbus"))
+            if not 0.0 < self.fit_pupil < self.fit_limbus <= 1.0:
+                raise ValueError("fit_pupil / fit_limbus: needs 0 < pupil < limbus <= 1")
+        if not isinstance(self.hold_outer_color, bool) or not isinstance(self.asymmetry, bool):
+            raise ValueError("hold_outer_color / asymmetry: expected true or false")
+        if isinstance(self.limbus_level, bool) or self.limbus_level not in EYE_LIMBUS_LEVELS:
+            raise ValueError(f"limbus_level: one of {EYE_LIMBUS_LEVELS}, got {self.limbus_level!r}")
+        if self.colour_source not in EYE_COLOUR_SOURCES:
+            raise ValueError(f"colour_source: one of {EYE_COLOUR_SOURCES}, got {self.colour_source!r}")
+        colour = _vec3(self.limbal_colour, "limbal_colour")
+        put("limbal_colour", tuple(_unit(c, "limbal_colour") for c in colour))
+        if not 0.0 < self.band_mm or not 0.0 < self.normal_mm or not 0.0 < self.falloff:
+            raise ValueError("band_mm / normal_mm / falloff: need > 0")
+        if not 0.0 <= self.strength <= 1.0:
+            raise ValueError(f"strength: needs 0 <= s <= 1, got {self.strength}")
+        if not 0.0 <= self.overlap_mm:
+            raise ValueError(f"overlap_mm: needs >= 0, got {self.overlap_mm}")
+
+    def to_dict(self) -> dict:
+        return {
+            "cornea_radius": self.cornea_radius, "limbus_radius": self.limbus_radius, "iris_root_z": self.iris_root_z,
+            "iris_concavity": self.iris_concavity, "pupil_radius": self.pupil_radius, "fit_pupil": self.fit_pupil,
+            "fit_limbus": self.fit_limbus, "hold_outer_color": self.hold_outer_color,
+            "limbus_level": self.limbus_level, "colour_source": self.colour_source,
+            "limbal_colour": list(self.limbal_colour), "band_mm": self.band_mm, "strength": self.strength,
+            "normal_mm": self.normal_mm, "falloff": self.falloff, "overlap_mm": self.overlap_mm,
+            "asymmetry": self.asymmetry,
+        }
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "EyeSpec":
+        if not isinstance(raw, dict):
+            raise ValueError(f"eye: expected an object, got {raw!r}")
+        names = [f.name for f in fields(cls)]
+        missing = [n for n in names if n not in raw]
+        unknown = sorted(set(raw) - set(names))
+        if missing or unknown:
+            raise ValueError(f"eye: missing {missing}, unknown {unknown}")
+        return cls(**{n: raw[n] for n in names})
+
+
 @dataclass(frozen=True)
 class MirrorPair:
     """Zwei Objekte, deren Platzierungen über die Weltebene `normal·x = offset` gekoppelt sind
@@ -195,7 +301,7 @@ class SceneObject:
     einfache Werte, die künftige Objekt-Commands (M1/M2) ändern.
     """
 
-    __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material", "texture", "hidden", "parent")
+    __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material", "texture", "hidden", "parent", "eye")
 
     def __init__(
         self,
@@ -210,6 +316,7 @@ class SceneObject:
         texture: str | None = None,
         hidden: bool = False,
         parent: ObjectId | None = None,
+        eye: EyeSpec | None = None,
     ) -> None:
         self._id = _require_object_id(object_id)
         self.mesh: Mesh = mesh
@@ -231,6 +338,10 @@ class SceneObject:
         # nur Commands in `src/mirai`; `Scene.set_parent` prüft Gruppe und Zyklen.
         self.hidden: bool = bool(hidden)
         self.parent: ObjectId | None = None if parent is None else _require_object_id(parent)
+        # AD-033: None = not an eye; else the eye's values (its shell mesh is generated from them in `src/mirai`).
+        if eye is not None and not isinstance(eye, EyeSpec):
+            raise TypeError(f"erwartet ein EyeSpec oder None, nicht {eye!r}")
+        self.eye: EyeSpec | None = eye
 
     @property
     def id(self) -> ObjectId:

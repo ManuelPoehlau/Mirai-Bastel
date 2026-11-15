@@ -55,6 +55,11 @@ Version 8 trägt auch die Sichtbarkeit der Knochen (Outliner 2026-11-07): ein Kn
 sichtbar). Ein Rig mit ausgeblendetem Knochen wird als Version 8 geschrieben (sonst 7), damit ein älterer Build die
 Datei ablehnt, statt die Ausblendung beim Speichern still zu verlieren.
 
+Version 9 (Augen, AD-033 §4.2, CORE_V1_FREEZE §7.1 2026-11-15) ist additiv: ein Auge trägt `"eye": {...}` (die Werte
+von `core.scene.EyeSpec`; fehlt = kein Auge). Nur geschrieben, wenn ein Objekt ein Auge ist (sonst 4-8 wie bisher), damit
+ein älterer Build die Datei ablehnt, statt die Augen beim Speichern still zu verlieren. Gelesen werden 2-9; ein ungültiges
+Auge macht die Datei ungültig.
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -67,7 +72,7 @@ import json
 from .ids import ObjectId
 from .mesh import LayerKind, Mesh
 from .rig import Rig
-from .scene import MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, Scene, SceneObject
+from .scene import EyeSpec, MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, Scene, SceneObject
 
 FORMAT_VERSION = 4
 #: Written instead of FORMAT_VERSION when any mesh has point layers (AD-025 §4.2).
@@ -78,6 +83,8 @@ UV_FORMAT_VERSION = 6
 RIG_FORMAT_VERSION = 7
 #: Written when any object is a group, hidden or in a group, or any bone is hidden (Outliner, 2026-11-07).
 GROUP_FORMAT_VERSION = 8
+#: Written when any object is an eye (AD-033 §4.2).
+EYE_FORMAT_VERSION = 9
 
 
 def scene_to_dict(scene: Scene) -> dict:
@@ -88,7 +95,9 @@ def scene_to_dict(scene: Scene) -> dict:
     grouped = any(
         obj.state is ObjectState.GROUP or obj.hidden or obj.parent is not None for obj in scene.objects.values()
     ) or (scene.rig is not None and bool(scene.rig.hidden_ids()))
-    if grouped:
+    if any(obj.eye is not None for obj in objects):
+        version = EYE_FORMAT_VERSION
+    elif grouped:
         version = GROUP_FORMAT_VERSION
     elif rigged:
         version = RIG_FORMAT_VERSION
@@ -115,7 +124,8 @@ def _has_weights(mesh: Mesh) -> bool:
 
 def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
-    if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION, GROUP_FORMAT_VERSION):
+    if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION, GROUP_FORMAT_VERSION,
+                   EYE_FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
@@ -158,6 +168,8 @@ def _object_to_dict(obj: SceneObject) -> dict:
         out["hidden"] = True  # version 8
     if obj.parent is not None:
         out["parent"] = int(obj.parent)  # version 8
+    if obj.eye is not None:
+        out["eye"] = obj.eye.to_dict()  # version 9 (AD-033); absent = not an eye
     return out
 
 
@@ -178,6 +190,7 @@ def _object_from_dict(raw: dict) -> SceneObject:
         texture=raw.get("texture"),
         hidden=bool(raw.get("hidden", False)),
         parent=None if raw.get("parent") is None else ObjectId(raw["parent"]),
+        eye=None if raw.get("eye") is None else EyeSpec.from_dict(raw["eye"]),
     )
 
 
