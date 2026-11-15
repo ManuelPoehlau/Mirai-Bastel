@@ -2,7 +2,7 @@
 
 **Status:** audit, English with a German summary. No Production change. **Phase 0 closed 2026-11-14: Manu's
 decisions are recorded in §5.1**; **Phase 1 (pure core `src/mirai/surface_slide/`) done 2026-11-15, gate G1 green:
-implementation note §13.1.** It reviews the research
+implementation note §13.1; Phase 2 (plan, region capture, symmetry) done 2026-11-15, gate G2 green: §13.3.** It reviews the research
 [SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md](SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md) (commit `ec3816d`) and
 its prototype [`experiments/surface_slide/`](../../experiments/surface_slide/README.md) against the current Production
 code at `main` @ `6282cd5`. New measurements come from six small probes in
@@ -704,10 +704,110 @@ written frame, refusals tested. Runs: the new tests, `tests/test_surface_slide_*
 
 **Done means:** G2 green, an implementation note §13.3, no app wiring.
 
+### 13.3 Implementation note — Phase 2 done (2026-11-15)
+
+**Built** (Production, in `src/mirai/surface_slide/`; no app wiring, no binding, no `keymap.json` entry, no
+`ATELIER.md` entry; nothing outside the package changed):
+
+- `capture.py` — `MeshHalf` (the capturable part of a `core.Mesh` at the press: snapshot positions, side, eligible /
+  straddling polygons, chain edges), `region_faces` / `all_faces`, `build_capture` → `SlideCapture` (reference, row ↔
+  `VertexId`, triangle → polygon, chains, `complete`).
+- `plan.py` — `plan_surface_slide(mesh, seeds, *, pivot, influence, mask, symmetry, hidden_faces) -> SlidePlan`,
+  `SurfaceSlideRefused`; `SlideSession` (region capture, growth ×2 with replay, `update` / `settle` →
+  `SlideStep(positions, flags, lagging, captures)`, positions incl. the exact mirrors).
+- `curves.py` — `EdgeChain(stop_short=, amount=)` and `ends()`; without `stop_short` bit-identical to Phase 1 (G1).
+- Package docstring: contract item 8 (driver rule, drawn half, walls, region == full).
+
+**Gate G2: green** [M] (container, NumPy 2.5.3): `tests/test_surface_slide_plan.py`, 12 tests, ≈ 7 s. Each scenario
+runs a region session and a full session side by side and writes every region frame into the mesh in one journal
+change; checked on **every written frame**: region == full **bit for bit** (positions, flags, lagging count);
+`assert_mesh_invariants`; every driven vertex on a triangle of `triangulate_mesh_face` of its own polygon at the press
+(corner ids equal, barycentrics ≥ 0, plane distance ≤ 1e-12 h), never on a hidden polygon; mirror pairs bitwise
+(`mirror_position` of the driver); every seam vertex of the mesh at x == 0 exactly; driven vertices strictly on the
+driven half; **no `AMBIGUOUS`** and every press pair still paired with its partner (also in the frames after barrier
+and chain stops); then zero drag = press bit for bit and the rollback = `export_state()` before.
+
+| Scenario | Mesh | What it shows |
+|---|---|---|
+| cheek, Soft 0.15, 15 h into the seam | cage | `BARRIER` stops backed off, pairs intact |
+| seam vertex, Soft 0.12, up and across | cage | seam row on the declared seam chain, plane pinned |
+| neck rim vertex, Soft 0.06, 12 h to the seam and back | cage | E5 along the boundary, stops short of the seam (`CHAIN_END`) |
+| seeds on both halves, pivot on −X | cage | B3: −X driven, the +X seed written as a mirror (K-near ignored) |
+| polygons hidden in the drag direction | cage | hidden polygons are walls (`BARRIER`), never entered |
+| cheek into the seam; seam vertex; no definition | head_basemesh | same on a closed quad mesh; without a definition x = 0 is no wall (crosses) |
+| margin 1 h, 15 h + 5 h drag | cage | ≥ 3 captures, every growth replayed, result == full |
+
+Plus: capture structure (driven half only, canonical order, seam edges barriers and chain, seam normals in the plane,
+capture border present / absent), mask and weights, refusals (nothing selected, all masked, pivot not a seed, a
+falloff vertex without partner, a seed without partner, a non-exact plane, a seam vertex whose polygons are hidden,
+a straddling polygon, a bowtie), `EdgeChain.stop_short`.
+Runs: the new file, `tests/test_surface_slide_core.py`, `tests/test_surface_slide_slide.py`,
+`experiments/surface_slide/tests` (G1 oracle), `tests/test_packed_geometry.py`: **342 passed**.
+
+**Found by the gate and fixed:** two rim rows walking to the seam both stopped at "98 % of the last edge" — the same
+point, so their mirrors coincided too (`AMBIGUOUS`). Rule now: a chain walk covers at most 98 % of *its own* path to a
+stop vertex, so rows stop at distinct points in their order along the chain.
+
+**Decisions made while building (DI), deviations from §13.2:**
+
+1. **Signature:** `pivot=` (default: the seed nearest to the seeds' centroid) and `hidden_faces=` (the resolved hidden
+   polygons) added; `influence` is the `SoftSettings` (None / disabled = no falloff); `mask` is the effective mask the
+   caller passes as for W/E/R (hidden vertices fully masked); `symmetry` an optional `SymmetryIndex`.
+2. **Driver rule:** a pair carries the larger of its two weights (the symmetric field gives both the same); a pivot on
+   the seam drives the seeds' side, or +normal when the seeds are on both or none (the `symmetric_influence`
+   convention). A seam vertex on no captured seam edge (its driven-side polygons hidden) does not move; as pivot it
+   refuses ("cannot slide").
+3. **Straddling** = corners strictly on both sides. Refused only where such a polygon touches a weighted vertex;
+   elsewhere it is not captured and its edges are walls. **Bowtie** is checked on the Core topology (all polygons,
+   hidden ones too) of the driven vertices.
+4. **Capture:** Dijkstra from the driven vertices over the corners of eligible polygons (straight-line steps across a
+   polygon, closer to geodesic than edges only), first margin `CAPTURE_MARGIN` = 4 h, ×2 per growth; a chain
+   component a driven vertex walks is captured whole (a chain walk never ends at the region border). Positions from
+   the press snapshot through `triangulate_face` — the rule of `triangulate_mesh_face`, which would read the
+   positions the gesture has already written.
+5. **Growth replays** every `update` / `settle` since the last exact zero drag (the pursuit carries state); with the
+   canonical order (polygons by id, triangles in triangulation order, rows by id) the larger capture reproduces the
+   full capture's frames bit for bit. Residual order dependences, none observed: `SlideReference.degenerate` scales
+   with the largest captured triangle (only above area 1), the antipodal fallback's whole-surface search when a path
+   leaves the rows.
+6. **`h`** (§13.1 item 7) = mean polygon edge of the polygons around the driven vertices: part of every capture, so
+   region and full use the same `h`; not mesh-wide (O(region)).
+7. **Vertex normals** (§13.1 item 6): angle-weighted kept (no measured reason to change); seam vertices: plane
+   component removed — exactly the direction of the half ring plus its mirror image (the half ring alone tilts it).
+8. **Chain stops (E3, E5):** the seam chain stops short of its ends, the boundary chain of its ends and of seam
+   vertices (≤ 98 % of the own path). Seam positions are pinned to the plane coordinate when written (no −0.0).
+9. Refusal texts English and `PROVISIONAL` like Vertex Slide; `SoftSymmetryRefusal` is passed on in the status line.
+
+**Container costs** [M] (indicative; P1–P8 are Phase 4, reference PC ≈ × 3 [T]):
+
+| Case | Plan | Capture + slide setup | Full capture | `update` median 2 h / 10 h | Growth frame |
+|---|---|---|---|---|---|
+| cage, Soft 0.15: 57 driven + 57 mirrored | 9–13 ms | 8–12 ms (520 of 809 half polygons) | 15–21 ms | 0.9 / 1.7 ms | 54–62 ms (replay) |
+| 20k (no definition), 987 driven | 29 ms | 31 ms (1 570 polygons, 857 B / vertex) | 335 ms | 3.6 / 6.1 ms | — |
+| 20k (no definition), 4 293 driven | 75 ms | 140 ms (5 306 polygons, 884 B / vertex) | 348 ms | 15 / 24 ms | — |
+
+Region capture removes the full-mesh capture (B2: 31 ms instead of 335 ms at ≈ 1 000 driven vertices). Arm for
+≈ 1 000 vertices ≈ 60 ms container ≈ 180 ms reference PC [T]: above P1 (100 ms); Phase 4 (the geodesic influence is
+shared with Soft Move; the capture's per-polygon Python loop). A growth frame costs the replay of the drag so far:
+measure in Phase 4; if it hitches, transplant the pursuit state into the larger capture instead (same triangles,
+same barycentrics) rather than replaying.
+
+**Observed:** `examples/meshes/gollum_20k.obj` has no exact mirror pair at all under X (21 875 `UNPAIRED`, OBJ
+rounding), so a symmetric Surface Slide refuses there, as every symmetric tool; the Gollum cage scene is exact.
+
+**Open for Phase 3** (unchanged scope): `SurfaceSlideGesture` in `controllers/gestures.py` around `SlideSession`
+(create at the press, write `SlideStep.positions` through the journal, status line from the flags and `lagging`),
+the M1 mapping at the drawn pivot depth, the morph-mix rule (E2: the plan already reads the base positions), the live
+radius change (replan + replay), the binding (E6).
+
 ## 14. Reproduce
 
 ```bash
 python -m pytest experiments/surface_slide/tests -q
+```
+
+```bash
+python -m pytest tests/test_surface_slide_core.py tests/test_surface_slide_slide.py tests/test_surface_slide_plan.py -q
 ```
 
 ```bash

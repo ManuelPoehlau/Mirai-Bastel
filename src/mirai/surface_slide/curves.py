@@ -11,6 +11,12 @@ A walk is described by the vertex it starts at, the *arm* (the chain neighbour i
 arm is the chain edge the tangent points along best (positive component only); the length is the tangent's component
 along that first edge (the prototype's rule). At every further vertex the walk takes the chain edge it did not come
 by; it stops with `FLAG_CHAIN_END` where the chain ends or branches, and where a closed loop comes back to its start.
+
+`stop_short` (Phase 2, E3): vertices a walk never reaches. A walk towards one covers at most `amount` of its own path
+to it (flag `FLAG_CHAIN_END` when that caps it), so an open-boundary row never lands on the mirror plane at the seam,
+where it would coincide with its own mirror partner (`AMBIGUOUS`), nor on a chain end; and two rows walking towards
+the same stop vertex stop at different points, in their order along the chain (a cap of a fixed fraction of the last
+edge would stack them on one point). Precedent: Vertex Slide's 98 % of the way under symmetry.
 """
 
 from __future__ import annotations
@@ -18,15 +24,18 @@ from __future__ import annotations
 from viewport.packed_geometry import np  # NumPy behind its pinned-version check (AD-032 §2)
 
 from .reference import BOUNDARY_EDGE, SlideReference
-from .tracer import FLAG_CHAIN_END, FLAG_STUCK
+from .tracer import BARRIER_MAX_AMOUNT, FLAG_CHAIN_END, FLAG_STUCK
 
 _I = np.intp
 
 
 class EdgeChain:
-    """The chain of `edges` (`(k, 2)` reference rows, either order) on `ref` (module docstring)."""
+    """The chain of `edges` (`(k, 2)` reference rows, either order) on `ref` (module docstring). `stop_short`: rows
+    a walk never reaches; it covers at most `amount` of its path to one."""
 
-    def __init__(self, ref: SlideReference, edges) -> None:
+    def __init__(self, ref: SlideReference, edges, *, stop_short=(), amount: float = BARRIER_MAX_AMOUNT) -> None:
+        if not 0.0 < amount < 1.0:
+            raise ValueError("amount must be in (0, 1)")
         edges = np.asarray(edges, dtype=_I).reshape(-1, 2)
         tri, k = ref.edge_slots(edges)
         if np.any(tri < 0):
@@ -45,11 +54,40 @@ class EdgeChain:
         mask[list(self.nbrs)] = True
         self.on_chain = mask
         self.on_chain.flags.writeable = False
+        self.stop_short = frozenset(int(r) for r in np.asarray(stop_short, dtype=_I).reshape(-1).tolist())
+        self.amount = float(amount)
+        self._caps: dict[tuple[int, int], float | None] = {}
+
+    def ends(self) -> list[int]:
+        """The rows where the chain ends or branches (chain degree other than 2), ascending."""
+        return sorted(v for v, n in self.nbrs.items() if len(n) != 2)
 
     @classmethod
-    def boundary(cls, ref: SlideReference) -> "EdgeChain":
+    def boundary(cls, ref: SlideReference, *, stop_short=(), amount: float = BARRIER_MAX_AMOUNT) -> "EdgeChain":
         """The chain of every open boundary edge of `ref` (not barriers, not capture borders)."""
-        return cls(ref, ref.edges_with_code(BOUNDARY_EDGE))
+        return cls(ref, ref.edges_with_code(BOUNDARY_EDGE), stop_short=stop_short, amount=amount)
+
+    def _cap(self, row: int, neighbour: int) -> float | None:
+        """`amount` x the path length from `row` (leaving by `neighbour`) to the first stop vertex, None when the walk
+        meets none before the chain ends or a loop closes."""
+        key = (row, neighbour)
+        if key in self._caps:
+            return self._caps[key]
+        V = self.ref.V
+        cap = None
+        total = 0.0
+        prev, cur = row, neighbour
+        for _ in range(self.n_edges + 1):
+            total += float(np.linalg.norm(V[cur] - V[prev]))
+            if cur in self.stop_short:
+                cap = self.amount * total
+                break
+            onward = [o for o in self.nbrs[cur] if o != prev]
+            if len(onward) != 1 or cur == row:
+                break
+            prev, cur = cur, onward[0]
+        self._caps[key] = cap
+        return cap
 
     def arm(self, row: int, tangent) -> tuple[int, float]:
         """`(neighbour, length)`: the chain edge at `row` the tangent points along best and the tangent's component
@@ -71,6 +109,11 @@ class EdgeChain:
         if neighbour < 0 or not length > 0.0:
             t, b = ref.vertex_anchor(np.array([row]))
             return int(t[0]), b[0], 0.0, 0
+        capped = 0
+        if self.stop_short:
+            cap = self._cap(row, int(neighbour))
+            if cap is not None and length > cap:
+                length, capped = cap, FLAG_CHAIN_END
         remaining = float(length)
         travelled = 0.0
         prev, cur = row, int(neighbour)
@@ -83,7 +126,7 @@ class EdgeChain:
                 ia = ka if ref.T[t, ka] == prev else kb
                 ib = kb if ia == ka else ka
                 bary[ia], bary[ib] = 1.0 - f, f
-                return t, bary, travelled + remaining, 0
+                return t, bary, travelled + remaining, capped
             remaining -= seg
             travelled += seg
             onward = [o for o in self.nbrs[cur] if o != prev]
