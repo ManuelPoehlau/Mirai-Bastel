@@ -1,10 +1,10 @@
 {
   "version": 6,
-  "object_id_counter": 3,
-  "edit_object": 2,
+  "object_id_counter": 10,
+  "edit_object": 9,
   "objects": [
     {
-      "id": 2,
+      "id": 9,
       "name": "Dragon_retopo_low2_1 ZBrush",
       "state": "normal",
       "transform": {
@@ -84718,16 +84718,16 @@
       "space": "world",
       "edit": {
         "space": "world",
-        "key_azimuth": -50.5,
-        "key_elevation": 9.5,
-        "key_intensity": 0.6,
-        "key_kelvin": 4500.0,
+        "key_azimuth": -142.0,
+        "key_elevation": 35.0,
+        "key_intensity": 1.5,
+        "key_kelvin": 10000.0,
         "key_wrap": 0.0,
         "fill_coupled": true,
         "fill_azimuth": 135.0,
         "fill_elevation": -35.0,
-        "fill_ratio": 2.0,
-        "fill_kelvin": 8000.0,
+        "fill_ratio": 3.0,
+        "fill_kelvin": 3000.0,
         "fill_wrap": 0.0,
         "ambient": 0.1
       }
@@ -84741,18 +84741,18 @@
     "reference_ghost": false,
     "camera": {
       "target": [
-        -1.989046922954906,
-        2.363976182537757,
-        -2.393034069802881
+        -0.9119741649834515,
+        2.6440560860934066,
+        -0.7844491210424481
       ],
-      "distance": 26.441208227638665,
-      "yaw": -13.175796326794847,
-      "pitch": 0.2285298641951805,
+      "distance": 40.483193352985225,
+      "yaw": -12.120796326794759,
+      "pitch": 0.21352986419518283,
       "fov_degrees": 50.0,
       "ortho": false
     },
     "subd": {
-      "view": "cage",
+      "view": "off",
       "level": 1,
       "cage_depth_test": true,
       "secondary_strength": 0.35,
