@@ -2394,6 +2394,8 @@ class Application:
             return self._gestures.arm_extrude(key, origin)
         if command == commands.LOOP_SLIDE:
             return self._gestures.arm_slide(key, origin)
+        if command == commands.SURFACE_SLIDE:
+            return self._gestures.arm_surface_slide(key, origin)
         if command in SMOOTH_COMMANDS:
             return self._gestures.arm_smooth(command, key, origin)
         if command == commands.INSET:

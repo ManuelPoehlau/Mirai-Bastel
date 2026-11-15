@@ -80,6 +80,7 @@ _TOOL_NAMES = {
     commands.SCALE: "Scale",
     commands.EXTRUDE: "Extrude",
     commands.LOOP_SLIDE: "Loop Slide",
+    commands.SURFACE_SLIDE: "Surface Slide",
     commands.SMOOTH: "Smooth",
     commands.RELAX: "Relax",
     commands.INSET: "Inset",

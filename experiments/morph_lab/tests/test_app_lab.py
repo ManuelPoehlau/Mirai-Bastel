@@ -575,7 +575,7 @@ def test_unreadable_sent_file_is_a_lab_scene_error(tmp_path):
 # -- jaw pose ---------------------------------------------------------------------------------
 
 JAW_OPEN_KEY, JAW_CLOSE_KEY, JAW_FINE_KEY = _key("right", "alt"), _key("left", "alt"), _key("right", "alt", "shift")
-JAW_TOGGLE_KEY, JAW_HINGE_KEY = _key("j"), _key("j", "shift")
+JAW_HINGE_KEY = _key("j", "shift")
 
 
 def name_jaw_group(app, lab):
@@ -607,11 +607,9 @@ def test_jaw_keys_pose_the_group_without_history_or_changing_the_meshes(lab_app)
     assert moved and moved - inside  # falloff reaches past the group
     assert (base.mesh.export_state(), target.mesh.export_state()) == states
     assert len(app.history) == undo_steps
-    press(app, lab, JAW_TOGGLE_KEY)
+    press(app, lab, JAW_CLOSE_KEY, JAW_CLOSE_KEY, _key("left", "alt", "shift"))
     frame(app)
     assert lab.provider.jaw_angle == 0 and app.viewport.surface_render_mesh is None
-    press(app, lab, JAW_TOGGLE_KEY)
-    assert lab.provider.jaw_angle == 11
 
 
 def test_jaw_pose_follows_the_morph_weight(lab_app):

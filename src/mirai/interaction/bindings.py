@@ -323,6 +323,8 @@ def build_default_bindings() -> BindingSet:
     bs.set_default(_key("r", "shift"), cmd.EDGE_RING)
     bs.set_default(_key("i"), cmd.LOOP_INSERT)
     bs.set_default(_key("g"), cmd.LOOP_SLIDE)
+    # Surface Slide (audit 2026-11-14 §13.4, E6): hold J. Key: Manu 2026-11-15 ("J").
+    bs.set_default(_key("j"), cmd.SURFACE_SLIDE)
     # Inset / Bevel (2026-10-29, `PROVISIONAL` engineering keys, Blender's): I in face mode is Inset (resolved in
     # `Application.key_press`; I in edge mode stays Loop Insert), so INSET has no binding of its own. Hold Ctrl+B =
     # Bevel of the vertices / edges / faces' edges of the active mode (Ctrl+B was free in the code defaults and in

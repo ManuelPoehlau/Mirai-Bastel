@@ -2,7 +2,8 @@
 
 **Status:** audit, English with a German summary. No Production change. **Phase 0 closed 2026-11-14: Manu's
 decisions are recorded in §5.1**; **Phase 1 (pure core `src/mirai/surface_slide/`) done 2026-11-15, gate G1 green:
-implementation note §13.1; Phase 2 (plan, region capture, symmetry) done 2026-11-15, gate G2 green: §13.3; Phase 3 handoff: §13.4.** It reviews the research
+implementation note §13.1; Phase 2 (plan, region capture, symmetry) done 2026-11-15, gate G2 green: §13.3; Phase 3
+(gesture on hold `J`, E6 answered 2026-11-15) done 2026-11-15, gate G3 green: §13.5.** It reviews the research
 [SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md](SURFACE_SLIDE_ALGORITHM_RESEARCH_2026-11-13.md) (commit `ec3816d`) and
 its prototype [`experiments/surface_slide/`](../../experiments/surface_slide/README.md) against the current Production
 code at `main` @ `6282cd5`. New measurements come from six small probes in
@@ -412,7 +413,7 @@ Bedienungsintegration. Damit können wir Phase 0 sauber abschließen und anschli
 | E3 | **No crossing** of the mirror plane: driven vertices stop short of the seam (back-off, precedent 98 %) | **decided** |
 | E4 | V1 without pivot-under-cursor, mapping M1 | **default for the build; verdict in the practical test (Phase 5)** |
 | E5 | Vertices on open boundaries **slide along the boundary** (edge-chain walker, as the seam) | **decided** |
-| E6 | Binding / tool entry | **open until the operational integration (Phase 3)**; no `keymap.json` entry before Manu's explicit approval |
+| E6 | Binding / tool entry | **decided 2026-11-15** (Phase 3, Manu: „J“): hold `J`, its own key beside `G`; in `config/keymap.json` with `"set": "2026-11-15"` (§13.5) |
 | E7 | Lagging vertex at release: commit as shown | **default for the build; verdict in the practical test** |
 | E8 | SubD preview on: slide on the cage | **decided** |
 | E9 | Direction model `transport` | **decided** |
@@ -511,7 +512,7 @@ Soft Move at that size.
 | **0 — Decisions** | E1, E2, E3, E5 answered; this audit's B1–B3 specs accepted; E6 when Phase 3 starts | Manu's answers recorded in this file — **done 2026-11-14 (§5.1)** |
 | **1 — Pure core** | Port `reference`, `tracer`, `curves`, pursuit to `src/mirai/surface_slide/` on index arrays; transport per §3.2 | **G1**: on the report's 76 scenarios the port matches the prototype (oracle, like `knife_oracle`) to ≤ 1e-12 h for every geodesic candidate kept; prototype claims re-asserted (0 region jumps, step ratio ≤ 2, exact zero restore, weight 0 untouched, tracked deviation ≤ 1e-12 h); new tests: thin fin, boundary hit, near-zero loop, chase degenerate gap, transport jump metric (direct vs tree), antipodal normals |
 | **2 — Plan, capture, symmetry** | `plan_surface_slide`, region capture from `core.Mesh` with `triangulate_mesh_face`, seam / boundary chains, barrier back-off, refusals | **G2**: on the Gollum cage and `examples/meshes/head_basemesh.obj`: mirror pairs bitwise exact, seam coordinate exactly 0, no `AMBIGUOUS` after a barrier stop, every driven vertex on the *drawn* triangles of its face (≤ 1e-12 h), region capture == full capture bit for bit, `tests/mesh_invariants.py` after every gesture, refusals tested |
-| **3 — Gesture** | `SurfaceSlideGesture`, M1 mapping at the drawn depth, morph-mix rule (E2, tested on `scenes/Gollum_Head_01_Morphs.mirai.json`), binding (E6) | **G3**: one history entry; Undo / Redo exact; Esc and zero drag bit-exact (`export_state` equality); held-gesture refusals; posed refusal; mix 0 % ≡ no target; `pytest tests` fully and GL tests in their own process (AGENTS.md §8a), `experiments/morph_lab/tests`, the Knife oracle (shared triangulation untouched) |
+| **3 — Gesture** | `SurfaceSlideGesture`, M1 mapping at the drawn depth, morph-mix rule (E2, tested on `scenes/Gollum_Head_01_Morphs.mirai.json`), binding (E6) — **done 2026-11-15 (§13.5)** | **G3**: one history entry; Undo / Redo exact; Esc and zero drag bit-exact (`export_state` equality); held-gesture refusals; posed refusal; mix 0 % ≡ no target; `pytest tests` fully and GL tests in their own process (AGENTS.md §8a), `experiments/morph_lab/tests`, the Knife oracle (shared triangulation untouched) |
 | **4 — Performance** | Optimisations 1–3, probe | **G4**: container proxies of P1–P8; then a reference-PC run by Manu against P1–P8 |
 | **5 — Practical test** | Short German test for Manu: cheek, brow, lid rim, lip, nose; with and without symmetry; soft radii; at 0 % and 100 % mix | **G5**: Manu's verdicts on E4, E7, E10 recorded; keymap entry only after his explicit approval |
 | 6 — V1.1 (optional) | Phong / kept reference / cursor M2 / shape correction, each only on a recorded need | per item |
@@ -874,6 +875,85 @@ Knife oracle (`experiments/knife_oracle`, the triangulation is untouched — con
 **Done means:** G3 green; E6 asked (bound only if Manu answered); docs in the same commit — `docs/ATELIER.md` entry only
 once it has a key (it is then visible), the gesture list of `AD-027-INTERACTION-LAYER-SESSION-SLOT.md`, `docs/research/README.md`; an implementation note §13.5.
 
+### 13.5 Implementation note — Phase 3 done (2026-11-15)
+
+**E6 answered** (Manu, chat 2026-11-15, asked before the build): **„J“** — hold `J` starts Surface Slide, its own key
+beside `G`. Default in `interaction/bindings.py` and entry in `config/keymap.json` with `"set": "2026-11-15"`. Bare `J`
+was the Morph Lab's jaw toggle (0° ↔ last angle; the lab refuses to start on a taken key, AD-013 H2-R1); asked,
+Manu: „Das Morphlab wird eh ausgebaut, dort kann die Taste weg.“ — removed from `experiments/morph_lab` (key, command,
+README; `Shift+J` = hinge stays, it is free in the app).
+
+**Built** (Production; `src/mirai/surface_slide/` unchanged except its package docstring, so G1 / G2 untouched):
+
+- `commands.SURFACE_SLIDE` (`"SurfaceSlide"`): in `HOLD_COMMANDS`, **position-only** in `layer_declarations` (posed
+  refusal, AD-028 §7.1), in `TRANSFORM_COMMANDS` (dispatch through `_run_gesture`, the status labels, and — through
+  `objects.COMPONENT_COMMANDS` — the refusal in mode `4`), in `UNCONSTRAINED_GESTURES` and in the Shift precision
+  tuple of `GestureSession.motion`. Not in `_TOPOLOGY_COMMANDS` (hidden faces are walls, not a refusal).
+- `Application._transform_arm` → `GestureController.arm_surface_slide`; `GestureController.surface_slide_plan`
+  (`plan_surface_slide` with `services.soft_settings`, `mask_values(seeds)`, `hidden_faces()`).
+- `SurfaceSlideGesture(_SlideGesture)` and `surface_slide_weights(plan)` in `controllers/gestures.py`;
+  `AppServices.hidden_faces()` (as `hidden_vertices`). `_SlideGesture` takes the command (default `LOOP_SLIDE`) and
+  records every vertex it wrote (`touched`), so Esc tells the viewport about all of them, also after a re-plan.
+- HUD tool name „Surface Slide“.
+
+**Gate G3: green** [M] (container): `tests/test_surface_slide_gesture.py`, 12 tests, ≈ 3 s, headless `Application` on
+the Gollum cage and on `scenes/Gollum_Head_01_Morphs.mirai.json`, the default key `J`:
+
+| Test | What it pins |
+|---|---|
+| one entry, Undo / Redo | one History entry, `export_state()` equal after Undo and Redo, `SymmetryState.VALID` and every mirror pair bitwise after release and after Redo, `tests/mesh_invariants.py` |
+| Esc / drag back | Esc after motion and a drag back to the press pixel: `export_state()` bit-exact, no entry |
+| press without motion | „Surface Slide: no change“, nothing written, no entry |
+| held gesture | `W` / `G` refused (one gesture), Ctrl+Z / Ctrl+Y / `C` / `2` / `3` / `4` change nothing and the gesture stays |
+| refusals at the press | nothing selected or hovered, all masked, a vertex off its mirror image: status line, no session |
+| object mode, posed | `4`: refused, nothing written; posed rig with a bound mesh: „is posed“, then at rest it arms |
+| mix 0 % | the gesture on the base at 0 % == the same gesture with the targets removed, every vertex bit for bit |
+| mix 100 % (Jaw_Open) | the mapping point is the drawn pivot (≤ 1e-12), the world delta is the mapping at the drawn depth (and differs from the rest depth); every driven vertex on a drawn triangle of the **press base** (≤ 1e-12 h); the offsets bit-identical |
+| target editing view (H4) | slides the view (the target shape), as W does; Undo restores the offsets |
+| Soft live | wheel during the gesture: new weights, still one entry (Undo exact), Esc exact, symmetric frames |
+| hidden faces | never entered (anchors checked every frame), rows stop at them („at a wall“), only plan vertices move |
+
+Runs: the new file; `tests/test_surface_slide_*.py` with the G1 oracle (`experiments/surface_slide/tests`): **335 passed**; `pytest tests`
+fully under `xvfb-run`: **7 086 passed, 8 skipped, 4 failed** — three tests used bare `J` as "the unbound key" or listed the
+hold family (`test_input_binding`, `test_keymap_config` ×2: now `0` and `SURFACE_SLIDE`, then 124 passed), and
+`tests/test_scene_menu_local_tmp.py::test_probe_menu_wiring` fails the same way without this change (pre-existing, step
+5: W in the fake window arms no gesture; not touched here); the GL tests in their own process: **194 passed**; `experiments/morph_lab/tests`
+(after the J removal): **49 passed** — before it, the lab's binding check failed on `J` (3 failed, 27 errors: that is
+how the conflict was found); the Knife oracle (`experiments/knife_oracle`): **351 passed**, the triangulation is untouched.
+
+**Decisions made while building (DI), deviations from §13.4:**
+
+1. **Hover fallback:** the vertices of the hovered element of the active mode (`element_vertices`, the W/E/R rule),
+   not only a hovered vertex. **Pivot:** the hovered vertex when it is a seed *and* not fully masked, else the plan's
+   default (a masked hovered seed would otherwise refuse the whole gesture).
+2. **M1 mapping:** `edit_camera.screen_delta_to_world(anchor, Σdx, Σdy, w, h)` once per motion (object space, as every
+   gesture), `anchor` = the pivot's press position plus `shown_shift`, fixed at the press. `|Σ| ≤ 1e-9 px` per axis
+   (`SURFACE_SLIDE_ZERO_PX`) gives the exact zero vector, so `SlideSession` resets and writes the press state.
+3. **Shift** scales the motion by `PRECISION_GAIN` as Move; a drag back while Shift changed is, as for Move, not
+   bit-exact (the pixel sum is not 0).
+4. **Soft live:** writes `plan.origins` back (inside the journal), re-plans from the press with the same seeds and
+   pivot, a new `SlideSession` and **one** `update` with the current delta (no replay of the drag history; rows may
+   lag after a step, the pursuit closes in on the next motions). A refusal keeps the old plan and re-writes what it
+   showed. The weights shown: driven vertices and, for mirrored ones, their driver's weight.
+5. **„In `GESTURE_REFUSES` like the other hold keys“** read as: the same path as the other hold keys — none of them is
+   a member of `GESTURE_REFUSES`; a second hold key is refused by `_transform_arm` (one gesture in the slot), which
+   holds for `J` too (tested with `W` and `G`).
+6. **Target editing view (H4):** W/E/R edit the view's mesh (the target shape); Surface Slide does the same — the plan
+   reads the edit mesh, which is the view, and `shown_shift` is None there. Tested.
+7. **Status line** (`PROVISIONAL`): arm „Surface Slide: N vertices [(Soft: wheel = radius)] [(symmetric)] - move the
+   mouse, release J to commit“ (N counts the mirrored vertices); per frame „Surface Slide: 2.4 h · k at a wall · k at
+   a chain end · k lagging“ (the drag's tangent length in `h`; `BOUNDARY | BARRIER` = wall); the symmetric field's
+   refusal text is passed on unchanged (German, from `soft_selection`).
+8. Release commits what is shown (E7 default); `settle` is not wired.
+
+**Container costs** [M] (indicative, measured while the full suite ran in parallel; P1–P8 are Phase 4): Gollum cage,
+cheek, hold J — no Soft (1 driven + 1 mirrored): arm 15 ms, motion median 0.5 ms (p95 1.0 ms); Soft 0.15 (60 driven
++ 60 mirrored): arm 25 ms, motion median 1.5 ms (p95 2.0 ms).
+
+**Open** (unchanged scope): Phase 4 (P1 arm time at 1 000+ vertices, the growth-replay hitch, §13.3), Phase 5 practical
+test (E4 cursor M1, E7 lag at release, E10 shape correction; how the key feels), the cursor mapping M2, Phong, a kept
+reference.
+
 ## 14. Reproduce
 
 ```bash
@@ -881,7 +961,7 @@ python -m pytest experiments/surface_slide/tests -q
 ```
 
 ```bash
-python -m pytest tests/test_surface_slide_core.py tests/test_surface_slide_slide.py tests/test_surface_slide_plan.py -q
+python -m pytest tests/test_surface_slide_core.py tests/test_surface_slide_slide.py tests/test_surface_slide_plan.py tests/test_surface_slide_gesture.py -q
 ```
 
 ```bash

@@ -53,7 +53,6 @@ JAW_OPEN = "MorphJawOpen"
 JAW_CLOSE = "MorphJawClose"
 JAW_OPEN_FINE = "MorphJawOpenFine"
 JAW_CLOSE_FINE = "MorphJawCloseFine"
-JAW_TOGGLE = "MorphJawToggle"
 JAW_SET_HINGE = "MorphJawSetHinge"
 EDIT_BASE = "MorphEditBase"
 EDIT_TARGET = "MorphEditTarget"
@@ -102,7 +101,7 @@ LAB_KEYS: tuple[LabKey, ...] = (
     LabKey(_key("left", "alt"), JAW_CLOSE, f"Kiefer -{JAW_STEP} Grad (schließen)"),
     LabKey(_key("right", "alt", "shift"), JAW_OPEN_FINE, f"Kiefer +{JAW_FINE_STEP} Grad"),
     LabKey(_key("left", "alt", "shift"), JAW_CLOSE_FINE, f"Kiefer -{JAW_FINE_STEP} Grad"),
-    LabKey(_key("j"), JAW_TOGGLE, "Kiefer: 0 Grad <-> zuletzt eingestellter Winkel"),
+    # bare J (jaw 0 <-> last angle) removed 2026-11-15: the app's Surface Slide (Manu: "dort kann die Taste weg").
     LabKey(_key("j", "shift"), JAW_SET_HINGE, "Kiefer-Scharnier = Mitte der ausgewählten Punkte (nichts gewählt: automatisch)"),
     LabKey(_key("comma"), EDIT_BASE, "Basis bearbeiten"),
     LabKey(_key("period"), EDIT_TARGET, "Ziel 1 bearbeiten"),
@@ -154,8 +153,6 @@ class MorphAppLab:
         )
         #: the weight the A/B key returns to (the last one above 0 %)
         self.ab_weight = MAX_WEIGHT
-        #: the angle the jaw key returns to (the last one away from 0)
-        self.ab_jaw = JAW_STEP * 4
 
     def attach(self, viewport) -> None:
         viewport.set_surface_provider(self.provider)
@@ -171,10 +168,7 @@ class MorphAppLab:
         return weight
 
     def set_jaw_angle(self, angle: int) -> int:
-        angle = self.provider.set_jaw_angle(angle)
-        if angle != 0:
-            self.ab_jaw = angle
-        return angle
+        return self.provider.set_jaw_angle(angle)
 
     def set_jaw_hinge(self) -> bool:
         """Shift+J: the hinge is the centre of the selected vertices (rest position of the base);
@@ -220,10 +214,6 @@ class MorphAppLab:
             return True
         if command in JAW_STEPS:
             self.set_jaw_angle(self.provider.jaw_angle + JAW_STEPS[command])
-            self.app.set_status(f"Kiefer: {self.provider.jaw_angle} Grad")
-            return True
-        if command == JAW_TOGGLE:
-            self.provider.set_jaw_angle(self.ab_jaw if self.provider.jaw_angle == 0 else 0)
             self.app.set_status(f"Kiefer: {self.provider.jaw_angle} Grad")
             return True
         if command == JAW_SET_HINGE:

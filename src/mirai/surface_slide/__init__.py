@@ -11,7 +11,8 @@ no GUI, no input types; NumPy only through `viewport.packed_geometry` (AD-032). 
 which reads a `core.Mesh` through its query API and never writes it: `capture` (the drawn triangles of the driven
 half, region-limited, `MeshHalf`, `SlideCapture`) and `plan` (`plan_surface_slide` -> `SlidePlan`: weights, the
 symmetry driver rule, refusals; `SlideSession`: region growth with replay, the positions to write including the exact
-mirrors). The gesture, the cursor mapping and the binding are Phase 3 (E6).
+mirrors). The gesture (hold J, Manu 2026-11-15, E6) is `controllers.gestures.SurfaceSlideGesture` (Phase 3, audit
+§13.5): it creates the `SlideSession` at the press, maps the pointer (M1) and writes through the journal.
 
 **Contract** (report §14.4 as amended by the audit):
 

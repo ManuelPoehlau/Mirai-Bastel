@@ -181,7 +181,7 @@ _NON_MESH_COMMANDS = (
 #: W/E/R are the object gesture (placement only).
 _POSITION_ONLY_COMMANDS = (
     commands.MOVE, commands.ROTATE, commands.SCALE, commands.TWEAK, commands.LOOP_SLIDE,
-    commands.SMOOTH, commands.RELAX, commands.RESYMMETRIZE, commands.SEAM_TO_PLANE,
+    commands.SURFACE_SLIDE, commands.SMOOTH, commands.RELAX, commands.RESYMMETRIZE, commands.SEAM_TO_PLANE,
 )
 
 #: Locked: constants no `Application` path handles (fail-closed). Phase 5 lifted the H1 locks.

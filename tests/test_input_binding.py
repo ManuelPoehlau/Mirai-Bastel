@@ -146,8 +146,8 @@ class DefaultBindingsTests(unittest.TestCase):
         self.assertEqual(self.bs.command_for(_drag("LEFT", "alt")), cmd.ORBIT)
 
     def test_unbound_input_resolves_to_none(self):
-        # X ist seit WP-06 B4 ConstrainAxisX; J ist unbelegt.
-        self.assertIsNone(self.bs.command_for(_key("j")))
+        # X ist seit WP-06 B4 ConstrainAxisX; J seit 2026-11-15 Surface Slide; 0 ist unbelegt.
+        self.assertIsNone(self.bs.command_for(_key("0")))
 
 
 class BindingOverrideTests(unittest.TestCase):

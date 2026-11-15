@@ -184,7 +184,7 @@ same moments, never a camera gesture (H2-R2).
 
 | Interaction | Today | Becomes | owner | grabs | ends |
 |---|---|---|---|---|---|
-| hold-key gestures: W/E/R (components), T, G (Loop / Vertex Slide), S / Alt+S, I (faces), Ctrl+B; the gizmo / `Tweak` LMB drag | `_transform_*` (5), `_extrude_*` (3), `_slide_*` (5), `_vslide_*` (3), `_offset`, `_smooth_*` (5), `_constraint_retouched`, `_rotate_press`, `_rotate_virtual`, `_ctrl_snap_ok`, `_soft_gesture`, `_soft_gesture_reference`, `_soft_op_running`, `_soft_gesture_shown` | `GestureSession`, one kind per gesture | `"transform"` | nothing | its key or LMB release (commit), Cancel, a refusal at `begin()` |
+| hold-key gestures: W/E/R (components), T, G (Loop / Vertex Slide), J (Surface Slide, 2026-11-15), S / Alt+S, I (faces), Ctrl+B; the gizmo / `Tweak` LMB drag | `_transform_*` (5), `_extrude_*` (3), `_slide_*` (5), `_vslide_*` (3), `_offset`, `_smooth_*` (5), `_constraint_retouched`, `_rotate_press`, `_rotate_virtual`, `_ctrl_snap_ok`, `_soft_gesture`, `_soft_gesture_reference`, `_soft_op_running`, `_soft_gesture_shown` | `GestureSession`, one kind per gesture | `"transform"` | nothing | its key or LMB release (commit), Cancel, a refusal at `begin()` |
 | object gesture (W/E/R in `4`) | `_object_gesture` | a `GestureSession` kind (ObjectController) | `"transform"` | nothing | same |
 | Knife | 13 `_knife*` fields | `KnifeSession` | `"knife"` | keys (resolved in `knife`), plain / Shift LMB and the KnifeLift button (press, drag, release), motion, hover, Shift held, Soft wheel steps, leave | Enter (commit), Esc (cancel) |
 | Re-Symmetrize preview | `_resym_plan` | `ResymPreview` | `"resymmetrize"` | keys, select / region clicks, select / Tweak drags, gizmo press, Soft wheel steps, hover | Alt+M again (commit), Esc |
@@ -525,7 +525,9 @@ and its rows below; a session ends with its steps green (E1, E2, targeted tests)
   command, target, begun, space, the retouched constraint, the dial's press point and virtual cursor, Ctrl snap,
   the gesture's Soft settings and the display it owns) is the session's; the kinds are subclasses:
   `TransformGesture` (Move / Rotate / Scale through the `ToolManager`, also from the gizmo / Tweak origin),
-  `ExtrudeGesture`, `LoopSlideGesture` / `VertexSlideGesture`, `SmoothGesture`, `OffsetGesture` (Inset / Bevel).
+  `ExtrudeGesture`, `LoopSlideGesture` / `VertexSlideGesture`, `SmoothGesture`, `OffsetGesture` (Inset / Bevel);
+  since 2026-11-15 also `SurfaceSlideGesture` (hold J, a `_SlideGesture` around `mirai.surface_slide.SlideSession`;
+  Surface Slide audit 2026-11-14 §13.5).
   Moved one kind per commit (C3), the not-yet-moved kinds running meanwhile as a transitional `_AppGesture` with
   their code still in `Application`; E1 and E2 after each. Routing: the motion reaches the gesture through stage 3,
   its key release through `slot.handle(KeyRelease)`; Alt still borrows the motion for the camera in front of the

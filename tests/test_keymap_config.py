@@ -127,7 +127,7 @@ def test_a_hold_command_off_a_key_makes_the_file_invalid(tmp_path, command, kind
 
 def test_the_hold_family_is_the_set_application_arms_on_a_key():
     assert cmd.HOLD_COMMANDS == {
-        cmd.MOVE, cmd.ROTATE, cmd.SCALE, cmd.EXTRUDE, cmd.LOOP_SLIDE, cmd.SMOOTH, cmd.RELAX, cmd.INSET, cmd.BEVEL,
+        cmd.MOVE, cmd.ROTATE, cmd.SCALE, cmd.EXTRUDE, cmd.LOOP_SLIDE, cmd.SURFACE_SLIDE, cmd.SMOOTH, cmd.RELAX, cmd.INSET, cmd.BEVEL,
         cmd.LASSO_ARM, cmd.LIGHT_DRAG, cmd.MORPH_WEIGHT_DRAG, cmd.PIVOT_PLACE, cmd.WEIGHTS_FROM_GROUP, cmd.WEIGHT_SET,
     }
 
@@ -194,12 +194,12 @@ def test_an_invalid_keymap_starts_the_app_with_the_defaults_and_says_so_loudly(t
 def test_an_invalid_file_applies_none_of_its_valid_entries(tmp_path):
     path = _write(
         tmp_path,
-        _entry("global", "key", "j", [], cmd.SCALE),
+        _entry("global", "key", "0", [], cmd.SCALE),
         _entry("global", "wheel", "UP", [], cmd.MOVE),  # hold command off a key
     )
     bindings = build_default_bindings()
     assert load_keymap(bindings, path).status == "invalid"
-    assert bindings.command_for(_key("j")) is None
+    assert bindings.command_for(_key("0")) is None
 
 
 def test_a_missing_keymap_is_quiet(tmp_path):

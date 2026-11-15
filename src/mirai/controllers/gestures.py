@@ -1,7 +1,7 @@
 """GestureController (AD-027 §3.4): the hold-key gestures as sessions in the slot (`GestureSession`, one kind per
 gesture), their sticky constraint settings and the Soft live radius / flow of a running gesture.
 
-A gesture is armed by its key (W/E/R, T, G, S / Alt+S, I in face mode, Ctrl+B) or by an LMB drag (a gizmo handle,
+A gesture is armed by its key (W/E/R, T, G, J, S / Alt+S, I in face mode, Ctrl+B) or by an LMB drag (a gizmo handle,
 the `Tweak` drag command: `TWEAK_KEY`); nothing moves before the first motion (AD-016); the release of its key (or
 of the LMB) commits at most one History entry, Esc restores the exact prior state. While it runs it is the slot's
 session (owner `"transform"`): its `allows` is `can_run` stage 6 (a held gesture refuses the mode, placement and
@@ -12,6 +12,7 @@ Behaviour as it was inside `Application` (AD-027 M6 moves it, nothing else). The
 - `TransformGesture` - Move / Rotate / Scale on components through the `ToolManager` (also from the gizmo / Tweak);
 - `ExtrudeGesture` - Extrude (hold T) through the `ToolManager`;
 - `LoopSlideGesture`, `VertexSlideGesture` - hold G in edge / vertex mode, a journal from the first motion;
+- `SurfaceSlideGesture` - Surface Slide (hold J): the vertices slide across the drawn surface (`mirai.surface_slide`);
 - `SmoothGesture` - Smooth / Relax (hold S / Alt+S), a tap is one step; Soft live radius as W/E/R;
 - `OffsetGesture` - Inset (hold I in face mode) / Bevel (hold Ctrl+B), topology built once past the threshold.
 
@@ -55,6 +56,8 @@ from ..soft_selection import (
     compute_influence,
     symmetric_influence,
 )
+from ..surface_slide import (FLAG_BARRIER, FLAG_BOUNDARY, FLAG_CHAIN_END, SURFACE_SLIDE_LABEL, SlidePlan as SurfacePlan,
+                             SlideSession, SlideStep, SurfaceSlideRefused, plan_surface_slide)
 from ..symmetric_offset import SymmetricOffset
 from ..symmetry import vertex_correspondence
 from ..symmetric_ops import SymmetryRefusal
@@ -83,6 +86,8 @@ TRANSFORM_COMMANDS: dict[str, tuple[str, str, str]] = {
     commands.EXTRUDE: ("Extrude", "extrude", "extruded"),
     # 2026-10-15 (loop tools promoted): hold G, the same hold-key family as T.
     commands.LOOP_SLIDE: ("Loop Slide", "slide", "slid"),
+    # Surface Slide (audit 2026-11-14 §13.4): hold J (Manu 2026-11-15, E6), the same hold-key family.
+    commands.SURFACE_SLIDE: (SURFACE_SLIDE_LABEL, "slide", "slid"),
     # WP Toolbox Gaps C2: hold S / Alt+S, same family (a tap is one step).
     commands.SMOOTH: ("Smooth", "smooth", "smoothed"),
     commands.RELAX: ("Relax", "relax", "relaxed"),
@@ -172,7 +177,13 @@ GESTURE_REFUSES = frozenset(
 BEGUN_GESTURE_REFUSES = frozenset({commands.UNDO, commands.REDO, commands.TOGGLE_TRANSFORM_SPACE})
 #: The gestures that ignore the constraint keys: Extrude is normal-only, Loop Slide runs along its edges, Smooth /
 #: Relax and Inset / Bevel have no axis - neither the gesture nor the pending constraint changes.
-UNCONSTRAINED_GESTURES = frozenset({commands.EXTRUDE, commands.LOOP_SLIDE, *SMOOTH_COMMANDS, *OFFSET_COMMANDS})
+UNCONSTRAINED_GESTURES = frozenset(
+    {commands.EXTRUDE, commands.LOOP_SLIDE, commands.SURFACE_SLIDE, *SMOOTH_COMMANDS, *OFFSET_COMMANDS}
+)
+
+#: Surface Slide: a summed pixel drag within this of 0 is the press point (float sums of the motion; Vertex Slide's
+#: rule), so dragging back restores the press state bit for bit.
+SURFACE_SLIDE_ZERO_PX = 1e-9
 
 
 def shown_shift(services):
@@ -190,6 +201,13 @@ def shown_shift(services):
         return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
 
     return shift
+
+
+def surface_slide_weights(plan: SurfacePlan) -> dict[VertexId, float]:
+    """The weights a Surface Slide shows: the driven vertices' and, for each mirrored vertex, its driver's."""
+    weights = dict(zip(plan.vertex_ids, plan.weights))
+    weights.update({w: weights[d] for w, d in plan.mirrors.items()})
+    return weights
 
 
 def _plus(p, d):
@@ -353,7 +371,8 @@ class GestureSession:
             return False
         if self.rotate_virtual is not None:
             self.rotate_virtual = (self.rotate_virtual[0] + dx, self.rotate_virtual[1] + dy)
-        if not force and self.services.modifiers[0] and self.command in (commands.MOVE, commands.SCALE, *OFFSET_COMMANDS):
+        precise = (commands.MOVE, commands.SCALE, commands.SURFACE_SLIDE, *OFFSET_COMMANDS)
+        if not force and self.services.modifiers[0] and self.command in precise:
             dx, dy = dx * PRECISION_GAIN, dy * PRECISION_GAIN
         return self.step(dx, dy)
 
@@ -682,11 +701,14 @@ class _SlideGesture(GestureSession):
     from it the mesh records into a journal (`before`, with the selection snapshot `selection_before`): the release
     commits it as one entry, Esc rolls it back."""
 
-    def __init__(self, controller: "GestureController", key: str, plan, origin) -> None:
-        super().__init__(controller, commands.LOOP_SLIDE, key, plan.vertex_ids, origin)
+    def __init__(self, controller: "GestureController", key: str, plan, origin,
+                 command: str = commands.LOOP_SLIDE) -> None:
+        super().__init__(controller, command, key, plan.vertex_ids, origin)
         self.plan = plan
         self.before: MeshChange | None = None
         self.selection_before: tuple | None = None
+        #: every vertex written since the press (Esc tells the viewport about all of them, also after a re-plan)
+        self.touched: set[VertexId] = set()
 
     def _record(self) -> None:
         if not self.begun:
@@ -698,6 +720,7 @@ class _SlideGesture(GestureSession):
         mesh = self.services.scene.mesh
         for vid, position in positions.items():
             mesh.set_vertex_position(vid, position)
+        self.touched.update(positions)
         self.services.invalidate_picks()
         self.services.notify_vertices_moved(set(positions))
 
@@ -726,7 +749,7 @@ class _SlideGesture(GestureSession):
         self.before = None
         self.services.scene.mesh.rollback_change(before)
         self.services.invalidate_picks()
-        self.services.notify_vertices_moved(set(self.plan.vertex_ids))
+        self.services.notify_vertices_moved(set(self.plan.vertex_ids) | self.touched)
 
     def cleanup(self) -> None:
         if self.before is not None:
@@ -826,6 +849,87 @@ class VertexSlideGesture(_SlideGesture):
         self._write(vertex_slide_positions(plan, chosen, t))
         self.services.status(f"{VERTEX_SLIDE_LABEL}: {t * 100.0:.0f} %")
         return True
+
+
+class SurfaceSlideGesture(_SlideGesture):
+    """Surface Slide (hold J, audit 2026-11-14 §13.4): the vertices slide across the drawn surface of the press state
+    (`mirai.surface_slide`). The plan and its `session` (the region capture) are made at the press; every motion maps
+    the summed pixel drag since the press to one world vector at the pivot's drawn press position (`anchor`: rest
+    position plus `shown_shift`, §15; mapping M1, E4) and writes `session.update(delta)` - driven vertices and the
+    exact mirrors - through the journal. A summed drag of 0 (within `SURFACE_SLIDE_ZERO_PX`) is the press state bit
+    for bit. The release commits what is shown (E7 default, no settle). `seeds` / `pivot` (the hovered seed, None =
+    the plan's default) are kept for a Soft re-plan; `shown` = the positions last written."""
+
+    def __init__(self, controller: "GestureController", key: str, plan: SurfacePlan, session: SlideSession, seeds,
+                 pivot: VertexId | None, anchor, origin) -> None:
+        super().__init__(controller, key, plan, origin, command=commands.SURFACE_SLIDE)
+        self.session = session
+        self.seeds: frozenset[VertexId] = frozenset(seeds)
+        self.pivot = pivot
+        self.anchor = anchor
+        self.drag: tuple[float, float] = (0.0, 0.0)
+        self.delta: tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self.shown: dict | None = None
+
+    def _mapped(self) -> tuple[float, float, float]:
+        sx, sy = self.drag
+        if abs(sx) <= SURFACE_SLIDE_ZERO_PX and abs(sy) <= SURFACE_SLIDE_ZERO_PX:
+            return (0.0, 0.0, 0.0)
+        width, height = self.services.viewport_size
+        return tuple(self.services.edit_camera.screen_delta_to_world(self.anchor, sx, sy, width, height))
+
+    def _show(self, step: SlideStep) -> None:
+        self._write(step.positions)
+        self.shown = step.positions
+        self.services.status(self._status_line(step))
+
+    def _status_line(self, step: SlideStep) -> str:
+        """`PROVISIONAL`: the drag length in `h` and the rows stopped at a wall / a chain end / still lagging."""
+        u, v = self.session.slide.tangent_of(self.delta)
+        text = f"{SURFACE_SLIDE_LABEL}: {math.hypot(u, v) / self.plan.edge_scale:.1f} h"
+        flags = step.flags
+        walls = int(((flags & (FLAG_BOUNDARY | FLAG_BARRIER)) != 0).sum())
+        ends = int(((flags & FLAG_CHAIN_END) != 0).sum())
+        notes = [f"{walls} at a wall" if walls else "", f"{ends} at a chain end" if ends else "",
+                 f"{step.lagging} lagging" if step.lagging else ""]
+        return " · ".join([text, *filter(None, notes)])
+
+    def step(self, dx: float, dy: float) -> bool:
+        self._record()
+        self.drag = (self.drag[0] + dx, self.drag[1] + dy)
+        self.delta = self._mapped()
+        self._show(self.session.update(self.delta))
+        return True
+
+    def soft_live(self) -> bool:
+        """With Soft on at the press the wheel / flow keys step its radius live (as a Soft W/E/R)."""
+        return self.soft is not None
+
+    def reweight(self, settings: SoftSettings) -> None:
+        """New radius / flow: back to the press positions, the plan and its capture again from there (same seeds and
+        pivot), the current drag applied once; a refusal keeps the old plan and what it showed."""
+        services = self.services
+        self.soft = settings
+        mesh = services.scene.mesh
+        old = self.plan
+        if self.begun:
+            for vid, position in old.origins.items():
+                mesh.set_vertex_position(vid, position)
+        try:
+            plan = self._controller.surface_slide_plan(self.seeds, self.pivot, settings)
+            session = SlideSession(mesh, plan)
+        except SurfaceSlideRefused:
+            if self.begun and self.shown is not None:
+                self._write(self.shown)
+            return
+        self.plan, self.session = plan, session
+        self.target = frozenset(plan.vertex_ids)
+        if self.begun:
+            self._show(session.update(self.delta))
+        else:
+            services.invalidate_picks()
+        services.notify_vertices_moved(set(old.origins) | set(plan.origins))
+        self.show_weights(surface_slide_weights(plan))
 
 
 class SmoothGesture(GestureSession):
@@ -1196,6 +1300,54 @@ class GestureController:
         services.status(
             f"{VERTEX_SLIDE_LABEL}: {count} {noun} - move the mouse towards an edge, release {key.upper()} to commit"
         )
+        return True
+
+    def surface_slide_plan(self, seeds, pivot: VertexId | None, soft: SoftSettings | None) -> SurfacePlan:
+        """The Surface Slide plan of `seeds` on the edit mesh as it stands (the press state): the effective mask and
+        the hidden faces of now, `soft` None = no falloff. Raises `SurfaceSlideRefused`."""
+        services = self.services
+        return plan_surface_slide(services.scene.mesh, seeds, pivot=pivot, influence=soft,
+                                  mask=services.mask_values(seeds), hidden_faces=services.hidden_faces())
+
+    def arm_surface_slide(self, key: str, origin) -> bool:
+        """Hold J (audit 2026-11-14 §13.4): the resolved selection (edge / face selections too), else the hovered
+        element's vertices; the pivot is the hovered vertex when it is a free seed, else the plan's default. The plan
+        and the capture are made now, from the press state; refusals are posted at the press, before anything moves.
+        On the base with a morph target dialled in the plan reads the rest shape (E2) and only the mapping point is
+        the drawn one."""
+        services = self.services
+        services.flush_hover()  # (as `arm_transform`)
+        mesh = services.scene.mesh
+        selection = services.selection
+        seeds = resolve_selection_vertices(mesh, selection, selection.mode)
+        hovered = hovered_of_mode(mesh, selection)
+        if not seeds and hovered is not None:
+            seeds = element_vertices(mesh, hovered)
+        pivot = None
+        if isinstance(hovered, VertexId) and hovered in seeds and unblocked({hovered}, services.mask_values(seeds)):
+            pivot = hovered
+        soft = services.soft_settings if services.soft_settings.enabled else None
+        try:
+            plan = self.surface_slide_plan(seeds, pivot, soft)
+            session = SlideSession(mesh, plan)
+        except SurfaceSlideRefused as exc:
+            services.status(str(exc))
+            return False
+        anchor = plan.origins[plan.pivot]
+        shift = shown_shift(services)  # §15: the drag is mapped where the pivot is drawn
+        if shift is not None:
+            anchor = _plus(anchor, shift(plan.pivot))
+        gesture = SurfaceSlideGesture(self, key, plan, session, seeds, pivot, anchor, origin)
+        services.interaction.start(gesture)
+        services.set_hovered(None)
+        if soft is not None:
+            gesture.soft = soft
+            gesture.soft_reference = soft.world_radius * 100.0 / soft.radius_percent
+            gesture.show_weights(surface_slide_weights(plan))
+        count = len(plan.origins)
+        noun = "vertex" if count == 1 else "vertices"
+        notes = (" (Soft: wheel = radius)" if soft is not None else "") + (" (symmetric)" if plan.plane else "")
+        services.status(f"{SURFACE_SLIDE_LABEL}: {count} {noun}{notes} - move the mouse, release {key.upper()} to commit")
         return True
 
     def arm_smooth(self, command: str, key: str, origin) -> bool:

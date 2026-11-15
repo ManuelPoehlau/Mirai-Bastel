@@ -254,6 +254,12 @@ class AppServices:
         app = self._app
         return set(app._hidden.resolve(app.scene.mesh).vertices)
 
+    def hidden_faces(self) -> set:
+        """The edit object's hidden faces (`mirai.hidden`; also a face whose corners are hidden). Reason for the member
+        (AD-027 M6): Surface Slide never enters hidden faces (walls); Hide stays in `Application` (§3.4)."""
+        app = self._app
+        return set(app._hidden.resolve(app.scene.mesh).faces)
+
     def loop_seed_edges(self, label: str):
         """The selected edges, else the hovered edge; None (status posted) outside edge mode or without either
         (`Application._loop_seed_edges`). Reason for the member (AD-027 M6): Loop Slide plans from the seeds the

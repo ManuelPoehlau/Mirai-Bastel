@@ -311,6 +311,10 @@ EDGE_LOOP = "EdgeLoop"
 EDGE_RING = "EdgeRing"
 LOOP_INSERT = "LoopInsert"
 LOOP_SLIDE = "LoopSlide"
+# SURFACE_SLIDE (Surface Slide, audit 2026-11-14 §13.4): global hold key like G; the selected (else hovered) vertices
+# slide across the drawn surface (`mirai.surface_slide`, `controllers.gestures.SurfaceSlideGesture`). Key J: Manu
+# 2026-11-15 (E6).
+SURFACE_SLIDE = "SurfaceSlide"
 # EXTRUDE (WP-06 B9): global, hold-key-hover like Move/Rotate/Scale - routed via
 # tool_for_command() to `mirai.topology.extrude.ExtrudeTool`; the Topology-Lab
 # Alt+E binding is gone. Face mode only.
@@ -452,7 +456,7 @@ RIG_COMMANDS = (
 #: of that key's value, which only a `key` input has, so a keymap entry may bind them to `kind: "key"` only.
 HOLD_COMMANDS = frozenset(
     {
-        MOVE, ROTATE, SCALE, EXTRUDE, LOOP_SLIDE, SMOOTH, RELAX, INSET, BEVEL, LASSO_ARM, LIGHT_DRAG,
+        MOVE, ROTATE, SCALE, EXTRUDE, LOOP_SLIDE, SURFACE_SLIDE, SMOOTH, RELAX, INSET, BEVEL, LASSO_ARM, LIGHT_DRAG,
         MORPH_WEIGHT_DRAG, PIVOT_PLACE, WEIGHTS_FROM_GROUP, WEIGHT_SET,
     }
 )

@@ -73,7 +73,6 @@ Umgestellt 2026-10-24 (Manu): `Pfeil`, `Shift+Pfeil`, `←`/`→` kollidierten m
 
 | `Alt+Pfeil rechts` / `Alt+Pfeil links` | **Kiefer-Pose** +5° (öffnen) / −5° (schließen) (`PROVISIONAL`, 2026-10-25) |
 | `Alt+Shift+Pfeil rechts` / `links` | Kiefer ±1° |
-| `J` | Kiefer: 0° ↔ zuletzt eingestellter Winkel |
 | `Shift+J` | Kiefer-Scharnier = Mitte der ausgewählten Punkte (Modus `1`); nichts gewählt = automatisch |
 
 `,` / `.` führen genau die App-Geste `4` · Objekt auswählen · `1` aus (kein eigener Pfad, kein Undo-Schritt, mit
@@ -98,7 +97,7 @@ also am ruhenden Kiefer gesculptet und fährt bei jedem Winkel mit.
    Name **`Kiefer`** (auch `Unterkiefer` / `Jaw`; Groß-/Kleinschreibung egal). Die Gruppe wird mit `Strg+S` gespeichert.
 2. Optional das **Scharnier** setzen: Punkte am Kiefergelenk auswählen (Modus `1`), `Shift+J`. Ohne Scharnier nimmt das Lab
    die Gruppenmitte in X, die Oberkante in Y und die Rückseite in Z (für einen Kopf, der nach +Z schaut). Achse ist X.
-3. `Alt+Pfeil rechts/links` dreht, `J` vergleicht mit 0°. Positive Winkel öffnen einen Kiefer, der nach +Z schaut.
+3. `Alt+Pfeil rechts/links` dreht (`J` ist seit 2026-11-15 Surface Slide der App; der Kiefer-Vergleich mit 0° ist entfallen). Positive Winkel öffnen einen Kiefer, der nach +Z schaut.
    Außerhalb der Gruppe läuft die Pose über 3 Kantenringe auf 0 aus (Mundwinkel/Wange reißen nicht).
 
 Wie das Gewicht ist die Pose **reine Ansicht** (kein Undo, nicht gespeichert, ändert weder Basis noch Ziel) und
