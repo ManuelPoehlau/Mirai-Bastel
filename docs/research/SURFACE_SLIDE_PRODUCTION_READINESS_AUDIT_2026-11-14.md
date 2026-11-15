@@ -673,6 +673,37 @@ settled vertex, now only the paths needed); `update` 1 125 rows 2.7–3.1 ms med
 hidden faces as barriers), region capture with growth on `CAPTURE`, the symmetry driver rule (B3) and the mirrored
 writes, refusals (straddling faces, bowtie vertices), the normal source and `h` (items 6–7).
 
+### 13.2 Handoff: Phase 2 (plan, capture, symmetry)
+
+Mode (M5): Production, extends `src/mirai/surface_slide/`; still no gesture, no binding (Phase 3). Read §3.1, §3.5,
+§3.6, §7, §9 (row 2, gate G2), §13.1 and the package docstring; the Phase 1 API is the base, do not re-port.
+
+**Build** `plan.py` (`plan_surface_slide(mesh, seeds, *, influence=None, mask=None, symmetry=None) -> SlidePlan`,
+`SurfaceSlideRefused(ValueError)`, the message is the status line) and the capture from a `core.Mesh`:
+
+- Weights from `soft_selection.compute_influence` / `symmetric.symmetric_influence` unchanged; `mask.mask_weights`
+  (weight × (1 − mask)); pivot = the seed the gesture starts on. Precedent for planning and refusals:
+  `topology/vertex_slide.py` (`plan_vertex_slide`, `VertexSlideRefused`, `vertex_slide_positions`).
+- **Driver rule (B3):** drive the pivot's half plus the seam, whatever K-near says; every vertex on the other half is
+  written as `symmetry.mirror_position` of its partner (`symmetry_coordination.SymmetryIndex`, `is_exact_plane`);
+  weights pair-consistent. Refuse without a partner, on a non-exact plane.
+- **Capture (B1, B2):** faces within a margin of the driven set, triangles from `viewport.derived.triangulate_mesh_face`
+  (no second rule); `capture_edges` = the captured region's border, `barrier_edges` = the declared seam
+  (`definition.seam_edges`) + edges of hidden faces (hidden faces not captured). On any `FLAG_CAPTURE` in a frame:
+  grow the region (radius × 2), rebuild, replay the current drag. Gate: region capture == full capture bit for bit.
+- Chains: `[seam chain, EdgeChain.boundary(ref)]` in that order (seam wins at a seam vertex on a boundary).
+- Refusals: straddling faces (both sides, no seam vertex) and bowtie vertices in the driven region, no partner.
+- Open from §13.1: pass `edge_scale` = mean polygon edge; decide the vertex-normal source (keep angle-weighted unless
+  a measured reason says otherwise).
+
+**Gate G2** (§9): Gollum cage (`scenes/Gollum_Head_01.mirai.json`) and `examples/meshes/head_basemesh.obj`: mirror
+pairs bitwise exact, seam coordinate exactly 0, no `AMBIGUOUS` after a barrier stop, every driven vertex on the drawn
+triangles of its face (≤ 1e-12 h), region capture == full capture bit for bit, `tests/mesh_invariants.py` after every
+written frame, refusals tested. Runs: the new tests, `tests/test_surface_slide_*.py`, the G1 oracle,
+`tests/test_packed_geometry.py`, and the tests of any `src/` module touched outside the package.
+
+**Done means:** G2 green, an implementation note §13.3, no app wiring.
+
 ## 14. Reproduce
 
 ```bash
