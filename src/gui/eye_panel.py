@@ -1,5 +1,5 @@
 """The eye panel (AD-033 §6): the view state of the eye preview and the selected eyes' values. Button "Auge" in the
-toggle bar, closed by default. Every control calls the `Application` path of `gui.eye_model` with its refusals; a
+toggle bar, closed by default. The "Blick" section sets where every eye looks (`mirai.eye_gaze`). Every control calls the `Application` path of `gui.eye_model` with its refusals; a
 slider applies on release (one Undo step per change, not one per drag frame). No keys (D-L9).
 """
 
@@ -10,6 +10,8 @@ from viewport.eye_pass import REFLECTIONS, REFRACTIONS
 
 
 class EyePanel:
+    PAD_SIZE = (150.0, 96.0)  # the gaze pad in pixels (`PROVISIONAL`)
+
     def __init__(self, imgui, app, layer) -> None:
         self.imgui, self.app, self.layer = imgui, app, layer
         self.image_buf = ""
@@ -33,6 +35,7 @@ class EyePanel:
                 em.set_view(app, reflection=reflection)
             imgui.same_line()
         imgui.new_line()
+        self._draw_gaze(st)
         imgui.separator()
         imgui.text_disabled(st.header)
         if not st.has_eyes:
@@ -74,3 +77,44 @@ class EyePanel:
         if spec is not None and st.eyes[0].texture is not None:
             if imgui.small_button("Bild entfernen"):
                 app.set_eye_iris_image(None)
+
+    def _draw_gaze(self, st: em.EyePanelState) -> None:
+        """Where every eye looks (`mirai.eye_gaze`): the mode, the gaze pad (drag: the eyes look there, as seen facing
+        them; double click: straight ahead) and the focus distance. View state, applied live."""
+        imgui, app = self.imgui, self.app
+        imgui.separator()
+        imgui.text_disabled("Blick (alle Augen, nicht gespeichert)")
+        if not st.scene_eyes:
+            imgui.text_disabled("Kein Auge in der Szene")
+            return
+        for i, (mode, label) in enumerate(em.GAZE_LABELS.items()):
+            if i % 2:
+                imgui.same_line()
+            if imgui.radio_button(label, st.gaze_mode == mode):
+                em.set_gaze(app, mode=mode)
+        width, height = self.PAD_SIZE
+        imgui.invisible_button("##gaze_pad", imgui.ImVec2(width, height))
+        a, b = imgui.get_item_rect_min(), imgui.get_item_rect_max()
+        cx, cy = (a.x + b.x) / 2, (a.y + b.y) / 2
+        if imgui.is_item_active():
+            mouse = imgui.get_io().mouse_pos
+            em.set_gaze_pad(app, (mouse.x - cx) / (width / 2), (cy - mouse.y) / (height / 2))
+        elif imgui.is_item_hovered() and imgui.is_mouse_double_clicked(0):
+            em.set_gaze_pad(app, 0.0, 0.0)
+        dl = imgui.get_window_draw_list()
+        frame = imgui.get_color_u32(imgui.ImVec4(0.38, 0.4, 0.45, 1))
+        dl.add_rect(a, b, frame, 3.0)
+        dl.add_line(imgui.ImVec2(cx, a.y), imgui.ImVec2(cx, b.y), frame)
+        dl.add_line(imgui.ImVec2(a.x, cy), imgui.ImVec2(b.x, cy), frame)
+        dot = em.state(app).gaze_dot  # after a drag this frame: the new point
+        if dot is not None:
+            colour = imgui.get_color_u32(imgui.ImVec4(0.9, 0.92, 0.96, 1))
+            dl.add_circle_filled(imgui.ImVec2(cx + dot[0] * width / 2, cy - dot[1] * height / 2), 4.0, colour)
+        imgui.same_line()
+        imgui.text_disabled("Pad ziehen:\nBlick wie von\nvorn gesehen\n(Doppelklick:\ngeradeaus)")
+        lo, hi = em.GAZE_FOCUS_RANGE
+        imgui.set_next_item_width(170.0)
+        changed, focus = imgui.slider_float("Fokus-Abstand (Augenradien)", float(st.gaze_focus), lo, hi, "%.0f",
+                                            imgui.SliderFlags_.logarithmic)
+        if changed:
+            em.set_gaze(app, focus=focus)

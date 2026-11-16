@@ -35,7 +35,7 @@ from core.scene import IDENTITY_TRANSFORM
 from viewport.eye_pass import EyeDraw
 from viewport.gl_render_store import DEFAULT_BASE_COLOR
 
-from .. import object_space
+from .. import eye_gaze, object_space
 from ..eye_object import (
     DEFAULT_EYE,
     cornea_triangles,
@@ -320,6 +320,10 @@ class ObjectController:
         #: Ctrl+C: the ids of the objects Ctrl+V copies (view state, no Undo step; an id that is gone is skipped)
         self.clipboard: tuple[ObjectId, ...] = ()
         self.last_edit_switch_seconds: float = 0.0
+        #: Eye gaze (`mirai.eye_gaze`, view state): the point the drawn eyes look at (None = their own rotation) and
+        #: the last point a moving mode resolved (the cursor left the viewport: the eyes keep it; `target` freezes it).
+        self.gaze_drawn = None
+        self.gaze_last = None
 
     # -- adding, importing, exporting, deleting (AD-021 M1, Track A1/A2) -----------------------------
 
@@ -1180,6 +1184,7 @@ class ObjectController:
         for key in [key for key in viewport.object_entries if key not in others]:
             viewport.remove_object_entry(key)
         highlighted = self.highlighted()
+        self.gaze_drawn = gaze = self.gaze_target()
         for oid, obj in others.items():
             reference = obj.state is ObjectState.REFERENCE
             colour = selected_color(obj, DEFAULT_BASE_COLOR) if oid in highlighted else object_base_color(obj)
@@ -1192,7 +1197,8 @@ class ObjectController:
                 oid,
                 obj.mesh,
                 colour,
-                model_matrix=object_space.model_matrix(obj),
+                model_matrix=object_space.model_matrix(obj) if gaze is None or obj.eye is None
+                else object_space.placement_matrix(eye_gaze.aimed_transform(obj, gaze), obj.pivot),
                 # M2-0 (§7.3): RD-1 Ghost for every Reference on `Alt+D`; RD-3 a Reference is drawn in Wireframe too -
                 # a Normal object follows the display mode.
                 alpha=REFERENCE_GHOST_ALPHA if reference and self.reference_ghost else 1.0,
@@ -1208,6 +1214,42 @@ class ObjectController:
             self._shown_texture(edit, edit.id in highlighted),
         )
         self.highlight_key = self._highlight_signature()
+
+    def gaze_eyes(self) -> list[SceneObject]:
+        """The eyes the gaze turns: every drawn eye (an eye is never the edit object)."""
+        scene = self.services.scene
+        return [obj for oid, obj in scene.objects.items()
+                if obj.eye is not None and oid != scene.edit_object_id and not scene.is_hidden(oid)]
+
+    def gaze_target(self):
+        """The world point the eyes look at in the current gaze mode (`mirai.eye_gaze`), None for `rest` or without
+        eyes. `mouse` with the cursor outside the viewport (or the camera dragging) keeps the last point."""
+        services = self.services
+        gaze = services.display.eye_gaze
+        if gaze.mode == "rest":
+            return None
+        frame = eye_gaze.gaze_frame(self.gaze_eyes())
+        if frame is None:
+            return None
+        if gaze.mode == "camera":
+            target = eye_gaze.camera_target(services.camera)
+        elif gaze.mode == "target" and gaze.target is not None:
+            target = gaze.target
+        else:
+            target = None
+            cursor = services.cursor
+            if gaze.mode == "mouse" and cursor is not None:
+                width, height = (int(v) for v in services.viewport_size)
+                target = eye_gaze.mouse_target(services.camera, cursor, width, height, frame, gaze.focus)
+            if target is None:
+                target = self.gaze_last or eye_gaze.pad_target(frame, 0.0, 0.0, gaze.focus)
+        self.gaze_last = target
+        return target
+
+    def sync_gaze(self) -> None:
+        """Per frame (`Application.update_viewport`): redraw the eyes when the gaze point moved (camera, cursor)."""
+        if self.services.viewport is not None and self.gaze_target() != self.gaze_drawn:
+            self.sync_views()
 
     def _shown_texture(self, obj: SceneObject, highlighted: bool) -> str | None:
         """The texture the viewport draws for `obj` (AD-026): its own while textures are shown

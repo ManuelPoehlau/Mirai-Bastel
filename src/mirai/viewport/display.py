@@ -29,6 +29,7 @@ from viewport.light_rig import (
 )
 from viewport.material import DEFAULT_FINISH, SurfaceFinish
 
+from ..eye_gaze import GazeState
 from .look_controls import LIGHT_FIELDS, clamp_light
 
 #: Anzeige-Namen der Bezugsräume in der Statuszeile.
@@ -76,6 +77,8 @@ class DisplayState:
         self.eye_preview: bool = True
         self.eye_reflection: str = "studio"
         self.eye_refraction: str = "V2"
+        # Eye gaze (2026-11-16, `mirai.eye_gaze`): where every eye looks - view state the same way, not saved, no Undo.
+        self.eye_gaze: GazeState = GazeState()
 
     # -- Übergänge ----------------------------------------------------------
 

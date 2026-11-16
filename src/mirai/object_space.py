@@ -97,10 +97,15 @@ def axis_to_world(obj: SceneObject, a: Vec3) -> Vec3:
 
 def model_matrix(obj: SceneObject) -> list[float] | None:
     """4x4 Objekt -> Welt, spaltenweise wie `OrbitCamera.build_view_matrix` (GL); None = Identität."""
-    t = obj.transform
-    if is_identity(t):
+    if is_identity(obj.transform):
         return None
-    s, rot, c = t.scale, t.rotation, obj.pivot
+    return placement_matrix(obj.transform, obj.pivot)
+
+
+def placement_matrix(t: ObjectTransform, c: Vec3) -> list[float]:
+    """4x4 of the placement `t` about the pivot `c` (as `model_matrix`, never None): also for a placement that is
+    drawn but not the object's own (the eye gaze, `mirai.eye_gaze`)."""
+    s, rot = t.scale, t.rotation
     rc = _rotate(rot, c)
     translation = [t.translation[i] + c[i] - s * rc[i] for i in range(3)]
     m = [0.0] * 16

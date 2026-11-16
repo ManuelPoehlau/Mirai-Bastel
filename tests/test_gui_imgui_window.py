@@ -400,6 +400,7 @@ def test_eye_panel_draws_an_eye_and_leaves_gl_state_as_found():
         pytest.skip(f"kein GL/Display: {exc}")
     try:
         eye = app.add_eye()
+        app.set_eye_gaze(mode="camera")  # the eye pass with a gaze-turned matrix, the panel's gaze pad drawn
         layer.eye_open = True
         run.render_frame(window)  # first frame: the eye program, the procedural iris and the panel are created
         run.render_frame(window)

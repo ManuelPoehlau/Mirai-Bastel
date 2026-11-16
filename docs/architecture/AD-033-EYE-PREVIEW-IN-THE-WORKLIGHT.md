@@ -260,6 +260,34 @@ in the real window, GL state), the eye lab's `test_oracle_production.py` (7: `ey
 
 Melde dich, wenn etwas stört — keine Abhakliste (Development System §7).
 
+## 12. Addendum 2026-11-16: eye gaze (view state, `PROVISIONAL`)
+
+**Request (Manu, 2026-11-16):** "ich brauche eine Möglichkeit, die Augen Blickrichtung per Maus steuern zu können. Auch
+die Option, dass die Augen in die Kamera gucken (ich drehe den viewport, aber gollum guckt mich dabei immer an)".
+
+**Built:** `mirai/eye_gaze.py` (pure math), `DisplayState.eye_gaze` (`GazeState`), `ObjectController.gaze_target` /
+`sync_gaze` (the drawn eye matrices in `sync_views`, re-synced by the frame tick when the point moves),
+`Application.set_eye_gaze` / `set_eye_gaze_angles` / `eye_gaze_angles`, the section "Blick" in the panel "Auge"
+(`gui/eye_model.py`, `gui/eye_panel.py`). Tests: `tests/test_eye_gaze.py`, `test_gui_eye_model.py`,
+`test_gui_imgui_window.py` (panel + eye pass with a turned eye, GL state).
+
+- **Rule:** every drawn eye (selected or not) looks at one world point; each turns about its own sclera centre by the
+  shortest rotation from its own rest direction (its object rotation = the primary position, Listing's law, no added
+  roll), clamped to `MAX_GAZE_DEGREES` = 50° (a camera behind the head never turns the eyes into the skull). Both aim at
+  the same point, so they converge on a near one.
+- **Modes:** `rest` (the object rotation; draws exactly as before), `camera` (the camera's eye point), `mouse` (the point
+  under the cursor on a plane facing the view `focus` eye radii in front of the eyes; the cursor over a panel or outside
+  keeps the last point), `target` (a fixed world point: the gaze pad, or switching from `mouse` freezes the current
+  point). `focus` (default 25 eye radii ≈ 30 cm at the reference eye) also sets the pad's distance; changing it in
+  `target` keeps the direction.
+- **View state, like the preview (Q-E3):** the object transforms, the file and the Undo stack never change. No keys
+  (D-L9): the panel only. The CPU pick caches keep the object's own rotation (an eye shell is a sphere about the turn
+  centre; only the corneal bulge differs). While a gaze mode is on, an object Rotate of an eye changes its rest
+  direction, which the drawn eye does not show until `rest`.
+- **Open / not built:** baking the gaze into the eyes' rotation (one Undo step) — it would break an X mirror pair
+  (`object_mirror`: a sideways gaze is not mirror-symmetric); a per-eye rest divergence kept while aiming; a gaze target
+  that is saved with the scene.
+
 ## Decision record
 
 **Manu, 2026-11-15:** "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm".

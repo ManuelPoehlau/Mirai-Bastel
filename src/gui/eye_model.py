@@ -1,7 +1,8 @@
 """Eye panel, pure logic (AD-033 §6, `PROVISIONAL` layout). No pyglet, no imgui.
 
 The panel reads `state(app)` and calls the same `Application` paths as everything else: `set_eye_display` (view state:
-preview, reflection, refraction - no Undo, not saved), `set_eye` (the selected eyes' values, one Undo step per change)
+preview, reflection, refraction - no Undo, not saved), `set_eye_gaze` / `set_eye_gaze_angles` (where every eye looks,
+`mirai.eye_gaze`, view state as well), `set_eye` (the selected eyes' values, one Undo step per change)
 and `set_eye_iris_image`. It holds no document state. With several eyes selected the values shown are the first
 eye's; a change goes to all of them (as the material rows do).
 """
@@ -12,6 +13,7 @@ from dataclasses import dataclass
 
 from core import SelectionMode
 
+from mirai.eye_gaze import FOCUS_RANGE, GAZE_MODES, PAD_DEGREES
 from viewport.eye_pass import REFLECTIONS, REFRACTIONS
 
 LEVEL_LABELS = ("L0 wie P1b", "L1 Farbband", "L2 + Normalen", "L3 + durchscheinend")
@@ -28,12 +30,31 @@ SLIDERS = (
 )
 
 
+#: The gaze modes as the panel names them (`mirai.eye_gaze`).
+GAZE_LABELS = {"rest": "Eigene Drehung", "camera": "Kamera", "mouse": "Maus", "target": "Fester Punkt"}
+assert tuple(GAZE_LABELS) == GAZE_MODES
+GAZE_FOCUS_RANGE = FOCUS_RANGE
+
+
 @dataclass(frozen=True)
 class EyePanelState:
     eyes: tuple  # the selected eye objects
     preview: bool
     reflection: str
     refraction: str
+    gaze_mode: str = "rest"
+    gaze_focus: float = 25.0
+    gaze_angles: tuple[float, float] | None = None  # (yaw, pitch) degrees the eyes look at now, None = own rotation
+    scene_eyes: int = 0  # how many eyes the gaze turns
+
+    @property
+    def gaze_dot(self) -> tuple[float, float] | None:
+        """Where the gaze pad shows the current gaze: (x, y) in -1..1 (right, up), clamped to the pad's edge."""
+        if self.gaze_angles is None:
+            return None
+        yaw, pitch = self.gaze_angles
+        clamp = lambda v: max(-1.0, min(1.0, v))  # noqa: E731
+        return clamp(yaw / PAD_DEGREES[0]), clamp(pitch / PAD_DEGREES[1])
 
     @property
     def has_eyes(self) -> bool:
@@ -75,7 +96,22 @@ def selected_eyes(app) -> tuple:
 
 def state(app) -> EyePanelState:
     display = app.display
-    return EyePanelState(selected_eyes(app), display.eye_preview, display.eye_reflection, display.eye_refraction)
+    gaze = display.eye_gaze
+    return EyePanelState(selected_eyes(app), display.eye_preview, display.eye_reflection, display.eye_refraction,
+                         gaze.mode, gaze.focus, app.eye_gaze_angles(), len(app._objects.gaze_eyes()))
+
+
+def set_gaze(app, **changes) -> bool:
+    """The gaze mode / focus (view state, no Undo): `Application.set_eye_gaze`."""
+    assert set(changes) <= {"mode", "focus"}
+    return app.set_eye_gaze(**changes)
+
+
+def set_gaze_pad(app, x: float, y: float) -> bool:
+    """A point on the gaze pad, (x, y) in -1..1 (right, up as seen facing the eyes): the eyes look there (mode
+    "target")."""
+    x, y = max(-1.0, min(1.0, x)), max(-1.0, min(1.0, y))
+    return app.set_eye_gaze_angles(x * PAD_DEGREES[0], y * PAD_DEGREES[1])
 
 
 def set_value(app, field: str, value) -> bool:

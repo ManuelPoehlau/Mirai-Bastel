@@ -45,3 +45,18 @@ def test_every_slider_field_is_an_eye_value_within_its_range():
     for field, _label, lo, hi, _fmt in em.SLIDERS:
         assert hasattr(DEFAULT_EYE, field) and lo <= getattr(DEFAULT_EYE, field) <= hi
     assert len(em.LEVEL_LABELS) == 4
+
+
+def test_gaze_section_state_and_pad(app):
+    st = em.state(app)
+    assert st.scene_eyes == 0 and st.gaze_mode == "rest" and st.gaze_dot is None
+    app.add_eye()
+    app.selection.objects = set()  # the gaze turns every eye, selected or not
+    assert em.state(app).scene_eyes == 1
+    assert em.set_gaze_pad(app, 0.5, -0.5) is True
+    st = em.state(app)
+    assert st.gaze_mode == "target" and st.gaze_dot == pytest.approx((0.5, -0.5))
+    assert em.set_gaze_pad(app, 3.0, 0.0) is True and em.state(app).gaze_dot == pytest.approx((1.0, 0.0))  # clamped
+    assert em.set_gaze(app, mode="camera") is True and em.state(app).gaze_mode == "camera"
+    assert em.set_gaze(app, focus=80.0) is True and em.state(app).gaze_focus == 80.0
+    assert tuple(em.GAZE_LABELS) == ("rest", "camera", "mouse", "target")

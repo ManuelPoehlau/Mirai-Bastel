@@ -873,6 +873,59 @@ class Application:
                          f"{wanted.refraction}")
         return True
 
+    def set_eye_gaze(self, **changes) -> bool:
+        """Where every eye looks (`mirai.eye_gaze`, view state: not saved, no Undo step): any of `mode` ("rest" /
+        "camera" / "mouse" / "target"), `focus` (eye radii) and `target` (a world point). Switching to "target" without
+        a point freezes the point the eyes look at now; a new focus in "target" keeps the direction. An invalid value
+        is refused with the reason; True = it changed."""
+        from .eye_gaze import GazeState, gaze_frame, pad_angles, pad_target
+
+        current = self.display.eye_gaze
+        wanted = {"mode": current.mode, "focus": current.focus, "target": current.target, **changes}
+        frame = gaze_frame(self._objects.gaze_eyes())
+        if wanted["mode"] == "target" and "target" not in changes and (current.mode != "target" or current.target is None):
+            wanted["target"] = self._objects.gaze_drawn or (
+                None if frame is None else pad_target(frame, 0.0, 0.0, wanted["focus"]))
+        elif "focus" in changes and "target" not in changes and wanted["target"] is not None and frame is not None:
+            angles = pad_angles(frame, wanted["target"])
+            if angles is not None:
+                try:
+                    wanted["target"] = pad_target(frame, *angles, float(wanted["focus"]))
+                except (TypeError, ValueError):
+                    pass  # GazeState refuses the focus below
+        try:
+            gaze = GazeState(**wanted)
+        except (TypeError, ValueError) as exc:
+            self._set_status(f"Eye gaze: {exc}")
+            return False
+        if gaze == current:
+            return False
+        self.display.eye_gaze = gaze
+        if gaze.mode != current.mode or gaze.focus != current.focus:
+            self._set_status(f"Eye gaze: {gaze.mode}, focus {gaze.focus:.3g} eye radii")
+        self._objects.sync_views()
+        return True
+
+    def set_eye_gaze_angles(self, yaw: float, pitch: float) -> bool:
+        """The gaze pad: every eye looks at the point `yaw` degrees right / `pitch` up (as seen facing the eyes) of
+        their mean rest direction, `focus` eye radii away; mode "target". Refused without an eye in the scene."""
+        from .eye_gaze import gaze_frame, pad_target
+
+        frame = gaze_frame(self._objects.gaze_eyes())
+        if frame is None:
+            self._set_status("Eye gaze: no eye in the scene")
+            return False
+        return self.set_eye_gaze(mode="target", target=pad_target(frame, yaw, pitch, self.display.eye_gaze.focus))
+
+    def eye_gaze_angles(self) -> tuple[float, float] | None:
+        """(yaw, pitch) in degrees of the point the eyes look at now, as the gaze pad shows it; None in mode "rest" or
+        without eyes."""
+        from .eye_gaze import gaze_frame, pad_angles
+
+        target = self._objects.gaze_drawn
+        frame = gaze_frame(self._objects.gaze_eyes())
+        return None if target is None or frame is None else pad_angles(frame, target)
+
     def set_eye_iris_image(self, path: str | Path | None) -> bool:
         """The iris image of every selected eye (AD-033 §4.1: the object's texture, AD-026), one Undo step. A JSON beside
         the image with the same name (the eye lab's `iris_custom.json` format: `pupil`, `limbus`, optional
@@ -5287,6 +5340,7 @@ class Application:
         if self.viewport is not None:
             self.flush_hover()
             self._objects.sync_highlight()
+            self._objects.sync_gaze()
             self._push_region_tints()
             # skin first: the morph stage keeps its surface while a later stage (skin, SubD) reads it
             self.skin.refresh()
