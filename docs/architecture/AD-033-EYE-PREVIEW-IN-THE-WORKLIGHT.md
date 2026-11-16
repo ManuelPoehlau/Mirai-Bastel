@@ -390,6 +390,9 @@ This replaces the panel of §6 / §11. No Core change, no shader change, no form
 
 Verdikt: KEEP / ITERATE / REJECT, gern je Punkt.
 
+**Verdikt Manu, 2026-11-16: „1-6 Keep“** — alle sechs Punkte KEEP. Das Layout bleibt `PROVISIONAL` bis zu einer
+eigenen GUI-Entscheidung, das Verhalten ist abgenommen.
+
 
 **Manu, 2026-11-15:** "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm".
 

@@ -465,4 +465,7 @@ Phase 2 is built as [AD-033 §16](../architecture/AD-033-EYE-PREVIEW-IN-THE-WORK
 pixel change yet) and look presets from existing values ("Standard (L0)", plus the ones the artist saves). Acceptance
 per §H row 2: the objective part is met in the container tests. The practical test on the Gollum head is Manu's.
 Deviation: isolation *without* the head is not built (it needs the edit mesh and its overlays suppressed).
-**Still open from §I:** I-5 … I-14 (I-5 gates phase 3).
+**Practical test (Manu, 2026-11-16): "1-6 Keep".** **I-5 decided (Manu, 2026-11-16): "Core Change erlaubt"** - the
+new look values may go into `EyeSpec` as a nested group with scene format v10 (§D change 1; a stop point like Q-E2,
+now cleared). **Still open from §I:** I-6 … I-14; for phase 3 in particular I-8 (highlight), I-10 (lid shadow / band
+as values) and I-12 (budget).
