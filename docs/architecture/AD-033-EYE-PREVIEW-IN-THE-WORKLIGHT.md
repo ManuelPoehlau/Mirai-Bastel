@@ -8,7 +8,7 @@ deviations from the draft, each with its reason); **E-4 MEASURED on the referenc
 LookDev phase 2, compact panel "Auge" and the Eye Lab window**; **§17 (2026-11-16): Eye LookDev phase 3, the
 reflections (`EyeLook`, scene format v10; container: TESTED; reference-PC cost MEASURED within the I-12 target;
 practical test KEEP)**; **§18 (2026-11-16): Eye LookDev phase 4, the iris (`EyeIris`, scene format v11; container:
-TESTED; reference-PC cost MEASURED within the I-12 target after the key table; practical test open)**. Names and
+TESTED; reference-PC cost MEASURED within the I-12 target after the key table; practical test KEEP)**. Names and
 numbers not covered by a decision stay `PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
@@ -628,6 +628,12 @@ Die Kosten sind gemessen (2026-11-16, Lauf 2 mit der Schlüssel-Tabelle): innerh
 8. Speichern, neu laden: die Iris-Werte sind da (Datei-Version 11). Eine Datei ohne Iris-Werte bleibt Version 10.
 
 Verdikt: KEEP / ITERATE / REJECT, gern je Punkt, dazu der Vergleich mit deinen Stills in denselben drei Ansichten.
+
+**Verdikt Manu, 2026-11-16: „1-8 Keep“** — alle acht Punkte KEEP. Das Verhalten der Phase 4 ist abgenommen. Die Zahlen
+(`DEFAULT_IRIS`, die Konstanten in `eye_optics`, die Tabellengröße, die Vorlage „Iris (Startwerte)“, die Regler-Bereiche)
+und das Layout des Abschnitts „Iris“ bleiben `PROVISIONAL`, bis sie eigens entschieden sind; I-6 bleibt offen. Im selben
+Zug **I-9 (Teil „Bild neben die Szene“): „ja“** — Mirai darf das Iris-Bild beim Speichern neben die Szene kopieren
+(Grundlage für Phase 5).
 
 
 **Manu, 2026-11-15:** "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm".
