@@ -963,6 +963,33 @@ def test_relief_from_alpha_without_a_height_is_flat(gl_window, tmp_path):
     assert np.abs(derived - plain).max() > 3
 
 
+def test_imported_height_in_alpha_draws_as_the_accepted_derived_height(gl_window, tmp_path):
+    """Eye LookDev phase 5: the import bakes phase 4's derived height (`eye_optics.iris_height`, "2 go") into the
+    copy's alpha, so "Höhe aus Alpha" on the copy draws what "Höhe aus Helligkeit" drew on the same colour - the
+    accepted phase 4 appearance - within one 8-bit step of the relief's filtering."""
+    from mirai import iris_import as ii
+
+    flat = np.full((SIZE, SIZE, 4), 255, np.uint8)
+    flat[..., :3] = np.clip(np.round(eo.procedural_iris(G, SIZE) * 255.0), 0, 255).astype(np.uint8)
+    marks = ii.Landmarks(ii.Circle(SIZE / 2, SIZE / 2, G.pupil_radius / G.iris_radius * SIZE / 2),
+                         ii.Circle(SIZE / 2, SIZE / 2, G.limbus_radius / G.iris_radius * SIZE / 2))
+    result = ii.build_copy(flat, marks, "flat", DEFAULT_EYE, hold_outer_color=False)
+    copy, rgb_only = tmp_path / "copy.png", tmp_path / "copy_rgb.png"
+    copy.write_bytes(ii.encode_png(result.rgba))
+    opaque = result.rgba.copy()
+    opaque[..., 3] = 255
+    rgb_only.write_bytes(ii.encode_png(opaque))
+    fitted = dataclasses.replace(DEFAULT_EYE, fit_pupil=result.fit_pupil, fit_limbus=result.fit_limbus,
+                                 hold_outer_color=result.hold_outer_color)
+    kw = dict(distance=4.0, key=(30.0, 20.0))
+    phase4, camera, _ = _iris_full(gl_window, _iris(fitted, relief=1.0), texture=str(rgb_only), **kw)
+    alpha, _, _ = _iris_full(gl_window, _iris(fitted, relief=1.0, relief_source="alpha"), texture=str(copy), **kw)
+    plain, _, _ = _iris_full(gl_window, fitted, texture=str(rgb_only), **kw)
+    iris = _iris_pixels(camera)
+    assert (np.abs(phase4 - plain).max(-1)[iris] > 3).mean() > 0.3  # the relief is there
+    assert np.abs(alpha - phase4).max() <= 2 and np.abs(alpha - phase4).mean() < 0.1
+
+
 def test_pupil_edge_and_margin_change_only_a_ring_at_the_pupil(gl_window):
     """Roadmap #7: the soft edge changes only pixels whose iris point lies within the edge (plus the pixel footprint)
     of the pupil radius; the margin darkens only outside the pupil, within its width."""

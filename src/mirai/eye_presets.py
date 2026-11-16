@@ -15,6 +15,9 @@ Eye LookDev phase 4: the look's iris values (`core.EyeIris`) travel inside the n
 {...}}`). A preset look without them (saved before phase 4, or from an eye without iris values) leaves an eye's iris
 values as they are (`set_eye_changes`). The built-in `IRIS_START` holds only iris values (key `"look.iris"`), so it
 keeps the eye's reflections, anatomy and limbus (`PROVISIONAL` agent values, I-6 stays open).
+
+Eye LookDev phase 5 (Manu 2026-11-16): a preset never changes an eye's relief height source (`EyeIris.relief_source`);
+it belongs to the iris image's import (`Application.apply_eye_preset` -> `eye_object.keep_relief_source`).
 """
 
 from __future__ import annotations

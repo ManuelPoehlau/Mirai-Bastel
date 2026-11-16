@@ -178,6 +178,17 @@ def look_value(spec: EyeSpec, name: str):
     return getattr(look, name)
 
 
+def keep_relief_source(before: EyeSpec, after: EyeSpec) -> EyeSpec:
+    """`after` with `before`'s relief height source (Eye LookDev phase 5, Manu 2026-11-16: the source belongs to the
+    iris image's import, not to a look; presets and "Iris zurücksetzen" keep it). An eye whose image carries its height
+    in alpha keeps "alpha" even when a preset removes its iris values: they come back neutral (every amount 0) with
+    that source."""
+    source = look_value(before, "iris.relief_source")
+    if look_value(after, "iris.relief_source") == source:
+        return after
+    return with_changes(after, **{IRIS_PREFIX + "relief_source": source})
+
+
 def shape_changed(before: EyeSpec, after: EyeSpec) -> bool:
     return any(getattr(before, name) != getattr(after, name) for name in SHAPE_FIELDS)
 

@@ -145,10 +145,36 @@ the derived surface), `RenderMesh` (a UV-only change re-writes the face's triang
 
 - UV editing, unwrapping, texture painting, baking, several UV maps or textures per object, UDIM tiles, normal maps,
   per-corner normals. The data model leaves room (a keyed UV map, a corner domain for split normals).
-- Copying the image into the project, relative texture paths, sRGB-correct display (the image's values are used as the
-  base colour directly, like the base colour itself).
+- ~~Copying the image into the project, relative texture paths~~ (both since Eye LookDev phase 5, see the addendum
+  below), sRGB-correct display (the image's values are used as the base colour directly, like the base colour itself).
 - Open for Manu (B24): is the selection tint replacing the texture in mode `4` right; is "Textur anzeigen" in the menu
   enough or does it want a key; is the texture's brightness under the Worklight right.
+
+### Addendum 2026-11-16: scene-relative texture paths, iris copies beside the scene (Eye LookDev phase 5)
+
+**Manu, 2026-11-16** (phase 5 decisions (1) and (2)): texture paths inside the scene's directory are written relative to
+the scene file; no new format version; Mirai copies an eye's iris image beside the scene (I-9) and only iris images in
+this phase. Built in `src/mirai/texture_files.py`, `Application.save_scene_file` / `init_scene` - **no Core code
+change**: `SceneObject.texture` stays a plain string and `core.serialization` writes and reads it unchanged (its
+docstring now states what a relative path means).
+
+- **Writing:** a texture in the scene file's directory or below it is written relative to that directory with `/`
+  (`Kopf_textures/iris_3fa9c2d1e0.png`); every other path as it is (absolute, as before). A Windows path read on Linux
+  (or the other way round) counts as absolute and is never rewritten.
+- **Reading:** a relative path is joined to the scene file's directory; in memory every texture path is absolute, so the
+  viewport, the eye pass and the ZBrush bridge are unchanged. A missing texture keeps its path; the round trip writes
+  the same string back.
+- **Older builds** read a relative path against their working directory: they usually do not find the image and show
+  the object without its texture, but they keep the stored string and write it back unchanged on save (no data loss).
+  No version bump: the key and its type are unchanged.
+- **Iris copies** (`<scene stem>_textures/`, the ZBrush bridge's folder): on save, every eye's iris image that is not
+  yet in that folder is copied byte for byte under its content name `<stem>_<10 hex of SHA-256>.<ext>`; an existing
+  file is never overwritten (same bytes: reused; other bytes: `_2`, `_3` ...). "Speichern unter" fills the new scene's
+  own folder; the original scene and its folder stay untouched. The eyes point at the copies only after every copy and
+  the scene file are written (a failed save changes no reference). No file is ever deleted; an Undo after a save returns
+  to a path that still exists. Other textures (OBJ imports) are not copied.
+- Tests: `tests/test_scene_textures.py` (absolute, relative, missing, spaces, another working directory, foreign
+  Windows paths, Save As, failed copy and failed write, Undo, the repository's test scene from anywhere).
 
 ## 8. Verification and measurements
 

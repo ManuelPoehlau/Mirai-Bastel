@@ -547,3 +547,25 @@ basis of phase 5). The other half of I-9 (invest first in the procedural iris, t
 not asked and stays open; phase 5 as planned (§G) is the photo workflow. **Still open from §I:** I-6, I-7, I-9
 (direction), I-11, I-13, I-14.
 
+
+## Addendum 2026-11-16 (phase 5): the iris import built
+
+**Manu, 2026-11-16:** the phase 5 proposal approved with decisions (1)-(5) (AD-033 §19 quotes them): scene-relative
+texture paths without a new version; iris images copied into `<SceneName>_textures/` by content hash, never
+overwritten or deleted, Save As independent; the phase 4 height baked into alpha ("Alpha behalten" optional), presets
+never overwrite `relief_source`; the lab's estimate extracted into production; **option B** - his photo stays local,
+the clone test uses synthetic images, the repository's `Gollum_Head_03` (v9) is not his working scene and is not
+migrated; highlight retouching deferred. Built as [AD-033 §19](../architecture/AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md)
+and [AD-026's addendum](../architecture/AD-026-FACE-CORNER-UVS-AND-TEXTURE.md). Acceptance per §H row 5:
+
+- **Met in the container (TESTED [C]):** a frontal photo and a flat image import without a hand-written file; the
+  repository's test scene `scenes/Eye_Iris_Import_Test.mirai.json` opens with both irises from any working directory
+  and clone location; landmark error after the fit 0.0 % for both (with the correction), within 1.5 % with the
+  estimate's landmarks; the corrected photo drawn back through the cornea reproduces the photo (no doubled limbus, the
+  pupil edge within 1 px); "Höhe aus Alpha" on the copy draws as phase 4's derived height.
+- **A correction to §C.3 [C]:** "the existing radial fit ... residual at most 1.5 %" holds only between the pinned
+  knots. The fit pins a photo's visible iris edge to the true limbus radius, which the cornea hides; in the frontal
+  model the eye's visible edge then shows the photo 5.5 % of the iris radius inside its own edge. For photos the
+  baked inverse refraction is what meets §H's 1.5 %; it is on by default for "Frontales Foto".
+- **Practical test:** pending (AD-033 §19, German, with Manu's own photo locally). **Still open from §I:** I-6, I-7,
+  I-9 (direction), I-11, I-13, I-14.

@@ -89,6 +89,7 @@ from .mesh_assembly import (
 )
 from .mesh_geometry import mesh_center_and_radius
 from . import object_space
+from . import texture_files
 from . import view_state
 from .orbit_focus import FocusTracker, OrbitFocus, focus_point
 from .pivot import WorkingPivot
@@ -368,6 +369,11 @@ class CommandGate:
         return self.refused_contexts.get(context)
 
 
+#: Eye LookDev phase 5: imported iris images of a scene that has no file yet (gitignored; `save_scene_file` copies them
+#: beside the scene). Like `config/eye_presets/`, relative to the repository root.
+EYE_IMPORT_DIR = Path(__file__).resolve().parents[2] / "eye_import"
+
+
 class Application:
     """Window-unabhängiger Produktions-Orchestrator."""
 
@@ -599,6 +605,9 @@ class Application:
         self._focus_tracker = FocusTracker()
         self._orbit_anchor: tuple | None = None  # (point or None,) once resolved for the running gesture
         self._loaded_view = None  # the `view` of the scene file `init_scene` just read (see `load_scene`)
+        # The scene file this document was read from or last saved to (absolute; None = not saved yet). Its directory
+        # resolves scene-relative texture paths and holds `<stem>_textures/` (`mirai.texture_files`, phase 5).
+        self.scene_path: Path | None = None
         # Transform gizmo (2026-10-21, AD-016 D3; promoted from the Playground, Manu). Off unless the host
         # draws it (`src/main.py` sets `gizmo_enabled`): Labs on `Application` get no invisible handles.
         # The handle press itself is a press session (`pointer_tools.GizmoPress`); `_gizmo_cache` = (key, pivot).
@@ -696,12 +705,18 @@ class Application:
         self._morph.drop_view()  # the reset replaces every object, the view included
         if geometry_type in ("cube", "obj", "empty"):
             reset_scene(self.scene, *self._build_mesh(geometry_type, obj_path))
+            self.scene_path = None
         elif geometry_type == "file":
             if scene_path is None:
                 raise ValueError('geometry_type="file" requires scene_path')
-            data = json.loads(Path(scene_path).read_text(encoding="utf-8"))
+            scene_path = Path(os.path.abspath(scene_path))
+            data = json.loads(scene_path.read_text(encoding="utf-8"))
             loaded = scene_from_dict(data)
+            for obj in loaded.objects.values():  # phase 5: a scene-relative texture path is absolute in memory
+                if obj.texture is not None:
+                    obj.texture = texture_files.resolve(obj.texture, scene_path.parent)
             replace_scene(self.scene, loaded)
+            self.scene_path = scene_path
             # View state (`mirai.view_state`) rides in the file beside the core envelope; `load_scene` applies it.
             self._loaded_view = data.get(view_state.VIEW_KEY) if isinstance(data, dict) else None
         # AD-029 §5: object IDs of a loaded file may repeat earlier ones; a ZBrush link of this session must not reach
@@ -925,7 +940,15 @@ class Application:
             return False
         from . import eye_presets
 
-        return self._objects.set_eye(f"Eye preset {name}", **eye_presets.set_eye_changes(preset))
+        return self._objects.set_eye(f"Eye preset {name}", keep_relief_source=True,
+                                     **eye_presets.set_eye_changes(preset))
+
+    def reset_eye_iris(self) -> bool:
+        """"Iris zurücksetzen": the selected eyes without iris values (neutral, as before phase 4), one Undo step; each
+        keeps its relief's height source (phase 5: it belongs to the iris image's import)."""
+        from .eye_object import IRIS_PREFIX
+
+        return self._objects.set_eye("Reset iris", keep_relief_source=True, **{IRIS_PREFIX[:-1]: None})
 
     def save_eye_preset(self, name: str) -> bool:
         """The first selected eye's look as a preset file (`mirai.eye_presets`); a saved preset of the same name is
@@ -1064,6 +1087,46 @@ class Application:
         `hold_outer_color`) sets the radial fit in the same step; without one the fit is cleared (planar). None removes
         the image. True = something changed."""
         return self._objects.set_eye_iris_image(None if path is None else Path(path))
+
+    def import_eye_iris(self, source: str | Path, landmarks, kind: str = "photo", correct: bool = True,
+                        keep_alpha: bool = False, hold_outer_color: bool = True) -> bool:
+        """Eye LookDev phase 5 (Manu 2026-11-16): import an iris image for every selected eye (`mirai.iris_import`).
+        `kind` "photo" (a frontal photo; `correct` bakes the exact inverse of the cornea's refraction for the first
+        selected eye's anatomy) or "flat" (flat / unrefracted / painted); `landmarks` the pupil and iris circles in the
+        source's pixels. The copy - the height in its alpha (`eye_optics.iris_height`, or the source's own alpha with
+        `keep_alpha`) - is written under its content name into the scene's `<stem>_textures/`, or into `eye_import/`
+        while the scene has no file (`Application.save_scene_file` copies it beside the scene). One Undo step: the
+        texture, the fit and the relief's source "alpha". Nothing runs at draw time. True = imported."""
+        from . import iris_import
+        from .eye_object import IRIS_PREFIX
+
+        label = "Iris import"
+        eyes = self._objects.eye_targets(label)
+        if eyes is None:
+            return False
+        source = Path(source)
+        try:
+            rgba = iris_import.read_rgba(source)
+            result = iris_import.build_copy(rgba, landmarks, kind, eyes[0].eye, correct=correct,
+                                            keep_alpha=keep_alpha, hold_outer_color=hold_outer_color,
+                                            refraction=self.display.eye_refraction)
+            png = iris_import.encode_png(result.rgba)
+            directory = (EYE_IMPORT_DIR if self.scene_path is None
+                         else texture_files.scene_texture_dir(self.scene_path))
+            path = texture_files.store(png, directory, texture_files.hashed_name(f"{source.stem}_iris", png, ".png"))
+        except (OSError, ValueError) as exc:
+            self._set_status(f"{label}: {source.name}: {exc}")
+            return False
+        changes = {"fit_pupil": result.fit_pupil, "fit_limbus": result.fit_limbus,
+                   "hold_outer_color": result.hold_outer_color, IRIS_PREFIX + "relief_source": "alpha"}
+        if not self._objects.apply_iris_image(eyes, str(path), changes, label):
+            return False
+        error = iris_import.frontal_error(result, landmarks, kind, eyes[0].eye, correct, self.display.eye_refraction)
+        notes = [f"landmark error {100 * error:.1f} %"]
+        if result.note:
+            notes.append(result.note)
+        self._set_status(f"{label}: {path.name} ({'; '.join(notes)})")
+        return True
 
     def select_objects(self, object_ids) -> bool:
         """Outliner click (AD-030): the object selection becomes exactly `object_ids` (mode `4` only; hidden and
@@ -1303,16 +1366,57 @@ class Application:
         if owner is not None:
             self._set_status(f"Save scene: not while the {owner} interaction runs")
             return False
-        path = Path(path)
-        data = scene_to_dict(self._morph.document_scene())
-        data[view_state.VIEW_KEY] = view_state.capture(self)
-        text = json.dumps(data, indent=2)
+        path = Path(os.path.abspath(path))
+        document = self._morph.document_scene()
         path.parent.mkdir(parents=True, exist_ok=True)
+        copies, missing = self._copy_iris_images(document, path)  # OSError: nothing written, nothing changed
+        data = scene_to_dict(document)
+        data[view_state.VIEW_KEY] = view_state.capture(self)
+        for raw in data["objects"]:
+            texture = raw.get("texture")
+            if texture is not None:
+                raw["texture"] = texture_files.to_file(copies.get(raw["id"], texture), path.parent)
+        text = json.dumps(data, indent=2)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")
         os.replace(tmp, path)
-        self._set_status(f"Saved scene: {path}")
+        # Only now, with the copies and the file written, do the eyes point at their copies (the same image; no Undo
+        # step: an Undo restores the old path, which still exists - nothing here deletes a file).
+        for obj in document.objects.values():
+            if int(obj.id) in copies:
+                obj.texture = copies[int(obj.id)]
+        if copies:
+            self._objects.sync_views()  # the entries draw from the copy from now on
+        self.scene_path = path
+        notes = []
+        if copies:
+            notes.append(f"iris image copied to {texture_files.scene_texture_dir(path).name}/")
+        if missing:
+            notes.append(f"iris image not found, path kept: {', '.join(sorted(missing))}")
+        self._set_status(f"Saved scene: {path}" + (f" ({'; '.join(notes)})" if notes else ""))
         return True
+
+    def _copy_iris_images(self, document, path: Path) -> tuple[dict[int, str], set[str]]:
+        """Phase 5 (I-9, Manu 2026-11-16): every eye's iris image that is not yet in the scene's own
+        `<stem>_textures/` is copied there byte for byte under its content name (`texture_files.copy_into`; never
+        overwrites). Returns ({object id: the copy's path}, names of images that do not exist - their path is kept).
+        Only iris images: other textures are not copied (they are written scene-relative when they lie below the scene
+        directory). `OSError` when a copy fails (the caller writes nothing then)."""
+        directory = texture_files.scene_texture_dir(path)
+        copies: dict[int, str] = {}
+        missing: set[str] = set()
+        done: dict[str, str] = {}
+        for obj in document.objects.values():
+            texture = obj.texture
+            if obj.eye is None or texture is None or texture_files.inside(texture, directory):
+                continue
+            if texture not in done:
+                if not os.path.isfile(texture):
+                    missing.add(Path(texture).name)
+                    continue
+                done[texture] = str(texture_files.copy_into(texture, directory))
+            copies[int(obj.id)] = done[texture]
+        return copies, missing
 
     def dispatch_command(
         self, command: str, context: Optional[dict] = None, **params

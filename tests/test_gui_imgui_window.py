@@ -440,6 +440,49 @@ def test_eye_panel_draws_an_eye_and_leaves_gl_state_as_found():
         run.render_frame(window)
         assert snapshot_gl_state() == before
         assert any(t is not None for t in app.viewport.eye_pass._relief.values())
+        # Eye LookDev phase 5: the import draft open in the lab (the source image as a texture, both circles drawn),
+        # then imported (the copy as the eye's texture, height from alpha); still the GL state as found.
+        import tempfile
+        from pathlib import Path
+
+        import numpy as np
+
+        from gui import iris_import_model as im
+        from mirai import iris_import as ii
+
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "iris.png"
+            yy, xx = np.mgrid[0:96, 0:96]
+            rr = np.hypot(xx - 47.5, yy - 47.5)
+            rgba = np.full((96, 96, 4), 255, np.uint8)
+            rgba[rr < 40, :3] = (90, 120, 160)
+            rgba[rr < 12, :3] = 5
+            source.write_bytes(ii.encode_png(rgba))
+            lab = layer.eye_lab
+            draft, message = im.open_draft(source)
+            assert message == "" and draft is not None
+            lab.importer.draft = draft
+            lab.importer._set_texture(draft)
+            run.render_frame(window)
+            before = snapshot_gl_state()
+            run.render_frame(window)
+            assert snapshot_gl_state() == before and lab.importer._texture is not None
+            import mirai.application as application_module
+
+            old_dir = application_module.EYE_IMPORT_DIR
+            application_module.EYE_IMPORT_DIR = Path(tmp) / "eye_import"
+            try:
+                assert im.run_import(app, draft) is True
+            finally:
+                application_module.EYE_IMPORT_DIR = old_dir
+            assert app.set_eye(**{"look.iris.relief": 0.6}) is True  # relief from the copy's alpha
+            run.render_frame(window)
+            run.render_frame(window)
+            before = snapshot_gl_state()
+            run.render_frame(window)
+            assert snapshot_gl_state() == before
+            lab.importer.draft = None
+            lab.importer._set_texture(None)
         app.close_eye_lab()
         run.render_frame(window)
         assert len(layer.panel_rects) == rects

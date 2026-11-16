@@ -124,7 +124,7 @@ clamp or Reinhard per channel, sRGB encode in the shader; no `GL_FRAMEBUFFER_SRG
 | `lab_scene.py` | the scene on the production `Viewport`, camera presets, close-up framing |
 | `lab_state.py` | every control as plain data, materials, the lab-local key table, HUD text |
 | `iris_source.py` | which iris image is used: `out/iris_custom.png` if usable, else the procedural one (P1 and P1b) |
-| `iris_fit.py`, `suggest_iris_fit.py` | the radial fit of the custom image (`out/iris_custom.json`): validation, remap + GLSL twin, the estimate |
+| `iris_fit.py`, `suggest_iris_fit.py` | the radial fit of the custom image (`out/iris_custom.json`): validation, remap + GLSL twin, the estimate (in production since Eye LookDev phase 5: `src/mirai/iris_import.estimate`, with a centre; the Eye Lab's "Iris importieren" replaces the hand-written JSON) |
 | `parity.py` | shader-vs-NumPy cases (inputs, references, tolerances) for the test and the probe |
 | `tests/` | 35 headless tests + 13 GL tests |
 | `RESULTS_CONTAINER_2026-11-14.md` | the container validation (`TESTED [C]`) with raw output |

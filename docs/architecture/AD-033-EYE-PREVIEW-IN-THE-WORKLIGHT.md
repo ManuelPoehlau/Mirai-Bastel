@@ -8,8 +8,9 @@ deviations from the draft, each with its reason); **E-4 MEASURED on the referenc
 LookDev phase 2, compact panel "Auge" and the Eye Lab window**; **§17 (2026-11-16): Eye LookDev phase 3, the
 reflections (`EyeLook`, scene format v10; container: TESTED; reference-PC cost MEASURED within the I-12 target;
 practical test KEEP)**; **§18 (2026-11-16): Eye LookDev phase 4, the iris (`EyeIris`, scene format v11; container:
-TESTED; reference-PC cost MEASURED within the I-12 target after the key table; practical test KEEP)**. Names and
-numbers not covered by a decision stay `PROVISIONAL`.
+TESTED; reference-PC cost MEASURED within the I-12 target after the key table; practical test KEEP)**; **§19
+(2026-11-16): Eye LookDev phase 5, the iris import (no Core change; container: TESTED; practical test pending)**. Names
+and numbers not covered by a decision stay `PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
 §8 (decisions incl. those of 2026-11-14 / 15); [eye lab README](../../experiments/lookdev_eye_lab/README.md) (P1, P1b,
@@ -635,6 +636,122 @@ und das Layout des Abschnitts „Iris“ bleiben `PROVISIONAL`, bis sie eigens e
 Zug **I-9 (Teil „Bild neben die Szene“): „ja“** — Mirai darf das Iris-Bild beim Speichern neben die Szene kopieren
 (Grundlage für Phase 5).
 
+
+## 19. Addendum 2026-11-16: Eye LookDev phase 5 - the iris import (`PROVISIONAL` layout and constants)
+
+**Manu, 2026-11-16** ([assessment](../research/EYE_LOOKDEV_PHASE2_ASSESSMENT_2026-11-16.md) §C.3, §G phase 5, §H row 5,
+I-9 "ja" to copying the image beside the scene), on the five questions asked before building: **(1)** texture paths
+inside the scene directory scene-relative, no new format version, documented in `serialization.py` and AD-026 §7;
+**(2)** the `<SceneName>_textures/` convention, only iris images copied, content hashes, never overwrite, Save As makes
+an independent folder, references change only after the copies and the save succeeded, never delete, `eye_import/` for
+unsaved scenes; **(3)** the accepted `iris_height` baked 8-bit into the copy's alpha, the source's alpha kept on
+"Alpha behalten", presets never overwrite `relief_source` (it belongs to the image's import), "Höhe aus Alpha" must
+reproduce phase 4's look; the lab's estimate extracted cleanly into production as a starting point only; **(4)**
+option B: Manu's photo stays local, the clone test uses synthetic images, `Gollum_Head_03` in the repository (v9) is not
+his working scene and is not migrated here; **(5)** highlight retouching deferred (first the real photo through the
+pipeline; no automatic detection).
+
+**Pieces (all at import; nothing at draw time; no Core change).**
+- `mirai.iris_import` (NumPy, no GL): PNG write (8-bit RGBA) and read (pyglet's decoders first, else an own PNG decoder
+  for headless use), `estimate` (the eye lab's profile method - pupil edge = first ring brighter than 0.15, iris edge =
+  first ring brighter than 0.85 or the steepest outer change - plus a centre: the dark pupil's centroid),
+  `edge_check`, `build_copy`, `frontal_error`.
+- `mirai.texture_files`: scene-relative paths and content-named copies (AD-026 addendum 2026-11-16).
+- `Application.import_eye_iris(source, landmarks, kind, correct, keep_alpha, hold_outer_color)`: one Undo step - the
+  copy as the eyes' texture, the fit, the iris's `relief_source` "alpha" (an eye without iris values gets them with
+  every amount 0: it still draws neutral; its file is v11). The copy goes into the scene's `<stem>_textures/`, or into
+  `eye_import/` (gitignored, repository root) while the scene has no file; `save_scene_file` then copies it beside the
+  scene. `Application.reset_eye_iris` ("Iris zurücksetzen") and `apply_eye_preset` keep each eye's `relief_source`
+  (`eye_object.keep_relief_source`).
+- `gui.iris_import_model` (pure) and `eye_panel.IrisImportSection`: "Iris importieren ..." under the image field of the
+  Eye Lab.
+
+**The copy.** Square, centred on the iris circle, the iris edge at 0.88 of half its width (`TARGET_SHARE`), 256-2048 px.
+A pupil off the iris centre is moved onto it smoothly (the eye's pupil is centred). Two mappings:
+- **flat / painted** (and a photo without the correction): the source radius scaled linearly; `fit_pupil` / `fit_limbus`
+  pin the copy's pupil edge and iris edge exactly as the hand-written JSON did (`hold_outer_color` = "Randfarbe
+  halten", default on - Manu's 2026-11-14 "A+H").
+- **frontal photo with "Brechung herausrechnen"** (default on for photos): a copy pixel stands for a true iris radius
+  r; `eye_optics.trace` (frontal rays, the display's V2 / V3) gives the apparent radius A(r); the copy shows what the
+  photo shows at A(r), linear in the apparent radius between the landmarks (the photo's pupil edge at the eye's apparent
+  pupil edge, its iris edge at the eye's visible limbus). The copy is then a true-radius layout: `fit_pupil` =
+  0.88 × pupil / limbus radius, `fit_limbus` = 0.88, no hold (beyond the visible limbus the copy holds the photo's
+  edge colour itself). Exact for the first selected eye's anatomy at import; both landmarks stay pinned by the fit if
+  the anatomy changes later.
+
+**The landmark error (§H row 5, `frontal_error`).** Following the eye's own path (radius -> fit `share_map` -> copy ->
+source): a photo at the eye's apparent pupil edge and visible limbus against the photo's landmarks; a flat image at the
+true pupil and limbus radii. **Measured [C]:** flat image 0.0 %; frontal photo with the correction 0.0 % (with the
+estimate's landmarks, not touched by hand, within 1.5 % on the synthetic photo); **a frontal photo without the
+correction 5.5 %** - the doubled refraction: the hand-written fit pins the photo's visible iris edge to the true limbus
+radius, which lies behind the limbus, so the eye's visible edge shows the photo 5.5 % of the iris radius inside its
+edge. That corrects §C.3's "residual at most 1.5 %", which measured only between the two pinned knots; the correction is
+what meets the 1.5 % limit for photos. Image check [C] (`test_iris_import.py`): a synthetic photo (the procedural iris
+traced through the cornea) imported with the correction and drawn back through the cornea reproduces the photo (mean
+difference 2.0 grey levels, two resamplings; without the correction 6.5), the estimated pupil and iris edges of the
+drawn result within 1 px of the photo's - no doubled limbus, no swimming pupil.
+
+**Height.** `eye_optics.iris_height` (phase 4, "2 go") on the copy's colour with the copy's fit, 8-bit in alpha; with
+"Alpha behalten" (offered only when the source has alpha) the source's alpha, resampled like the colour. **"Höhe aus
+Alpha" on the copy draws what "Höhe aus Helligkeit" drew on the same colour** (GL, `test_gl_eye_pass.py`: at most 2,
+mean below 0.1 grey levels). Note: a PNG with this alpha looks partly transparent in an image viewer; the alpha is a
+height, not opacity.
+
+**Oblique photos (`edge_check`).** The iris edge's radius in 48 directions (the strongest brightness change between 0.7
+and 1.3 iris radii) is fitted with a cos 2θ term; above 3 % ellipticity (about 20° off frontal) or a pupil more than
+12 % of the iris radius off its centre, the dialog says: "Foto schräg? Nicht radialsymmetrisch - die Brechungskorrektur
+setzt ein frontales Foto voraus." A hint only: the correction stays selectable. Known limit: a real eye's visible
+limbus is a little wider than tall, so an uncropped frontal photo can show the hint too.
+
+**The dialog.** "Iris importieren ..." opens the path from the image field: the kind ("Frontales Foto" / "Flach /
+ungebrochen / gemalt"), "Brechung herausrechnen", "Randfarbe halten" (flat or uncorrected), "Alpha behalten" (if the
+image has alpha), the image with both circles (cyan pupil, yellow iris: drag a centre handle to move a circle - both
+together while their centres coincide -, an edge handle or the line to change the radius), the values as x / y / r,
+"Neu schätzen", "Importieren", "Abbrechen". The draft is UI state (not saved, no Undo). The status line reports the
+copy's name and the landmark error.
+
+**Not in this phase.** Highlight retouching (decision 5), automatic highlight detection, colour or lighting changes to
+the photo (baked crescent / lid shadow, §C.3 #2-#3: `colour_source` still decides the limbal colour), the migration of
+Manu's local `Gollum_Head_03` (decision 4; see the Praxistest), a general image editor.
+
+**Tests.** `test_iris_import.py` (PNG incl. every filter type; the estimate and its centre; the symmetry check; refused
+landmarks; flat and photo copies, the landmark error, the photo drawn back through the cornea; the height in alpha and
+"Alpha behalten"; the app path: one Undo step, `eye_import/` until saved, a saved scene's folder, the scene opened from
+elsewhere, refusals, presets and the reset keep `relief_source`), `test_gui_iris_import_model.py` (the dialog's logic),
+`test_scene_textures.py` (AD-026 addendum), `test_gl_eye_pass.py` (alpha = derived height), `test_gui_imgui_window.py`
+(the dialog drawn, an import, the GL state as found), `test_eye_iris.py` (the reset keeps the source).
+**Clone test scene:** `scenes/Eye_Iris_Import_Test.mirai.json` - "Auge gemalt" (the procedural iris imported flat) and
+"Auge Foto" (the same iris traced through the cornea as a synthetic frontal photo, imported with the correction), both
+with "Iris (Startwerte)"; copies in `scenes/Eye_Iris_Import_Test_textures/`, named scene-relative. Only images made by
+Mirai's own code. `.gitignore` keeps `scenes/**/iris_custom_*` (copies of Manu's photo) out of the repository.
+
+### Praxistest für Manu (Deutsch, ca. 15 Minuten)
+
+Dein Foto bleibt lokal. Wichtig vorab: Dein v11-`Gollum_Head_03` liegt nur bei dir; ziehe es erst um, wenn du willst
+(Punkt 6). Die Kopie deines Fotos (`iris_custom_…`) ignoriert Git, sie kommt nicht ins Repo.
+
+1. `scenes/Eye_Iris_Import_Test.mirai.json` öffnen (Datei-Menü): beide Augen haben ihre Iris, links „gemalt“, rechts
+   „Foto“ (beide aus Mirais eigenem Iris-Generator). Sie sehen gleich aus – das rechte war ein „Foto durch die Hornhaut“.
+2. Deine Szene öffnen (oder ein neues Auge), Auge wählen, „Im Eye Lab öffnen“. Unten im Feld „Iris-Bild“ den Pfad zu
+   deinem `iris_custom.png` eintragen, dann **„Iris importieren …“** (nicht „Iris-Bild laden“).
+3. Quelle wählen: dein Bild ist ein Foto → „Frontales Foto“, „Brechung herausrechnen“ an. Die beiden Kreise liegen schon
+   ungefähr richtig (Vorschlag). Zieh sie nach: Mittelpunkt = verschieben, Punkt rechts am Kreis oder die Linie = Radius.
+   Türkis = Pupillenrand, Gelb = Irisrand (sichtbarer Limbus). Steht darunter ein gelber Hinweis „Foto schräg?“, sag
+   mir, ob er bei deinem Bild passt.
+4. „Importieren“. In der Statuszeile steht der Name der Kopie und „landmark error … %“. Mit „Iris (Startwerte)“ und
+   Qualität „voll“ ansehen, frontal und Dreiviertel: **kein doppelter Limbus** (kein zweiter dunkler Ring innen am
+   Rand), **keine schwimmende Pupille** (der dunkle Pupillenrand sitzt genau am Pupillenrand des Auges). Zum Vergleich
+   einmal ohne „Brechung herausrechnen“ importieren (Strg+Z dazwischen).
+5. „Höhe aus Alpha“ ist nach dem Import gewählt. Umschalten auf „Höhe aus Helligkeit“: das Relief sieht gleich aus
+   (dieselbe Ableitung, jetzt im Bild gespeichert). Eine Look-Vorlage anwenden: die Höhenquelle bleibt.
+6. Speichern (Strg+S). Ist die Szene neu, wandert die Kopie aus `eye_import/` nach `<Szenenname>_textures/`. Bei deinem
+   `Gollum_Head_03` zieht beim Speichern auch das alte `iris_custom.png` einmal dorthin um, und die Pfade in der Datei
+   stehen danach relativ – das ist die Migration, die du selbst auslöst. „Speichern unter“ mit neuem Namen legt einen
+   eigenen Ordner an; die alte Szene bleibt, wie sie war.
+7. Glanzpunkte: Sieht man in deinem Foto eingebrannte Glanzpunkte als falsches Relief oder feste helle Flecken? Dann
+   ist die Retusche (Entscheidung 5) der nächste Schritt; sonst bleibt sie weg.
+
+Verdikt: KEEP / ITERATE / REJECT, gern je Punkt.
 
 **Manu, 2026-11-15:** "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm".
 

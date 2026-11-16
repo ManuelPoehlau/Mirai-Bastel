@@ -11,6 +11,7 @@ change). No keys (D-L9).
 from __future__ import annotations
 
 from . import eye_model as em
+from . import iris_import_model as im
 from viewport.eye_pass import REFLECTIONS, REFRACTIONS, TIERS
 
 TIER_HINT = "'schnell' zeichnet ohne Reflexe und Iris des Eye Labs (wie vor Phase 3), 'voll' mit ihnen."
@@ -107,6 +108,7 @@ class EyeLabPanel:
         self.sliders = _Sliders(imgui, app)
         self.image_buf = ""
         self.preset_buf = ""
+        self.importer = IrisImportSection(imgui, app)
 
     def draw(self) -> None:
         imgui, app = self.imgui, self.app
@@ -185,6 +187,7 @@ class EyeLabPanel:
         if st.eyes[0].texture is not None:
             if imgui.small_button("Bild entfernen"):
                 app.set_eye_iris_image(None)
+        self.importer.draw(self.image_buf)
         imgui.separator()
         imgui.set_next_item_width(170.0)
         _, self.preset_buf = imgui.input_text_with_hint("##preset", "Name der Vorlage", self.preset_buf)
@@ -232,6 +235,137 @@ class EyeLabPanel:
         if spec.look is not None and spec.look.iris is not None:
             if imgui.small_button("Iris zurücksetzen"):
                 em.reset_iris(app)
+
+
+class IrisImportSection:
+    """Eye LookDev phase 5: "Iris importieren" in the Eye Lab - the source's kind, the two landmark circles over the
+    image (drag a centre or an edge, or type the values), the options and "Importieren" (`gui.iris_import_model`). The
+    draft is UI state; only "Importieren" changes the document (one Undo step)."""
+
+    VIEW = 320.0  # the image view's longer side in pixels (`PROVISIONAL`)
+    PUPIL_COLOUR = (0.35, 0.85, 0.95, 1.0)
+    IRIS_COLOUR = (0.98, 0.82, 0.30, 1.0)
+    WARN = (0.95, 0.75, 0.35, 1.0)
+
+    def __init__(self, imgui, app) -> None:
+        self.imgui, self.app = imgui, app
+        self.draft: im.ImportDraft | None = None
+        self.message = ""
+        self._texture = None  # the source as a GL texture for the view (pyglet), made when a draft opens
+        self._grab: tuple[str, str] | None = None
+
+    def _set_texture(self, draft: im.ImportDraft | None) -> None:
+        if self._texture is not None:
+            self._texture.delete()
+            self._texture = None
+        if draft is None:
+            return
+        try:
+            from pyglet import image
+
+            w, h = draft.size
+            rows = draft.rgba[::-1].tobytes()  # pyglet: bottom-up
+            self._texture = image.ImageData(w, h, "RGBA", rows, pitch=w * 4).get_texture()
+        except Exception as exc:  # no GL here: the circles are still set by value
+            self._texture, self.message = None, f"Vorschau nicht verfügbar ({exc.__class__.__name__})"
+
+    def draw(self, path_text: str) -> None:
+        imgui = self.imgui
+        if self.draft is None:
+            if imgui.small_button("Iris importieren ..."):
+                draft, self.message = im.open_draft(path_text)
+                if draft is not None:
+                    self.draft = draft
+                    self._set_texture(draft)
+            if imgui.is_item_hovered():
+                imgui.set_tooltip("Bild aus dem Feld oben öffnen: Quelle angeben, Pupillen- und Irisrand setzen,\n"
+                                  "dann importieren (die Kopie liegt neben der Szene).")
+            if self.message:
+                imgui.text_colored(imgui.ImVec4(*self.WARN), self.message)
+            return
+        self._draw_draft()
+
+    def _draw_draft(self) -> None:
+        imgui, app = self.imgui, self.app
+        draft = self.draft
+        imgui.separator()
+        imgui.text_disabled("Iris importieren (Phase 5)")
+        imgui.text_disabled(draft.summary)
+        for kind, label in im.KIND_LABELS.items():
+            if imgui.radio_button(label, draft.kind == kind):
+                draft = im.with_options(draft, kind=kind)
+            imgui.same_line()
+        imgui.new_line()
+        if draft.kind == "photo":
+            changed, on = imgui.checkbox("Brechung herausrechnen (frontales Foto)", draft.correct)
+            if changed:
+                draft = im.with_options(draft, correct=on)
+        if draft.kind == "flat" or not draft.correct:
+            changed, on = imgui.checkbox("Randfarbe halten", draft.hold_outer_color)
+            if changed:
+                draft = im.with_options(draft, hold_outer_color=on)
+        if draft.has_alpha:
+            changed, on = imgui.checkbox("Alpha behalten (eigene Höhe)", draft.keep_alpha)
+            if changed:
+                draft = im.with_options(draft, keep_alpha=on)
+        else:
+            imgui.text_disabled("Höhe: aus der Helligkeit, in den Alphakanal der Kopie")
+        draft = self._draw_view(draft)
+        for name, label in (("pupil", "Pupille"), ("iris", "Iris")):
+            c = getattr(draft.marks, name)
+            values = [c.x, c.y, c.r]
+            imgui.set_next_item_width(220.0)
+            changed, values = imgui.drag_float3(f"{label} x / y / r", values, 0.25, 0.0, 0.0, "%.1f")
+            if changed:
+                draft = im.set_circle(draft, name, x=values[0], y=values[1], r=values[2])
+        if draft.problem:
+            imgui.text_colored(imgui.ImVec4(*self.WARN), draft.problem)
+        if draft.hint:
+            imgui.text_colored(imgui.ImVec4(*self.WARN), draft.hint)
+        if imgui.small_button("Neu schätzen"):
+            draft = im.reestimate(draft)
+        imgui.same_line()
+        if not draft.problem and imgui.button("Importieren"):
+            im.run_import(app, draft)
+        imgui.same_line()
+        if imgui.small_button("Abbrechen"):
+            self.draft = None
+            self._set_texture(None)
+            return
+        self.draft = draft
+
+    def _draw_view(self, draft: im.ImportDraft) -> im.ImportDraft:
+        """The source image with both circles; a centre handle moves its circle, an edge handle (or the line) sets
+        its radius."""
+        imgui = self.imgui
+        w, h = draft.size
+        scale = self.VIEW / max(w, h)
+        size = imgui.ImVec2(w * scale, h * scale)
+        origin = imgui.get_cursor_screen_pos()
+        if self._texture is not None:
+            imgui.image(imgui.ImTextureRef(self._texture.id), size)
+            imgui.set_cursor_screen_pos(origin)
+        imgui.invisible_button("##iris_view", size)
+        mouse = imgui.get_io().mouse_pos
+        x, y = (mouse.x - origin.x) / scale, (mouse.y - origin.y) / scale
+        if imgui.is_item_activated():
+            self._grab = im.pick_handle(draft.marks, x, y, 8.0 / scale)
+        if imgui.is_item_active() and self._grab is not None:
+            draft = im.drag_handle(draft, self._grab, x, y)
+        if imgui.is_item_deactivated() and self._grab is not None:
+            draft, self._grab = im.checked(draft), None
+        dl = imgui.get_window_draw_list()
+        if self._texture is None:
+            dl.add_rect(origin, imgui.ImVec2(origin.x + size.x, origin.y + size.y),
+                        imgui.get_color_u32(imgui.ImVec4(0.38, 0.4, 0.45, 1)))
+        for name, colour in (("pupil", self.PUPIL_COLOUR), ("iris", self.IRIS_COLOUR)):
+            c = getattr(draft.marks, name)
+            u32 = imgui.get_color_u32(imgui.ImVec4(*colour))
+            centre = imgui.ImVec2(origin.x + c.x * scale, origin.y + c.y * scale)
+            dl.add_circle(centre, c.r * scale, u32, 96, 1.5)
+            dl.add_circle_filled(centre, 3.5, u32)
+            dl.add_circle_filled(imgui.ImVec2(centre.x + c.r * scale, centre.y), 4.5, u32)
+        return draft
 
 
 def draw_gaze(imgui, app, st: em.EyePanelState, pad_size: tuple[float, float]) -> None:
