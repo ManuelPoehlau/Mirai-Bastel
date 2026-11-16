@@ -288,6 +288,15 @@ die Option, dass die Augen in die Kamera gucken (ich drehe den viewport, aber go
   (`object_mirror`: a sideways gaze is not mirror-symmetric); a per-eye rest divergence kept while aiming; a gaze target
   that is saved with the scene.
 
+## 13. Pointer 2026-11-16: assessment for the next phase (no decision)
+
+What comes after E-1 … E-3 and the gaze - visual quality of iris, pupil, cornea and reflections, the split between the
+normal viewport and an Eye Lab, eyes beside a morph target's editing view, cost on the reference PC, phases and the
+decisions needed from Manu - is assessed in
+[EYE_LOOKDEV_PHASE2_ASSESSMENT_2026-11-16.md](../research/EYE_LOOKDEV_PHASE2_ASSESSMENT_2026-11-16.md) (Discovery;
+nothing in this AD changes). It also notes that §7 quotes the lab's cube-map rows (T-C) while §11 built the analytic
+studio (T-D, about twice the per-pixel cost in the lab); E-4 stays the only source for the real cost.
+
 ## Decision record
 
 **Manu, 2026-11-15:** "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm".
