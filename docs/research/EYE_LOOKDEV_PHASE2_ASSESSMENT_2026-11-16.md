@@ -509,3 +509,31 @@ seed instead of a mirrored seed; the shadow is the upper lid's only and independ
 tilt; the softened highlight is a softbox-shaped area light at the key (I-8 kept the key highlight, the studio softbox
 stays where it is). A built-in preset "Reflexe (Startwerte)" (look values only, `PROVISIONAL`) gives the practical test
 a starting point; I-6 stays open. **Still open from §I:** I-6, I-7, I-9, I-11, I-13, I-14.
+
+## Addendum 2026-11-16 (phase 4): the iris built
+
+**Manu, 2026-11-16:** "Phase 4 go" (roadmap #4, #5, #7, the rules of phase 3), then on the two questions asked before
+building: "1 go (v11)" (the iris values as their own optional group in the look, scene format v11, v10 files unchanged)
+and "2 go" (until the import of phase 5 the relief's height is derived from the iris image's brightness). Built as
+[AD-033 §18](../architecture/AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md) describes: `core.EyeIris` (`EyeLook.iris`), drawn
+only in the "full" tier. Acceptance per §H row 4:
+
+- **Met in the container (TESTED [C]):** every amount at 0 draws bit-identically (also forced into the new program);
+  "fast", every eye without iris values and every scene without eyes use the program of phase 3 (its source unchanged
+  for all 128 variants); GPU parity for every new function; the crescent lies opposite the key from either side, the
+  rim shadow on the key's side; the pupil edge only changes a ring at the pupil radius (with the pixel footprint, so it
+  is smooth at every distance).
+- **The physics checked [C]:** the key's path through the cornea against a forward ray trace from a frontal to a grazing
+  key. A finding on the way: §C.1's "#4 analytic" needs the cornea's focusing, and that is strongest with the key from
+  the side (at 80° the far iris gets over 3 × the unrefracted key's light); with a frontal key it is an even 1.3 ×.
+  The first solver (a fixed-point iteration) was wrong at grazing keys; the built one solves in the path's plane.
+- **Open:** the cost on the reference PC (I-12; the probe's `iris full` rows) and the practical test (§18's
+  Praxistest). §F's estimate for #4 (+0.05–0.1 ms) is too low for the built model: tracing the key through the cornea
+  per pixel costs about as much as the whole phase 3 look in the container's software renderer (relative numbers
+  only), the crescent's two neighbour paths as much again (they run only with `crescent` > 0).
+
+Deviations from §C / §D, each with its reason in AD-033 §18: the height is derived at draw time into the pass's own
+texture (no image is written; phase 5 writes a real one); only the key is refracted (fill and ambient as before);
+`crescent` may exaggerate up to 2. A built-in preset "Iris (Startwerte)" (iris values only, `PROVISIONAL`) gives the
+practical test a starting point. **Still open from §I:** I-6, I-7, I-9, I-11, I-13, I-14.
+

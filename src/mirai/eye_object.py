@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
-from core import EyeLook, EyeSpec, Mesh, ObjectMaterial, ObjectTransform
+from core import EyeIris, EyeLook, EyeSpec, Mesh, ObjectMaterial, ObjectTransform
 
 from viewport.eye_optics import EyeGeometry
 
@@ -69,6 +69,21 @@ DEFAULT_LOOK = EyeLook(
 )
 #: `with_changes` keys of the look values: "look.<EyeLook field>".
 LOOK_PREFIX = "look."
+#: The app's starting iris values (Eye LookDev phase 4, `PROVISIONAL`): every amount at 0 (= neutral, the iris as
+#: before), the shaping values where a first slider move starts. They exist only once an iris value is set.
+DEFAULT_IRIS = EyeIris(
+    light=0.0,
+    crescent=0.0,
+    rim_shadow=0.0,
+    rim_shadow_mm=0.4,
+    relief=0.0,
+    relief_mm=0.12,
+    relief_source="luminance",
+    pupil_edge_mm=0.0,
+    pupil_margin=0.0,
+)
+#: `with_changes` keys of the iris values: "look.iris.<EyeIris field>".
+IRIS_PREFIX = LOOK_PREFIX + "iris."
 
 #: The values whose change rebuilds the shell (the rest only changes the shading).
 SHAPE_FIELDS = ("cornea_radius", "limbus_radius")
@@ -138,20 +153,29 @@ def shell_mesh(spec: EyeSpec, segments: int = SEGMENTS, sclera_rings: int = SCLE
 
 
 def with_changes(spec: EyeSpec, **changes) -> EyeSpec:
-    """A validated copy (`ValueError` from `EyeSpec` / `EyeLook` on an invalid combination). A key "look.<field>" changes
-    one look value: on the eye's own look, or on `DEFAULT_LOOK` when it has none yet (so each eye keeps its other look
-    values); `look=None` removes the look (neutral)."""
-    look_changes = {key[len(LOOK_PREFIX):]: value for key, value in changes.items() if key.startswith(LOOK_PREFIX)}
+    """A validated copy (`ValueError` from `EyeSpec` / `EyeLook` / `EyeIris` on an invalid combination). A key
+    "look.<field>" changes one look value: on the eye's own look, or on `DEFAULT_LOOK` when it has none yet (so each eye
+    keeps its other look values); `look=None` removes the look (neutral). Phase 4: "look.iris.<field>" changes one iris
+    value the same way (on `DEFAULT_IRIS` when the look has none yet); "look.iris"=None removes the iris values."""
+    iris_changes = {key[len(IRIS_PREFIX):]: value for key, value in changes.items() if key.startswith(IRIS_PREFIX)}
+    look_changes = {key[len(LOOK_PREFIX):]: value for key, value in changes.items()
+                    if key.startswith(LOOK_PREFIX) and not key.startswith(IRIS_PREFIX)}
     plain = {key: value for key, value in changes.items() if not key.startswith(LOOK_PREFIX)}
-    if look_changes:
+    if look_changes or iris_changes:
         base = plain.get("look", spec.look) or DEFAULT_LOOK
+        if iris_changes:
+            look_changes["iris"] = replace(look_changes.get("iris", base.iris) or DEFAULT_IRIS, **iris_changes)
         plain["look"] = replace(base, **look_changes)
     return replace(spec, **plain)
 
 
 def look_value(spec: EyeSpec, name: str):
-    """One look value of `spec` (its own look, else the starting look's)."""
-    return getattr(spec.look or DEFAULT_LOOK, name)
+    """One look value of `spec` (its own look, else the starting look's); "iris.<name>" an iris value (the eye's own,
+    else the starting iris's)."""
+    look = spec.look or DEFAULT_LOOK
+    if name.startswith("iris."):
+        return getattr(look.iris or DEFAULT_IRIS, name[len("iris."):])
+    return getattr(look, name)
 
 
 def shape_changed(before: EyeSpec, after: EyeSpec) -> bool:

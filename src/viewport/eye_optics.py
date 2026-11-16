@@ -671,3 +671,199 @@ def area_key(r, c, up_ref, roughness, half, radiance, right_ref=(1.0, 0.0, 0.0))
         return 0.5 * (_erf((v + hw) * k) - _erf((v - hw) * k))
 
     return radiance * box(x, half[0]) * box(y, half[1]) * (s * s * (3.0 - 2.0 * s))
+
+
+# -- the iris (Eye LookDev phase 4; `core.EyeIris`, Manu 2026-11-16: "1 go (v11), 2 go") ------------------------------
+# GLSL twins in `eye_shaders.IRIS_LIB_SRC`, drawn only in the "full" tier and only for an eye whose iris values have an
+# amount above 0 (`iris_active`). Every term is neutral at amount 0. All constants `PROVISIONAL`.
+
+#: The key's path back from an iris point through the cornea (`iris_light_path`): incident ray, normal and refracted
+#: ray lie in one plane through the cornea's centre, so the entry point is one angle in that plane, found by secant
+#: steps from the straight path's exit (max. 2e-5 eye radii from the converged point after 6 steps over keys up to 85
+#: degrees off the axis; a plain fixed-point iteration needed > 12 steps at grazing keys). A residual above
+#: IRIS_LIGHT_TOLERANCE means no path: beyond the caustic, the key cannot reach the point (checked against a forward
+#: ray trace, `test_eye_iris.py`).
+IRIS_LIGHT_STEPS = 6
+IRIS_LIGHT_TOLERANCE = 1e-4
+#: The two neighbours of the finite difference start from the point's own solution (their planes differ by < 1e-2
+#: rad): three secant steps leave < 1e-9 rad at p99, 1e-4 rad at worst (the concentration then within 1 %).
+IRIS_LIGHT_WARM_STEPS = 3
+IRIS_LIGHT_WARM_OFFSET = 1e-3
+#: The finite-difference step (eye radii) of the beam's area at the iris (`iris_key_terms`): 0.12 mm.
+IRIS_LIGHT_DELTA = 0.01
+#: The concentration's cap (a caustic would be infinite) and the smallest cosine it divides by.
+CRESCENT_MAX = 4.0
+CRESCENT_MIN_COS = 0.2
+#: The dark margin of the pupil (`pupil_margin`): its width beyond the pupil edge.
+PUPIL_MARGIN_MM = 0.35
+#: The height derived from the iris image's brightness (`iris_height`): the high-pass's Gaussian (share of the image
+#: width), the RMS that maps to the full height, and the soft edge of the iris annulus (share of half the image width).
+HEIGHT_HIGHPASS = 0.03
+HEIGHT_RANGE = 2.5
+HEIGHT_EDGE = 0.04
+#: The amounts of `core.EyeIris` (neutral at 0).
+IRIS_AMOUNTS = ("light", "crescent", "rim_shadow", "relief", "pupil_edge_mm", "pupil_margin")
+IRIS_KEY_AMOUNTS = ("light", "crescent", "rim_shadow")
+
+
+def iris_active(look) -> bool:
+    """True when an `EyeLook`'s iris values change the picture (some amount above 0)."""
+    iris = getattr(look, "iris", None)
+    return iris is not None and any(getattr(iris, name) > 0.0 for name in IRIS_AMOUNTS)
+
+
+def iris_values(iris, g: EyeGeometry, texture_width: int = 512) -> dict:
+    """The iris's derived numbers (GL-free; `eye_pass.iris_uniforms` names them): the key terms' switch, the rim
+    shadow's width, the relief's depth and step (one texel of the image at the planar mapping), the pupil edge."""
+    return {
+        "key": sum(getattr(iris, name) for name in IRIS_KEY_AMOUNTS),
+        "rim_width": iris.rim_shadow_mm * MM,
+        "relief_depth": iris.relief * iris.relief_mm * MM,
+        "relief_step": 2.0 * g.iris_radius / max(int(texture_width), 1),
+        "pupil_edge": iris.pupil_edge_mm * MM,
+        "margin_width": PUPIL_MARGIN_MM * MM,
+    }
+
+
+def _light_miss(phi, hx, hy, g: EyeGeometry):
+    """In the plane of the key `l` (x) and the point (y >= 0), the cornea's centre at the origin: how far the key
+    refracted at the cornea's point at angle `phi` from `l` misses the point (h - E) x t."""
+    c, s = np.cos(phi), np.sin(phi)
+    eta = N_AIR / N_EFFECTIVE
+    m = np.sqrt(np.maximum(1.0 - eta * eta * (1.0 - c * c), 0.0)) - eta * c
+    return (hx - g.cornea_radius * c) * (-m * s) - (hy - g.cornea_radius * s) * (-eta - m * c)
+
+
+def iris_light_path(hit, l, g: EyeGeometry, start=None):
+    """The Worklight key's path to iris points `hit` (eye-local), back through the cornea (one surface, n 1.3375, as
+    refraction V2): `l` the unit direction toward the key. Returns (valid, entry: where the light enters the cornea,
+    d: the unit direction from the hit toward the entry, cos_in: the key's cosine at the entry, aperture: the radius at
+    which the path crosses the limbus plane - beyond the limbus radius the sclera shades the point, phi: the entry's
+    angle from `l` in the path's plane). Not valid: no path (the key cannot reach the point through the cornea).
+    `start`: a neighbour's `phi` to start from (IRIS_LIGHT_WARM_STEPS steps) instead of the straight path."""
+    hit = np.asarray(hit, dtype=np.float64)
+    l = np.broadcast_to(np.asarray(l, dtype=np.float64), hit.shape)
+    ca = np.array([0.0, 0.0, g.anterior_centre_z])
+    radius, eta = g.cornea_radius, N_AIR / N_EFFECTIVE
+    q = hit - ca
+    hx = _dot(q, l)
+    w = q - hx[..., None] * l
+    hy = np.linalg.norm(w, axis=-1)
+    other = np.where(np.abs(l[..., :1]) < 0.9, np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0]))
+    v = np.where((hy > 1e-9)[..., None], w / np.maximum(hy, 1e-12)[..., None], normalize(np.cross(l, other)))
+    if start is None:
+        # first guess: where the straight path leaves the cornea; second: one fixed-point step from there
+        p0 = np.arctan2(hy, np.sqrt(np.maximum(radius * radius - hy * hy, 0.0)))
+        c, s = np.cos(p0), np.sin(p0)
+        m = np.sqrt(np.maximum(1.0 - eta * eta * (1.0 - c * c), 0.0)) - eta * c
+        dx, dy = eta + m * c, m * s
+        norm = np.maximum(np.hypot(dx, dy), 1e-12)
+        dx, dy = dx / norm, dy / norm
+        b = hx * dx + hy * dy
+        t = -b + np.sqrt(np.maximum(b * b - (hx * hx + hy * hy - radius * radius), 0.0))
+        p1 = np.arctan2(hy + t * dy, hx + t * dx)
+        steps = IRIS_LIGHT_STEPS
+    else:
+        p0 = np.asarray(start, dtype=np.float64)
+        p1 = p0 + IRIS_LIGHT_WARM_OFFSET
+        steps = IRIS_LIGHT_WARM_STEPS
+    f0, f1 = _light_miss(p0, hx, hy, g), _light_miss(p1, hx, hy, g)
+    for _ in range(steps):
+        den = f1 - f0
+        safe = np.abs(den) > 1e-12
+        p2 = np.where(safe, p1 - f1 * (p1 - p0) / np.where(safe, den, 1.0), p1)
+        p0, f0 = p1, f1
+        p1, f1 = p2, _light_miss(p2, hx, hy, g)
+    c, s = np.cos(p1), np.sin(p1)
+    n = c[..., None] * l + s[..., None] * v
+    entry = ca + radius * n
+    m = np.sqrt(np.maximum(1.0 - eta * eta * (1.0 - c * c), 0.0)) - eta * c
+    t_in = -eta * l - m[..., None] * n
+    d = normalize(entry - hit)
+    ok = (np.abs(f1) < IRIS_LIGHT_TOLERANCE) & (c > 0.0) & (_dot(hit - entry, t_in) > 0.0)
+    dz = d[..., 2]
+    s_plane = (g.limbus_z - hit[..., 2]) / np.where(dz > 1e-6, dz, 1.0)
+    cross = hit[..., :2] + s_plane[..., None] * d[..., :2]
+    aperture = np.where(dz > 1e-6, np.hypot(cross[..., 0], cross[..., 1]), 1e3)
+    return ok, entry, d, c, aperture, p1
+
+
+def _cone_point(xy, g: EyeGeometry):
+    r = np.hypot(xy[..., 0], xy[..., 1])
+    return np.concatenate([xy, (g.iris_a + g.iris_b * r)[..., None]], -1)
+
+
+def iris_key_terms(hit, l, rim_width: float, g: EyeGeometry, concentration: bool = True):
+    """Phase 4 roadmap #4: the key light at iris points `hit` after the cornea (the point on the iris cone below
+    `hit.xy`). Returns (d, T, C, S): d the direction toward the refracted key (for N·L), T the cornea's transmission
+    (Schlick, IOR 1.376 as the reflection), C the concentration (the beam's cross-section at the cornea over its
+    cross-section at the iris: the cornea's focusing, > 1 opposite the key - the crescent - and < 1 near it; capped;
+    checked against a forward ray trace, `test_eye_iris.py`), S the rim shadow (1 where the path would cross the
+    limbus plane outside the limbus, soft over `rim_width`). Without `concentration` (the shader: crescent 0) C is 1
+    and the two neighbours' paths - the costly part - are not traced."""
+    xy = np.asarray(hit, dtype=np.float64)[..., :2]
+    l = np.broadcast_to(np.asarray(l, dtype=np.float64), xy.shape[:-1] + (3,))
+    h0 = _cone_point(xy, g)
+    h1 = _cone_point(xy + np.array([IRIS_LIGHT_DELTA, 0.0]), g)
+    h2 = _cone_point(xy + np.array([0.0, IRIS_LIGHT_DELTA]), g)
+    ok, e0, d, cos_in, aperture, phi = iris_light_path(h0, l, g)
+    trans = np.where(ok, 1.0 - schlick_scalar(CORNEA_F0, cos_in), 0.0)
+    shadow = np.where(ok, _smooth((aperture - g.limbus_radius) / rim_width + 0.5), 1.0)
+    if not concentration:
+        return d, trans, np.ones_like(trans), shadow
+    ok1, e1, _d1, _c1, _a1, _p1 = iris_light_path(h1, l, g, phi)
+    ok2, e2, _d2, _c2, _a2, _p2 = iris_light_path(h2, l, g, phi)
+    beam = np.abs(_dot(np.cross(e1 - e0, e2 - e0), l))
+    area = np.linalg.norm(np.cross(h1 - h0, h2 - h0), axis=-1)
+    cos_iris = _dot(iris_cone_normal(h0, g), d)
+    conc = np.clip(beam / (area * np.maximum(cos_iris, CRESCENT_MIN_COS)), 0.0, CRESCENT_MAX)
+    return d, trans, np.where(ok & ok1 & ok2, conc, 1.0), shadow
+
+
+def relief_normal(hit, grad, g: EyeGeometry):
+    """Roadmap #5: the iris cone's normal tilted by a height gradient `grad` (..., 2; d height / d x, d y,
+    eye-local)."""
+    hit, grad = np.asarray(hit, dtype=np.float64), np.asarray(grad, dtype=np.float64)
+    r = np.maximum(np.hypot(hit[..., 0], hit[..., 1]), 1e-6)
+    return normalize(np.stack([-g.iris_b * hit[..., 0] / r - grad[..., 0], -g.iris_b * hit[..., 1] / r - grad[..., 1],
+                               np.ones_like(r)], -1))
+
+
+def pupil_weights(r, width, margin_width: float, g: EyeGeometry):
+    """Roadmap #7 at iris radii `r`: (the pupil's share - a step at the pupil radius for `width` 0, else soft over
+    `width` centred on it -, the dark margin's weight: 1 at the pupil edge, 0 `margin_width` beyond it)."""
+    r, width = np.asarray(r, dtype=np.float64), np.asarray(width, dtype=np.float64)
+    soft = 1.0 - _smooth((r - g.pupil_radius) / np.where(width > 0.0, width, 1.0) + 0.5)
+    pupil = np.where(width > 0.0, soft, (r < g.pupil_radius).astype(np.float64))
+    return pupil, 1.0 - _smooth((r - g.pupil_radius) / margin_width)
+
+
+def _gaussian_blur(a: np.ndarray, sigma: float) -> np.ndarray:
+    """Periodic Gaussian blur (FFT); `sigma` in pixels."""
+    h, w = a.shape
+    fy, fx = np.fft.fftfreq(h)[:, None], np.fft.fftfreq(w)[None, :]
+    kernel = np.exp(-2.0 * (math.pi * sigma) ** 2 * (fx * fx + fy * fy))
+    return np.real(np.fft.ifft2(np.fft.fft2(a) * kernel))
+
+
+def iris_height(rgb: np.ndarray, pupil_share: float, edge_share: float) -> np.ndarray:
+    """Roadmap #5 without a height channel (Manu 2026-11-16, "2 go"): a height in [0, 1] (0.5 = flat) from the iris
+    image's brightness - bright fibres and the collarette raised, dark crypts deep. A high-pass (Gaussian of
+    HEIGHT_HIGHPASS of the width, normalized over the iris annulus only) keeps the fibres and crypts and drops the
+    colour zones; the result is scaled by its RMS. Outside the annulus between the image's pupil edge and iris edge
+    (shares of half the image width; the fit's landmarks) the height is flat, so neither the black pupil nor the
+    background makes a cliff. `rgb` (h, w, 3) sRGB in [0, 1], row order irrelevant."""
+    h, w = rgb.shape[:2]
+    y, x = np.meshgrid((np.arange(h) + 0.5) / h * 2.0 - 1.0, (np.arange(w) + 0.5) / w * 2.0 - 1.0, indexing="ij")
+    rho = np.hypot(x, y)
+    mask = (_smooth((rho - pupil_share) / HEIGHT_EDGE - 0.5) * (1.0 - _smooth((rho - edge_share) / HEIGHT_EDGE + 0.5)))
+    if not mask.any():
+        return np.full((h, w), 0.5)
+    luma = np.asarray(rgb, dtype=np.float64)[..., :3] @ np.array([0.2126, 0.7152, 0.0722])
+    sigma = HEIGHT_HIGHPASS * w
+    mean = _gaussian_blur(luma * mask, sigma) / np.maximum(_gaussian_blur(mask, sigma), 1e-6)
+    detail = (luma - mean) * mask
+    rms = math.sqrt(float(np.sum(detail * detail) / max(float(np.sum(mask)), 1.0)))
+    if rms <= 1e-9:
+        return np.full((h, w), 0.5)
+    return 0.5 + 0.5 * np.clip(detail / (HEIGHT_RANGE * rms), -1.0, 1.0) * mask

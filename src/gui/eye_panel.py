@@ -13,7 +13,7 @@ from __future__ import annotations
 from . import eye_model as em
 from viewport.eye_pass import REFLECTIONS, REFRACTIONS, TIERS
 
-TIER_HINT = "'schnell' zeichnet ohne die Reflexe des Eye Labs (wie vor Phase 3), 'voll' mit ihnen."
+TIER_HINT = "'schnell' zeichnet ohne Reflexe und Iris des Eye Labs (wie vor Phase 3), 'voll' mit ihnen."
 
 
 class _Sliders:
@@ -174,6 +174,7 @@ class EyeLabPanel:
         for field, label, lo, hi, fmt in em.SLIDERS:
             self.sliders.slider(spec, field, label, lo, hi, fmt)
         self.draw_look(st)
+        self.draw_iris(st)
         imgui.separator()
         imgui.text_disabled(st.image_text)
         imgui.set_next_item_width(220.0)
@@ -211,6 +212,26 @@ class EyeLabPanel:
             imgui.same_line()
             if imgui.small_button("Reflexe zurücksetzen"):
                 em.reset_look(app)
+
+    def draw_iris(self, st: em.EyePanelState) -> None:
+        """Phase 4: the iris (`core.EyeIris`): key through the cornea, relief, pupil edge; live preview while held."""
+        imgui, app = self.imgui, self.app
+        spec = st.spec
+        imgui.separator()
+        imgui.text_disabled("Iris (Phase 4, gespeichert)")
+        if st.tier != "full":
+            imgui.text_colored(imgui.ImVec4(0.95, 0.75, 0.35, 1.0), em.IRIS_HINT)
+        for field, label, lo, hi, fmt in em.IRIS_SLIDERS:
+            self.sliders.slider(spec, field, label, lo, hi, fmt)
+        source = em.value(spec, "look.iris.relief_source")
+        for key, label in em.RELIEF_SOURCE_LABELS.items():
+            if imgui.radio_button(label, source == key):
+                em.set_value(app, "look.iris.relief_source", key)
+            imgui.same_line()
+        imgui.new_line()
+        if spec.look is not None and spec.look.iris is not None:
+            if imgui.small_button("Iris zurücksetzen"):
+                em.reset_iris(app)
 
 
 def draw_gaze(imgui, app, st: em.EyePanelState, pad_size: tuple[float, float]) -> None:

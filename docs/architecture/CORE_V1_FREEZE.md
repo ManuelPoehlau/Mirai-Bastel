@@ -456,6 +456,26 @@ vertex record shapes, point layers; (5) tests `tests/test_core_face_uvs.py` (eve
 exactness, file validation, random sequences against U1 and exact Undo), `tests/mesh_invariants.assert_uv_invariants`,
 `tests/test_obj_uvs.py`, `tests/test_point_layers.py` (the pinned export key list now ends with `"face_uvs"`).
 
+**Decision:** Eye LookDev phase 4, the iris values, Core part (2026-11-16; [AD-033](AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md)
+§18, [assessment](../research/EYE_LOOKDEV_PHASE2_ASSESSMENT_2026-11-16.md) §C roadmap #4, #5, #7; Manu: "1 go (v11)")
+
+Freeze rule (§7): (1) requirement - the iris's values (key through the cornea, crescent, rim shadow, relief, pupil edge
+and margin) survive Undo / Redo, save / load, duplicate, mirror copy and presets like every look value; (2) not
+solvable with the public API: they belong to the eye's look, which the Core validates and the file carries (the
+`EyeLook` precedent); (3) documented in AD-033 §18 and the assessment; (4) smallest extension, **data only**:
+`src/core/scene.py` gains `EyeIris` (frozen, 9 fields, validated with `ValueError`: `light`, `rim_shadow`, `relief`,
+`pupil_margin` in [0, 1], `crescent` in [0, 2], `pupil_edge_mm` in [0, 2], positive `rim_shadow_mm` / `relief_mm`,
+`relief_source` one of `EYE_RELIEF_SOURCES` ("luminance", "alpha"); `to_dict` / `from_dict` with exactly the field names)
+and `EyeLook.iris: EyeIris | None = None` (the 12th field, the only one with a default; `None` = neutral; no default
+numbers in the Core - the app's are `mirai.eye_object.DEFAULT_IRIS`). `EyeLook.to_dict` writes `"iris"` only when set and
+`from_dict` accepts it as optional, so a look without iris values is written as in v10 and **v10 files read unchanged**
+(Manu's phase 3 files). `src/core/serialization.py` writes **version 11** only when a look has iris values (else 4–10 as
+before) and reads 2–11; an invalid iris makes the file invalid. Exported from `core`. Not touched: `Mesh`,
+`Operation`, `HistoryStack`, `SceneObject`, `EyeSpec`, every other field and signature. Existing tests unchanged except
+the assertion that pinned 11 as the first unknown version (`test_rig.py::test_versions_2_to_8_are_read`: now 12).
+(5) contract tests `tests/test_eye_iris.py` (validation, optional and typed, v11 only with iris values and the v10 file
+again without them, a v10 file read as before, an invalid iris refused; the app path: Undo, preview, save / load).
+
 **Decision:** Eye LookDev phase 3, the eye's look, Core part (2026-11-16; [AD-033](AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md)
 §17, [assessment](../research/EYE_LOOKDEV_PHASE2_ASSESSMENT_2026-11-16.md) §D change 1; Manu I-5: "Core Change erlaubt")
 

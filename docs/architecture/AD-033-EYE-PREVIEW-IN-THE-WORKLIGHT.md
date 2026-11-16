@@ -7,7 +7,8 @@ deviations from the draft, each with its reason); **E-4 MEASURED on the referenc
 **§14 (2026-11-16): view twins of eyes and teeth beside a morph target's editing view**; **§16 (2026-11-16): Eye
 LookDev phase 2, compact panel "Auge" and the Eye Lab window**; **§17 (2026-11-16): Eye LookDev phase 3, the
 reflections (`EyeLook`, scene format v10; container: TESTED; reference-PC cost MEASURED within the I-12 target;
-practical test KEEP)**. Names and
+practical test KEEP)**; **§18 (2026-11-16): Eye LookDev phase 4, the iris (`EyeIris`, scene format v11; container:
+TESTED; reference-PC cost and practical test open)**. Names and
 numbers not covered by a decision stay `PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
@@ -502,6 +503,115 @@ Verdikt: KEEP / ITERATE / REJECT, gern je Punkt, dazu der Vergleich mit deinen S
 **Verdikt Manu, 2026-11-16: „1-8 Keep“** — alle acht Punkte KEEP. Das Verhalten der Phase 3 ist abgenommen. Die Zahlen
 (`DEFAULT_LOOK`, die Konstanten in `eye_optics`, die Vorlage „Reflexe (Startwerte)“, die Regler-Bereiche) und das
 Layout des Abschnitts „Reflexe“ bleiben `PROVISIONAL`, bis sie eigens entschieden sind; I-6 bleibt offen.
+
+## 18. Addendum 2026-11-16: Eye LookDev phase 4 - the iris (`PROVISIONAL` values)
+
+**Manu, 2026-11-16** ([assessment](../research/EYE_LOOKDEV_PHASE2_ASSESSMENT_2026-11-16.md) §C.1, §G phase 4, §H row
+4): "Phase 4 go: Roadmap #4 Iris-Licht (Key durch die Hornhaut gebrochen, Halbmond gegenüber dem Glanzpunkt, Schatten
+unter dem Skleralrand), #5 Iris-Relief aus einem Höhenkanal, #7 weicher Pupillenrand. Gleiche Regeln wie Phase 3:
+neutral bei 0, nur Stufe "voll", NumPy-Zwilling + GPU-Parität je Funktion, I-12-Budget." On the two questions asked
+before building: **"1 go (v11)"** - the iris values as their own optional group inside the look, scene format v11
+(v10 files read unchanged); **"2 go"** - until the import (phase 5, I-9) the relief's height is derived from the iris
+image's brightness. Manu's iris image for Gollum (`iris_custom.png`, a photo: fine fibres, a brown collarette, white
+background, no height channel, no baked crescent) was the reference for that choice; it is not in the repository.
+
+**Data (Core, CORE_V1_FREEZE §7.1 2026-11-16).** `core.EyeIris` (frozen, validated, no defaults in the Core) and
+`EyeLook.iris: EyeIris | None = None`. `None` = neutral, the iris as before. The scene file writes **version 11** only
+when a look has iris values (`"look": {..., "iris": {...}}`); a look without them is written exactly as in v10, and a
+v10 file reads as before. The app's starting values are `mirai.eye_object.DEFAULT_IRIS` (every amount 0). Keys for
+`set_eye` / `preview_eye`: `"look.iris.<field>"`; `"look.iris"`=None removes them.
+
+| Field | Meaning | Neutral / start |
+|---|---|---|
+| `light` 0–1 | roadmap #4: the Worklight key reaches the iris **through the cornea**: its direction refracted at the entry point (one surface, n 1.3375 as V2), times the cornea's transmission (Schlick, IOR 1.376). 0 = the Worklight's own key on the iris cone (as before) | 0 |
+| `crescent` 0–2 | the cornea's **focusing**: the beam's cross-section at the cornea over its cross-section at the iris (finite difference, 0.12 mm). Opposite the key it concentrates the light - the crescent - up to 2.5 × at a grazing key; 1 = as computed, above 1 exaggerated (capped at 4 ×) | 0 |
+| `rim_shadow` 0–1, `rim_shadow_mm` | the **scleral rim's shadow**: where the key's path to the iris would cross the limbus plane outside the limbus, the key is blocked (soft over the width) - the iris edge on the key's side | 0, 0.4 mm |
+| `relief` 0–1, `relief_mm` | roadmap #5: the iris normal tilted by a height gradient (three samples one texel apart, the main sample's derivatives, so the relief fades with the mip level instead of sparkling); the height is ±`relief_mm` at relief 1 | 0, 0.12 mm |
+| `relief_source` | "luminance": the height is derived from the image's brightness (below); "alpha": the image's alpha channel holds it (phase 5's import will write it there). The procedural iris always derives its height | "luminance" |
+| `pupil_edge_mm` 0–2 | roadmap #7: the pupil edge soft over this width, plus the pixel footprint (`fwidth`), so it also anti-aliases at every distance. 0 = the hard edge as before | 0 |
+| `pupil_margin` 0–1 | darkens the iris's 0.35 mm just outside the pupil edge (the pupillary ruff) | 0 |
+
+**How the key's path is found** (`eye_optics.iris_light_path`). Incident ray, cornea normal and refracted ray lie in
+one plane through the cornea's centre, so the entry point is a single angle in that plane: a root of "the refracted ray
+misses the iris point", found by secant steps from the straight path's exit (6 steps; the two neighbours of the finite
+difference start from that solution, 3 steps). A plain fixed-point iteration was tried first: it needed more than 12
+steps at a grazing key and gave a wrong crescent at 3. No root, a key behind the entry, or a residual above 1e-4 means
+the key cannot reach the point (beyond the caustic): no key light there. **Checked against a forward ray trace**
+(`test_eye_iris.py`: a parallel beam through the cornea onto the iris, keys at 0°, 40°, 70°, 80°): the model's
+irradiance agrees within 15 % / 0.08 in the bins away from the steep edges, the far-side crescent at a grazing key is
+over 3 × the unrefracted key's cosine there, and the unlit zones agree. With a frontal key the effect is small (the
+cornea focuses about 1.3 × evenly); it shows when the key comes from the side (`L`-drag).
+
+**The derived height** (`eye_optics.iris_height`, Manu "2 go"): luminance minus its Gaussian mean (3 % of the image
+width, normalized over the iris annulus only), scaled by its RMS (2.5 × RMS = full height), flat outside the annulus
+between the image's pupil edge and iris edge (the fit's landmarks, else the planar mapping's), soft over 4 %. Bright
+fibres and the collarette rise, dark crypts sink; the colour zones (brown collarette, blue outer iris) do not become a
+step. The eye pass builds it once per image file (path + modification time) and fit, into its own RGBA copy of the
+image (`EyePass.relief_texture`, the shared texture of AD-026 untouched, filtered like `load_texture`). Known limit:
+light baked into a photo (catchlights) becomes false relief; the import of phase 5 (retouching, a real height) removes
+that.
+
+**Drawing.**
+- **Program.** The `IRIS` define, only together with `LOOK` and only for an eye whose iris values have an amount above
+  0 (`eye_pass.uses_iris`); an eye with iris values only also uses the look program (its reflection terms at 0). Every
+  other eye draws with the program of phase 3: its fragment source is character for character the one before phase 4
+  for all 128 variants (checked against `fb61f1c` while building), so "fast", every eye without iris values and every
+  scene without eyes draw and cost as before. 64 more variants exist, compiled on first use.
+- **Neutral at 0.** Every term sits behind a uniform branch or multiplies by its amount; forced into the `IRIS` program,
+  iris values with every amount at 0 draw the same pixels as none (tested V2 / V3, with an image, its fit and L3).
+- **Where.** The iris light (`iris_lit`) replaces the Worklight's diffuse light on the iris and pupil, and on the iris
+  seen through the translucent limbus (L3) and through the sclera band; relief and pupil terms only on the main iris
+  sample. The sclera, the film and every reflection are untouched.
+- **Cost control.** The two neighbour paths (the costly part) run only when `crescent` > 0. Measured in the container
+  (software renderer, relative only): the iris light without the crescent about as much as the whole phase 3 look, with
+  it about twice; relief about half of that. **Not measured on the reference PC** (I-12): the probe has the rows
+  `iris full` / `iris full key` and a column `vs look`.
+- **NumPy twins** for every new function (`iris_light_path`, `iris_key_terms`, `relief_normal`, `pupil_weights`),
+  GPU parity in `test_gl_eye_pass.py` (the direction to 1e-4 rad in float32, the concentration to 5e-3).
+
+**UI.** The Eye Lab window gains "Iris" below "Reflexe": the six amounts, then the rim shadow's width and the relief's
+depth, the height source ("Höhe aus Helligkeit" / "Höhe aus Alpha"), "Iris zurücksetzen". Live preview while held, one
+Undo step on release; a hint in the tier "schnell". The compact panel is unchanged (I-2). **Presets:** a preset look
+without iris values (phase 3's, or saved from an eye without them) leaves an eye's iris values as they are
+(`eye_presets.set_eye_changes`); a preset saved with them carries them. New built-in **"Iris (Startwerte)"**: only the
+iris values (light 1, crescent 1, rim shadow 0.8, relief 0.5, pupil edge 0.12 mm, margin 0.4), so it keeps reflections,
+anatomy, limbus and image - an agent starting point from container renders, not an artist decision (I-6 stays open).
+
+**Not in this phase / limits (`PROVISIONAL`).** Only the key is traced through the cornea; fill and ambient light the
+iris as before. The iris receives no lid shadow beyond phase 3's. The relief is a normal tilt, no parallax (roadmap
+#12 stays later). The concentration has no caustic fold (where two paths reach one point, the model takes one); the
+cap of 4 × bounds it. Pupil shape stays round.
+
+**Tests.** `test_eye_iris.py` (Core: validation, optional and strict, v11 only with iris values, v10 unchanged, an
+invalid iris refused; app: Undo, preview, save / load, presets keep the iris, the lab's controls, the tier; optics: the
+forward ray trace, convergence and unreachable points, the derived height, pupil weights and relief normal),
+`test_gl_eye_pass.py` (parity, "fast" and phase 3 unchanged, neutral at 0, the crescent opposite the key from either
+side, the rim shadow on the key's side, relief only on the iris and the derived texture built once, alpha without a
+height flat, the pupil ring, every iris variant draws and leaves the GL state clean), `test_gui_imgui_window.py` (the
+lab window with iris values), `test_rig.py` (the first unknown version is 12).
+
+### Praxistest für Manu (Deutsch, ca. 15 Minuten, `scenes/Gollum_Head_03.mirai.json`)
+
+Vorher bitte die Kosten messen (I-12), wie bei Phase 3:
+`python experiments\drag_cost\probe_eye_preview.py` und `... --size 1920 1080` (NVIDIA „Maximale Leistung bevorzugen“,
+`.venv312`); die Zeilen `iris full` / `iris full key`, Spalte `vs look` = was die Iris kostet.
+
+1. Szene laden (deine v10-Datei mit den Reflexen), ein Auge wählen, „Im Eye Lab öffnen“. Alles sieht aus wie nach
+   Phase 3; der neue Abschnitt „Iris“ steht unter „Reflexe“.
+2. Look-Vorlage „Iris (Startwerte)“ anwenden: nur die Iris ändert sich, die Reflexe bleiben. Ein Strg+Z nimmt genau das
+   zurück.
+3. „Key durch die Hornhaut“ auf 1, dann den Key mit `L`-Ziehen weit zur Seite: die Iris wird auf der dem Key
+   **abgewandten** Seite heller. „Halbmond“ hochziehen: dort entsteht ein heller Halbmond, er wandert gegenüber dem
+   Glanzpunkt mit, wenn du den Key bewegst.
+4. „Schatten am Skleralrand“: der Irisrand auf der Seite des Keys wird unter dem Rand dunkel („die Iris als Schüssel“).
+5. „Relief“ ziehen (Quelle „Höhe aus Helligkeit“): die Fasern deines Iris-Bilds fangen Licht, besonders mit dem Key von
+   der Seite. „Relief Tiefe mm“ ändert die Stärke. Aus Modellierdistanz: kein Flirren.
+6. „Pupillenrand weich“ und „Pupillensaum dunkel“: die Pupille hat einen weichen, leicht dunklen Rand, in der
+   Nahaufnahme und aus der Entfernung ohne Treppenstufen.
+7. Eye Lab schließen (Qualität „schnell“): die Iris sieht aus wie vor Phase 4.
+8. Speichern, neu laden: die Iris-Werte sind da (Datei-Version 11). Eine Datei ohne Iris-Werte bleibt Version 10.
+
+Verdikt: KEEP / ITERATE / REJECT, gern je Punkt, dazu der Vergleich mit deinen Stills in denselben drei Ansichten.
 
 
 **Manu, 2026-11-15:** "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm".

@@ -133,7 +133,8 @@ def test_presets_save_load_apply_keep_the_iris_fit(app, preset_dir):
     assert app.save_eye_preset("Gollum nass") is True
     data = json.loads((preset_dir / "gollum_nass.json").read_text(encoding="utf-8"))
     assert data["name"] == "Gollum nass" and "fit_pupil" not in data["values"]
-    assert [p.name for p in app.eye_presets()] == [eye_presets.BUILTIN_NAME, eye_presets.LOOK_START_NAME, "Gollum nass"]
+    assert [p.name for p in app.eye_presets()] == [eye_presets.BUILTIN_NAME, eye_presets.LOOK_START_NAME,
+                                                   eye_presets.IRIS_START_NAME, "Gollum nass"]
     depth = _depth(app)
     assert app.apply_eye_preset(eye_presets.BUILTIN_NAME) is True and _depth(app) == depth + 1
     assert eye.eye.limbus_level == 0 and eye.eye.pupil_radius == DEFAULT_EYE.pupil_radius
@@ -149,7 +150,8 @@ def test_an_invalid_preset_file_is_skipped_with_its_reason(preset_dir):
     (preset_dir / "odd.json").write_text('{"name": "Odd", "values": {"fit_pupil": 0.3}}', encoding="utf-8")
     (preset_dir / "broken.json").write_text("{", encoding="utf-8")
     presets, problems = eye_presets.load_presets(preset_dir)
-    assert [p.name for p in presets] == [eye_presets.BUILTIN_NAME, eye_presets.LOOK_START_NAME]
+    assert [p.name for p in presets] == [eye_presets.BUILTIN_NAME, eye_presets.LOOK_START_NAME,
+                                         eye_presets.IRIS_START_NAME]
     assert len(problems) == 3 and any("unknown" in p for p in problems)
 
 

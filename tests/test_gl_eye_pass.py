@@ -2,13 +2,17 @@
 per-triangle cornea / sclera split and the GPU ray classes against the CPU trace, the sclera's brightness against a
 Worklight object of the same colour, preview off = the Worklight's own draw, every level / reflection / refraction
 compiles and draws, GL state left as found. Eye LookDev phase 3: the look's terms (parity, neutral at 0, "fast" as
-before, each term where it belongs, the lid in the rest frame, calm at modelling distance).
+before, each term where it belongs, the lid in the rest frame, calm at modelling distance). Phase 4: the iris's terms
+(parity, neutral at 0, "fast" and phase 3 as before, the crescent opposite the key, the rim shadow on the key's side,
+relief and pupil edge only where they belong).
 
 Needs a real GL context (`xvfb-run -a python -m pytest tests/test_gl_eye_pass.py`); skips without."""
 
 from __future__ import annotations
 
 import ctypes
+import os
+import tempfile
 import dataclasses
 import math
 
@@ -20,12 +24,12 @@ import pytest
 pyglet = pytest.importorskip("pyglet", reason="pyglet not installed")
 
 from core import Mesh  # noqa: E402
-from mirai.eye_object import (DEFAULT_EYE, DEFAULT_LOOK, SCLERA_COLOUR, cornea_triangles, eye_material,  # noqa: E402
-                              shell_mesh)
+from mirai.eye_object import (DEFAULT_EYE, DEFAULT_IRIS, DEFAULT_LOOK, SCLERA_COLOUR, cornea_triangles,  # noqa: E402
+                              eye_material, shell_mesh)
 from mirai.viewport.camera import OrbitCamera  # noqa: E402
 from viewport import eye_optics as eo  # noqa: E402
 from viewport import eye_shaders as es  # noqa: E402
-from viewport.eye_pass import EyeDraw, eye_uniforms, look_uniforms, rest_rotation  # noqa: E402
+from viewport.eye_pass import EyeDraw, eye_uniforms, iris_uniforms, look_uniforms, rest_rotation  # noqa: E402
 from viewport.gl_render_store import GLRenderStore  # noqa: E402
 from viewport.material import SurfaceFinish  # noqa: E402
 from viewport.viewport import Viewport  # noqa: E402
@@ -51,13 +55,13 @@ def _model(scale=SCALE):
     return [scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, 1.0]
 
 
-def _scene(spec=DEFAULT_EYE, yaw=0.0, distance=6.0, pitch=0.0, model=None, rest=None):
+def _scene(spec=DEFAULT_EYE, yaw=0.0, distance=6.0, pitch=0.0, model=None, rest=None, texture=None):
     viewport = Viewport(Mesh(), store_type=GLRenderStore)
     camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=distance)
     camera.set_view(math.radians(yaw), math.radians(pitch))
     viewport.bind_camera(camera)
     viewport.on_camera_changed(aspect=1.0)
-    draw = EyeDraw(spec, None, SCLERA_COLOUR, FINISH, cornea_triangles(), rest_matrix=rest, variation=3)
+    draw = EyeDraw(spec, texture, SCLERA_COLOUR, FINISH, cornea_triangles(), rest_matrix=rest, variation=3)
     viewport.set_object_entry("eye", shell_mesh(spec), SCLERA_COLOUR, model_matrix=model or _model(), finish=FINISH,
                               eye=draw)
     return viewport, camera
@@ -239,9 +243,13 @@ class _Parity:
         from pyglet import gl
         from pyglet.graphics.shader import Shader, ShaderProgram
 
+        from viewport.gl_render_store import _register_sampler_buffer_uniform
+
+        _register_sampler_buffer_uniform()  # `u_inputs`; else only registered once a Worklight program was built
         self.gl = gl
         self.program = ShaderProgram(*(Shader(src, kind) for src, kind in es.parity_sources(fit_values is not None)))
         self.fit_values = fit_values or {}
+        self.crescent = None  # test hook: another `u_crescent`
         def gen(fn) -> int:
             ident = gl.GLuint()
             fn(1, ctypes.byref(ident))
@@ -282,6 +290,9 @@ class _Parity:
                        None, SCLERA_COLOUR, FINISH, cornea_triangles(), variation=PARITY_VARIATION)
         values = eye_uniforms(draw)
         values.update(look_uniforms(draw))
+        values.update(iris_uniforms(draw, _model(1.0), LIGHT["u_key_dir"], 512))
+        if self.crescent is not None:
+            values["u_crescent"] = self.crescent
         values.update(LIGHT)
         values.update({"u_inputs": 3, "u_width": self.WIDTH, "u_count": count, "u_func": es.PARITY_FUNCS[func]})
         for name, value in values.items():
@@ -309,9 +320,11 @@ class _Parity:
             fn(1, ctypes.byref(gl.GLuint(ident)))
 
 
+PARITY_IRIS = dataclasses.replace(DEFAULT_IRIS, light=0.8, crescent=1.2, rim_shadow=0.7, rim_shadow_mm=0.5,
+                                  relief=0.6, pupil_edge_mm=0.15, pupil_margin=0.5)
 PARITY_LOOK = dataclasses.replace(DEFAULT_LOOK, wet_sclera=0.5, irregularity_deg=0.7, irregularity_mm=1.2, seed=5,
                                   highlight_softness=0.6, lid_shadow=0.4, lid_shadow_mm=2.5, lid_band=0.8,
-                                  lid_upper=0.33, lid_lower=-0.45)
+                                  lid_upper=0.33, lid_lower=-0.45, iris=PARITY_IRIS)
 PARITY_VARIATION = 17
 LIGHT = {"u_key_dir": tuple(eo.normalize([0.4, 0.5, 0.75])), "u_key_color": (0.9, 0.88, 0.85), "u_key_wrap": 0.2,
          "u_fill_dir": tuple(eo.normalize([-0.6, 0.1, 0.5])), "u_fill_color": (0.3, 0.32, 0.35), "u_fill_wrap": 0.5,
@@ -746,4 +759,246 @@ def test_look_programs_draw_and_leave_the_gl_state_clean(gl_window, level, refle
     gl.glBindTexture(noise.target, 0)
     assert params == {"GL_TEXTURE_WRAP_S": gl.GL_REPEAT, "GL_TEXTURE_WRAP_T": gl.GL_REPEAT,
                       "GL_TEXTURE_MIN_FILTER": gl.GL_LINEAR_MIPMAP_LINEAR}
+    assert gl.glGetError() == gl.GL_NO_ERROR
+
+
+# -- Eye LookDev phase 4: the iris (`core.EyeIris`; Manu 2026-11-16 "1 go (v11), 2 go") ------------------------------
+
+SIDE_KEY = (40.0, 0.0)  # camera-relative azimuth / elevation in degrees: the key from the side, as after an `L`-drag
+
+
+def _iris(spec=DEFAULT_EYE, **values):
+    return dataclasses.replace(spec, look=dataclasses.replace(DEFAULT_LOOK, iris=dataclasses.replace(DEFAULT_IRIS,
+                                                                                                     **values)))
+
+
+def _iris_full(gl_window, spec, key=SIDE_KEY, force=False, **scene):
+    from viewport.light_rig import LightRig
+
+    viewport, camera = _scene(spec, **scene)
+    viewport.set_eye_display(tier="full")
+    viewport.set_light(LightRig(key_azimuth=key[0], key_elevation=key[1]))
+    viewport.eye_pass.force_look = viewport.eye_pass.force_iris = force
+    try:
+        return _render(gl_window, viewport), camera, viewport.light_uniforms()
+    finally:
+        viewport.eye_pass.force_look = viewport.eye_pass.force_iris = False
+
+
+def test_iris_functions_glsl_match_numpy(parity):
+    """GPU parity of every phase 4 function against its `eye_optics` twin."""
+    rng = np.random.default_rng(41)
+    v = eo.iris_values(PARITY_IRIS, G)
+    # the key's path and terms: iris points (inside the limbus and under the sclera), keys from the front hemisphere
+    r = G.iris_radius * np.sqrt(rng.uniform(0, 1, N))
+    phi = rng.uniform(0, 2 * np.pi, N)
+    hit = np.stack([r * np.cos(phi), r * np.sin(phi), G.iris_a + G.iris_b * r], -1)
+    off, az = np.radians(rng.uniform(0, 70, N)), rng.uniform(0, 2 * np.pi, N)
+    key = np.stack([np.sin(off) * np.cos(az), np.sin(off) * np.sin(az), np.cos(off)], -1)
+    x = _pack(hit, np.zeros(N), key)
+    a = _f32(x)
+    hit32, key32 = a[:, :3], eo.normalize(a[:, 4:7])
+    ok, _e, d, _cos, aperture, _phi = eo.iris_light_path(hit32, key32, G)
+    got = parity[False].run("iris_light_path", x)
+    assert np.array_equal(got[:, 3] >= 0.0, ok)
+    # float32 secant steps: the direction to 1e-4 rad
+    assert np.abs(got[ok, :3] - d[ok]).max() < 3e-4 and np.abs(got[ok, 3] - aperture[ok]).max() < 3e-4
+    _d, trans, conc, shadow = eo.iris_key_terms(hit32, key32, v["rim_width"], G)
+    got = parity[False].run("iris_key_terms", x)
+    assert np.abs(got[:, 0] - trans).max() < 2e-5 and np.abs(got[:, 2] - shadow).max() < 2e-3
+    assert np.abs(got[:, 1] - conc).max() < 5e-3  # a finite difference in float32: 1e-5 of the entry spacing
+    assert conc.max() > 1.3 and conc.min() < 0.9 and 0.05 < shadow.mean() < 0.95  # both ends are sampled
+    parity[False].crescent = 0.0  # without the crescent the neighbours are skipped: C = 1, the rest the same
+    got = parity[False].run("iris_key_terms", x)
+    parity[False].crescent = None
+    assert np.all(got[:, 1] == 1.0) and np.abs(got[:, 0] - trans).max() < 2e-5
+    _d, _t, flat, _s = eo.iris_key_terms(hit32, key32, v["rim_width"], G, concentration=False)
+    assert np.all(flat == 1.0)
+    # relief_normal and pupil_weights
+    grad = rng.uniform(-2.0, 2.0, (N, 2))
+    x = _pack(hit, np.zeros(N), grad)
+    a = _f32(x)
+    got = parity[False].run("relief_normal", x)
+    assert np.abs(got[:, :3] - eo.relief_normal(a[:, :3], a[:, 4:6], G)).max() < 5e-6
+    radius = rng.uniform(0.5, 2.0, N) * G.pupil_radius
+    width = np.where(rng.uniform(0, 1, N) < 0.2, 0.0, rng.uniform(0.001, 0.03, N))
+    x = _pack(radius, width)
+    a = _f32(x)
+    got = parity[False].run("pupil_weights", x)
+    pupil, margin = eo.pupil_weights(a[:, 0], a[:, 1], v["margin_width"], G)
+    assert np.abs(got[:, 0] - pupil).max() < 2e-4 and np.abs(got[:, 1] - margin).max() < 2e-4
+
+
+def test_fast_tier_and_phase_3_ignore_the_iris(gl_window):
+    """The standing rule: "fast" draws as before; a look without iris values draws with the program of phase 3, whose
+    source has no iris code (and is character for character the one of phase 3 - checked against that commit while
+    building)."""
+    iris = _iris(L3_EYE, light=1.0, crescent=1.0, rim_shadow=0.8, relief=0.5, pupil_edge_mm=0.1, pupil_margin=0.5)
+    plain, _ = _scene(L3_EYE, yaw=20.0)
+    viewport, _ = _scene(iris, yaw=20.0)  # the tier is "fast" by default
+    assert np.array_equal(_render(gl_window, plain), _render(gl_window, viewport))
+    locations = {"position": 0, "normal": 1}
+    for look in (False, True):
+        source = es.shell_sources(locations, "V2", 3, "studio", True, look=look)[1][0]
+        assert "#define IRIS\n" not in source and "iris_lit" not in source and "u_relief" not in source
+    assert "iris_lit" not in es.shell_sources(locations, "V2", 3, "studio", True, look=False, iris=True)[1][0]
+
+
+@pytest.mark.parametrize("variant", ["V2", "V3"])
+def test_every_iris_term_at_zero_is_neutral_in_the_iris_program(gl_window, variant):
+    """§H row 4: all iris amounts at 0 -> the same pixels, forced into the IRIS program (with an image, its fit and
+    the L3 paths behind the limbus)."""
+    from pyglet import image
+
+    size = 64
+    rgb = np.random.default_rng(3).uniform(0.2, 0.8, (size, size, 4))
+    rgb[..., 3] = 0.3  # an alpha that would tilt the normal if the relief were on
+    path = os.path.join(tempfile.mkdtemp(), "iris.png")
+    image.ImageData(size, size, "RGBA", (rgb * 255).astype(np.uint8).tobytes()).save(path)
+    spec = dataclasses.replace(L3_EYE, fit_pupil=0.22, fit_limbus=0.88, hold_outer_color=True)
+    plain, _, _ = _iris_full(gl_window, spec, yaw=25.0, texture=path)
+    forced, _, _ = _iris_full(gl_window, _iris(spec, relief_source="alpha"), force=True, yaw=25.0, texture=path)
+    assert np.array_equal(plain, forced)
+    viewport, _ = _scene(spec, yaw=25.0, texture=path)
+    viewport.set_eye_display(tier="full", refraction=variant)
+    reference = _render(gl_window, viewport)
+    viewport, _ = _scene(_iris(spec), yaw=25.0, texture=path)
+    viewport.set_eye_display(tier="full", refraction=variant)
+    viewport.eye_pass.force_look = viewport.eye_pass.force_iris = True
+    assert np.array_equal(reference, _render(gl_window, viewport))
+
+
+def _key_side(camera, light) -> float:
+    """+1 when the key lights the eye from the image's right, -1 from its left."""
+    view = np.array(camera.build_view_matrix()).reshape(4, 4).T[:3, :3]
+    return float(np.sign((view @ np.asarray(light["u_key_dir"]))[0]))
+
+
+def _iris_pixels(camera):
+    kinds = _cpu_kinds(camera, "V2")
+    iris = kinds == eo.IRIS
+    out = iris.copy()
+    for axis in (0, 1):
+        for shift in (1, 2):
+            out &= np.roll(iris, shift, axis) & np.roll(iris, -shift, axis)
+    return out
+
+
+def test_iris_light_changes_only_the_iris_and_the_crescent_lies_opposite_the_key(gl_window):
+    """Roadmap #4 / §H row 4 "the crescent moves opposite the highlight": with the key from the side, the key through
+    the cornea (refracted and focused) brightens the iris's far side more than its near side, for a key from either
+    side; the sclera is untouched (L0: no iris behind the limbus). The physics is checked against a forward ray trace in
+    `test_eye_iris.py`."""
+    kw = dict(distance=4.0)
+    plain, camera, light = _iris_full(gl_window, DEFAULT_EYE, **kw)
+    lit_only, _, _ = _iris_full(gl_window, _iris(light=1.0), **kw)
+    cornea, sclera = _regions(camera)
+    assert np.array_equal(lit_only[sclera], plain[sclera])
+    assert (np.abs(lit_only - plain).max(-1)[cornea] > 2).sum() > 200
+    iris = _iris_pixels(camera)
+    cols = np.argwhere(iris)[:, 1]
+    centre = 0.5 * (cols.min() + cols.max())
+    for key in ((60.0, 0.0), (-60.0, 0.0)):
+        base, camera, light = _iris_full(gl_window, DEFAULT_EYE, key=key, **kw)
+        crescent, _, _ = _iris_full(gl_window, _iris(light=1.0, crescent=1.0), key=key, **kw)
+        gain = (crescent - base).mean(-1)
+        x = np.where(iris, np.arange(SIZE)[None, :] - centre, 0.0) * _key_side(camera, light)
+        # the band between the centre and the far edge (outermost the key cannot reach: beyond the caustic)
+        half = 0.5 * (cols.max() - cols.min())
+        far, near = iris & (x < -0.15 * half) & (x > -0.75 * half), iris & (x > 0.15 * half) & (x < 0.75 * half)
+        assert far.sum() > 300 and near.sum() > 300
+        assert gain[far].mean() > gain[near].mean() + 5.0, (key, gain[far].mean(), gain[near].mean())
+        assert (crescent - base).mean(-1)[far].mean() > 5.0  # brighter than the Worklight's key alone
+
+
+def test_rim_shadow_darkens_the_iris_edge_on_the_keys_side(gl_window):
+    kw = dict(distance=4.0)
+    base, camera, light = _iris_full(gl_window, _iris(light=1.0), **kw)
+    shaded, _, _ = _iris_full(gl_window, _iris(light=1.0, rim_shadow=1.0), **kw)
+    assert np.all(shaded <= base)
+    darker = np.argwhere((base - shaded).max(-1) > 3)
+    assert len(darker) > 30
+    eye_centre = np.argwhere(_cpu_kinds(camera, "V2") > 0)[:, 1].mean()
+    assert np.sign(darker[:, 1].mean() - eye_centre) == _key_side(camera, light)
+
+
+def test_relief_changes_only_the_iris_and_reads_the_derived_height(gl_window):
+    """Roadmap #5: the relief tilts the iris's normal only (sclera and pupil unchanged); the procedural iris has no
+    alpha, so its height is derived (also with the source "alpha"); the derived texture is built once."""
+    kw = dict(distance=4.0, key=(30.0, 20.0))
+    plain, camera, _ = _iris_full(gl_window, DEFAULT_EYE, **kw)
+    relief, _, _ = _iris_full(gl_window, _iris(relief=1.0), **kw)
+    alpha, _, _ = _iris_full(gl_window, _iris(relief=1.0, relief_source="alpha"), **kw)
+    kinds = _cpu_kinds(camera, "V2")
+    cornea, sclera = _regions(camera)
+    assert np.array_equal(relief[sclera], plain[sclera])
+    pupil = cornea & (kinds == eo.PUPIL)
+    assert np.abs(relief[pupil] - plain[pupil]).max() <= 1
+    iris = _iris_pixels(camera)
+    assert (np.abs(relief - plain).max(-1)[iris] > 3).mean() > 0.3
+    assert np.array_equal(relief, alpha)
+    viewport, _ = _scene(_iris(relief=1.0), distance=4.0)
+    viewport.set_eye_display(tier="full")
+    _render(gl_window, viewport)
+    _render(gl_window, viewport)
+    assert len(viewport.eye_pass._relief) == 1
+    texture = next(iter(viewport.eye_pass._relief.values()))
+    assert texture is not None and texture.width == 512
+    viewport.eye_pass.release()
+    assert not viewport.eye_pass._relief
+
+
+def test_relief_from_alpha_without_a_height_is_flat(gl_window, tmp_path):
+    """An image without alpha read with the source "alpha" has no slope: the relief changes nothing."""
+    from pyglet import image
+
+    size = 64
+    rgb = np.random.default_rng(5).uniform(0.2, 0.8, (size, size, 3))
+    path = tmp_path / "iris_rgb.png"
+    image.ImageData(size, size, "RGB", (rgb * 255).astype(np.uint8).tobytes()).save(str(path))
+    plain, _, _ = _iris_full(gl_window, DEFAULT_EYE, distance=4.0, texture=str(path))
+    flat, _, _ = _iris_full(gl_window, _iris(relief=1.0, relief_source="alpha"), distance=4.0, texture=str(path))
+    assert np.abs(flat - plain).max() <= 1
+    derived, _, _ = _iris_full(gl_window, _iris(relief=1.0), distance=4.0, texture=str(path))
+    assert np.abs(derived - plain).max() > 3
+
+
+def test_pupil_edge_and_margin_change_only_a_ring_at_the_pupil(gl_window):
+    """Roadmap #7: the soft edge changes only pixels whose iris point lies within the edge (plus the pixel footprint)
+    of the pupil radius; the margin darkens only outside the pupil, within its width."""
+    kw = dict(distance=3.0)
+    plain, camera, _ = _iris_full(gl_window, DEFAULT_EYE, **kw)
+    eye, d = _camera_rays(camera)
+    tr = eo.trace(eye, d, "V2", G)
+    seen = (tr.kind == eo.IRIS) | (tr.kind == eo.PUPIL)
+    r = np.where(seen, np.hypot(tr.hit[..., 0], tr.hit[..., 1]), np.inf)
+    pixel = 2.0 * np.abs(np.gradient(r, axis=1)).clip(max=0.05)  # about two pixels' footprint
+    edge = 0.2 * eo.MM
+    soft, _, _ = _iris_full(gl_window, _iris(pupil_edge_mm=0.2), **kw)
+    changed = np.abs(soft - plain).max(-1) > 1
+    assert changed.sum() > 50
+    assert np.all(np.abs(r[changed] - G.pupil_radius) < edge / 2 + pixel[changed] + 2e-3)
+    margin, _, _ = _iris_full(gl_window, _iris(pupil_margin=1.0), **kw)
+    darker = (plain - margin).max(-1) > 1
+    assert darker.sum() > 50 and np.all(margin <= plain)
+    width = eo.PUPIL_MARGIN_MM * eo.MM
+    assert np.all((r[darker] > G.pupil_radius - 2e-3) & (r[darker] < G.pupil_radius + width + 2e-3))
+
+
+@pytest.mark.parametrize("level", [0, 3])
+@pytest.mark.parametrize("reflection", ["key", "studio"])
+@pytest.mark.parametrize("variant", ["V2", "V3"])
+def test_iris_programs_draw_and_leave_the_gl_state_clean(gl_window, level, reflection, variant):
+    from pyglet import gl
+
+    spec = dataclasses.replace(_iris(light=1.0, crescent=1.0, rim_shadow=0.8, relief=0.5, pupil_edge_mm=0.1,
+                                     pupil_margin=0.4), limbus_level=level, fit_pupil=0.22, fit_limbus=0.88)
+    viewport, _ = _scene(spec, yaw=25.0)
+    viewport.set_eye_display(tier="full", reflection=reflection, refraction=variant)
+    img = _render(gl_window, viewport)
+    assert np.sum(img.max(-1) > 0) > 3000
+    assert not gl.glIsEnabled(gl.GL_BLEND) and not gl.glIsEnabled(gl.GL_CULL_FACE)
+    unit = gl.GLint()
+    gl.glGetIntegerv(gl.GL_ACTIVE_TEXTURE, ctypes.byref(unit))
+    assert unit.value == gl.GL_TEXTURE0
     assert gl.glGetError() == gl.GL_NO_ERROR

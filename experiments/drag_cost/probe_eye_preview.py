@@ -21,10 +21,14 @@ rounds after 5 unmeasured ones:
                       draws without the look);
 - `look full`         the same look in the "full" tier (the Eye Lab's): wet sclera, irregularity, soft key highlight,
                       lid shadow and lid band;
-- `look full key`     the look with the key reflection only.
+- `look full key`     the look with the key reflection only;
+- `iris full`         Eye LookDev phase 4: the look plus the starting iris (`eye_presets.IRIS_START`: the key through
+                      the cornea with crescent and rim shadow, the relief derived from the iris's brightness, the soft
+                      pupil edge and margin) in the "full" tier;
+- `iris full key`     the same with the key reflection only.
 
-Reported: GPU p50 / min / max, the difference to `preview off` and to `L3` (the look's own cost, I-12: about 4 ms,
-at most 8 ms), the pixels the eyes cover. Plain ASCII.
+Reported: GPU p50 / min / max, the difference to `preview off`, to `L3` (the look's own cost, I-12: about 4 ms, at
+most 8 ms) and to `look full` (the iris's own cost on top of phase 3), the pixels the eyes cover. Plain ASCII.
 """
 
 from __future__ import annotations
@@ -47,12 +51,15 @@ ensure_paths()
 
 WARMUP_ROUNDS = 5
 DEFAULT_DRAWS = 40
-#: (name, preview, level, reflection, refraction, tier, look)
-RUNS = (("preview off", False, 0, "studio", "V2", "fast", False), ("L0", True, 0, "studio", "V2", "fast", False),
-        ("L2", True, 2, "studio", "V2", "fast", False), ("L3", True, 3, "studio", "V2", "fast", False),
-        ("L3 key", True, 3, "key", "V2", "fast", False), ("L3 V3", True, 3, "studio", "V3", "fast", False),
-        ("look fast", True, 3, "studio", "V2", "fast", True), ("look full", True, 3, "studio", "V2", "full", True),
-        ("look full key", True, 3, "key", "V2", "full", True))
+#: (name, preview, level, reflection, refraction, tier, look: None / "look" (phase 3) / "iris" (phase 3 + 4))
+RUNS = (("preview off", False, 0, "studio", "V2", "fast", None), ("L0", True, 0, "studio", "V2", "fast", None),
+        ("L2", True, 2, "studio", "V2", "fast", None), ("L3", True, 3, "studio", "V2", "fast", None),
+        ("L3 key", True, 3, "key", "V2", "fast", None), ("L3 V3", True, 3, "studio", "V3", "fast", None),
+        ("look fast", True, 3, "studio", "V2", "fast", "look"),
+        ("look full", True, 3, "studio", "V2", "full", "look"),
+        ("look full key", True, 3, "key", "V2", "full", "look"),
+        ("iris full", True, 3, "studio", "V2", "full", "iris"),
+        ("iris full key", True, 3, "key", "V2", "full", "iris"))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -108,7 +115,10 @@ def build_scene(size):
 def measure(size, draws: int) -> list[str]:
     from pyglet import gl
 
-    from mirai.eye_presets import LOOK_START
+    from mirai.eye_presets import IRIS_START, LOOK_START
+
+    looks = {None: None, "look": LOOK_START["look"],
+             "iris": dataclasses.replace(LOOK_START["look"], iris=IRIS_START["look.iris"])}
 
     window, app, eyes, views = build_scene(size)
     width, height = window.get_framebuffer_size()
@@ -124,7 +134,7 @@ def measure(size, draws: int) -> list[str]:
         images = {}
         for round_ in range(WARMUP_ROUNDS + draws):
             for name, preview, level, reflection, refraction, tier, look in RUNS:
-                wanted = LOOK_START["look"] if look else None
+                wanted = looks[look]
                 for eye in eyes:
                     if eye.eye.limbus_level != level or eye.eye.look != wanted:
                         eye.eye = dataclasses.replace(eye.eye, limbus_level=level, look=wanted)
@@ -156,13 +166,16 @@ def measure(size, draws: int) -> list[str]:
                       if images["L0"][i:i + 3] != images["preview off"][i:i + 3])
         floor = statistics.median(samples["preview off"])
         l3 = statistics.median(samples["L3"])
+        look_full = statistics.median(samples["look full"])
         lines.append(f"  view {view}: the eye pass changes {changed} px ({100.0 * changed / (width * height):.1f} % of "
                      f"the frame)")
-        lines.append(f"    {'run':<14} {'GPU p50':>9} {'min':>8} {'max':>8} {'vs off':>8} {'vs L3':>8}   {'CPU p50':>8}")
+        lines.append(f"    {'run':<14} {'GPU p50':>9} {'min':>8} {'max':>8} {'vs off':>8} {'vs L3':>8} {'vs look':>8}"
+                     f"   {'CPU p50':>8}")
         for name, *_ in RUNS:
             gpu = samples[name]
             lines.append(f"    {name:<14} {statistics.median(gpu):9.2f} {min(gpu):8.2f} {max(gpu):8.2f} "
-                         f"{statistics.median(gpu) - floor:+8.2f} {statistics.median(gpu) - l3:+8.2f}   "
+                         f"{statistics.median(gpu) - floor:+8.2f} {statistics.median(gpu) - l3:+8.2f} "
+                         f"{statistics.median(gpu) - look_full:+8.2f}   "
                          f"{statistics.median(cpu[name]):8.2f}")
     gl.glDeleteQueries(1, ctypes.byref(query))
     window.close()
@@ -179,7 +192,8 @@ def main(argv: list[str] | None = None) -> int:
     probe = pyglet.window.Window(width=64, height=64, visible=False)
     info = machine_info(pyglet.gl.gl_info.get_version_string(), pyglet.gl.gl_info.get_renderer())
     probe.close()
-    print("Eye preview GPU probe (AD-033 E-4, 2026-11-15; phase 3 look rows 2026-11-16): the whole frame, "
+    print("Eye preview GPU probe (AD-033 E-4, 2026-11-15; phase 3 look and phase 4 iris rows 2026-11-16): the whole "
+          "frame, "
           "GL_TIME_ELAPSED, ms")
     for line in info:
         print(line)

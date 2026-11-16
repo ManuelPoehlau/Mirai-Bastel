@@ -8,6 +8,11 @@ no blending, back faces culled, the store's polygon offset (the wire overlay kee
 
 Eye LookDev phase 3: an eye whose `EyeSpec.look` has an amount above 0 is drawn with the `LOOK` program in the "full"
 tier (`uses_look`); "fast" and every eye without a look draw with the program before phase 3, at its cost.
+
+Eye LookDev phase 4: an eye whose look has iris values with an amount above 0 is drawn with the `IRIS` program as well
+(`uses_iris`); every other eye with the program of phase 3. With the relief on and its height taken from the image's
+brightness (or the procedural iris), the pass binds its own copy of the iris image whose alpha holds the derived height
+(`relief_texture`, `eye_optics.iris_height`), built once per image file and fit.
 """
 
 from __future__ import annotations
@@ -95,8 +100,45 @@ def eye_uniforms(draw: EyeDraw) -> dict:
 
 
 def uses_look(draw: EyeDraw, display: EyeDisplay) -> bool:
-    """Phase 3: draw `draw` with its look (the "full" tier and a look with an amount above 0)."""
-    return display.tier == "full" and eo.look_active(getattr(draw.spec, "look", None))
+    """Phase 3: draw `draw` with its look (the "full" tier and a look with an amount above 0, phase 4: iris values
+    included)."""
+    look = getattr(draw.spec, "look", None)
+    return display.tier == "full" and (eo.look_active(look) or eo.iris_active(look))
+
+
+def uses_iris(draw: EyeDraw, display: EyeDisplay) -> bool:
+    """Phase 4: draw `draw` with its iris values (the "full" tier and an iris amount above 0)."""
+    return display.tier == "full" and eo.iris_active(getattr(draw.spec, "look", None))
+
+
+def relief_shares(spec) -> tuple[float, float]:
+    """Where the iris image's pupil edge and iris edge lie (shares of half its width): the fit's landmarks, else the
+    planar mapping's (the procedural iris as well)."""
+    if spec.fit_pupil is not None:
+        return spec.fit_pupil, spec.fit_limbus
+    g = eo.EyeGeometry.from_values(spec)
+    return g.pupil_radius / g.iris_radius, g.limbus_radius / g.iris_radius
+
+
+def derived_relief(draw: EyeDraw) -> bool:
+    """Phase 4: the relief's height is derived from the image's brightness (`relief_source` "luminance", or the
+    procedural iris, which has no alpha), so the pass binds its own texture; "alpha" reads the image as it is."""
+    iris = draw.spec.look.iris
+    return iris.relief > 0.0 and (iris.relief_source == "luminance" or not draw.texture)
+
+
+def iris_uniforms(draw: EyeDraw, model, key_dir, texture_width: int) -> dict:
+    """The iris's uniforms (GL-free; `eye_optics.iris_values`): the key in the eye's drawn local frame included."""
+    iris = draw.spec.look.iris
+    v = eo.iris_values(iris, eo.EyeGeometry.from_values(draw.spec), texture_width)
+    inverse = np.asarray(_inverse(model), dtype=np.float64).reshape(4, 4).T[:3, :3]
+    key = eo.normalize(inverse @ np.asarray(key_dir, dtype=np.float64))
+    return {
+        "u_key_local": tuple(float(c) for c in key), "u_iris_key": v["key"], "u_iris_light": iris.light,
+        "u_crescent": iris.crescent, "u_rim_shadow": iris.rim_shadow, "u_rim_width": v["rim_width"],
+        "u_relief_depth": v["relief_depth"], "u_relief_step": v["relief_step"], "u_pupil_edge": v["pupil_edge"],
+        "u_pupil_margin": iris.pupil_margin, "u_margin_width": v["margin_width"],
+    }
 
 
 def rest_rotation(draw: EyeDraw, model) -> tuple[float, ...]:
@@ -129,24 +171,29 @@ class EyePass:
         self._procedural: dict = {}
         self._ring_colours: dict = {}
         self._noise = None
+        self._relief: dict = {}
         #: Test hook: draw the ray classes (red iris, green pupil, blue limbal tissue, yellow sclera).
         self.debug_kind = False
         #: Test hook: in the "full" tier, draw an eye with any look (also one at amount 0) with the LOOK program - the
         #: check that every term is neutral at 0.
         self.force_look = False
+        #: Test hook: the same for the iris values (phase 4): an eye whose look has iris values at amount 0 is drawn
+        #: with the IRIS program.
+        self.force_iris = False
 
-    def program(self, display: EyeDisplay, level: int, fit: bool, look: bool = False):
+    def program(self, display: EyeDisplay, level: int, fit: bool, look: bool = False, iris: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore
 
-        key = (display.refraction, int(level), display.reflection, bool(fit), self.debug_kind, bool(look))
+        iris = bool(iris and look)
+        key = (display.refraction, int(level), display.reflection, bool(fit), self.debug_kind, bool(look), iris)
         program = self.programs.get(key)
         if program is None:
             attributes = GLRenderStore.program().attributes
             locations = {"position": attributes["position"]["location"], "normal": attributes["normal"]["location"]}
             sources = es.shell_sources(locations, display.refraction, level, display.reflection, fit, self.debug_kind,
-                                       look)
+                                       look, iris)
             program = ShaderProgram(*(Shader(src, kind) for src, kind in sources))
             self.programs[key] = program
         return program
@@ -187,6 +234,57 @@ class EyePass:
             gl.glBindTexture(texture.target, 0)
             self._noise = texture
         return self._noise
+
+    def relief_texture(self, draw: EyeDraw):
+        """Phase 4: the iris image (or the procedural iris) with the height derived from its brightness in alpha
+        (`eye_optics.iris_height`), filtered like `load_texture`. Built once per image file (path + modification time)
+        or anatomy, and per fit; None when the image cannot be read (the eye then draws without relief)."""
+        from pyglet import gl, image
+
+        spec = draw.spec
+        shares = relief_shares(spec)
+        g = eo.EyeGeometry.from_values(spec)
+        if draw.texture:
+            import os
+
+            try:
+                stamp = os.stat(draw.texture).st_mtime_ns
+            except OSError:
+                return None
+            key = (draw.texture, stamp, shares)
+        else:
+            key = (None, (g.pupil_radius, g.limbus_radius, g.iris_root_z), shares)
+        if key not in self._relief:
+            for old in [k for k in self._relief if draw.texture and k[0] == draw.texture and k[1] != key[1]]:
+                stale = self._relief.pop(old)
+                if stale is not None:
+                    stale.delete()
+            texture = None
+            try:
+                if draw.texture:
+                    data = image.load(draw.texture).get_image_data()
+                    width, height = data.width, data.height
+                    raw = np.frombuffer(data.get_data("RGBA", width * 4), dtype=np.uint8).reshape(height, width, 4)
+                    rgba = raw.copy()
+                else:
+                    width = height = 512
+                    rgb = eo.procedural_iris(g, 512)[::-1]  # pyglet rows run bottom-up
+                    rgba = np.empty((512, 512, 4), dtype=np.uint8)
+                    rgba[..., :3] = (np.clip(rgb, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
+                heights = eo.iris_height(rgba[..., :3] / 255.0, *shares)
+                rgba[..., 3] = np.clip(np.round(heights * 255.0), 0, 255).astype(np.uint8)
+                texture = image.ImageData(width, height, "RGBA", rgba.tobytes(), pitch=width * 4).get_texture()
+                gl.glBindTexture(texture.target, texture.id)
+                gl.glGenerateMipmap(texture.target)
+                gl.glTexParameteri(texture.target, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR_MIPMAP_LINEAR)
+                gl.glTexParameteri(texture.target, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+                gl.glTexParameteri(texture.target, gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT)
+                gl.glTexParameteri(texture.target, gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT)
+                gl.glBindTexture(texture.target, 0)
+            except Exception:  # noqa: BLE001 - an unreadable image draws without relief
+                texture = None
+            self._relief[key] = texture
+        return self._relief[key]
 
     def limbal_colour(self, draw: EyeDraw) -> tuple[float, float, float]:
         """The limbal colour: the eye's own (`colour_source` "shader"), or the iris image's outer ring ("image"; the
@@ -241,7 +339,10 @@ class EyePass:
         values = eye_uniforms(draw)
         values["u_limbus_albedo"] = self.limbal_colour(draw)
         look = uses_look(draw, display) or (self.force_look and display.tier == "full" and draw.spec.look is not None)
-        program = self.program(display, draw.spec.limbus_level, "u_fit_lab" in values, look)
+        iris = look and (uses_iris(draw, display) or (self.force_iris and draw.spec.look.iris is not None))
+        if iris and derived_relief(draw):
+            texture = self.relief_texture(draw) or texture
+        program = self.program(display, draw.spec.limbus_level, "u_fit_lab" in values, look, iris)
         model = store.uniform_data("model_uniforms")
         model = list(model) if len(model) == 16 else [1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0]
         values.update(light)
@@ -252,6 +353,8 @@ class EyePass:
             noise = self.noise_texture()
             values.update(look_uniforms(draw))
             values.update({"u_rest": rest_rotation(draw, model), "u_noise_texture": NOISE_UNIT})
+        if iris:
+            values.update(iris_uniforms(draw, model, light["u_key_dir"], texture.width))
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw, not once per value
         for name, value in values.items():
@@ -296,3 +399,7 @@ class EyePass:
         if self._noise is not None:
             self._noise.delete()
             self._noise = None
+        for texture in self._relief.values():
+            if texture is not None:
+                texture.delete()
+        self._relief.clear()

@@ -24,6 +24,12 @@ an amount above 0 - otherwise the program is exactly the one before phase 3): th
 irregularity of the film's reflection normal (a mip-mapped noise texture), the lid shadow on the eyeball and the lid
 band in the reflection (both in the eye's rest frame, `u_rest`), the soft key highlight. `LOOK_LIB_SRC` holds the
 parity-tested functions (NumPy twins in `eye_optics`); every term is neutral at amount 0.
+
+**The iris** (Eye LookDev phase 4, `core.EyeIris`; define `IRIS`, only together with `LOOK` and only for an eye whose
+iris values have an amount above 0 - otherwise the program is exactly the one of phase 3): the Worklight key traced back
+through the cornea to the iris (refracted direction, the cornea's focusing - the crescent opposite the key - and the
+shadow under the scleral rim), the relief from the iris image's height (alpha), the soft pupil edge and its dark margin.
+`IRIS_LIB_SRC` holds the parity-tested functions; every term is neutral at amount 0.
 """
 
 from __future__ import annotations
@@ -385,6 +391,136 @@ float area_key(vec3 r, vec3 c, vec3 up_ref, vec3 right_ref, float roughness) {{
 }}
 """
 
+IRIS_LIB_SRC = f"""
+const int IRIS_LIGHT_STEPS = {eo.IRIS_LIGHT_STEPS};
+const float IRIS_LIGHT_TOLERANCE = {eo.IRIS_LIGHT_TOLERANCE!r};
+const int IRIS_LIGHT_WARM_STEPS = {eo.IRIS_LIGHT_WARM_STEPS};
+const float IRIS_LIGHT_WARM_OFFSET = {eo.IRIS_LIGHT_WARM_OFFSET!r};
+const float IRIS_LIGHT_DELTA = {eo.IRIS_LIGHT_DELTA!r};
+const float CRESCENT_MAX = {eo.CRESCENT_MAX!r};
+const float CRESCENT_MIN_COS = {eo.CRESCENT_MIN_COS!r};
+const float IRIS_F0 = {eo.CORNEA_F0!r};
+
+// The iris's numbers (eye_optics.iris_values) and the key in eye-local space.
+uniform vec3 u_key_local;
+uniform float u_iris_key;
+uniform float u_iris_light;
+uniform float u_crescent;
+uniform float u_rim_shadow;
+uniform float u_rim_width;
+uniform float u_relief_depth;
+uniform float u_relief_step;
+uniform float u_pupil_edge;
+uniform float u_pupil_margin;
+uniform float u_margin_width;
+
+// -- the key through the cornea (eye_optics.iris_light_path / iris_key_terms), eye-local
+float light_miss(float phi, float hx, float hy) {{
+    float c = cos(phi);
+    float s = sin(phi);
+    float eta = N_AIR / N_EFFECTIVE;
+    float m = sqrt(max(1.0 - eta * eta * (1.0 - c * c), 0.0)) - eta * c;
+    return (hx - u_ant_radius * c) * (-m * s) - (hy - u_ant_radius * s) * (-eta - m * c);
+}}
+// `warm`: start from `phi` (a neighbour's solution) instead of the straight path; `phi` returns this point's angle.
+bool iris_light_path(vec3 hit, vec3 l, bool warm, inout float phi, out vec3 entry, out vec3 d, out float cos_in,
+                     out float aperture) {{
+    vec3 ca = vec3(0.0, 0.0, u_ant_centre_z);
+    float radius = u_ant_radius;
+    float eta = N_AIR / N_EFFECTIVE;
+    vec3 q = hit - ca;
+    float hx = dot(q, l);
+    vec3 w = q - hx * l;
+    float hy = length(w);
+    vec3 other = abs(l.x) < 0.9 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+    vec3 v = hy > 1e-9 ? w / max(hy, 1e-12) : normalize(cross(l, other));
+    float p0 = phi;
+    float p1 = phi + IRIS_LIGHT_WARM_OFFSET;
+    float c;
+    float s;
+    float m;
+    if (!warm) {{
+        p0 = atan(hy, sqrt(max(radius * radius - hy * hy, 0.0)));
+        c = cos(p0);
+        s = sin(p0);
+        m = sqrt(max(1.0 - eta * eta * (1.0 - c * c), 0.0)) - eta * c;
+        vec2 dir = vec2(eta + m * c, m * s);
+        dir /= max(length(dir), 1e-12);
+        float b = hx * dir.x + hy * dir.y;
+        float t = -b + sqrt(max(b * b - (hx * hx + hy * hy - radius * radius), 0.0));
+        p1 = atan(hy + t * dir.y, hx + t * dir.x);
+    }}
+    float f0 = light_miss(p0, hx, hy);
+    float f1 = light_miss(p1, hx, hy);
+    int steps = warm ? IRIS_LIGHT_WARM_STEPS : IRIS_LIGHT_STEPS;
+    for (int i = 0; i < steps; ++i) {{
+        float den = f1 - f0;
+        float p2 = abs(den) > 1e-12 ? p1 - f1 * (p1 - p0) / den : p1;
+        p0 = p1;
+        f0 = f1;
+        p1 = p2;
+        f1 = light_miss(p2, hx, hy);
+    }}
+    phi = p1;
+    c = cos(p1);
+    s = sin(p1);
+    vec3 n = c * l + s * v;
+    entry = ca + radius * n;
+    m = sqrt(max(1.0 - eta * eta * (1.0 - c * c), 0.0)) - eta * c;
+    vec3 t_in = -eta * l - m * n;
+    d = normalize(entry - hit);
+    cos_in = c;
+    float s_plane = (u_cap_z - hit.z) / (d.z > 1e-6 ? d.z : 1.0);
+    aperture = d.z > 1e-6 ? length(hit.xy + s_plane * d.xy) : 1e3;
+    return abs(f1) < IRIS_LIGHT_TOLERANCE && c > 0.0 && dot(hit - entry, t_in) > 0.0;
+}}
+vec3 cone_point(vec2 xy) {{ return vec3(xy, u_iris_a + u_iris_b * length(xy)); }}
+vec3 iris_key_terms(vec3 hit, vec3 l, out vec3 d) {{
+    vec3 h0 = cone_point(hit.xy);
+    vec3 e0;
+    float c0;
+    float a0;
+    float phi = 0.0;
+    bool ok = iris_light_path(h0, l, false, phi, e0, d, c0, a0);
+    float trans = ok ? 1.0 - schlick_scalar(IRIS_F0, c0) : 0.0;
+    float conc = 1.0;
+    if (u_crescent > 0.0) {{
+        // the two neighbours' entries (only for the crescent: the costly part)
+        vec3 h1 = cone_point(hit.xy + vec2(IRIS_LIGHT_DELTA, 0.0));
+        vec3 h2 = cone_point(hit.xy + vec2(0.0, IRIS_LIGHT_DELTA));
+        vec3 e1;
+        vec3 e2;
+        vec3 d1;
+        vec3 d2;
+        float c1;
+        float c2;
+        float a1;
+        float a2;
+        float phi1 = phi;
+        float phi2 = phi;
+        bool ok1 = iris_light_path(h1, l, true, phi1, e1, d1, c1, a1);
+        bool ok2 = iris_light_path(h2, l, true, phi2, e2, d2, c2, a2);
+        float beam = abs(dot(cross(e1 - e0, e2 - e0), l));
+        float area = length(cross(h1 - h0, h2 - h0));
+        float cos_iris = dot(iris_cone_normal(h0), d);
+        conc = ok && ok1 && ok2 ? clamp(beam / (area * max(cos_iris, CRESCENT_MIN_COS)), 0.0, CRESCENT_MAX) : 1.0;
+    }}
+    float shadow = ok ? limbus_smooth((a0 - u_limbus_radius) / u_rim_width + 0.5) : 1.0;
+    return vec3(trans, conc, shadow);
+}}
+
+// -- relief and pupil (eye_optics.relief_normal / pupil_weights), eye-local
+vec3 relief_normal(vec3 hit, vec2 grad) {{
+    float r = max(length(hit.xy), 1e-6);
+    return normalize(vec3(-u_iris_b * hit.xy / r - grad, 1.0));
+}}
+vec2 pupil_weights(float r, float width) {{
+    float pupil = width > 0.0 ? 1.0 - limbus_smooth((r - u_pupil_radius) / width + 0.5)
+                              : (r < u_pupil_radius ? 1.0 : 0.0);
+    return vec2(pupil, 1.0 - limbus_smooth((r - u_pupil_radius) / u_margin_width));
+}}
+"""
+
 SHELL_VERTEX_SRC = """#version 330 core
 layout(location = {position}) in vec3 position;
 layout(location = {normal}) in vec3 normal;
@@ -431,6 +567,22 @@ const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 vec3 to_world(vec3 n_local) { return normalize(mat3(u_model) * n_local); }
 
 vec3 lit(vec3 albedo, vec3 n_local) { return albedo * worklight_light(to_world(n_local)); }
+#ifdef IRIS
+
+// Phase 4: the iris's diffuse light - the Worklight's (`lit`), its key traced through the cornea (roadmap #4): the
+// refracted direction (`u_iris_light`), the cornea's focusing (`u_crescent`), the rim's shadow (`u_rim_shadow`).
+vec3 iris_lit(vec3 albedo, vec3 hit, vec3 n_local) {
+    if (u_iris_key <= 0.0) return lit(albedo, n_local);
+    vec3 n_world = to_world(n_local);
+    vec3 d;
+    vec3 terms = iris_key_terms(hit, u_key_local, d);
+    float k = wrap_light(dot(n_world, u_key_dir), u_key_wrap);
+    float k_ref = terms.x * wrap_light(dot(n_local, d), u_key_wrap);
+    k = mix(k, k_ref, u_iris_light) * mix(1.0, terms.y, u_crescent) * (1.0 - u_rim_shadow * terms.z);
+    return albedo * (vec3(u_ambient) + u_key_color * k
+                     + u_fill_color * wrap_light(dot(n_world, u_fill_dir), u_fill_wrap));
+}
+#endif
 
 float blinn_phong(vec3 n, vec3 l, vec3 v, float e) {
     if (dot(n, l) <= 0.0) return 0.0;
@@ -518,6 +670,21 @@ void main() {
         vec3 deep_albedo = texture(u_iris_texture, iris_st(deep_hit.xy)).rgb;
 #endif
         vec3 iris_albedo = texture(u_iris_texture, iris_st(hit.xy)).rgb;
+#ifdef IRIS
+        // Before any per-pixel branch (derivatives): the pupil edge's pixel footprint, the relief's height gradient.
+        float r_hit = length(hit.xy);
+        float r_aa = fwidth(r_hit);
+        vec2 relief_grad = vec2(0.0);
+        if (u_relief_depth > 0.0) {
+            vec2 st = iris_st(hit.xy);
+            vec2 st_dx = dFdx(st);
+            vec2 st_dy = dFdy(st);
+            float h0 = textureGrad(u_iris_texture, st, st_dx, st_dy).a;
+            float hx = textureGrad(u_iris_texture, iris_st(hit.xy + vec2(u_relief_step, 0.0)), st_dx, st_dy).a;
+            float hy = textureGrad(u_iris_texture, iris_st(hit.xy + vec2(0.0, u_relief_step)), st_dx, st_dy).a;
+            relief_grad = vec2(hx - h0, hy - h0) * (2.0 * u_relief_depth / u_relief_step);
+        }
+#endif
 #ifdef DEBUG_KIND
         out_color = vec4(kind == KIND_IRIS ? 1.0 : 0.0, kind == KIND_PUPIL ? 1.0 : 0.0,
                          kind == KIND_LIMBUS ? 1.0 : 0.0, 1.0);
@@ -540,11 +707,28 @@ void main() {
         if (kind == KIND_LIMBUS) {
             inside = tissue;
 #if LIMBUS_LEVEL >= 3
+#ifdef IRIS
+            vec3 behind = deep ? iris_lit(deep_albedo, deep_hit, iris_cone_normal(deep_hit)) : lit(u_limbus_albedo, ns);
+#else
             vec3 behind = deep ? lit(deep_albedo, iris_cone_normal(deep_hit)) : lit(u_limbus_albedo, ns);
+#endif
             inside = mix(tissue, behind, transmission(us));
 #endif
         } else {
+#ifdef IRIS
+            vec3 albedo = kind == KIND_PUPIL ? u_pupil_albedo : iris_albedo;
+            if (u_pupil_edge > 0.0 || u_pupil_margin > 0.0) {
+                // Roadmap #7: the pupil edge soft over its width plus the pixel footprint, the dark margin outside it.
+                float width = u_pupil_edge > 0.0 ? sqrt(u_pupil_edge * u_pupil_edge + r_aa * r_aa) : 0.0;
+                vec2 w = pupil_weights(r_hit, width);
+                albedo = mix(iris_albedo * (1.0 - u_pupil_margin * w.y), u_pupil_albedo, w.x);
+            }
+            vec3 n_iris = u_relief_depth > 0.0 && kind == KIND_IRIS ? relief_normal(hit, relief_grad)
+                                                                    : iris_cone_normal(hit);
+            inside = iris_lit(albedo, hit, n_iris);
+#else
             inside = lit(kind == KIND_PUPIL ? u_pupil_albedo : iris_albedo, iris_cone_normal(hit));
+#endif
 #if LIMBUS_LEVEL >= 1
 #if LIMBUS_LEVEL >= 3
             vec3 cover = mix(tissue, inside, transmission(us));
@@ -602,7 +786,12 @@ void main() {
 #endif
         colour = lit(albedo, n);
 #if LIMBUS_LEVEL >= 3
+#ifdef IRIS
+        vec3 behind = through ? iris_lit(through_albedo, through_hit, iris_cone_normal(through_hit))
+                              : lit(u_limbus_albedo, n);
+#else
         vec3 behind = through ? lit(through_albedo, iris_cone_normal(through_hit)) : lit(u_limbus_albedo, n);
+#endif
         colour = mix(colour, behind, transmission(us));
 #endif
         // The Worklight's own highlight (non-local viewer), with the eye's finish.
@@ -700,6 +889,21 @@ void main() {
         o.x = lid_occlusion(a.xyz, normalize(b.xyz), c.x);
     } else if (u_func == 13) {
         o.x = area_key(normalize(a.xyz), normalize(b.xyz), normalize(c.xyz), vec3(1.0, 0.0, 0.0), a.w);
+    } else if (u_func == 14) {
+        vec3 d;
+        o.xyz = iris_key_terms(a.xyz, normalize(b.xyz), d);
+    } else if (u_func == 15) {
+        vec3 e;
+        vec3 d;
+        float cos_in;
+        float aperture;
+        float phi = 0.0;
+        bool ok = iris_light_path(a.xyz, normalize(b.xyz), false, phi, e, d, cos_in, aperture);
+        o = vec4(d, ok ? aperture : -1.0);
+    } else if (u_func == 16) {
+        o.xyz = relief_normal(a.xyz, b.xy);
+    } else if (u_func == 17) {
+        o.xy = pupil_weights(a.x, a.y);
     }
     out_value = o;
 }
@@ -707,7 +911,8 @@ void main() {
 
 PARITY_FUNCS = {"trace_hit": 0, "trace_entry": 1, "iris_st": 2, "coords": 3, "weights": 4, "normal_blend": 5,
                 "sclera_through": 6, "td_env": 7, "worklight_light": 8, "film_uv": 9, "film_normal": 10,
-                "film_roughness_shadow": 11, "lid_occlusion": 12, "area_key": 13}
+                "film_roughness_shadow": 11, "lid_occlusion": 12, "area_key": 13, "iris_key_terms": 14,
+                "iris_light_path": 15, "relief_normal": 16, "pupil_weights": 17}
 
 FULLSCREEN_VERTEX_SRC = """#version 330 core
 layout(location = 0) in vec2 a_position;
@@ -722,24 +927,28 @@ def _header(**defines) -> str:
 
 
 def shell_sources(locations: dict[str, int], variant: str, level: int, reflection: str, fit: bool,
-                  debug_kind: bool = False, look: bool = False) -> list[tuple[str, str]]:
+                  debug_kind: bool = False, look: bool = False, iris: bool = False) -> list[tuple[str, str]]:
     """The shell program's sources. Without `look` the fragment source is the one before phase 3, character for
-    character (`test_gl_eye_pass.py` pins that), so the "fast" tier and an eye without a look draw and cost as before."""
+    character (`test_gl_eye_pass.py` pins that), so the "fast" tier and an eye without a look draw and cost as before;
+    without `iris` it is the one of phase 3. `iris` needs `look` (the iris values live in the look)."""
+    iris = bool(iris and look)
     header = _header(VARIANT=VARIANT_IDS[variant], LIMBUS_LEVEL=int(level), REFLECTION=REFLECTIONS[reflection],
-                     IRIS_FIT=1 if fit else None, DEBUG_KIND=1 if debug_kind else None, LOOK=1 if look else None)
-    library = EYE_LIB_SRC + (LOOK_LIB_SRC if look else "")
-    body = SHELL_FRAGMENT_BODY if look else _without_look(SHELL_FRAGMENT_BODY)
+                     IRIS_FIT=1 if fit else None, DEBUG_KIND=1 if debug_kind else None, LOOK=1 if look else None,
+                     IRIS=1 if iris else None)
+    library = EYE_LIB_SRC + (LOOK_LIB_SRC if look else "") + (IRIS_LIB_SRC if iris else "")
+    body = SHELL_FRAGMENT_BODY if iris else _without(SHELL_FRAGMENT_BODY, "IRIS")
+    body = body if look else _without(body, "LOOK")
     return [(SHELL_VERTEX_SRC.format(**locations), "vertex"), (header + library + body, "fragment")]
 
 
-def _without_look(source: str) -> str:
-    """`source` with its `#ifdef LOOK` blocks resolved as the preprocessor would without LOOK (kept: the `#else` part).
-    Nested `#if` inside a LOOK block are carried along; LOOK blocks themselves are not nested."""
-    out, state, depth = [], None, 0  # state: None outside, "if" / "else" inside a LOOK block
+def _without(source: str, name: str) -> str:
+    """`source` with its `#ifdef <name>` blocks resolved as the preprocessor would without that define (kept: the
+    `#else` part). Nested `#if` inside such a block are carried along; blocks of the same name are not nested."""
+    out, state, depth = [], None, 0  # state: None outside, "if" / "else" inside a block
     for line in source.splitlines(keepends=True):
         stripped = line.strip()
         if state is None:
-            if stripped == "#ifdef LOOK":
+            if stripped == f"#ifdef {name}":
                 state, depth = "if", 0
             else:
                 out.append(line)
@@ -761,5 +970,6 @@ def _without_look(source: str) -> str:
 
 def parity_sources(fit: bool) -> list[tuple[str, str]]:
     return [(FULLSCREEN_VERTEX_SRC, "vertex"),
-            (_header(IRIS_FIT=1 if fit else None, LOOK=1) + EYE_LIB_SRC + LOOK_LIB_SRC + PARITY_FRAGMENT_BODY,
+            (_header(IRIS_FIT=1 if fit else None, LOOK=1, IRIS=1) + EYE_LIB_SRC + LOOK_LIB_SRC + IRIS_LIB_SRC
+             + PARITY_FRAGMENT_BODY,
              "fragment")]

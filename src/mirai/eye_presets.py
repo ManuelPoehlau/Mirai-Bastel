@@ -10,6 +10,11 @@ starting look for the reflections (`LOOK_START`: only the `look` values, so it k
 files in `config/eye_presets/` (`{"name": ..., "values": {...}}`, the look as a nested `"look"` object or null). A file
 that cannot be read is skipped, and the reason is reported. A preset without `"look"` (saved before phase 3) leaves an
 eye's look as it is.
+
+Eye LookDev phase 4: the look's iris values (`core.EyeIris`) travel inside the nested look (`"look": {..., "iris":
+{...}}`). A preset look without them (saved before phase 4, or from an eye without iris values) leaves an eye's iris
+values as they are (`set_eye_changes`). The built-in `IRIS_START` holds only iris values (key `"look.iris"`), so it
+keeps the eye's reflections, anatomy and limbus (`PROVISIONAL` agent values, I-6 stays open).
 """
 
 from __future__ import annotations
@@ -19,21 +24,28 @@ import re
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from core import EyeLook, EyeSpec
+from core import EyeIris, EyeLook, EyeSpec
 
-from .eye_object import DEFAULT_EYE, DEFAULT_LOOK, with_changes
+from .eye_object import DEFAULT_EYE, DEFAULT_IRIS, DEFAULT_LOOK, LOOK_PREFIX, with_changes
 
 #: Where saved presets live: in the repo, relative to its root (same on Windows and Linux), like `config/keymap.json`.
 PRESET_DIR = Path(__file__).resolve().parents[2] / "config" / "eye_presets"
 #: The iris image's fit values: they stay with the image, not with a look.
 IMAGE_FIELDS = ("fit_pupil", "fit_limbus", "hold_outer_color")
 PRESET_FIELDS = tuple(f.name for f in fields(EyeSpec) if f.name not in IMAGE_FIELDS)
+#: Phase 4: a preset may hold only the iris values (no other look value changes).
+IRIS_KEY = LOOK_PREFIX + "iris"
 BUILTIN_NAME = "Standard (L0)"
 LOOK_START_NAME = "Reflexe (Startwerte)"
 #: Phase 3's starting reflections (`PROVISIONAL`, checked in the container's renders only): a wet sclera, a slight
 #: irregularity, the softened key highlight (I-8), a subtle lid shadow and lid band (I-10).
 LOOK_START = {"look": EyeLook(**{**DEFAULT_LOOK.to_dict(), "wet_sclera": 0.7, "irregularity_deg": 0.5,
                                  "highlight_softness": 0.6, "lid_shadow": 0.3, "lid_band": 0.7})}
+IRIS_START_NAME = "Iris (Startwerte)"
+#: Phase 4's starting iris (`PROVISIONAL`, checked in the container's renders only): the key through the cornea with
+#: its crescent and rim shadow, a moderate relief, a soft pupil edge with a dark margin.
+IRIS_START = {IRIS_KEY: EyeIris(**{**DEFAULT_IRIS.to_dict(), "light": 1.0, "crescent": 1.0, "rim_shadow": 0.8,
+                                   "relief": 0.5, "pupil_edge_mm": 0.12, "pupil_margin": 0.4})}
 
 
 @dataclass(frozen=True)
@@ -55,13 +67,15 @@ def _value(name: str, value):
         return tuple(value)
     if name == "look" and isinstance(value, dict):
         return EyeLook.from_dict(value)  # ValueError on an invalid look
+    if name == IRIS_KEY and isinstance(value, dict):
+        return EyeIris.from_dict(value)
     return value
 
 
 def _validated(values: object) -> dict:
     if not isinstance(values, dict):
         raise ValueError("'values' must be an object")
-    unknown = sorted(set(values) - set(PRESET_FIELDS))
+    unknown = sorted(set(values) - set(PRESET_FIELDS) - {IRIS_KEY})
     if unknown:
         raise ValueError(f"unknown values {unknown}")
     if not values:
@@ -73,7 +87,19 @@ def _validated(values: object) -> dict:
 
 def builtin_presets() -> list[EyePreset]:
     return [EyePreset(BUILTIN_NAME, _validated(preset_values(DEFAULT_EYE)), builtin=True),
-            EyePreset(LOOK_START_NAME, _validated(dict(LOOK_START)), builtin=True)]
+            EyePreset(LOOK_START_NAME, _validated(dict(LOOK_START)), builtin=True),
+            EyePreset(IRIS_START_NAME, _validated(dict(IRIS_START)), builtin=True)]
+
+
+def set_eye_changes(preset: EyePreset) -> dict:
+    """The `set_eye` values that apply `preset`: a look without iris values becomes one "look.<field>" change per
+    reflection value, so an eye keeps its own iris values (phase 4); everything else as stored."""
+    values = dict(preset.values)
+    look = values.get("look")
+    if isinstance(look, EyeLook) and look.iris is None:
+        del values["look"]
+        values.update({LOOK_PREFIX + name: value for name, value in look.to_dict().items()})
+    return values
 
 
 def load_presets(directory: Path = PRESET_DIR) -> tuple[list[EyePreset], list[str]]:

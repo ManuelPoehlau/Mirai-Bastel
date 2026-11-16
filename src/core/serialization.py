@@ -65,6 +65,11 @@ additiv: ein Auge trägt optional `"eye": {..., "look": {...}}` (die Werte von `
 Nur geschrieben, wenn ein Auge einen Look hat (sonst 4-9 wie bisher), damit ein älterer Build die Datei ablehnt, statt
 den Look beim Speichern still zu verlieren. Gelesen werden 2-10; ein ungültiger Look macht die Datei ungültig.
 
+Version 11 (Iris-Look, Eye LookDev Phase 4, Manu 2026-11-16 "1 go (v11)", CORE_V1_FREEZE §7.1) ist additiv: ein Look
+trägt optional `"look": {..., "iris": {...}}` (die Werte von `core.scene.EyeIris`; fehlt = neutral, so lesen sich
+v10-Dateien unverändert). Nur geschrieben, wenn ein Look Iris-Werte hat (sonst 4-10 wie bisher), damit ein älterer Build
+die Datei ablehnt, statt die Iris-Werte beim Speichern still zu verlieren. Gelesen werden 2-11.
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -92,6 +97,8 @@ GROUP_FORMAT_VERSION = 8
 EYE_FORMAT_VERSION = 9
 #: Written when any eye has a look (`EyeSpec.look`, Eye LookDev phase 3).
 EYE_LOOK_FORMAT_VERSION = 10
+#: Written when any eye's look has iris values (`EyeLook.iris`, Eye LookDev phase 4).
+EYE_IRIS_FORMAT_VERSION = 11
 
 
 def scene_to_dict(scene: Scene) -> dict:
@@ -102,7 +109,10 @@ def scene_to_dict(scene: Scene) -> dict:
     grouped = any(
         obj.state is ObjectState.GROUP or obj.hidden or obj.parent is not None for obj in scene.objects.values()
     ) or (scene.rig is not None and bool(scene.rig.hidden_ids()))
-    if any(obj.eye is not None and obj.eye.look is not None for obj in objects):
+    looks = [obj.eye.look for obj in objects if obj.eye is not None and obj.eye.look is not None]
+    if any(look.iris is not None for look in looks):
+        version = EYE_IRIS_FORMAT_VERSION
+    elif looks:
         version = EYE_LOOK_FORMAT_VERSION
     elif any(obj.eye is not None for obj in objects):
         version = EYE_FORMAT_VERSION
@@ -134,7 +144,7 @@ def _has_weights(mesh: Mesh) -> bool:
 def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
     if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION, GROUP_FORMAT_VERSION,
-                   EYE_FORMAT_VERSION, EYE_LOOK_FORMAT_VERSION):
+                   EYE_FORMAT_VERSION, EYE_LOOK_FORMAT_VERSION, EYE_IRIS_FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
@@ -178,7 +188,7 @@ def _object_to_dict(obj: SceneObject) -> dict:
     if obj.parent is not None:
         out["parent"] = int(obj.parent)  # version 8
     if obj.eye is not None:
-        out["eye"] = obj.eye.to_dict()  # version 9 (AD-033), with "look" version 10; absent = not an eye
+        out["eye"] = obj.eye.to_dict()  # version 9 (AD-033), "look" 10, "look.iris" 11; absent = not an eye
     return out
 
 

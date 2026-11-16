@@ -162,6 +162,63 @@ def _finite(value, what: str) -> float:
     return number
 
 
+#: Eye LookDev phase 4: where the iris relief's height comes from (`EyeIris.relief_source`).
+EYE_RELIEF_SOURCES = ("luminance", "alpha")
+
+
+@dataclass(frozen=True)
+class EyeIris:
+    """The iris's optional look values (Eye LookDev phase 4, assessment 2026-11-16 §C roadmap #4, #5, #7; Manu
+    2026-11-16 "1 go (v11), 2 go"): the key light through the cornea, the relief, the pupil's edge. Data only,
+    validated (`ValueError`); no default numbers in the Core (the app's are `mirai.eye_object.DEFAULT_IRIS`).
+
+    The amounts (`light`, `crescent`, `rim_shadow`, `relief`, `pupil_edge_mm`, `pupil_margin`) are neutral at 0; the
+    others only shape a term whose amount is above 0. `crescent` 1 = the cornea's focusing as computed, above 1
+    exaggerated. `relief_source` "luminance": the height is derived from the iris image's brightness; "alpha": the
+    image's alpha channel holds it. `*_mm` millimetres at the reference eye (sclera radius 12 mm)."""
+
+    light: float
+    crescent: float
+    rim_shadow: float
+    rim_shadow_mm: float
+    relief: float
+    relief_mm: float
+    relief_source: str
+    pupil_edge_mm: float
+    pupil_margin: float
+
+    def __post_init__(self) -> None:
+        put = lambda name, value: object.__setattr__(self, name, value)  # noqa: E731
+        for name in ("light", "crescent", "rim_shadow", "rim_shadow_mm", "relief", "relief_mm", "pupil_edge_mm",
+                     "pupil_margin"):
+            put(name, _finite(getattr(self, name), name))
+        for name in ("light", "rim_shadow", "relief", "pupil_margin"):
+            if not 0.0 <= getattr(self, name) <= 1.0:
+                raise ValueError(f"{name}: needs 0 <= a <= 1, got {getattr(self, name)}")
+        if not 0.0 <= self.crescent <= 2.0:
+            raise ValueError(f"crescent: needs 0 <= c <= 2, got {self.crescent}")
+        if not 0.0 <= self.pupil_edge_mm <= 2.0:
+            raise ValueError(f"pupil_edge_mm: needs 0 <= w <= 2, got {self.pupil_edge_mm}")
+        if not 0.0 < self.rim_shadow_mm or not 0.0 < self.relief_mm:
+            raise ValueError("rim_shadow_mm / relief_mm: need > 0")
+        if self.relief_source not in EYE_RELIEF_SOURCES:
+            raise ValueError(f"relief_source: one of {EYE_RELIEF_SOURCES}, got {self.relief_source!r}")
+
+    def to_dict(self) -> dict:
+        return {f.name: getattr(self, f.name) for f in fields(self)}
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "EyeIris":
+        if not isinstance(raw, dict):
+            raise ValueError(f"eye iris: expected an object, got {raw!r}")
+        names = [f.name for f in fields(cls)]
+        missing = [n for n in names if n not in raw]
+        unknown = sorted(set(raw) - set(names))
+        if missing or unknown:
+            raise ValueError(f"eye iris: missing {missing}, unknown {unknown}")
+        return cls(**{n: raw[n] for n in names})
+
+
 @dataclass(frozen=True)
 class EyeLook:
     """The eye's optional look values (Eye LookDev phase 3, assessment 2026-11-16 §D change 1; Manu I-5 "Core Change
@@ -171,7 +228,8 @@ class EyeLook:
     The five amounts (`wet_sclera`, `irregularity_deg`, `highlight_softness`, `lid_shadow`, `lid_band`) are neutral at 0;
     the other values only shape a term whose amount is above 0. Heights are eye-local in the eye's rest frame (1 = the
     sclera radius, +Y up), `*_mm` millimetres at the reference eye (sclera radius 12 mm). `seed` picks the irregularity
-    pattern (the app mixes it with the object, so two eyes never share one)."""
+    pattern (the app mixes it with the object, so two eyes never share one). `iris` (Eye LookDev phase 4, scene format
+    v11) is the optional `EyeIris`; `None` = neutral, the iris as before phase 4."""
 
     wet_sclera: float
     sclera_roughness: float
@@ -184,9 +242,12 @@ class EyeLook:
     lid_band: float
     lid_upper: float
     lid_lower: float
+    iris: EyeIris | None = None
 
     def __post_init__(self) -> None:
         put = lambda name, value: object.__setattr__(self, name, value)  # noqa: E731
+        if self.iris is not None and not isinstance(self.iris, EyeIris):
+            raise ValueError(f"iris: expected an EyeIris or None, got {self.iris!r}")
         for name in ("wet_sclera", "sclera_roughness", "irregularity_deg", "irregularity_mm", "highlight_softness",
                      "lid_shadow", "lid_shadow_mm", "lid_band", "lid_upper", "lid_lower"):
             put(name, _finite(getattr(self, name), name))
@@ -205,18 +266,20 @@ class EyeLook:
             raise ValueError(f"lid_lower / lid_upper: need -1 < lower < upper < 1, got {self.lid_lower}, {self.lid_upper}")
 
     def to_dict(self) -> dict:
-        return {f.name: getattr(self, f.name) for f in fields(self)}
+        out = {f.name: getattr(self, f.name) for f in fields(self) if f.name != "iris"}
+        return out | ({} if self.iris is None else {"iris": self.iris.to_dict()})  # absent = neutral: v10 looks stay
 
     @classmethod
     def from_dict(cls, raw: dict) -> "EyeLook":
         if not isinstance(raw, dict):
             raise ValueError(f"eye look: expected an object, got {raw!r}")
-        names = [f.name for f in fields(cls)]
+        names = [f.name for f in fields(cls) if f.name != "iris"]
         missing = [n for n in names if n not in raw]
-        unknown = sorted(set(raw) - set(names))
+        unknown = sorted(set(raw) - set(names) - {"iris"})
         if missing or unknown:
             raise ValueError(f"eye look: missing {missing}, unknown {unknown}")
-        return cls(**{n: raw[n] for n in names})
+        iris = raw.get("iris")
+        return cls(**{n: raw[n] for n in names}, iris=None if iris is None else EyeIris.from_dict(iris))
 
 
 @dataclass(frozen=True)

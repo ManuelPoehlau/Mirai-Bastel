@@ -12,6 +12,8 @@ them (as the material rows do).
 
 Eye LookDev phase 3: the Eye Lab's section "Reflexe" sets the look values (`LOOK_SLIDERS`, fields "look.<name>" that
 `mirai.eye_object.with_changes` merges into each eye's own look); they draw only in the quality "voll".
+Eye LookDev phase 4: the section "Iris" sets the iris values (`IRIS_SLIDERS`, fields "look.iris.<name>"), the relief's
+height source and "Iris zurücksetzen"; they draw only in the quality "voll" as well.
 """
 
 from __future__ import annotations
@@ -61,6 +63,21 @@ LOOK_SLIDERS = (
     ("look.lid_lower", "Unterlid-Kante (Höhe)", -0.8, 0.0, "%.3f"),
 )
 LOOK_HINT = "Reflexe zeichnen nur in Qualität 'voll' (das Eye Lab stellt sie beim Öffnen ein)."
+#: Phase 4, the Eye Lab's "Iris" (`core.EyeIris`; roadmap #4, #5, #7). Amounts first (neutral at 0), then what shapes
+#: them. Ranges `PROVISIONAL`; `EyeIris` refuses an invalid value (status line).
+IRIS_SLIDERS = (
+    ("look.iris.light", "Key durch die Hornhaut", 0.0, 1.0, "%.2f"),
+    ("look.iris.crescent", "Halbmond (1 = berechnet)", 0.0, 2.0, "%.2f"),
+    ("look.iris.rim_shadow", "Schatten am Skleralrand", 0.0, 1.0, "%.2f"),
+    ("look.iris.relief", "Relief", 0.0, 1.0, "%.2f"),
+    ("look.iris.pupil_edge_mm", "Pupillenrand weich mm", 0.0, 0.5, "%.3f"),
+    ("look.iris.pupil_margin", "Pupillensaum dunkel", 0.0, 1.0, "%.2f"),
+    ("look.iris.rim_shadow_mm", "Randschatten Breite mm", 0.05, 2.0, "%.2f"),
+    ("look.iris.relief_mm", "Relief Tiefe mm", 0.02, 0.5, "%.3f"),
+)
+#: The relief's height source (`EyeIris.relief_source`) as the lab names it.
+RELIEF_SOURCE_LABELS = {"luminance": "Höhe aus Helligkeit", "alpha": "Höhe aus Alpha"}
+IRIS_HINT = "Iris zeichnet nur in Qualität 'voll'. Den Key mit L-Ziehen bewegen: der Halbmond wandert gegenüber."
 
 
 def value(spec, field: str):
@@ -82,6 +99,11 @@ def new_pattern(app) -> bool:
 def reset_look(app) -> bool:
     """The selected eyes without a look (neutral, as before phase 3); one Undo step."""
     return app.set_eye(look=None)
+
+
+def reset_iris(app) -> bool:
+    """The selected eyes without iris values (neutral, as before phase 4; the reflections stay); one Undo step."""
+    return app.set_eye(**{LOOK_PREFIX + "iris": None})
 
 
 #: The gaze modes as the panel names them (`mirai.eye_gaze`).

@@ -430,6 +430,16 @@ def test_eye_panel_draws_an_eye_and_leaves_gl_state_as_found():
         run.render_frame(window)
         assert snapshot_gl_state() == before
         assert app.viewport.eye_pass._noise is not None
+        # Eye LookDev phase 4: iris values (IRIS program, the derived relief texture of the procedural iris) with the
+        # lab window's "Iris" section; still the GL state as found.
+        assert app.set_eye(**{"look.iris.light": 1.0, "look.iris.crescent": 1.0, "look.iris.relief": 0.5,
+                              "look.iris.pupil_edge_mm": 0.1}) is True
+        run.render_frame(window)
+        run.render_frame(window)
+        before = snapshot_gl_state()
+        run.render_frame(window)
+        assert snapshot_gl_state() == before
+        assert any(t is not None for t in app.viewport.eye_pass._relief.values())
         app.close_eye_lab()
         run.render_frame(window)
         assert len(layer.panel_rects) == rects

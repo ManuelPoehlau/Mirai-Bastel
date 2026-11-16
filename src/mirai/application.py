@@ -923,7 +923,9 @@ class Application:
         if preset is None:
             self._set_status(f"Eye preset: no preset {name!r}")
             return False
-        return self._objects.set_eye(f"Eye preset {name}", **preset.values)
+        from . import eye_presets
+
+        return self._objects.set_eye(f"Eye preset {name}", **eye_presets.set_eye_changes(preset))
 
     def save_eye_preset(self, name: str) -> bool:
         """The first selected eye's look as a preset file (`mirai.eye_presets`); a saved preset of the same name is
