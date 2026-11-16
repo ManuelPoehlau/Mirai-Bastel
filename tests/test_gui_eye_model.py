@@ -42,9 +42,28 @@ def test_actions_take_the_application_paths(app):
 
 
 def test_every_slider_field_is_an_eye_value_within_its_range():
-    for field, _label, lo, hi, _fmt in em.SLIDERS:
+    for field, _label, lo, hi, _fmt in em.PANEL_SLIDERS + em.ANATOMY_SLIDERS + em.SLIDERS:
         assert hasattr(DEFAULT_EYE, field) and lo <= getattr(DEFAULT_EYE, field) <= hi
     assert len(em.LEVEL_LABELS) == 4
+
+
+def test_compact_panel_holds_only_the_pupil_and_the_lab_the_rest():
+    """Phase 2, I-2: the panel's one eye value is the pupil; anatomy and limbus are only in the Eye Lab."""
+    assert [row[0] for row in em.PANEL_SLIDERS] == ["pupil_radius"]
+    lab = {row[0] for row in em.ANATOMY_SLIDERS + em.SLIDERS}
+    assert "pupil_radius" not in lab and {"cornea_radius", "limbus_radius", "iris_root_z", "iris_concavity"} <= lab
+
+
+def test_state_carries_the_phase2_view_state_and_preview_helpers(app):
+    eye = app.add_eye()
+    st = em.state(app)
+    assert (st.tier, st.eyes_shown, st.isolate, st.lab_open) == ("fast", True, False, False)
+    assert em.set_view(app, tier="full") is True and em.state(app).tier == "full"
+    assert em.preview_value(app, "pupil_radius", 0.2) is True and eye.eye == DEFAULT_EYE
+    assert em.end_preview(app) is True
+    assert em.preset_names(app)[0] == "Standard (L0)"
+    app.open_eye_lab()
+    assert em.state(app).lab_open
 
 
 def test_gaze_section_state_and_pad(app):

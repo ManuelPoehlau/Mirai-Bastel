@@ -1,10 +1,14 @@
-"""Eye panel, pure logic (AD-033 §6, `PROVISIONAL` layout). No pyglet, no imgui.
+"""Eye panel and Eye Lab window, pure logic (AD-033 §6; Eye LookDev phase 2, `PROVISIONAL` layout). No pyglet, no
+imgui.
 
-The panel reads `state(app)` and calls the same `Application` paths as everything else: `set_eye_display` (view state:
-preview, reflection, refraction - no Undo, not saved), `set_eye_gaze` / `set_eye_gaze_angles` (where every eye looks,
-`mirai.eye_gaze`, view state as well), `set_eye` (the selected eyes' values, one Undo step per change)
-and `set_eye_iris_image`. It holds no document state. With several eyes selected the values shown are the first
-eye's; a change goes to all of them (as the material rows do).
+Phase 2 (Manu 2026-11-16, I-1..I-3) splits the UI: the compact panel "Auge" keeps eyes on / off, preview and quality,
+gaze mode and pad, pupil, look preset and "open in Eye Lab"; every other value is in the Eye Lab window
+(`EYE_LAB_SLIDERS`, limbus, refraction, reflection, gaze focus, iris image, saving presets). Both read `state(app)` and
+call the same `Application` paths: `set_eye_display` / `set_eyes_shown` / `set_eye_isolate` (view state - no Undo,
+not saved), `set_eye_gaze` / `set_eye_gaze_angles` (`mirai.eye_gaze`, view state as well), `preview_eye` while a
+slider is held and `set_eye` on its release (one Undo step per change), `apply_eye_preset` and `set_eye_iris_image`.
+Neither holds document state. With several eyes selected the values shown are the first eye's; a change goes to all of
+them (as the material rows do).
 """
 
 from __future__ import annotations
@@ -14,14 +18,23 @@ from dataclasses import dataclass
 from core import SelectionMode
 
 from mirai.eye_gaze import FOCUS_RANGE, GAZE_MODES, PAD_DEGREES
-from viewport.eye_pass import REFLECTIONS, REFRACTIONS
+from viewport.eye_pass import REFLECTIONS, REFRACTIONS, TIERS
 
 LEVEL_LABELS = ("L0 wie P1b", "L1 Farbband", "L2 + Normalen", "L3 + durchscheinend")
 COLOUR_SOURCES = ("shader", "image")
 REFLECTION_LABELS = {"studio": "Studio + Key", "key": "nur Key-Glanz"}
-#: The panel's sliders: (field, label, min, max, format). Ranges as the eye lab's keys allowed (`PROVISIONAL`).
+#: The compact panel's one eye value (I-2): (field, label, min, max, format).
+PANEL_SLIDERS = (("pupil_radius", "Pupille", 0.08, 0.30, "%.3f"),)
+#: The Eye Lab's anatomy (shapes the shell; never in a panel before phase 2). Ranges `PROVISIONAL`; `EyeSpec` refuses an
+#: invalid combination (status line) and the last valid preview stays.
+ANATOMY_SLIDERS = (
+    ("cornea_radius", "Hornhaut-Radius", 0.52, 0.90, "%.3f"),
+    ("limbus_radius", "Limbus-Radius", 0.40, 0.60, "%.3f"),
+    ("iris_root_z", "Iris-Tiefe (z)", 0.70, 0.86, "%.3f"),
+    ("iris_concavity", "Iris-Wölbung", 0.0, 0.10, "%.3f"),
+)
+#: The Eye Lab's limbus sliders. Ranges as the eye lab's keys allowed (`PROVISIONAL`).
 SLIDERS = (
-    ("pupil_radius", "Pupille", 0.08, 0.30, "%.3f"),
     ("band_mm", "Bandbreite mm", 0.25, 4.0, "%.2f"),
     ("strength", "Stärke", 0.0, 1.0, "%.2f"),
     ("normal_mm", "Normalen-Übergang mm", 0.1, 2.0, "%.2f"),
@@ -36,6 +49,10 @@ assert tuple(GAZE_LABELS) == GAZE_MODES
 GAZE_FOCUS_RANGE = FOCUS_RANGE
 
 
+TIER_LABELS = {"fast": "schnell", "full": "voll"}
+assert tuple(TIER_LABELS) == TIERS
+
+
 @dataclass(frozen=True)
 class EyePanelState:
     eyes: tuple  # the selected eye objects
@@ -46,6 +63,10 @@ class EyePanelState:
     gaze_focus: float = 25.0
     gaze_angles: tuple[float, float] | None = None  # (yaw, pitch) degrees the eyes look at now, None = own rotation
     scene_eyes: int = 0  # how many eyes the gaze turns
+    tier: str = "fast"
+    eyes_shown: bool = True
+    isolate: bool = False
+    lab_open: bool = False
 
     @property
     def gaze_dot(self) -> tuple[float, float] | None:
@@ -98,7 +119,8 @@ def state(app) -> EyePanelState:
     display = app.display
     gaze = display.eye_gaze
     return EyePanelState(selected_eyes(app), display.eye_preview, display.eye_reflection, display.eye_refraction,
-                         gaze.mode, gaze.focus, app.eye_gaze_angles(), len(app._objects.gaze_eyes()))
+                         gaze.mode, gaze.focus, app.eye_gaze_angles(), len(app._objects.gaze_eyes()),
+                         display.eye_tier, display.eyes_shown, display.eye_isolate, app.eye_lab_open)
 
 
 def set_gaze(app, **changes) -> bool:
@@ -119,8 +141,22 @@ def set_value(app, field: str, value) -> bool:
     return app.set_eye(**{field: value})
 
 
+def preview_value(app, field: str, value) -> bool:
+    """While a slider is held: the selected eyes drawn with this value (no Undo, nothing saved)."""
+    return app.preview_eye(**{field: value})
+
+
+def end_preview(app) -> bool:
+    """A slider let go without a change: back to the eyes' own values."""
+    return app.preview_eye()
+
+
+def preset_names(app) -> list[str]:
+    return [preset.name for preset in app.eye_presets()]
+
+
 def set_view(app, **changes) -> bool:
-    assert set(changes) <= {"preview", "reflection", "refraction"}
+    assert set(changes) <= {"preview", "reflection", "refraction", "tier"}
     if "reflection" in changes and changes["reflection"] not in REFLECTIONS:
         raise ValueError(changes["reflection"])
     if "refraction" in changes and changes["refraction"] not in REFRACTIONS:

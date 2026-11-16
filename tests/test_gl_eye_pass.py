@@ -147,6 +147,14 @@ def test_sclera_reads_like_a_worklight_object_of_its_colour(gl_window):
     assert diff.mean() <= 2.0 and np.percentile(diff, 99) <= 8, (diff.mean(), np.percentile(diff, 99))
 
 
+def test_tier_full_draws_the_same_pixels_until_phase_3(gl_window):
+    """Eye LookDev phase 2: the tier is carried, not used (no shading term depends on it yet) - equal pixels."""
+    viewport, _ = _scene()
+    fast = _render(gl_window, viewport)
+    viewport.set_eye_display(tier="full")
+    assert np.array_equal(fast, _render(gl_window, viewport))
+
+
 def test_preview_off_is_the_worklight_draw(gl_window):
     viewport, _ = _scene()
     viewport.set_eye_display(preview=False)

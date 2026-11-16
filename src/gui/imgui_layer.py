@@ -97,6 +97,7 @@ class ImguiLayer:
         self.morph_open = True
         self.eye = None  # AD-033 §6: das Augen-Panel (Knopf „Auge“, Standard zu)
         self.eye_open = False
+        self.eye_lab = None  # Eye LookDev Phase 2 (I-1): das Eye-Lab-Fenster, offen solange `app.eye_lab_open`
         self.popup_open = False  # ein Menü/Dialog des Layers ist offen: ihm gehört die ganze Maus (letzter Frame)
 
         self._blocked = blocked or (lambda: False)
@@ -137,9 +138,10 @@ class ImguiLayer:
         from .morph_panel import MorphPanel
 
         self.morph = MorphPanel(imgui, self.app, self)
-        from .eye_panel import EyePanel
+        from .eye_panel import EyeLabPanel, EyePanel
 
         self.eye = EyePanel(imgui, self.app, self)
+        self.eye_lab = EyeLabPanel(imgui, self.app, self)
         if self.services is not None:
             from .goz_panel import GozPanel
             from .menus import Menus
@@ -413,6 +415,17 @@ class ImguiLayer:
             pos, size = imgui.get_window_pos(), imgui.get_window_size()
             imgui.end()
             rects.append((pos.x, pos.y, size.x, size.y))
+        if self.eye_lab is not None and self.app.eye_lab_open:
+            # links (über dem Outliner): die Mitte gehört dem eingerahmten Auge, rechts steht das Panel „Auge“
+            imgui.set_next_window_pos(imgui.ImVec2(8.0, self.PANEL_POS[1]), imgui.Cond_.first_use_ever)
+            _, keep = imgui.begin("Eye Lab", True, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
+                                  | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
+            self.eye_lab.draw()
+            pos, size = imgui.get_window_pos(), imgui.get_window_size()
+            imgui.end()
+            rects.append((pos.x, pos.y, size.x, size.y))
+            if keep is False:
+                self.app.close_eye_lab()
         self.panel_rects = rects
         if self.menus is not None:
             self.menus.popups()

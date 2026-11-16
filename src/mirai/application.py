@@ -852,13 +852,13 @@ class Application:
 
     def set_eye_display(self, **changes) -> bool:
         """The eye view state (AD-033 §6, Q-E3): any of `preview` (bool), `reflection` ("studio" / "key"),
-        `refraction` ("V2" / "V3"). Not saved, no Undo step. An invalid value is refused with the reason; True = it
-        changed."""
+        `refraction` ("V2" / "V3"), `tier` ("fast" / "full", Eye LookDev phase 2). Not saved, no Undo step. An invalid
+        value is refused with the reason; True = it changed."""
         from viewport.eye_pass import EyeDisplay
 
         display = self.display
         current = dict(preview=display.eye_preview, reflection=display.eye_reflection,
-                       refraction=display.eye_refraction)
+                       refraction=display.eye_refraction, tier=display.eye_tier)
         try:
             wanted = EyeDisplay(**{**current, **changes})
         except (TypeError, ValueError) as exc:
@@ -867,10 +867,140 @@ class Application:
         if dataclasses.asdict(wanted) == current:
             return False
         display.eye_preview, display.eye_reflection = bool(wanted.preview), wanted.reflection
-        display.eye_refraction = wanted.refraction
+        display.eye_refraction, display.eye_tier = wanted.refraction, wanted.tier
         self._apply_display()
         self._set_status(f"Eye view: preview {'on' if wanted.preview else 'off'}, {wanted.reflection}, "
-                         f"{wanted.refraction}")
+                         f"{wanted.refraction}, {wanted.tier}")
+        return True
+
+    def set_eyes_shown(self, shown: bool) -> bool:
+        """Every eye drawn or not (Eye LookDev phase 2, Manu 2026-11-16 I-3: view state - not saved, no Undo step,
+        unlike the outliner's per-object Hide). A not-shown eye has no render entry and no pick cache. True = it
+        changed."""
+        shown = bool(shown)
+        if self.display.eyes_shown == shown:
+            return False
+        self.display.eyes_shown = shown
+        self._pick_cache.invalidate()
+        self._objects.sync_views()
+        self._set_status(f"Eyes: {'shown' if shown else 'not shown (view only)'}")
+        return True
+
+    def set_eye_isolate(self, on: bool) -> bool:
+        """The Eye Lab's isolation (view state): only the eyes and the edit object (the head) are drawn and pickable.
+        True = it changed."""
+        on = bool(on)
+        if self.display.eye_isolate == on:
+            return False
+        self.display.eye_isolate = on
+        self._pick_cache.invalidate()
+        self._objects.sync_views()
+        self._set_status(f"Eye Lab: {'only the eyes and the edit object' if on else 'every object'} drawn")
+        return True
+
+    def preview_eye(self, **changes) -> bool:
+        """Live preview of eye values while a control is held (assessment §D change 2): the selected eyes are drawn
+        with `changes` applied, nothing in the document changes, no Undo step. The release commits with `set_eye`
+        (one Undo step), which ends the preview; `preview_eye()` without values ends it without a change. An invalid
+        combination is refused (status line) and the last valid preview stays. True = the drawing changed."""
+        return self._objects.preview_eye(**changes)
+
+    # -- eye look presets (Eye LookDev phase 2) ------------------------------------------------------------
+
+    def eye_presets(self) -> list:
+        """The look presets (`mirai.eye_presets.EyePreset`): the built-in ones, then the saved ones by name."""
+        from . import eye_presets
+
+        presets, problems = eye_presets.load_presets()
+        for problem in problems:
+            self._set_status(f"Eye preset: {problem}")
+        return presets
+
+    def apply_eye_preset(self, name: str) -> bool:
+        """The preset's values on every selected eye, one Undo step (the iris image and its fit stay). True = an eye
+        changed."""
+        preset = next((p for p in self.eye_presets() if p.name == name), None)
+        if preset is None:
+            self._set_status(f"Eye preset: no preset {name!r}")
+            return False
+        return self._objects.set_eye(f"Eye preset {name}", **preset.values)
+
+    def save_eye_preset(self, name: str) -> bool:
+        """The first selected eye's look as a preset file (`mirai.eye_presets`); a saved preset of the same name is
+        replaced, a built-in name is refused. No Undo step (a file, not the document). True = written."""
+        from . import eye_presets
+
+        eyes = self._objects.eye_targets("Save eye preset")
+        if eyes is None:
+            return False
+        try:
+            path = eye_presets.save_preset(name, eyes[0].eye)
+        except (OSError, ValueError) as exc:
+            self._set_status(f"Save eye preset: {exc}")
+            return False
+        self._set_status(f"Saved eye preset {name.strip()!r}: {path}")
+        return True
+
+    # -- the Eye Lab window (Eye LookDev phase 2, Manu 2026-11-16 I-1: a window in the app) ----------------------
+
+    @property
+    def eye_lab_open(self) -> bool:
+        return self.display.eye_lab is not None
+
+    def open_eye_lab(self) -> bool:
+        """Open the Eye Lab: remember the camera, the isolation and the tier, raise the tier to "full" and frame the
+        first selected eye frontally. View state only (no Undo, not saved). Refused without a selected eye; True =
+        opened (opening it again only frames again)."""
+        eyes = self._objects.eye_targets("Eye Lab")
+        if eyes is None:
+            return False
+        if self.display.eye_lab is None:
+            cam = self.camera
+            self.display.eye_lab = {
+                "camera": (cam.target, cam.distance, cam.yaw, cam.pitch, cam.ortho),
+                "isolate": self.display.eye_isolate, "tier": self.display.eye_tier,
+            }
+            self.set_eye_display(tier="full")
+        self.frame_eye(eyes[0], frontal=True)
+        self._set_status(f"Eye Lab: {eyes[0].name!r} (closing it restores camera, isolation and quality)")
+        return True
+
+    def close_eye_lab(self) -> bool:
+        """Close the Eye Lab: the camera, the isolation and the tier as they were when it opened. True = it was open."""
+        lab = self.display.eye_lab
+        if lab is None:
+            return False
+        self.display.eye_lab = None
+        cam = self.camera
+        cam.target, cam.distance, cam.yaw, cam.pitch = lab["camera"][:4]
+        cam.set_ortho(lab["camera"][4])
+        cam.camera_revision += 1
+        self.restore_camera_state()
+        self.set_eye_isolate(lab["isolate"])
+        self.set_eye_display(tier=lab["tier"])
+        self._set_status("Eye Lab closed")
+        return True
+
+    def frame_eye(self, eye: SceneObject | None = None, frontal: bool = False) -> bool:
+        """Frame one eye (the first selected one by default) close up; `frontal` also turns the camera to look into
+        it along its drawn axis (the gaze included). View only. True = framed."""
+        if eye is None:
+            eyes = self._objects.eye_targets("Frame eye")
+            if eyes is None:
+                return False
+            eye = eyes[0]
+        center, radius = mesh_center_and_radius(eye.mesh)
+        center, radius = object_space.world_center_and_radius(eye, center, radius)
+        cam = self.camera
+        if frontal:
+            matrix = self._objects.drawn_matrix(eye)
+            axis = (matrix[8], matrix[9], matrix[10])
+            length = math.sqrt(sum(c * c for c in axis))
+            if length > 0.0:
+                x, y, z = (c / length for c in axis)
+                cam.set_view(math.atan2(x, z), math.asin(max(-1.0, min(1.0, y))), ortho=False)
+        cam.frame_on_bounds(center, radius, margin=2.0)  # room for the Eye Lab window beside it
+        self.restore_camera_state()
         return True
 
     def set_eye_gaze(self, **changes) -> bool:
@@ -1113,6 +1243,9 @@ class Application:
         an `init_scene` — dort ist das Wiring die einzige Stelle.
         Kein History-Eintrag, keine Core-Änderung; der Aufrufer setzt bei
         Bedarf selbst einen Namen-Status (`set_status`)."""
+        lab = self.display.eye_lab
+        if lab is not None:  # the new scene gets its own framing; the lab's view state ends
+            self.display.eye_isolate, self.display.eye_tier, self.display.eye_lab = lab["isolate"], lab["tier"], None
         self.init_scene(
             geometry_type,
             store_type=store_type,
@@ -2269,6 +2402,7 @@ class Application:
             preview=self.display.eye_preview,
             reflection=self.display.eye_reflection,
             refraction=self.display.eye_refraction,
+            tier=self.display.eye_tier,
         )
         if self.viewport.set_surface_finish(self.display.surface_finish):
             # The global finish resets every entry; the objects' own materials go back on (AD-024 §4).

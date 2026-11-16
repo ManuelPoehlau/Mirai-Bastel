@@ -392,7 +392,7 @@ class Viewport:
         return changed
 
     def set_eye_display(self, **changes) -> EyeDisplay:
-        """AD-033 §6: the eye view state (`preview`, `reflection`, `refraction`) - not saved, no Undo."""
+        """AD-033 §6: the eye view state (`preview`, `reflection`, `refraction`, `tier`) - not saved, no Undo."""
         self.eye_display = replace(self.eye_display, **changes)
         return self.eye_display
 

@@ -412,6 +412,18 @@ def test_eye_panel_draws_an_eye_and_leaves_gl_state_as_found():
         assert snapshot_gl_state() == before
         assert any(r for r in layer.panel_rects)  # the eye window is among the panel rectangles
         assert app.viewport._eye_entries[eye.id].spec == eye.eye
+        # Eye LookDev phase 2: the Eye Lab window opens beside the panel, draws, and leaves GL state as found.
+        rects = len(layer.panel_rects)
+        assert app.open_eye_lab() is True
+        run.render_frame(window)  # the framing re-sends the entries once (as any gaze or camera change does)
+        run.render_frame(window)
+        before = snapshot_gl_state()
+        run.render_frame(window)
+        assert snapshot_gl_state() == before
+        assert len(layer.panel_rects) == rects + 1
+        app.close_eye_lab()
+        run.render_frame(window)
+        assert len(layer.panel_rects) == rects
     finally:
         layer.close()
         window.close()

@@ -12,3 +12,8 @@ App (Morph Lab) laden diese eine Datei beim Start; was hier steht, gilt vor der 
   HUD-Zeile „Keymap“). Halte-Werkzeuge (W/E/R, T, G, S, Q, L, N) gehen nur auf Tasten.
 - Nicht umbelegbar: Shift/Ctrl/Alt *während* einer Geste (fein, Raster, Kamera, durch das Mesh wählen) — die Liste
   steht beim Start in der Konsole und in der HUD-Zeile „Fixed“.
+
+`eye_presets/` — Look-Vorlagen für Augen (Eye LookDev Phase 2, AD-033 §16, `PROVISIONAL`): eine Datei je Vorlage,
+`{"name": ..., "values": {...}}` mit `EyeSpec`-Werten ohne die Iris-Anpassung. Das Eye Lab schreibt sie („Als
+Look-Vorlage speichern“), das Panel „Auge“ wendet sie an (ein Undo-Schritt). Die eingebaute Vorlage „Standard (L0)“
+steht im Code. Eine unlesbare Datei wird übersprungen, und der Grund steht in der Statuszeile.

@@ -4,8 +4,9 @@
 the eye shading (M3) and the Core field + format v9 approved; Q-E3 … Q-E5 as proposed; Q-E6: one scene unit = 1 cm
 (decision record at the end). **IMPLEMENTED E-1 … E-3 (2026-11-15, container: TESTED)**, as built in §11 (with the
 deviations from the draft, each with its reason); **E-4 MEASURED on the reference PC (Manu, 2026-11-16, §15)**;
-**§14 (2026-11-16): view twins of eyes and teeth beside a morph target's editing view**. Names and numbers not covered
-by a decision stay `PROVISIONAL`.
+**§14 (2026-11-16): view twins of eyes and teeth beside a morph target's editing view**; **§16 (2026-11-16): Eye
+LookDev phase 2, compact panel "Auge" and the Eye Lab window**. Names and numbers not covered by a decision stay
+`PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
 §8 (decisions incl. those of 2026-11-14 / 15); [eye lab README](../../experiments/lookdev_eye_lab/README.md) (P1, P1b,
@@ -337,6 +338,57 @@ Run by Manu, raw output and reading in
 - **Fixed the same day:** the angle is computed once per anatomy (`eye_optics._chamber_angle`) and the pass reads the
   program's active uniforms once per draw: 1.80 → 0.90 ms per eye in the container (TESTED [C]), the same numbers to
   the shader. The effect on the reference PC is an estimate until the probe is run again.
+
+
+## 16. Addendum 2026-11-16: Eye LookDev phase 2 - compact panel "Auge" and the Eye Lab window (`PROVISIONAL` layout)
+
+**Manu, 2026-11-16** (assessment §I, answered in the session): **I-1** the Eye Lab is a window in the app (a room
+later); **I-2** the compact panel holds the proposal as it is (no iris colour there); **I-3** eyes on / off is view state.
+This replaces the panel of §6 / §11. No Core change, no shader change, no format change.
+
+| Where | What | Undo / saved |
+|---|---|---|
+| Panel "Auge" | eyes shown (all), preview, quality "schnell / voll", gaze mode and pad, pupil, look preset, open / close the Eye Lab | view state: no / no; pupil and preset: one Undo step each, saved |
+| Eye Lab window | framing (frontal / keep angle), "Nur Augen + Kopf", quality, V2 / V3, studio / key, gaze focus, pupil and anatomy (cornea radius, limbus radius, iris depth, concavity), every limbus value, iris image, "save as look preset", close | as the panel |
+
+- **One system, two surfaces.** Both call the same `Application` paths (`gui/eye_model.py`). New paths:
+  `set_eyes_shown`, `set_eye_isolate`, `set_eye_display(tier=...)`, `preview_eye`, `eye_presets` /
+  `apply_eye_preset` / `save_eye_preset`, `open_eye_lab` / `close_eye_lab` / `frame_eye`.
+- **Live preview.** A held slider calls `preview_eye(**values)`: `ObjectController.eye_previews` draws the selected eyes
+  with those values (an anatomy value with a preview shell), nothing in the document changes. The release commits with
+  `set_eye` (one Undo step) and ends the preview. A preview made from values that are no longer the eye's (an Undo
+  while holding) is not drawn.
+- **Eyes on / off and isolation** filter the drawn non-edit objects in `sync_views`: a not-drawn object has no render
+  entry and no pick cache. This is not the per-object Hide: it adds no Undo step and the object's `hidden` is not set.
+- **Quality tier** (`EyeDisplay.tier`, `DisplayState.eye_tier`): "fast" by default, "full" while the Eye Lab is open.
+  Phase 2 only carries the value. Both tiers draw the same pixels (no program key, no define;
+  `test_tier_full_draws_the_same_pixels_until_phase_3`). The optional terms of phase 3 will use it.
+- **The Eye Lab's view state** (`DisplayState.eye_lab`) holds the camera, isolation and tier from when it opened.
+  Closing restores them; loading a scene ends the lab. Saving while it is open writes the close-up camera into the
+  scene's `view`, as any camera.
+- **Look presets** (`mirai/eye_presets.py`): a named set of `EyeSpec` values *without* the iris image's fit
+  (`fit_pupil`, `fit_limbus`, `hold_outer_color` stay with the image). Built in: "Standard (L0)" = `DEFAULT_EYE`. The
+  Eye Lab saves to `config/eye_presets/<name>.json`. A file that cannot be read is skipped, and the reason goes to the
+  status line. Applying a preset is one `set_eye`, so it is one Undo step. Whether the `Gollum_Head_03` values become a
+  built-in preset or the default is decision I-6, still open.
+- **Not in this phase:** the "without the head" isolation (the edit mesh would have to be suppressed with its
+  overlays), a key, the room form of the Eye Lab.
+- **Tests:** `tests/test_eye_lab.py` (preview, commit, Undo, eyes shown, isolation, framing and restore, load, presets),
+  `test_gui_eye_model.py` (panel / lab split), `test_gui_imgui_window.py` (the window draws and leaves GL state as
+  found), `test_gl_eye_pass.py` (tier: same pixels).
+
+### Praxistest für Manu (Deutsch, ca. 10 Minuten, `scenes/Gollum_Head_03.mirai.json`)
+
+1. Panel „Auge“ öffnen: nur noch Augen zeigen, Vorschau, Qualität, Blick, Pupille, Look-Vorlage, „Im Eye Lab öffnen“.
+2. „Augen zeigen“ aus und an: die Augen verschwinden und kommen wieder, Strg+Z macht dabei nichts rückgängig.
+3. Ein Auge wählen, Pupille ziehen: das Bild folgt beim Ziehen; nach dem Loslassen macht ein Strg+Z genau diesen Schritt
+   rückgängig.
+4. „Im Eye Lab öffnen“: Kamera frontal nah am Auge. „Nur Augen + Kopf“ an. Hornhaut-Radius, Limbus und Limbusfarbe
+   ziehen: Vorschau beim Ziehen. „Als Look-Vorlage speichern“ unter einem Namen.
+5. Eye Lab schließen: Kamera, Isolation und Qualität wie vorher.
+6. Das andere Auge wählen, im Panel die gespeicherte Vorlage anwenden: gleicher Look, Iris-Bild und Anpassung bleiben.
+
+Verdikt: KEEP / ITERATE / REJECT, gern je Punkt.
 
 
 **Manu, 2026-11-15:** "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm".

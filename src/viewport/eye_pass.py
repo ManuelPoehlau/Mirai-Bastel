@@ -23,6 +23,10 @@ IRIS_UNIT = 1
 PUPIL_ALBEDO = (0.012, 0.012, 0.012)
 REFLECTIONS = tuple(es.REFLECTIONS)
 REFRACTIONS = tuple(es.VARIANT_IDS)
+#: The quality tier (assessment 2026-11-16 §D change 3): "fast" in the modelling view, "full" while the Eye Lab window
+#: is open. Phase 2 only carries the value; the optional shading terms that "fast" will drop arrive in phase 3, so both
+#: tiers draw the same pixels today (no program key, no define).
+TIERS = ("fast", "full")
 
 
 @dataclass(frozen=True)
@@ -43,10 +47,11 @@ class EyeDisplay:
     preview: bool = True
     reflection: str = "studio"  # Q-E4: the studio by default; "key" = the Worklight key highlight only
     refraction: str = "V2"  # P1b V2 is the baseline (Manu 2026-11-14); V3 selectable
+    tier: str = "fast"
 
     def __post_init__(self) -> None:
-        if self.reflection not in REFLECTIONS or self.refraction not in REFRACTIONS:
-            raise ValueError(f"EyeDisplay: reflection {REFLECTIONS}, refraction {REFRACTIONS}")
+        if self.reflection not in REFLECTIONS or self.refraction not in REFRACTIONS or self.tier not in TIERS:
+            raise ValueError(f"EyeDisplay: reflection {REFLECTIONS}, refraction {REFRACTIONS}, tier {TIERS}")
 
 
 def _inverse(model: list[float]) -> tuple[float, ...]:

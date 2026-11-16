@@ -3,7 +3,7 @@
 **Status:** Discovery (2026-11-16, English with a German summary): research and architecture assessment, **no decision,
 no code change**. Filed after Manu approved the assessment as a document; every implementation phase in §G needs its
 own go, and the decisions in §I are Manu's and are not made here.
-**Since then (2026-11-16, later):** E-4 is measured and phases 0 and 1 are built - see the
+**Since then (2026-11-16, later):** E-4 is measured and phases 0, 1 and 2 are built - see the
 [addendum](#addendum-2026-11-16-later-e-4-measured-phases-0-and-1-built) at the end, which corrects two statements of
 §A and §F.
 **Baseline:** branch `claude/relaxed-brown-pf8ybr` @ `dd3c44b`.
@@ -456,3 +456,13 @@ says which objects belong to a head (`PROVISIONAL`; a separate body would be rep
 they are. Acceptance per §H row 1: met in the container tests; the practical test on the Gollum head is Manu's.
 
 **Still open from §I:** every decision except I-4.
+
+## Addendum 2026-11-16 (later still): phase 2 built
+
+**Manu, 2026-11-16:** I-1 "window in the app", I-2 "proposal as is" (no iris colour in the panel), I-3 "view state".
+Phase 2 is built as [AD-033 §16](../architecture/AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md) describes: the compact panel
+"Auge", the Eye Lab window with live preview, frontal framing, isolation "eyes + head", the quality tier (carried, no
+pixel change yet) and look presets from existing values ("Standard (L0)", plus the ones the artist saves). Acceptance
+per §H row 2: the objective part is met in the container tests. The practical test on the Gollum head is Manu's.
+Deviation: isolation *without* the head is not built (it needs the edit mesh and its overlays suppressed).
+**Still open from §I:** I-5 … I-14 (I-5 gates phase 3).

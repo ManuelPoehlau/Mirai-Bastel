@@ -77,6 +77,14 @@ class DisplayState:
         self.eye_preview: bool = True
         self.eye_reflection: str = "studio"
         self.eye_refraction: str = "V2"
+        # Eye LookDev phase 2 (Manu 2026-11-16, I-1..I-3): the quality tier ("fast" / "full", the Eye Lab window raises
+        # it while open), every eye shown or not (I-3: view state, not the per-object Hide) and the Eye Lab's isolation
+        # (only the eyes and the edit object drawn). All view state: not saved, no Undo.
+        self.eye_tier: str = "fast"
+        self.eyes_shown: bool = True
+        self.eye_isolate: bool = False
+        # The Eye Lab window (I-1): the camera, isolation and tier it restores on closing; None = closed.
+        self.eye_lab: dict | None = None
         # Eye gaze (2026-11-16, `mirai.eye_gaze`): where every eye looks - view state the same way, not saved, no Undo.
         self.eye_gaze: GazeState = GazeState()
 

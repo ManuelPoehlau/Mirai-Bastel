@@ -328,6 +328,9 @@ class ObjectController:
         #: the last point a moving mode resolved (the cursor left the viewport: the eyes keep it; `target` freezes it).
         self.gaze_drawn = None
         self.gaze_last = None
+        #: Live eye preview (Eye LookDev phase 2, `preview_eye`): id -> (the spec it was made from, the previewed spec,
+        #: its shell). Used only while the object's spec is still the one it was made from (an Undo or a commit ends it).
+        self.eye_previews: dict[ObjectId, tuple] = {}
 
     # -- adding, importing, exporting, deleting (AD-021 M1, Track A1/A2) -----------------------------
 
@@ -431,8 +434,12 @@ class ObjectController:
         """Set any `EyeSpec` values on every selected eye; one Undo step. A change of the anatomy that shapes the shell
         (`eye_object.SHAPE_FIELDS`) rebuilds the shell. An invalid combination is refused with the reason (status line)
         and nothing changes. True = an eye changed."""
+        had_preview = bool(self.eye_previews)
+        self.eye_previews.clear()  # a commit (or its refusal) ends the live preview
         eyes = self.eye_targets(label)
         if eyes is None:
+            if had_preview:
+                self.sync_views()
             return False
         services = self.services
         planned = []
@@ -441,6 +448,8 @@ class ObjectController:
                 after = with_changes(obj.eye, **changes)
             except ValueError as exc:
                 services.status(f"{label}: {exc}")
+                if had_preview:
+                    self.sync_views()
                 return False
             if after == obj.eye:
                 continue
@@ -448,6 +457,8 @@ class ObjectController:
             planned.append((obj, obj.eye, after, obj.mesh, mesh_after))
         if not planned:
             services.status(f"{label}: unchanged")
+            if had_preview:
+                self.sync_views()
             return False
         before = services.selection_snapshot()
         for obj, _, after, _, mesh_after in planned:
@@ -459,6 +470,45 @@ class ObjectController:
         self.meshes_changed(rebuilt)
         self.sync_views()
         services.status(f"{label}: {names}")
+        return True
+
+    def preview_eye(self, **changes) -> bool:
+        """Draw the selected eyes with `changes` applied (`Application.preview_eye`); no document change, no Undo.
+        Without values: end the preview. True = the drawing changed."""
+        if not changes:
+            if not self.eye_previews:
+                return False
+            self.eye_previews.clear()
+            self.sync_views()
+            return True
+        services = self.services
+        if services.selection.mode is not SelectionMode.OBJECT:
+            return False
+        eyes = [obj for obj in group_leaves(services.scene, services.selection.objects) if obj.eye is not None]
+        if not eyes:
+            return False
+        previews = {}
+        for obj in eyes:
+            try:
+                after = with_changes(obj.eye, **changes)
+            except ValueError as exc:
+                services.status(f"Eye preview: {exc}")
+                return False
+            old = self.eye_previews.get(obj.id)
+            if old is not None and old[0] == obj.eye and old[1] == after:
+                previews[obj.id] = old
+                continue
+            if not shape_changed(obj.eye, after):
+                mesh = obj.mesh
+            elif old is not None and old[0] == obj.eye and not shape_changed(old[1], after):
+                mesh = old[2]
+            else:
+                mesh = shell_mesh(after)
+            previews[obj.id] = (obj.eye, after, mesh)
+        if previews == self.eye_previews:
+            return False
+        self.eye_previews = previews
+        self.sync_views()
         return True
 
     def set_eye_iris_image(self, path: Path | None) -> bool:
@@ -1175,6 +1225,11 @@ class ObjectController:
             for oid, obj in scene.objects.items()
             if oid != scene.edit_object_id and obj.state is not ObjectState.GROUP and not scene.is_hidden(oid)
         }
+        # Eye LookDev phase 2 (view state): eyes not shown, or only the eyes beside the edit object (the Eye Lab).
+        display = services.display
+        if not display.eyes_shown or display.eye_isolate:
+            others = {oid: obj for oid, obj in others.items()
+                      if (display.eyes_shown if obj.eye is not None else not display.eye_isolate)}
         for oid in [oid for oid in self.pick_caches if oid not in others]:
             del self.pick_caches[oid]
         for oid in [oid for oid in self.cameras if oid not in scene.objects]:
@@ -1182,7 +1237,6 @@ class ObjectController:
         viewport = services.viewport
         if viewport is None:
             return
-        display = services.display
         # M2-1: the edit object's placement (mesh uniform + `view·model` for its overlays).
         viewport.set_model_matrix(object_space.model_matrix(scene.edit_object))
         twins = self.view_twins(others)
@@ -1199,12 +1253,15 @@ class ObjectController:
             colour = selected_color(obj, DEFAULT_BASE_COLOR) if oid in highlighted else object_base_color(obj)
             finish = object_finish(obj, display.surface_finish)
             # AD-033: a Normal eye is drawn by the eye pass (its iris image goes there, not to the Worklight store).
-            eye = None
+            eye, mesh = None, obj.mesh
             if obj.eye is not None and not reference:
-                eye = EyeDraw(obj.eye, obj.texture, tuple(colour), finish, cornea_triangles())
+                spec, preview = obj.eye, self.eye_previews.get(oid)
+                if preview is not None and preview[0] == obj.eye:
+                    spec, mesh = preview[1], preview[2]
+                eye = EyeDraw(spec, obj.texture, tuple(colour), finish, cornea_triangles())
             viewport.set_object_entry(
                 key,
-                obj.mesh,
+                mesh,
                 colour,
                 model_matrix=self._drawn_matrix(obj, gaze, twin_offset),
                 # M2-0 (§7.3): RD-1 Ghost for every Reference on `Alt+D`; RD-3 a Reference is drawn in Wireframe too -
@@ -1239,6 +1296,11 @@ class ObjectController:
             for oid, obj in others.items()
             if oid != base_id and obj.state is ObjectState.NORMAL
         }
+
+    def drawn_matrix(self, obj: SceneObject) -> list[float]:
+        """The matrix `obj` is drawn with now (its placement, an eye turned to the gaze point)."""
+        matrix = self._drawn_matrix(obj, self.gaze_drawn)
+        return matrix if matrix is not None else object_space.placement_matrix(obj.transform, obj.pivot)
 
     def _drawn_matrix(self, obj: SceneObject, gaze, twin_offset=None) -> list[float] | None:
         """The matrix an object's entry is drawn with: its own placement, an eye turned to the gaze point
