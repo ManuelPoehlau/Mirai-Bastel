@@ -467,5 +467,20 @@ per §H row 2: the objective part is met in the container tests. The practical t
 Deviation: isolation *without* the head is not built (it needs the edit mesh and its overlays suppressed).
 **Practical test (Manu, 2026-11-16): "1-6 Keep".** **I-5 decided (Manu, 2026-11-16): "Core Change erlaubt"** - the
 new look values may go into `EyeSpec` as a nested group with scene format v10 (§D change 1; a stop point like Q-E2,
-now cleared). **Still open from §I:** I-6 … I-14; for phase 3 in particular I-8 (highlight), I-10 (lid shadow / band
-as values) and I-12 (budget).
+now cleared). **Still open from §I:** I-6, I-7, I-9, I-11, I-13, I-14.
+
+### Phase 3 decisions (Manu, 2026-11-16)
+
+- **I-8 Highlight:** keep the Worklight-key highlight in studio mode, but soften it: a broader highlight shape, less
+  excessive peak intensity, no isolated artificial white dot. It must stay visually tied to the studio key light and
+  read as a corneal reflection.
+- **I-10 Lid shadow and reflected lid band:** allowed as subtle, independently adjustable preview parameters for now.
+  The lid-shadow approximation stays separate from the dark lid band in the corneal reflection. Both are optional
+  (neutral at 0) and structured so geometry-driven shadows and reflections can later supplement or replace them. Not
+  baked into textures, no opaque shader hacks.
+- **I-12 Budget:** 60 FPS (16.7 ms) is the target; 30 FPS (33.3 ms) is the minimum acceptable interactive performance
+  in the Eye Lab close-up. The new eye effects should add about 4 ms at most; 8 ms is the upper limit, and only if the
+  whole view stays at or above 30 FPS. Measured on the reference PC at 1024×768 and 1920×1080: targets to validate,
+  not assumed results.
+- **Standing rule:** keep the lightweight real-time approach; the existing viewport and modelling interaction are not
+  sacrificed for eye-specific effects (the "fast" tier and the default path stay as cheap as today).
