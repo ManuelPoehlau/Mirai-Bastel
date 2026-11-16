@@ -515,7 +515,7 @@ vec4 iris_table_value(vec2 xy) {{
 }}
 """
 
-IRIS_LIB_SRC = f"""
+IRIS_LIB_SRC = """
 // The iris's numbers (eye_optics.iris_values) and the key's table (`IRIS_LIGHT_SRC`, baked per eye by the pass).
 uniform float u_iris_key;
 uniform float u_iris_light;
@@ -527,15 +527,15 @@ uniform float u_margin_width;
 uniform sampler2D u_iris_table;
 
 // -- relief and pupil (eye_optics.relief_normal / pupil_weights), eye-local
-vec3 relief_normal(vec3 hit, vec2 grad) {{
+vec3 relief_normal(vec3 hit, vec2 grad) {
     float r = max(length(hit.xy), 1e-6);
     return normalize(vec3(-u_iris_b * hit.xy / r - grad, 1.0));
-}}
-vec2 pupil_weights(float r, float width) {{
+}
+vec2 pupil_weights(float r, float width) {
     float pupil = width > 0.0 ? 1.0 - limbus_smooth((r - u_pupil_radius) / width + 0.5)
                               : (r < u_pupil_radius ? 1.0 : 0.0);
     return vec2(pupil, 1.0 - limbus_smooth((r - u_pupil_radius) / u_margin_width));
-}}
+}
 """
 
 SHELL_VERTEX_SRC = """#version 330 core
