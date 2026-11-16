@@ -240,11 +240,13 @@ def run_jaw_scenario(tmp_path) -> None:
 
     # save -> load: bit-exact, at rest
     path = tmp_path / "jaw.mirai.json"
+    weight = app.morph_weight
     assert app.save_scene_file(path), app.status_message
     app.load_scene("file", scene_path=path, **OVERLAYS)
     loaded = app.scene.mesh
     assert loaded.export_state() == end[0] and app.scene.rig == end[1]
-    assert app.pose == {} and not app.posed and not app.pose_mode and app.morph_weight == 0
+    # the pose is not saved (AD-028 §6); the morph slider is (Manu 2026-11-16, `view_state`)
+    assert app.pose == {} and not app.posed and not app.pose_mode and app.morph_weight == weight
 
 
 def test_the_jaw_scenario(tmp_path) -> None:

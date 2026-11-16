@@ -1,12 +1,14 @@
 """Das Morph-Panel (AD-030 §13, Manu 2026-11-07): die Morph-Ziele des Edit-Objekts mit einem Regler pro Ziel.
 
-Zeile: Name (Klick = aktuell wie Shift+N; Doppelklick = Umbenennen im Textfeld des Layers), Regler 0-100 % (Ziehen =
-Gewicht live, Strg+Klick = Zahl tippen), `S` = Solo, „Bearbeiten“ = Tab für dieses Ziel („Zurück“ in der Ansicht). Oben
-„+ Neues Ziel“ und „Alle 0 %“, unten „Löschen“ für das aktuelle Ziel. Ohne Ziele nur „+ Neues Ziel“. Jeder Knopf ruft
+Zeile: Name (Klick = aktuell wie Shift+N; Doppelklick = Umbenennen im Textfeld des Layers), Regler -100..200 % (Ziehen =
+Gewicht live, Strg+Klick = Zahl tippen, geklemmt), `S` = Solo, „Bearbeiten“ = Tab für dieses Ziel („Zurück“ in der Ansicht). Oben
+„+ Neues Ziel“, „Alle 0 %“ und „In Basis backen“ (Mischung wird Ruheform, Regler auf 0; Manu 2026-11-16), unten „Löschen“ für das aktuelle Ziel. Ohne Ziele nur „+ Neues Ziel“. Jeder Knopf ruft
 denselben `Application`-Weg wie die Taste, mit denselben Ablehnungen; das Panel hält keinen Dokumentzustand.
 """
 
 from __future__ import annotations
+
+from mirai.morph_targets import MAX_WEIGHT, MIN_WEIGHT
 
 from . import morph_model as mm
 
@@ -32,6 +34,11 @@ class MorphPanel:
             return
         imgui.same_line()
         self._button("Alle 0 %", True, "zero", 0, None, app.zero_morph_weights)
+        imgui.same_line()
+        self._button("In Basis backen", st.can_bake, "bake", 0,
+                     "nur an der Basis (Tab)" if st.view_open else
+                     "Sichtbare Mischung wird die neue Ruheform, Regler auf 0 (Strg+Z holt beides zurück)",
+                     app.bake_morph_mix)
         imgui.separator()
         flags = imgui.TableFlags_.sizing_fixed_fit | imgui.TableFlags_.no_saved_settings
         if imgui.begin_table("##targets", 4, flags):
@@ -70,7 +77,8 @@ class MorphPanel:
             app.rename_morph_target(action[1], row.lid)
         imgui.table_next_column()
         imgui.set_next_item_width(_SLIDER_WIDTH)
-        changed, value = imgui.slider_int("##w", row.weight, 0, 100, "%d %%")
+        changed, value = imgui.slider_int("##w", row.weight, MIN_WEIGHT, MAX_WEIGHT, "%d %%",
+                                          imgui.SliderFlags_.always_clamp)
         layer._remember("morph_weight", row.lid)
         if changed and value != row.weight:
             app.set_morph_weight(value, row.lid, quiet=True)

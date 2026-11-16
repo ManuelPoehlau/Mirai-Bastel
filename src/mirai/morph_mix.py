@@ -4,7 +4,7 @@
 
     p(v) = b(v) + Σᵢ (wᵢ / 100) · dᵢ(v)
 
-over the targets with a weight above 0, wᵢ in whole percent 0..100 (no clamping beyond that range, no
+over the targets with a weight other than 0, wᵢ in whole percent -100..200 (Manu 2026-11-16; before: 0..100; no
 normalization, no correctives). The sum runs in ascending `LayerId` order — fixed for the life of a
 layer, unlike the display order — with the first term taken as it is (not added to 0.0). So one target
 gives exactly the Phase 3 values (`b + d` at 100 %, `b + w·d` below), and a point with no offset in any
@@ -75,13 +75,13 @@ def mix_position(b, terms) -> tuple:
 
 
 def factor(weight: int) -> float:
-    """Whole percent -> the multiplier (exactly 1.0 at 100 %)."""
-    return 1.0 if weight >= 100 else weight / 100.0
+    """Whole percent -> the multiplier (exactly 1.0 at 100 %, exactly -1.0 at -100 %, 2.0 at 200 %)."""
+    return weight / 100.0
 
 
 def evaluate(base: Mesh, weights: dict) -> dict:
     """The definition, for every vertex (the oracle and the reference for SubD of the mixed cage)."""
-    order = sorted((lid for lid, w in weights.items() if w > 0), key=int)
+    order = sorted((lid for lid, w in weights.items() if w != 0), key=int)
     out = {}
     for v in base.all_vertex_ids():
         terms = []
@@ -128,7 +128,7 @@ class MixSurface:
         self._watch = base.watch()
         #: the shown mix: a `SurfacePositions` over the base's topology (None until the first `update`)
         self.mesh: Optional[SurfacePositions] = None
-        #: the weights the surface shows: LayerId -> whole percent (> 0 only)
+        #: the weights the surface shows: LayerId -> whole percent (!= 0 only)
         self.weights: dict = {}
         #: True right after an `update` that patched the topology of `mesh` in place (H7)
         self.topology_changed = False
@@ -174,7 +174,7 @@ class MixSurface:
         (rebuilt = a new `mesh` object, changed vertices of the kept one)."""
         base = self.base
         alive = set(base.point_layer_ids())
-        weights = {lid: int(w) for lid, w in weights.items() if w > 0 and lid in alive}
+        weights = {lid: int(w) for lid, w in weights.items() if w != 0 and lid in alive}
         change = self._watch.take()
         self.topology_changed = False
         if self.mesh is None:

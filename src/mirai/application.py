@@ -4423,6 +4423,11 @@ class Application:
         """Every target of the document edit object at 0 % (view state)."""
         return self._morph.zero_all()
 
+    def bake_morph_mix(self) -> bool:
+        """The shown mix becomes the edit object's rest shape, its weights go to 0 % (one Undo step with the weights,
+        Manu 2026-11-16)."""
+        return self._morph.bake_mix()
+
     def rename_morph_target(self, name: str | None = None, lid=None) -> bool:
         """Renames the edit object's target (one Undo step); without `name` the next name of
         `morph_targets.RENAME_CYCLE`; `lid` default = the current target."""

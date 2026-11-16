@@ -22,11 +22,13 @@ from ..scene_objects import clean_name
 from ..morph_targets import (
     DRAG_PIXELS_PER_PERCENT as MORPH_DRAG_PIXELS_PER_PERCENT,
     MAX_TARGETS as MORPH_MAX_TARGETS,
-    MAX_WEIGHT as MORPH_MAX_WEIGHT,
-    MIN_WEIGHT as MORPH_MIN_WEIGHT,
+    FULL_WEIGHT as MORPH_FULL_WEIGHT,
+    REST_WEIGHT as MORPH_REST_WEIGHT,
     WEIGHT_STEPS as MORPH_WEIGHT_STEPS,
     MorphDisplay,
+    MorphWeightsCommand,
     TargetView,
+    bake_positions,
     TranslatingHistory,
     morph_target_ids,
     new_target_name,
@@ -223,9 +225,9 @@ class MorphController:
         if command in MORPH_WEIGHT_STEPS:
             return self.set_weight(self.weight + MORPH_WEIGHT_STEPS[command])
         if command == commands.MORPH_WEIGHT_FULL:
-            return self.set_weight(MORPH_MAX_WEIGHT)
+            return self.set_weight(MORPH_FULL_WEIGHT)
         if command == commands.MORPH_WEIGHT_ZERO:
-            return self.set_weight(MORPH_MIN_WEIGHT)
+            return self.set_weight(MORPH_REST_WEIGHT)
         if command in (commands.MORPH_NEXT, commands.MORPH_PREVIOUS):
             return self.step_target(1 if command == commands.MORPH_NEXT else -1)
         return False
@@ -326,7 +328,7 @@ class MorphController:
         name = mesh.point_layer_info(lid).name
         oid = services.scene.edit_object_id
         provider = self.display.provider
-        provider.set_weight(oid, MORPH_MIN_WEIGHT, lid)
+        provider.set_weight(oid, MORPH_REST_WEIGHT, lid)
         self.ab.pop((oid, lid), None)
         services.mesh_transaction(f"Delete morph target {name!r}", lambda m: m.remove_point_layer(lid), moved_of=lambda _: set())
         if neighbour is not None:
@@ -389,7 +391,7 @@ class MorphController:
             return False
         self.solo_restore.pop(obj.id, None)
         weight = self.display.provider.set_weight(obj.id, weight, lid)
-        if weight > MORPH_MIN_WEIGHT:
+        if weight != MORPH_REST_WEIGHT:
             self.ab[(obj.id, lid)] = weight
         self.display.refresh()
         if not quiet:
@@ -424,9 +426,9 @@ class MorphController:
         before = entry[1] if entry is not None else {other: provider.weight(obj.id, other) for other in ids}
         for other in ids:
             if other != lid:
-                provider.set_weight(obj.id, MORPH_MIN_WEIGHT, other)
-        if provider.weight(obj.id, lid) == MORPH_MIN_WEIGHT:
-            provider.set_weight(obj.id, self.ab.get((obj.id, lid), MORPH_MAX_WEIGHT), lid)
+                provider.set_weight(obj.id, MORPH_REST_WEIGHT, other)
+        if provider.weight(obj.id, lid) == MORPH_REST_WEIGHT:
+            provider.set_weight(obj.id, self.ab.get((obj.id, lid), MORPH_FULL_WEIGHT), lid)
         self.solo_restore[obj.id] = (lid, before)
         self.display.refresh()
         services.status(f"Morph: solo {self.weight_text(lid)} (S again: weights as before)")
@@ -442,15 +444,53 @@ class MorphController:
         self.solo_restore.pop(obj.id, None)
         provider = self.display.provider
         for lid in ids:
-            provider.set_weight(obj.id, MORPH_MIN_WEIGHT, lid)
+            provider.set_weight(obj.id, MORPH_REST_WEIGHT, lid)
         self.display.refresh()
         self.services.status("Morph: every target at 0 %")
         return True
 
+    def bake_mix(self) -> bool:
+        """Manu 2026-11-16: the shown mix of the edit object's targets (every weight other than 0 %) becomes its rest
+        shape and those weights go to 0 % - the picture stays. The targets stay (relative offsets, now on the new
+        base). One Undo step: the positions and, as its companion, the weights (`MorphWeightsCommand`), so Ctrl+Z
+        shows the old base with the sliders as they were. On the base only, outside every interaction."""
+        services = self.services
+        label = "Bake morph mix"
+        if self._lifecycle_refuses(label):
+            return False
+        obj = services.scene.edit_object
+        mesh = obj.mesh
+        ids = morph_target_ids(mesh)
+        if not ids:
+            services.status(f"{label}: this mesh has no target (Ctrl+N makes one)")
+            return False
+        provider = self.display.provider
+        weights = provider.object_weights(obj.id)
+        if not weights:
+            services.status(f"{label}: every target is at 0 % - nothing to bake")
+            return False
+        positions = bake_positions(mesh, weights)
+        names = ", ".join(f"{mesh.point_layer_info(lid).name} {weights[lid]} %" for lid in ids if lid in weights)
+        description = f"Bake morph mix ({names})"
+        self.solo_restore.pop(obj.id, None)
+        companion = MorphWeightsCommand(provider, obj.id, weights, {}, self.display.refresh, description)
+
+        def mutate(m: Mesh) -> None:
+            for vid, p in positions.items():
+                m.set_vertex_position(vid, p)
+
+        done = services.mesh_transaction(description, mutate, moved_of=lambda _: set(positions), companion=companion)
+        if not done.changed:
+            return False
+        services.status(
+            f"Morph mix baked into the base ({len(positions)} points; {names} -> 0 %). Ctrl+Z brings it back"
+        )
+        return True
+
     def toggle_ab(self) -> bool:
         obj = self.document_object
-        last = self.ab.get((obj.id, self.current_target), MORPH_MAX_WEIGHT)
-        return self.set_weight(last if self.weight == MORPH_MIN_WEIGHT else MORPH_MIN_WEIGHT)
+        last = self.ab.get((obj.id, self.current_target), MORPH_FULL_WEIGHT)
+        return self.set_weight(last if self.weight == MORPH_REST_WEIGHT else MORPH_REST_WEIGHT)
 
     # -- the editing view (H4, AD-025 §15) -------------------------------------------------------------
 
@@ -580,7 +620,7 @@ class MorphController:
             if obj is None:
                 continue
             for lid in lids - set(morph_target_ids(obj.mesh)):
-                provider.set_weight(oid, MORPH_MIN_WEIGHT, lid)
+                provider.set_weight(oid, MORPH_REST_WEIGHT, lid)
                 self.ab.pop((oid, lid), None)
 
     def after_history(self) -> None:
