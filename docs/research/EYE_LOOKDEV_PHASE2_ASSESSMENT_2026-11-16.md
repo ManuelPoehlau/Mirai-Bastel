@@ -527,10 +527,12 @@ only in the "full" tier. Acceptance per §H row 4:
   key. A finding on the way: §C.1's "#4 analytic" needs the cornea's focusing, and that is strongest with the key from
   the side (at 80° the far iris gets over 3 × the unrefracted key's light); with a frontal key it is an even 1.3 ×.
   The first solver (a fixed-point iteration) was wrong at grazing keys; the built one solves in the path's plane.
-- **Open:** the cost on the reference PC (I-12; the probe's `iris full` rows) and the practical test (§18's
-  Praxistest). §F's estimate for #4 (+0.05–0.1 ms) is too low for the built model: tracing the key through the cornea
-  per pixel costs about as much as the whole phase 3 look in the container's software renderer (relative numbers
-  only), the crescent's two neighbour paths as much again (they run only with `crescent` > 0).
+- **Cost, run 1 on the reference PC (Manu, 2026-11-16, MEASURED [RPC],
+  [results](../../experiments/drag_cost/RESULTS_EYE_IRIS_REFERENCE_PC_2026-11-16.md)):** over the I-12 limit - the iris
+  +8.3 / +13.4 ms on top of the look in the Eye Lab view, phase 3 + 4 together +9.3 / +15.7 ms (1024×768 /
+  1920×1080). §F's estimate for #4 (+0.05–0.1 ms) assumed an analytic term; the built model traces the key's path, per
+  pixel. Changed the same day: the path is baked once per eye into a 64² table and read per pixel (AD-033 §18 "Cost");
+  a second run on the reference PC is open, and so is the practical test.
 
 Deviations from §C / §D, each with its reason in AD-033 §18: the height is derived at draw time into the pass's own
 texture (no image is written; phase 5 writes a real one); only the key is refracted (fill and ambient as before);

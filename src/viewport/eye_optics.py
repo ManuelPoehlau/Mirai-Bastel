@@ -820,6 +820,33 @@ def iris_key_terms(hit, l, rim_width: float, g: EyeGeometry, concentration: bool
     return d, trans, np.where(ok & ok1 & ok2, conc, 1.0), shadow
 
 
+#: The key's table (`iris_light_table`): texels across the iris disc (2 iris radii; 0.22 mm per texel at the reference
+#: eye). Traced per pixel the path cost the reference PC +8 / +13 ms in the Eye Lab view (1024×768 / 1920×1080,
+#: 2026-11-16): once per eye into this table, then one texel per pixel.
+IRIS_TABLE_SIZE = 64
+
+
+def iris_table_value(xy, l, rim_width: float, crescent: float, rim_shadow: float, g: EyeGeometry):
+    """One texel of the key's table at iris points `xy` (..., 2): (d.x, d.y, T, the crescent and rim shadow factor
+    mix(1, C, crescent) (1 - rim_shadow S)); where no path reaches the point (T 0) d is the key's own direction."""
+    xy = np.asarray(xy, dtype=np.float64)
+    hit = np.concatenate([xy, np.zeros(xy.shape[:-1] + (1,))], -1)
+    l = np.broadcast_to(np.asarray(l, dtype=np.float64), hit.shape)
+    d, trans, conc, shadow = iris_key_terms(hit, l, rim_width, g, concentration=crescent > 0.0)
+    d = np.where((trans > 0.0)[..., None], d, l)
+    factor = (1.0 - crescent + crescent * conc) * (1.0 - rim_shadow * shadow)
+    return np.stack([d[..., 0], d[..., 1], trans, factor], -1)
+
+
+def iris_light_table(l, rim_width: float, crescent: float, rim_shadow: float, g: EyeGeometry,
+                     size: int = IRIS_TABLE_SIZE) -> np.ndarray:
+    """The key's table as the pass bakes it: (size, size, 4), row j / column i = the texel at y / x =
+    ((j or i) + 0.5) / size * 2 - 1 iris radii (the first row is the bottom one, as GL stores it)."""
+    c = ((np.arange(size) + 0.5) / size * 2.0 - 1.0) * g.iris_radius
+    y, x = np.meshgrid(c, c, indexing="ij")
+    return iris_table_value(np.stack([x, y], -1), l, rim_width, crescent, rim_shadow, g)
+
+
 def relief_normal(hit, grad, g: EyeGeometry):
     """Roadmap #5: the iris cone's normal tilted by a height gradient `grad` (..., 2; d height / d x, d y,
     eye-local)."""

@@ -29,7 +29,10 @@ parity-tested functions (NumPy twins in `eye_optics`); every term is neutral at 
 iris values have an amount above 0 - otherwise the program is exactly the one of phase 3): the Worklight key traced back
 through the cornea to the iris (refracted direction, the cornea's focusing - the crescent opposite the key - and the
 shadow under the scleral rim), the relief from the iris image's height (alpha), the soft pupil edge and its dark margin.
-`IRIS_LIB_SRC` holds the parity-tested functions; every term is neutral at amount 0.
+The key's path is traced once per eye into a small table (`IRIS_LIGHT_SRC`, `iris_table_sources`; the pass bakes it when
+the key, the gaze or a value changes) and read per pixel: tracing it per pixel cost the reference PC +13 ms in the Eye
+Lab view at 1920×1080 (2026-11-16). `IRIS_LIGHT_SRC` and `IRIS_LIB_SRC` hold the parity-tested functions; every term is
+neutral at amount 0.
 """
 
 from __future__ import annotations
@@ -391,7 +394,7 @@ float area_key(vec3 r, vec3 c, vec3 up_ref, vec3 right_ref, float roughness) {{
 }}
 """
 
-IRIS_LIB_SRC = f"""
+IRIS_LIGHT_SRC = f"""
 const int IRIS_LIGHT_STEPS = {eo.IRIS_LIGHT_STEPS};
 const float IRIS_LIGHT_TOLERANCE = {eo.IRIS_LIGHT_TOLERANCE!r};
 const int IRIS_LIGHT_WARM_STEPS = {eo.IRIS_LIGHT_WARM_STEPS};
@@ -401,18 +404,11 @@ const float CRESCENT_MAX = {eo.CRESCENT_MAX!r};
 const float CRESCENT_MIN_COS = {eo.CRESCENT_MIN_COS!r};
 const float IRIS_F0 = {eo.CORNEA_F0!r};
 
-// The iris's numbers (eye_optics.iris_values) and the key in eye-local space.
+// The key's numbers (eye_optics.iris_values) and the key in eye-local space.
 uniform vec3 u_key_local;
-uniform float u_iris_key;
-uniform float u_iris_light;
 uniform float u_crescent;
 uniform float u_rim_shadow;
 uniform float u_rim_width;
-uniform float u_relief_depth;
-uniform float u_relief_step;
-uniform float u_pupil_edge;
-uniform float u_pupil_margin;
-uniform float u_margin_width;
 
 // -- the key through the cornea (eye_optics.iris_light_path / iris_key_terms), eye-local
 float light_miss(float phi, float hx, float hy) {{
@@ -509,6 +505,27 @@ vec3 iris_key_terms(vec3 hit, vec3 l, out vec3 d) {{
     return vec3(trans, conc, shadow);
 }}
 
+// -- the key's table (eye_optics.iris_light_table): one texel per iris point, (d.x, d.y, T, the crescent and rim
+// shadow factor); where no path reaches the point d is the key's own direction (T is 0 there).
+vec4 iris_table_value(vec2 xy) {{
+    vec3 d;
+    vec3 terms = iris_key_terms(vec3(xy, 0.0), u_key_local, d);
+    d = terms.x > 0.0 ? d : u_key_local;
+    return vec4(d.xy, terms.x, mix(1.0, terms.y, u_crescent) * (1.0 - u_rim_shadow * terms.z));
+}}
+"""
+
+IRIS_LIB_SRC = f"""
+// The iris's numbers (eye_optics.iris_values) and the key's table (`IRIS_LIGHT_SRC`, baked per eye by the pass).
+uniform float u_iris_key;
+uniform float u_iris_light;
+uniform float u_relief_depth;
+uniform float u_relief_step;
+uniform float u_pupil_edge;
+uniform float u_pupil_margin;
+uniform float u_margin_width;
+uniform sampler2D u_iris_table;
+
 // -- relief and pupil (eye_optics.relief_normal / pupil_weights), eye-local
 vec3 relief_normal(vec3 hit, vec2 grad) {{
     float r = max(length(hit.xy), 1e-6);
@@ -570,15 +587,15 @@ vec3 lit(vec3 albedo, vec3 n_local) { return albedo * worklight_light(to_world(n
 #ifdef IRIS
 
 // Phase 4: the iris's diffuse light - the Worklight's (`lit`), its key traced through the cornea (roadmap #4): the
-// refracted direction (`u_iris_light`), the cornea's focusing (`u_crescent`), the rim's shadow (`u_rim_shadow`).
+// refracted direction (`u_iris_light`), the cornea's focusing and the rim's shadow (the table's factor).
+// The path is traced once per eye into a small table (`IRIS_LIGHT_SRC`), read here per pixel (no mip levels).
 vec3 iris_lit(vec3 albedo, vec3 hit, vec3 n_local) {
     if (u_iris_key <= 0.0) return lit(albedo, n_local);
     vec3 n_world = to_world(n_local);
-    vec3 d;
-    vec3 terms = iris_key_terms(hit, u_key_local, d);
+    vec4 t = textureLod(u_iris_table, vec2(0.5) + hit.xy / (2.0 * u_iris_radius), 0.0);
+    vec3 d = vec3(t.xy, sqrt(max(1.0 - dot(t.xy, t.xy), 0.0)));
     float k = wrap_light(dot(n_world, u_key_dir), u_key_wrap);
-    float k_ref = terms.x * wrap_light(dot(n_local, d), u_key_wrap);
-    k = mix(k, k_ref, u_iris_light) * mix(1.0, terms.y, u_crescent) * (1.0 - u_rim_shadow * terms.z);
+    k = mix(k, t.z * wrap_light(dot(n_local, d), u_key_wrap), u_iris_light) * t.w;
     return albedo * (vec3(u_ambient) + u_key_color * k
                      + u_fill_color * wrap_light(dot(n_world, u_fill_dir), u_fill_wrap));
 }
@@ -669,21 +686,24 @@ void main() {
         }
         vec3 deep_albedo = texture(u_iris_texture, iris_st(deep_hit.xy)).rgb;
 #endif
-        vec3 iris_albedo = texture(u_iris_texture, iris_st(hit.xy)).rgb;
 #ifdef IRIS
+        vec2 st = iris_st(hit.xy);
+        vec4 iris_texel = texture(u_iris_texture, st);
+        vec3 iris_albedo = iris_texel.rgb;
         // Before any per-pixel branch (derivatives): the pupil edge's pixel footprint, the relief's height gradient.
         float r_hit = length(hit.xy);
         float r_aa = fwidth(r_hit);
         vec2 relief_grad = vec2(0.0);
         if (u_relief_depth > 0.0) {
-            vec2 st = iris_st(hit.xy);
             vec2 st_dx = dFdx(st);
             vec2 st_dy = dFdy(st);
-            float h0 = textureGrad(u_iris_texture, st, st_dx, st_dy).a;
+            float h0 = iris_texel.a;
             float hx = textureGrad(u_iris_texture, iris_st(hit.xy + vec2(u_relief_step, 0.0)), st_dx, st_dy).a;
             float hy = textureGrad(u_iris_texture, iris_st(hit.xy + vec2(0.0, u_relief_step)), st_dx, st_dy).a;
             relief_grad = vec2(hx - h0, hy - h0) * (2.0 * u_relief_depth / u_relief_step);
         }
+#else
+        vec3 iris_albedo = texture(u_iris_texture, iris_st(hit.xy)).rgb;
 #endif
 #ifdef DEBUG_KIND
         out_color = vec4(kind == KIND_IRIS ? 1.0 : 0.0, kind == KIND_PUPIL ? 1.0 : 0.0,
@@ -904,15 +924,34 @@ void main() {
         o.xyz = relief_normal(a.xyz, b.xy);
     } else if (u_func == 17) {
         o.xy = pupil_weights(a.x, a.y);
+    } else if (u_func == 18) {
+        o = iris_table_value(a.xy);
     }
     out_value = o;
+}
+"""
+
+IRIS_TABLE_VERTEX_SRC = """#version 330 core
+void main() {
+    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}
+"""
+
+IRIS_TABLE_FRAGMENT_BODY = """
+uniform int u_table_size;
+layout(location = 0) out vec4 out_value;
+void main() {
+    vec2 xy = (gl_FragCoord.xy / float(u_table_size) * 2.0 - 1.0) * u_iris_radius;
+    out_value = iris_table_value(xy);
 }
 """
 
 PARITY_FUNCS = {"trace_hit": 0, "trace_entry": 1, "iris_st": 2, "coords": 3, "weights": 4, "normal_blend": 5,
                 "sclera_through": 6, "td_env": 7, "worklight_light": 8, "film_uv": 9, "film_normal": 10,
                 "film_roughness_shadow": 11, "lid_occlusion": 12, "area_key": 13, "iris_key_terms": 14,
-                "iris_light_path": 15, "relief_normal": 16, "pupil_weights": 17}
+                "iris_light_path": 15, "relief_normal": 16, "pupil_weights": 17,
+                "iris_table_value": 18}
 
 FULLSCREEN_VERTEX_SRC = """#version 330 core
 layout(location = 0) in vec2 a_position;
@@ -970,6 +1009,13 @@ def _without(source: str, name: str) -> str:
 
 def parity_sources(fit: bool) -> list[tuple[str, str]]:
     return [(FULLSCREEN_VERTEX_SRC, "vertex"),
-            (_header(IRIS_FIT=1 if fit else None, LOOK=1, IRIS=1) + EYE_LIB_SRC + LOOK_LIB_SRC + IRIS_LIB_SRC
+            (_header(IRIS_FIT=1 if fit else None, LOOK=1, IRIS=1) + EYE_LIB_SRC + LOOK_LIB_SRC + IRIS_LIGHT_SRC
+             + IRIS_LIB_SRC
              + PARITY_FRAGMENT_BODY,
              "fragment")]
+
+
+def iris_table_sources() -> list[tuple[str, str]]:
+    """Phase 4: the program that bakes an eye's key table (`IRIS_LIGHT_SRC`, one fragment per texel)."""
+    return [(IRIS_TABLE_VERTEX_SRC, "vertex"),
+            (_header() + EYE_LIB_SRC + IRIS_LIGHT_SRC + IRIS_TABLE_FRAGMENT_BODY, "fragment")]

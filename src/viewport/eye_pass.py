@@ -12,7 +12,9 @@ tier (`uses_look`); "fast" and every eye without a look draw with the program be
 Eye LookDev phase 4: an eye whose look has iris values with an amount above 0 is drawn with the `IRIS` program as well
 (`uses_iris`); every other eye with the program of phase 3. With the relief on and its height taken from the image's
 brightness (or the procedural iris), the pass binds its own copy of the iris image whose alpha holds the derived height
-(`relief_texture`, `eye_optics.iris_height`), built once per image file and fit.
+(`relief_texture`, `eye_optics.iris_height`), built once per image file and fit. With the key through the cornea on, it
+bakes the eye's key table first (`iris_table`, 64² RGBA16F: one evaluation of the path per texel instead of per pixel),
+again only when the key in the eye's frame, the anatomy or a key value changes.
 """
 
 from __future__ import annotations
@@ -29,6 +31,8 @@ from .material import SurfaceFinish
 IRIS_UNIT = 1
 #: The irregularity texture's unit (phase 3).
 NOISE_UNIT = 2
+#: The key's table (phase 4): its unit while the eye draws.
+TABLE_UNIT = 3
 #: P1b's pupil colour (sRGB, display-referred like every albedo here).
 PUPIL_ALBEDO = (0.012, 0.012, 0.012)
 REFLECTIONS = tuple(es.REFLECTIONS)
@@ -172,6 +176,12 @@ class EyePass:
         self._ring_colours: dict = {}
         self._noise = None
         self._relief: dict = {}
+        #: Phase 4: per eye (its variation) the key table: (cache key, texture, framebuffer).
+        self._tables: dict = {}
+        self._table_program = None
+        self._table_vao = None
+        #: Test hook / probe: how often a table was baked.
+        self.table_bakes = 0
         #: Test hook: draw the ray classes (red iris, green pupil, blue limbal tissue, yellow sclera).
         self.debug_kind = False
         #: Test hook: in the "full" tier, draw an eye with any look (also one at amount 0) with the LOOK program - the
@@ -234,6 +244,78 @@ class EyePass:
             gl.glBindTexture(texture.target, 0)
             self._noise = texture
         return self._noise
+
+    def iris_table(self, draw: EyeDraw, values: dict):
+        """Phase 4: the eye's key table (`eye_shaders.IRIS_LIGHT_SRC` / `eye_optics.iris_light_table`), baked into a
+        64² RGBA16F texture when the key in the eye's frame, the anatomy or a key value changed since the last bake;
+        the GL state is left as found (framebuffer, viewport, program, vertex array, scissor, depth, blend)."""
+        import ctypes
+
+        from pyglet import gl
+        from pyglet.graphics.shader import Shader, ShaderProgram
+
+        names = ("u_ant_centre_z", "u_ant_radius", "u_cap_z", "u_iris_a", "u_iris_b", "u_iris_radius",
+                 "u_limbus_radius", "u_key_local", "u_crescent", "u_rim_shadow", "u_rim_width")
+        cache_key = tuple(values[n] for n in names)
+        entry = self._tables.get(draw.variation)
+        if entry is not None and entry[0] == cache_key:
+            return entry[1]
+        size = eo.IRIS_TABLE_SIZE
+        if entry is None:
+            texture, fbo = gl.GLuint(), gl.GLuint()
+            gl.glGenTextures(1, ctypes.byref(texture))
+            gl.glActiveTexture(gl.GL_TEXTURE0 + TABLE_UNIT)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, texture)
+            gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA16F, size, size, 0, gl.GL_RGBA, gl.GL_FLOAT, None)
+            for name, value in (("GL_TEXTURE_MIN_FILTER", gl.GL_LINEAR), ("GL_TEXTURE_MAG_FILTER", gl.GL_LINEAR),
+                                ("GL_TEXTURE_WRAP_S", gl.GL_CLAMP_TO_EDGE), ("GL_TEXTURE_WRAP_T", gl.GL_CLAMP_TO_EDGE)):
+                gl.glTexParameteri(gl.GL_TEXTURE_2D, getattr(gl, name), value)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+            gl.glActiveTexture(gl.GL_TEXTURE0)
+            gl.glGenFramebuffers(1, ctypes.byref(fbo))
+            entry = (None, texture.value, fbo.value)
+        if self._table_program is None:
+            self._table_program = ShaderProgram(*(Shader(src, kind) for src, kind in es.iris_table_sources()))
+            vao = gl.GLuint()
+            gl.glGenVertexArrays(1, ctypes.byref(vao))
+            self._table_vao = vao.value
+
+        def geti(name, count=1):
+            buf = (gl.GLint * count)()
+            gl.glGetIntegerv(name, buf)
+            return buf[0] if count == 1 else tuple(buf)
+
+        saved = {"draw_fbo": geti(gl.GL_DRAW_FRAMEBUFFER_BINDING), "read_fbo": geti(gl.GL_READ_FRAMEBUFFER_BINDING),
+                 "viewport": geti(gl.GL_VIEWPORT, 4), "program": geti(gl.GL_CURRENT_PROGRAM),
+                 "vao": geti(gl.GL_VERTEX_ARRAY_BINDING)}
+        flags = {cap: bool(gl.glIsEnabled(cap)) for cap in (gl.GL_SCISSOR_TEST, gl.GL_DEPTH_TEST, gl.GL_BLEND,
+                                                            gl.GL_CULL_FACE)}
+        gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, entry[2])
+        gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0, gl.GL_TEXTURE_2D, entry[1], 0)
+        complete = gl.glCheckFramebufferStatus(gl.GL_FRAMEBUFFER) == gl.GL_FRAMEBUFFER_COMPLETE
+        if complete:
+            for cap in flags:
+                gl.glDisable(cap)
+            gl.glViewport(0, 0, size, size)
+            program = self._table_program
+            program.use()
+            active = program.uniforms
+            for name, value in values.items():
+                if name in active:
+                    program[name] = value
+            program["u_table_size"] = size
+            gl.glBindVertexArray(self._table_vao)
+            gl.glDrawArrays(gl.GL_TRIANGLES, 0, 3)
+            self.table_bakes += 1
+        gl.glBindFramebuffer(gl.GL_DRAW_FRAMEBUFFER, saved["draw_fbo"])
+        gl.glBindFramebuffer(gl.GL_READ_FRAMEBUFFER, saved["read_fbo"])
+        gl.glViewport(*saved["viewport"])
+        gl.glUseProgram(saved["program"])
+        gl.glBindVertexArray(saved["vao"])
+        for cap, on in flags.items():
+            (gl.glEnable if on else gl.glDisable)(cap)
+        self._tables[draw.variation] = (cache_key if complete else None, entry[1], entry[2])
+        return entry[1] if complete else None
 
     def relief_texture(self, draw: EyeDraw):
         """Phase 4: the iris image (or the procedural iris) with the height derived from its brightness in alpha
@@ -353,8 +435,14 @@ class EyePass:
             noise = self.noise_texture()
             values.update(look_uniforms(draw))
             values.update({"u_rest": rest_rotation(draw, model), "u_noise_texture": NOISE_UNIT})
+        table = None
         if iris:
             values.update(iris_uniforms(draw, model, light["u_key_dir"], texture.width))
+            if values["u_iris_key"] > 0.0:
+                table = self.iris_table(draw, values)
+                if table is None:  # no float framebuffer: the Worklight's key, as without these values
+                    values["u_iris_key"] = 0.0
+            values["u_iris_table"] = TABLE_UNIT
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw, not once per value
         for name, value in values.items():
@@ -365,6 +453,9 @@ class EyePass:
         if noise is not None:
             gl.glActiveTexture(gl.GL_TEXTURE0 + NOISE_UNIT)
             gl.glBindTexture(noise.target, noise.id)
+        if table is not None:
+            gl.glActiveTexture(gl.GL_TEXTURE0 + TABLE_UNIT)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, table)
         gl.glActiveTexture(gl.GL_TEXTURE0)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthMask(gl.GL_TRUE)
@@ -385,6 +476,9 @@ class EyePass:
         if noise is not None:
             gl.glActiveTexture(gl.GL_TEXTURE0 + NOISE_UNIT)
             gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+        if table is not None:
+            gl.glActiveTexture(gl.GL_TEXTURE0 + TABLE_UNIT)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
         gl.glActiveTexture(gl.GL_TEXTURE0)
         program.stop()
         return True
@@ -403,3 +497,16 @@ class EyePass:
             if texture is not None:
                 texture.delete()
         self._relief.clear()
+        if self._tables or self._table_program is not None:
+            import ctypes
+
+            from pyglet import gl
+
+            for _key, texture, fbo in self._tables.values():
+                gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(texture)))
+                gl.glDeleteFramebuffers(1, ctypes.byref(gl.GLuint(fbo)))
+            self._tables.clear()
+            if self._table_program is not None:
+                self._table_program.delete()
+                gl.glDeleteVertexArrays(1, ctypes.byref(gl.GLuint(self._table_vao)))
+                self._table_program, self._table_vao = None, None

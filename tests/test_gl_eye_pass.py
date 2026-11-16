@@ -1002,3 +1002,63 @@ def test_iris_programs_draw_and_leave_the_gl_state_clean(gl_window, level, refle
     gl.glGetIntegerv(gl.GL_ACTIVE_TEXTURE, ctypes.byref(unit))
     assert unit.value == gl.GL_TEXTURE0
     assert gl.glGetError() == gl.GL_NO_ERROR
+
+
+def test_iris_table_value_glsl_matches_numpy(parity):
+    rng = np.random.default_rng(43)
+    v = eo.iris_values(PARITY_IRIS, G)
+    r = G.iris_radius * np.sqrt(rng.uniform(0, 1, N))
+    phi = rng.uniform(0, 2 * np.pi, N)
+    x = _pack(np.stack([r * np.cos(phi), r * np.sin(phi)], -1))
+    a = _f32(x)
+    key = eo.normalize(LIGHT["u_key_dir"])  # the parity pass's model is the identity
+    for crescent in (PARITY_IRIS.crescent, 0.0):
+        parity[False].crescent = crescent
+        got = parity[False].run("iris_table_value", x)
+        parity[False].crescent = None
+        ref = eo.iris_table_value(a[:, :2], key, v["rim_width"], crescent, PARITY_IRIS.rim_shadow, G)
+        assert np.abs(got[:, :3] - ref[:, :3]).max() < 3e-4
+        assert np.abs(got[:, 3] - ref[:, 3]).max() < 1e-2  # the concentration's finite difference in float32
+
+
+def test_iris_table_is_baked_once_per_key_and_leaves_the_gl_state(gl_window):
+    """The key's path is traced once per eye into the table (not per pixel): baked again only when the key in the
+    eye's frame or a key value changes; its texels are `eye_optics.iris_light_table`; the GL state stays as found."""
+    from pyglet import gl
+
+    from gui.imgui_layer import snapshot_gl_state
+
+    spec = _iris(light=1.0, crescent=1.0, rim_shadow=0.8)
+    viewport, camera = _scene(spec, distance=4.0)
+    viewport.set_eye_display(tier="full")
+    passes = viewport.eye_pass
+    _render(gl_window, viewport)
+    bakes = passes.table_bakes if passes is not None else 0
+    passes = viewport.eye_pass
+    _render(gl_window, viewport)
+    _render(gl_window, viewport)
+    assert passes.table_bakes == bakes >= 1  # an unchanged frame reuses the table
+    camera.set_view(math.radians(20.0), 0.0)  # the key follows the camera: it turns in the eye's frame
+    viewport.on_camera_changed(aspect=1.0)
+    _render(gl_window, viewport)
+    assert passes.table_bakes == bakes + 1
+    (_key, texture, _fbo), = passes._tables.values()
+    size = eo.IRIS_TABLE_SIZE
+    out = np.zeros((size, size, 4), dtype=np.float32)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, texture)
+    gl.glGetTexImage(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA, gl.GL_FLOAT, out.ctypes.data)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+    light = viewport.light_uniforms()
+    key = eo.normalize(np.asarray(light["u_key_dir"]))  # the model is a uniform scale: the same direction locally
+    ref = eo.iris_light_table(key, spec.look.iris.rim_shadow_mm * eo.MM, 1.0, 0.8, G)
+    close = (np.abs(out[..., :3] - ref[..., :3]).max(-1) < 2e-3) & (np.abs(out[..., 3] - ref[..., 3]) < 2e-2)
+    assert close.mean() > 0.99, close.mean()  # half floats; a few texels at the edge of the key's reach flip
+    # a bake inside a frame leaves the state as found
+    spec2 = _iris(light=1.0, crescent=1.0, rim_shadow=0.5)
+    viewport.set_object_entry("eye", shell_mesh(spec2), SCLERA_COLOUR, model_matrix=_model(), finish=FINISH,
+                              eye=EyeDraw(spec2, None, SCLERA_COLOUR, FINISH, cornea_triangles(), variation=3))
+    viewport.sync()
+    before = snapshot_gl_state()
+    viewport.render()
+    assert passes.table_bakes == bakes + 2
+    assert snapshot_gl_state() == before and gl.glGetError() == gl.GL_NO_ERROR

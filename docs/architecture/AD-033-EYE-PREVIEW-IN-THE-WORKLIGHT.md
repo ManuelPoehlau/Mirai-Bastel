@@ -562,10 +562,22 @@ that.
 - **Where.** The iris light (`iris_lit`) replaces the Worklight's diffuse light on the iris and pupil, and on the iris
   seen through the translucent limbus (L3) and through the sclera band; relief and pupil terms only on the main iris
   sample. The sclera, the film and every reflection are untouched.
-- **Cost control.** The two neighbour paths (the costly part) run only when `crescent` > 0. Measured in the container
-  (software renderer, relative only): the iris light without the crescent about as much as the whole phase 3 look, with
-  it about twice; relief about half of that. **Not measured on the reference PC** (I-12): the probe has the rows
-  `iris full` / `iris full key` and a column `vs look`.
+- **Cost (MEASURED [RPC], Manu 2026-11-16, run 1,
+  [results](../../experiments/drag_cost/RESULTS_EYE_IRIS_REFERENCE_PC_2026-11-16.md)).** The first build traced the
+  key's path per pixel: the iris cost **+8.3 / +13.4 ms** in the Eye Lab view on top of the look (1024×768 /
+  1920×1080), phase 3 + 4 together +9.3 / +15.7 ms - **over the I-12 limit of 8 ms**, and +6.4 ms even at modelling
+  distance (the cost hardly scaled with the iris's area).
+- **The key table (built the same day after that run).** The path depends only on the iris point and the key's
+  direction in the eye's frame - one value per eye and frame. The pass now bakes it once per eye into a **64² RGBA16F
+  table** (`EyePass.iris_table`, program `eye_shaders.iris_table_sources`, texel `(d.x, d.y, T, F)` with
+  F = mix(1, C, crescent) (1 - rim_shadow S); twin `eye_optics.iris_light_table`), only when the key in the eye's
+  frame, the anatomy or a key value changes (a still camera bakes nothing; an orbit with the camera-relative key or a
+  moving gaze bakes 4096 texels per eye and frame), and the shader reads one texel per pixel (`textureLod`, also for
+  the iris behind the limbus and the sclera band). Texel 0.22 mm at the reference eye; the rim shadow's 0.4 mm spans
+  about two. The neighbour paths run only when `crescent` > 0; the relief reuses the main sample's alpha. Software
+  renderer in the container (wall time, relative only): the iris on top of the look from about +10 to about +3 ms.
+  Should no float framebuffer be available, the eye draws with the Worklight's key on the iris (as without these
+  values). **To be measured again on the reference PC.**
 - **NumPy twins** for every new function (`iris_light_path`, `iris_key_terms`, `relief_normal`, `pupil_weights`),
   GPU parity in `test_gl_eye_pass.py` (the direction to 1e-4 rad in float32, the concentration to 5e-3).
 
@@ -585,14 +597,16 @@ cap of 4 × bounds it. Pupil shape stays round.
 **Tests.** `test_eye_iris.py` (Core: validation, optional and strict, v11 only with iris values, v10 unchanged, an
 invalid iris refused; app: Undo, preview, save / load, presets keep the iris, the lab's controls, the tier; optics: the
 forward ray trace, convergence and unreachable points, the derived height, pupil weights and relief normal),
-`test_gl_eye_pass.py` (parity, "fast" and phase 3 unchanged, neutral at 0, the crescent opposite the key from either
+`test_gl_eye_pass.py` (parity incl. the table's texel, the baked table against its twin, baked once per key and the GL
+state left as found, "fast" and phase 3 unchanged, neutral at 0, the crescent opposite the key from either
 side, the rim shadow on the key's side, relief only on the iris and the derived texture built once, alpha without a
 height flat, the pupil ring, every iris variant draws and leaves the GL state clean), `test_gui_imgui_window.py` (the
 lab window with iris values), `test_rig.py` (the first unknown version is 12).
 
 ### Praxistest für Manu (Deutsch, ca. 15 Minuten, `scenes/Gollum_Head_03.mirai.json`)
 
-Vorher bitte die Kosten messen (I-12), wie bei Phase 3:
+Vorher bitte die Kosten messen (I-12), wie bei Phase 3 (Lauf 1 vom 2026-11-16 lag über dem Budget; seitdem die
+Schlüssel-Tabelle, bitte erneut):
 `python experiments\drag_cost\probe_eye_preview.py` und `... --size 1920 1080` (NVIDIA „Maximale Leistung bevorzugen“,
 `.venv312`); die Zeilen `iris full` / `iris full key`, Spalte `vs look` = was die Iris kostet.
 
