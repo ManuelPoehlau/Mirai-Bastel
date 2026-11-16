@@ -532,7 +532,8 @@ only in the "full" tier. Acceptance per §H row 4:
   +8.3 / +13.4 ms on top of the look in the Eye Lab view, phase 3 + 4 together +9.3 / +15.7 ms (1024×768 /
   1920×1080). §F's estimate for #4 (+0.05–0.1 ms) assumed an analytic term; the built model traces the key's path, per
   pixel. Changed the same day: the path is baked once per eye into a 64² table and read per pixel (AD-033 §18 "Cost");
-  a second run on the reference PC is open, and so is the practical test.
+  run 2 on the reference PC (Manu, same day): the iris +2.8 / +0.5 ms on top of the look in the Eye Lab view, phase 3 +
+  4 together at most +3.8 ms in any measured view - within the I-12 target. The practical test is open.
 
 Deviations from §C / §D, each with its reason in AD-033 §18: the height is derived at draw time into the pass's own
 texture (no image is written; phase 5 writes a real one); only the key is refracted (fill and ambient as before);

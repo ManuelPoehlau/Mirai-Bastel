@@ -1,4 +1,4 @@
-# Eye LookDev phase 4 (the iris) — reference PC run 1 (2026-11-16): over the I-12 budget
+# Eye LookDev phase 4 (the iris) — reference PC runs (2026-11-16): run 1 over the I-12 budget, run 2 within it
 
 Machine: the reference PC (Core 2 Quad Q9550, GeForce 9800 GTX+, GL 3.3.0, Windows 10 19045, Python 3.12.10 in
 `.venv312`) — **MEASURED [RPC]**. Run by Manu on 2026-11-16 with `experiments/drag_cost/probe_eye_preview.py` at
@@ -36,3 +36,25 @@ within 0.05 ms.
   a key value changes; the shader reads one texel per pixel. The relief reuses the main sample's alpha (two extra
   samples instead of three). In the container's software renderer (wall time, relative only) the iris on top of the
   look fell from about +10 ms to about +3 ms in a 600-pixel close-up. **To be measured again on the reference PC.**
+
+## Run 2 (Manu, 2026-11-16): the key table — within the I-12 target
+
+Source line of both runs: commit `ba13deb1b1`, "working tree MODIFIED", `src/` tree `c2cd117ff5` (`fa4e889` + a
+string-only change). A run in between still showed `d400b84` and reproduced run 1 within 0.05 ms (not recorded).
+
+| View | 1024×768 iris full `vs look` | `vs L3` (phase 3 + 4) | 1920×1080 iris full `vs look` | `vs L3` |
+|---|---|---|---|---|
+| head | +0.14 | +0.90 | +0.19 | +1.45 |
+| close | +0.29 | +2.17 | +0.45 | +3.80 |
+| **lab** | +2.79 | **+3.70** | +0.49 | **+2.77** |
+
+`iris full key`: lab +2.96 / +1.71 ms `vs L3`. Whole frame with the iris in the Eye Lab view: 6.35 / 6.54 ms GPU,
+10.14 / 10.29 ms wall (1024×768 / 1920×1080). The phase 3 rows reproduce run 1 within 0.02 ms.
+
+Reading (COMPUTED): the iris on top of the look fell from +8.3 / +13.4 to +2.8 / +0.5 ms in the Eye Lab view;
+phase 3 + 4 together are at most **+3.80 ms** in any measured view and size - **within the I-12 target of about 4 ms**,
+well under the 8 ms limit, the whole frame far above 60 FPS on the GPU. One reading is not explained: in the lab view
+at 1024×768 the iris costs +2.79 ms, at 1920×1080 (twice the pixels) only +0.49; the other views scale as expected. A
+table bake in some frames of the smaller run is the likeliest cause (the probe re-sends the eye entries per run); it
+does not change the budget verdict.
+

@@ -8,7 +8,7 @@ deviations from the draft, each with its reason); **E-4 MEASURED on the referenc
 LookDev phase 2, compact panel "Auge" and the Eye Lab window**; **§17 (2026-11-16): Eye LookDev phase 3, the
 reflections (`EyeLook`, scene format v10; container: TESTED; reference-PC cost MEASURED within the I-12 target;
 practical test KEEP)**; **§18 (2026-11-16): Eye LookDev phase 4, the iris (`EyeIris`, scene format v11; container:
-TESTED; reference-PC cost and practical test open)**. Names and
+TESTED; reference-PC cost MEASURED within the I-12 target after the key table; practical test open)**. Names and
 numbers not covered by a decision stay `PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
@@ -577,7 +577,10 @@ that.
   about two. The neighbour paths run only when `crescent` > 0; the relief reuses the main sample's alpha. Software
   renderer in the container (wall time, relative only): the iris on top of the look from about +10 to about +3 ms.
   Should no float framebuffer be available, the eye draws with the Worklight's key on the iris (as without these
-  values). **To be measured again on the reference PC.**
+  values). **Run 2 on the reference PC (Manu, 2026-11-16, MEASURED [RPC]):** the iris on top of the look +2.8 / +0.5 ms
+  in the Eye Lab view (1024×768 / 1920×1080), phase 3 + 4 together at most **+3.8 ms** in any measured view - within the
+  I-12 target of about 4 ms. One reading unexplained (the lab view at 1024×768 costs more than at 1920×1080), see the
+  results file.
 - **NumPy twins** for every new function (`iris_light_path`, `iris_key_terms`, `relief_normal`, `pupil_weights`),
   GPU parity in `test_gl_eye_pass.py` (the direction to 1e-4 rad in float32, the concentration to 5e-3).
 
@@ -605,8 +608,7 @@ lab window with iris values), `test_rig.py` (the first unknown version is 12).
 
 ### Praxistest für Manu (Deutsch, ca. 15 Minuten, `scenes/Gollum_Head_03.mirai.json`)
 
-Vorher bitte die Kosten messen (I-12), wie bei Phase 3 (Lauf 1 vom 2026-11-16 lag über dem Budget; seitdem die
-Schlüssel-Tabelle, bitte erneut):
+Die Kosten sind gemessen (2026-11-16, Lauf 2 mit der Schlüssel-Tabelle): innerhalb des I-12-Ziels. Zum Nachmessen:
 `python experiments\drag_cost\probe_eye_preview.py` und `... --size 1920 1080` (NVIDIA „Maximale Leistung bevorzugen“,
 `.venv312`); die Zeilen `iris full` / `iris full key`, Spalte `vs look` = was die Iris kostet.
 
