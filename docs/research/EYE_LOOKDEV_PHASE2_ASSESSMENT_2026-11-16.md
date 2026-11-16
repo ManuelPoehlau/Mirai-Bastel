@@ -501,7 +501,8 @@ I-8, I-10, I-12): roadmap #1 wet sclera, #2 irregularity, #3 lid shadow and lid 
   target of about 4 ms; "fast" unchanged. §F's estimate for #1-#7 at this size (3.5-4.5 / 7-9 ms) was pessimistic. An
   eye filling the frame height is estimated above the 8 ms limit at 1920×1080 [E], not measured. The phase 0 CPU fix
   is measured too: 7.0-7.8 ms less wall time per frame, correcting the open estimate of the first addendum.
-- **Open, Manu's:** the practical test against the stills (AD-033 §17, German checklist).
+- **Practical test (Manu, 2026-11-16): "1-8 Keep"** - all eight points of AD-033 §17 KEEP; the behaviour is
+  accepted, the numbers stay `PROVISIONAL`. Phase 3 is done; phase 4 (iris) needs its own go.
 
 Deviations from §C / §D, each with its reason in AD-033 §17: per-eye variation from the object id mixed with a look
 seed instead of a mirrored seed; the shadow is the upper lid's only and independent of the key direction; no canthal

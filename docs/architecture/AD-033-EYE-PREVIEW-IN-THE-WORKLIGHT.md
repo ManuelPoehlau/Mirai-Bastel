@@ -7,7 +7,7 @@ deviations from the draft, each with its reason); **E-4 MEASURED on the referenc
 **§14 (2026-11-16): view twins of eyes and teeth beside a morph target's editing view**; **§16 (2026-11-16): Eye
 LookDev phase 2, compact panel "Auge" and the Eye Lab window**; **§17 (2026-11-16): Eye LookDev phase 3, the
 reflections (`EyeLook`, scene format v10; container: TESTED; reference-PC cost MEASURED within the I-12 target;
-practical test open)**. Names and
+practical test KEEP)**. Names and
 numbers not covered by a decision stay `PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
@@ -498,6 +498,10 @@ Die Kosten sind gemessen (2026-11-16, „Cost“ oben): innerhalb des I-12-Ziels
 8. Speichern, neu laden: die Reflexe sind da (Datei-Version 10).
 
 Verdikt: KEEP / ITERATE / REJECT, gern je Punkt, dazu der Vergleich mit deinen Stills in denselben drei Ansichten.
+
+**Verdikt Manu, 2026-11-16: „1-8 Keep“** — alle acht Punkte KEEP. Das Verhalten der Phase 3 ist abgenommen. Die Zahlen
+(`DEFAULT_LOOK`, die Konstanten in `eye_optics`, die Vorlage „Reflexe (Startwerte)“, die Regler-Bereiche) und das
+Layout des Abschnitts „Reflexe“ bleiben `PROVISIONAL`, bis sie eigens entschieden sind; I-6 bleibt offen.
 
 
 **Manu, 2026-11-15:** "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm".
