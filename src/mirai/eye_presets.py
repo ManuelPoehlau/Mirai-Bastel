@@ -4,9 +4,12 @@ A preset is a named bundle of `core.EyeSpec` values. Applying it is one `Applica
 step and needs no new document entity. The iris image's own values (`fit_pupil`, `fit_limbus`, `hold_outer_color`)
 belong to that image and are never part of a preset, so a preset never breaks an eye's iris fit.
 
-The built-in preset is the app's default eye (L0, `eye_object.DEFAULT_EYE`). Presets the artist saves in the Eye Lab
-are JSON files in `config/eye_presets/` (`{"name": ..., "values": {...}}`). A file that cannot be read is skipped,
-and the reason is reported.
+The built-in presets are the app's default eye (L0, `eye_object.DEFAULT_EYE`) and, since Eye LookDev phase 3, a
+starting look for the reflections (`LOOK_START`: only the `look` values, so it keeps the eye's anatomy and limbus;
+`PROVISIONAL` agent values, not an artist decision - I-6 is open). Presets the artist saves in the Eye Lab are JSON
+files in `config/eye_presets/` (`{"name": ..., "values": {...}}`, the look as a nested `"look"` object or null). A file
+that cannot be read is skipped, and the reason is reported. A preset without `"look"` (saved before phase 3) leaves an
+eye's look as it is.
 """
 
 from __future__ import annotations
@@ -16,9 +19,9 @@ import re
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from core import EyeSpec
+from core import EyeLook, EyeSpec
 
-from .eye_object import DEFAULT_EYE, with_changes
+from .eye_object import DEFAULT_EYE, DEFAULT_LOOK, with_changes
 
 #: Where saved presets live: in the repo, relative to its root (same on Windows and Linux), like `config/keymap.json`.
 PRESET_DIR = Path(__file__).resolve().parents[2] / "config" / "eye_presets"
@@ -26,6 +29,11 @@ PRESET_DIR = Path(__file__).resolve().parents[2] / "config" / "eye_presets"
 IMAGE_FIELDS = ("fit_pupil", "fit_limbus", "hold_outer_color")
 PRESET_FIELDS = tuple(f.name for f in fields(EyeSpec) if f.name not in IMAGE_FIELDS)
 BUILTIN_NAME = "Standard (L0)"
+LOOK_START_NAME = "Reflexe (Startwerte)"
+#: Phase 3's starting reflections (`PROVISIONAL`, checked in the container's renders only): a wet sclera, a slight
+#: irregularity, the softened key highlight (I-8), a subtle lid shadow and lid band (I-10).
+LOOK_START = {"look": EyeLook(**{**DEFAULT_LOOK.to_dict(), "wet_sclera": 0.7, "irregularity_deg": 0.5,
+                                 "highlight_softness": 0.6, "lid_shadow": 0.3, "lid_band": 0.7})}
 
 
 @dataclass(frozen=True)
@@ -36,9 +44,18 @@ class EyePreset:
 
 
 def preset_values(spec: EyeSpec) -> dict:
-    """The look values of `spec` (no image fit), JSON-ready."""
+    """The look values of `spec` (no image fit), JSON-ready (the nested look as an object, or None)."""
     raw = spec.to_dict()
+    raw["look"] = None if spec.look is None else spec.look.to_dict()
     return {name: raw[name] for name in PRESET_FIELDS}
+
+
+def _value(name: str, value):
+    if name == "limbal_colour" and isinstance(value, list):
+        return tuple(value)
+    if name == "look" and isinstance(value, dict):
+        return EyeLook.from_dict(value)  # ValueError on an invalid look
+    return value
 
 
 def _validated(values: object) -> dict:
@@ -49,13 +66,14 @@ def _validated(values: object) -> dict:
         raise ValueError(f"unknown values {unknown}")
     if not values:
         raise ValueError("no values")
-    changes = {k: tuple(v) if k == "limbal_colour" and isinstance(v, list) else v for k, v in values.items()}
+    changes = {k: _value(k, v) for k, v in values.items()}
     with_changes(DEFAULT_EYE, **changes)  # ValueError on an invalid combination
     return changes
 
 
 def builtin_presets() -> list[EyePreset]:
-    return [EyePreset(BUILTIN_NAME, _validated(preset_values(DEFAULT_EYE)), builtin=True)]
+    return [EyePreset(BUILTIN_NAME, _validated(preset_values(DEFAULT_EYE)), builtin=True),
+            EyePreset(LOOK_START_NAME, _validated(dict(LOOK_START)), builtin=True)]
 
 
 def load_presets(directory: Path = PRESET_DIR) -> tuple[list[EyePreset], list[str]]:

@@ -1,6 +1,7 @@
 """AD-033 §4: the parametric eye's data - `core.EyeSpec` (value, validation), `SceneObject.eye` (default None), scene
-file v9 (round trip, written only with an eye, older versions load without one, an invalid eye refused) - and the
-shell builder / fit reader of `mirai.eye_object` (headless)."""
+file v9 (round trip, written only with an eye, older versions load without one, an invalid eye refused), the optional
+look `core.EyeLook` with scene file v10 (Eye LookDev phase 3) - and the shell builder / fit reader of
+`mirai.eye_object` (headless)."""
 
 from __future__ import annotations
 
@@ -12,10 +13,12 @@ import pytest
 
 import tests._bootstrap  # noqa: F401
 
-from core import EyeSpec, Mesh, Scene, SceneObject
+from core import EyeLook, EyeSpec, Mesh, Scene, SceneObject
 from core.ids import ObjectId
-from core.serialization import EYE_FORMAT_VERSION, GROUP_FORMAT_VERSION, scene_from_dict, scene_to_dict
-from mirai.eye_object import DEFAULT_EYE, EYE_SCALE_CM, eye_transform, read_fit_sidecar, shape_changed, shell_mesh, with_changes
+from core.serialization import (EYE_FORMAT_VERSION, EYE_LOOK_FORMAT_VERSION, GROUP_FORMAT_VERSION,
+                                scene_from_dict, scene_to_dict)
+from mirai.eye_object import (DEFAULT_EYE, DEFAULT_LOOK, EYE_SCALE_CM, eye_transform, look_value, read_fit_sidecar,
+                              shape_changed, shell_mesh, with_changes)
 from viewport.eye_optics import EyeGeometry
 
 
@@ -108,6 +111,71 @@ def test_older_versions_load_without_eyes_and_an_invalid_eye_is_refused():
     with pytest.raises(ValueError):
         scene_from_dict(data)
     raw["eye"] = {"pupil_radius": 0.16}  # missing fields
+    with pytest.raises(ValueError):
+        scene_from_dict(data)
+
+
+# -- the look (Eye LookDev phase 3, Manu I-5 2026-11-16: "Core Change erlaubt", format v10) --------------------------
+
+LOOK = dataclasses.replace(DEFAULT_LOOK, wet_sclera=0.6, irregularity_deg=0.5, seed=7, highlight_softness=0.4,
+                           lid_shadow=0.3, lid_band=0.7)
+
+
+@pytest.mark.parametrize("changes", [
+    dict(wet_sclera=1.1), dict(wet_sclera=-0.1), dict(sclera_roughness=0.0), dict(sclera_roughness=1.5),
+    dict(irregularity_deg=-0.1), dict(irregularity_deg=11.0), dict(irregularity_mm=0.0), dict(seed=-1),
+    dict(seed=1.5), dict(seed=True), dict(seed=2 ** 31), dict(highlight_softness=2.0), dict(lid_shadow=math.inf),
+    dict(lid_shadow_mm=0.0), dict(lid_band=-0.5), dict(lid_upper=1.0), dict(lid_lower=-1.0),
+    dict(lid_upper=0.1, lid_lower=0.2), dict(lid_band=None),
+])
+def test_invalid_look_values_are_refused(changes):
+    with pytest.raises(ValueError):
+        dataclasses.replace(DEFAULT_LOOK, **changes)
+
+
+def test_look_is_optional_and_typed():
+    assert DEFAULT_EYE.look is None
+    assert dataclasses.replace(DEFAULT_EYE, look=LOOK).look == LOOK
+    with pytest.raises(ValueError):
+        dataclasses.replace(DEFAULT_EYE, look=LOOK.to_dict())
+    assert all(getattr(DEFAULT_LOOK, name) == 0.0
+               for name in ("wet_sclera", "irregularity_deg", "highlight_softness", "lid_shadow", "lid_band"))
+
+
+def test_with_changes_sets_one_look_value_and_keeps_the_others():
+    first = with_changes(DEFAULT_EYE, **{"look.wet_sclera": 0.5})
+    assert first.look == dataclasses.replace(DEFAULT_LOOK, wet_sclera=0.5)
+    second = with_changes(first, **{"look.lid_band": 0.4, "pupil_radius": 0.2})
+    assert second.look == dataclasses.replace(DEFAULT_LOOK, wet_sclera=0.5, lid_band=0.4) and second.pupil_radius == 0.2
+    assert with_changes(second, look=None).look is None
+    assert look_value(DEFAULT_EYE, "lid_upper") == DEFAULT_LOOK.lid_upper and look_value(second, "lid_band") == 0.4
+    with pytest.raises(ValueError):
+        with_changes(first, **{"look.lid_upper": -0.6})  # below the lower lid
+
+
+def test_v10_only_with_a_look_round_trips_and_v9_eyes_stay_as_they_were():
+    scene, eye = _scene_with_eye()
+    v9 = json.loads(json.dumps(scene_to_dict(scene)))
+    assert v9["version"] == EYE_FORMAT_VERSION and "look" not in next(o for o in v9["objects"] if "eye" in o)["eye"]
+    eye.eye = dataclasses.replace(eye.eye, look=LOOK)
+    data = json.loads(json.dumps(scene_to_dict(scene)))
+    assert data["version"] == EYE_LOOK_FORMAT_VERSION == EYE_FORMAT_VERSION + 1
+    raw = next(o for o in data["objects"] if "eye" in o)
+    assert raw["eye"]["look"]["seed"] == 7 and raw["eye"]["look"]["lid_band"] == 0.7
+    back = next(o for o in scene_from_dict(data).objects.values() if o.eye is not None)
+    assert back.eye == eye.eye and back.eye.look == LOOK
+    eye.eye = dataclasses.replace(eye.eye, look=None)  # the look removed: v9 again, the same file as before
+    assert json.loads(json.dumps(scene_to_dict(scene))) == v9
+
+
+@pytest.mark.parametrize("corrupt", [
+    lambda look: look.update(lid_band=3.0), lambda look: look.pop("seed"), lambda look: look.update(gloss=1.0),
+])
+def test_an_invalid_look_makes_the_file_invalid(corrupt):
+    scene, eye = _scene_with_eye()
+    eye.eye = dataclasses.replace(eye.eye, look=LOOK)
+    data = json.loads(json.dumps(scene_to_dict(scene)))
+    corrupt(next(o for o in data["objects"] if "eye" in o)["eye"]["look"])
     with pytest.raises(ValueError):
         scene_from_dict(data)
 

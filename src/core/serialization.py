@@ -60,6 +60,11 @@ von `core.scene.EyeSpec`; fehlt = kein Auge). Nur geschrieben, wenn ein Objekt e
 ein älterer Build die Datei ablehnt, statt die Augen beim Speichern still zu verlieren. Gelesen werden 2-9; ein ungültiges
 Auge macht die Datei ungültig.
 
+Version 10 (Augen-Look, Eye LookDev Phase 3, Manu I-5 2026-11-16 "Core Change erlaubt", CORE_V1_FREEZE §7.1) ist
+additiv: ein Auge trägt optional `"eye": {..., "look": {...}}` (die Werte von `core.scene.EyeLook`; fehlt = neutral).
+Nur geschrieben, wenn ein Auge einen Look hat (sonst 4-9 wie bisher), damit ein älterer Build die Datei ablehnt, statt
+den Look beim Speichern still zu verlieren. Gelesen werden 2-10; ein ungültiger Look macht die Datei ungültig.
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -85,6 +90,8 @@ RIG_FORMAT_VERSION = 7
 GROUP_FORMAT_VERSION = 8
 #: Written when any object is an eye (AD-033 §4.2).
 EYE_FORMAT_VERSION = 9
+#: Written when any eye has a look (`EyeSpec.look`, Eye LookDev phase 3).
+EYE_LOOK_FORMAT_VERSION = 10
 
 
 def scene_to_dict(scene: Scene) -> dict:
@@ -95,7 +102,9 @@ def scene_to_dict(scene: Scene) -> dict:
     grouped = any(
         obj.state is ObjectState.GROUP or obj.hidden or obj.parent is not None for obj in scene.objects.values()
     ) or (scene.rig is not None and bool(scene.rig.hidden_ids()))
-    if any(obj.eye is not None for obj in objects):
+    if any(obj.eye is not None and obj.eye.look is not None for obj in objects):
+        version = EYE_LOOK_FORMAT_VERSION
+    elif any(obj.eye is not None for obj in objects):
         version = EYE_FORMAT_VERSION
     elif grouped:
         version = GROUP_FORMAT_VERSION
@@ -125,7 +134,7 @@ def _has_weights(mesh: Mesh) -> bool:
 def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
     if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION, GROUP_FORMAT_VERSION,
-                   EYE_FORMAT_VERSION):
+                   EYE_FORMAT_VERSION, EYE_LOOK_FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
@@ -169,7 +178,7 @@ def _object_to_dict(obj: SceneObject) -> dict:
     if obj.parent is not None:
         out["parent"] = int(obj.parent)  # version 8
     if obj.eye is not None:
-        out["eye"] = obj.eye.to_dict()  # version 9 (AD-033); absent = not an eye
+        out["eye"] = obj.eye.to_dict()  # version 9 (AD-033), with "look" version 10; absent = not an eye
     return out
 
 

@@ -33,6 +33,9 @@ Architekturvertrag:
 - Rig (`Scene.rig: Rig | None`; AD-028 §3.1, CORE_V1_FREEZE §7.1 2026-11-02): der reservierte Platz
   trägt jetzt einen geprüften, unveränderlichen Wert (`core.rig`) - Knochen mit Ruhelage in Welt-
   koordinaten; `None` = kein Rig. Pose, Auswertung und Commands leben in `src/mirai`.
+- Augen (`EyeSpec`, `SceneObject.eye`; AD-033 §4, CORE_V1_FREEZE §7.1 2026-11-15): reine Daten. Seit 2026-11-16
+  (Eye LookDev Phase 3, Manu I-5 "Core Change erlaubt") trägt ein Auge optional eine verschachtelte Look-Gruppe
+  (`EyeLook`, `EyeSpec.look`; `None` = neutral, wie bisher); Bedeutung und Zeichnung leben in `src/viewport`.
 """
 
 from __future__ import annotations
@@ -160,6 +163,63 @@ def _finite(value, what: str) -> float:
 
 
 @dataclass(frozen=True)
+class EyeLook:
+    """The eye's optional look values (Eye LookDev phase 3, assessment 2026-11-16 §D change 1; Manu I-5 "Core Change
+    erlaubt", I-8, I-10): the wet film's reflection on cornea and sclera and the lid's effect on the eyeball. Data only,
+    validated (`ValueError`); no default numbers in the Core (the app's are `mirai.eye_object.DEFAULT_LOOK`).
+
+    The five amounts (`wet_sclera`, `irregularity_deg`, `highlight_softness`, `lid_shadow`, `lid_band`) are neutral at 0;
+    the other values only shape a term whose amount is above 0. Heights are eye-local in the eye's rest frame (1 = the
+    sclera radius, +Y up), `*_mm` millimetres at the reference eye (sclera radius 12 mm). `seed` picks the irregularity
+    pattern (the app mixes it with the object, so two eyes never share one)."""
+
+    wet_sclera: float
+    sclera_roughness: float
+    irregularity_deg: float
+    irregularity_mm: float
+    seed: int
+    highlight_softness: float
+    lid_shadow: float
+    lid_shadow_mm: float
+    lid_band: float
+    lid_upper: float
+    lid_lower: float
+
+    def __post_init__(self) -> None:
+        put = lambda name, value: object.__setattr__(self, name, value)  # noqa: E731
+        for name in ("wet_sclera", "sclera_roughness", "irregularity_deg", "irregularity_mm", "highlight_softness",
+                     "lid_shadow", "lid_shadow_mm", "lid_band", "lid_upper", "lid_lower"):
+            put(name, _finite(getattr(self, name), name))
+        for name in ("wet_sclera", "highlight_softness", "lid_shadow", "lid_band"):
+            if not 0.0 <= getattr(self, name) <= 1.0:
+                raise ValueError(f"{name}: needs 0 <= a <= 1, got {getattr(self, name)}")
+        if not 0.0 < self.sclera_roughness <= 1.0:
+            raise ValueError(f"sclera_roughness: needs 0 < r <= 1, got {self.sclera_roughness}")
+        if not 0.0 <= self.irregularity_deg <= 10.0:
+            raise ValueError(f"irregularity_deg: needs 0 <= d <= 10, got {self.irregularity_deg}")
+        if not 0.0 < self.irregularity_mm or not 0.0 < self.lid_shadow_mm:
+            raise ValueError("irregularity_mm / lid_shadow_mm: need > 0")
+        if isinstance(self.seed, bool) or not isinstance(self.seed, int) or not 0 <= self.seed < 2 ** 31:
+            raise ValueError(f"seed: expected an integer 0 <= s < 2**31, got {self.seed!r}")
+        if not -1.0 < self.lid_lower < self.lid_upper < 1.0:
+            raise ValueError(f"lid_lower / lid_upper: need -1 < lower < upper < 1, got {self.lid_lower}, {self.lid_upper}")
+
+    def to_dict(self) -> dict:
+        return {f.name: getattr(self, f.name) for f in fields(self)}
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "EyeLook":
+        if not isinstance(raw, dict):
+            raise ValueError(f"eye look: expected an object, got {raw!r}")
+        names = [f.name for f in fields(cls)]
+        missing = [n for n in names if n not in raw]
+        unknown = sorted(set(raw) - set(names))
+        if missing or unknown:
+            raise ValueError(f"eye look: missing {missing}, unknown {unknown}")
+        return cls(**{n: raw[n] for n in names})
+
+
+@dataclass(frozen=True)
 class EyeSpec:
     """A parametric eye (AD-033 §4.1): the object is an eyeball whose shell mesh `src/mirai` generates from these values
     and which the viewport shades as an eye. Data only, validated (`ValueError`); no default numbers in the Core (the
@@ -168,7 +228,8 @@ class EyeSpec:
     Eye-local units: 1 = the sclera radius; the eye looks down +Z. `*_mm` values are millimetres at the reference eye
     (sclera radius 12 mm) and scale with the eye. The iris image is the object's `texture` (AD-026); `fit_pupil` /
     `fit_limbus` say where the image's own pupil edge / iris edge lie (shares of half the image width; both None = the
-    planar mapping), `hold_outer_color` holds the iris-edge colour beyond the limbus."""
+    planar mapping), `hold_outer_color` holds the iris-edge colour beyond the limbus. `look` (Eye LookDev phase 3, scene
+    format v10) is the optional `EyeLook`; `None` = neutral, the eye as before phase 3."""
 
     cornea_radius: float
     limbus_radius: float
@@ -187,9 +248,12 @@ class EyeSpec:
     falloff: float
     overlap_mm: float
     asymmetry: bool
+    look: EyeLook | None = None
 
     def __post_init__(self) -> None:
         put = lambda name, value: object.__setattr__(self, name, value)  # noqa: E731
+        if self.look is not None and not isinstance(self.look, EyeLook):
+            raise ValueError(f"look: expected an EyeLook or None, got {self.look!r}")
         for name in ("cornea_radius", "limbus_radius", "iris_root_z", "iris_concavity", "pupil_radius", "band_mm",
                      "strength", "normal_mm", "falloff", "overlap_mm"):
             put(name, _finite(getattr(self, name), name))
@@ -236,18 +300,19 @@ class EyeSpec:
             "limbal_colour": list(self.limbal_colour), "band_mm": self.band_mm, "strength": self.strength,
             "normal_mm": self.normal_mm, "falloff": self.falloff, "overlap_mm": self.overlap_mm,
             "asymmetry": self.asymmetry,
-        }
+        } | ({} if self.look is None else {"look": self.look.to_dict()})  # absent = neutral, so v9 eyes stay as they were
 
     @classmethod
     def from_dict(cls, raw: dict) -> "EyeSpec":
         if not isinstance(raw, dict):
             raise ValueError(f"eye: expected an object, got {raw!r}")
-        names = [f.name for f in fields(cls)]
+        names = [f.name for f in fields(cls) if f.name != "look"]
         missing = [n for n in names if n not in raw]
-        unknown = sorted(set(raw) - set(names))
+        unknown = sorted(set(raw) - set(names) - {"look"})
         if missing or unknown:
             raise ValueError(f"eye: missing {missing}, unknown {unknown}")
-        return cls(**{n: raw[n] for n in names})
+        look = raw.get("look")
+        return cls(**{n: raw[n] for n in names}, look=None if look is None else EyeLook.from_dict(look))
 
 
 @dataclass(frozen=True)

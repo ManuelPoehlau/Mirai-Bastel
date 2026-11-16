@@ -9,6 +9,9 @@ not saved), `set_eye_gaze` / `set_eye_gaze_angles` (`mirai.eye_gaze`, view state
 slider is held and `set_eye` on its release (one Undo step per change), `apply_eye_preset` and `set_eye_iris_image`.
 Neither holds document state. With several eyes selected the values shown are the first eye's; a change goes to all of
 them (as the material rows do).
+
+Eye LookDev phase 3: the Eye Lab's section "Reflexe" sets the look values (`LOOK_SLIDERS`, fields "look.<name>" that
+`mirai.eye_object.with_changes` merges into each eye's own look); they draw only in the quality "voll".
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from dataclasses import dataclass
 from core import SelectionMode
 
 from mirai.eye_gaze import FOCUS_RANGE, GAZE_MODES, PAD_DEGREES
+from mirai.eye_object import LOOK_PREFIX, look_value
 from viewport.eye_pass import REFLECTIONS, REFRACTIONS, TIERS
 
 LEVEL_LABELS = ("L0 wie P1b", "L1 Farbband", "L2 + Normalen", "L3 + durchscheinend")
@@ -41,6 +45,43 @@ SLIDERS = (
     ("falloff", "Durchscheinen (Abfall)", 0.5, 20.0, "%.2f"),
     ("overlap_mm", "Überlappung rundum mm", 0.0, 1.0, "%.2f"),
 )
+
+#: Phase 3, the Eye Lab's "Reflexe" (`core.EyeLook`; I-8, I-10). Amounts first (neutral at 0), then what shapes them.
+#: Ranges `PROVISIONAL`; `EyeLook` refuses an invalid value (status line).
+LOOK_SLIDERS = (
+    ("look.wet_sclera", "Nasse Lederhaut", 0.0, 1.0, "%.2f"),
+    ("look.irregularity_deg", "Unregelmäßigkeit (Grad)", 0.0, 2.0, "%.2f"),
+    ("look.highlight_softness", "Key-Glanz weich", 0.0, 1.0, "%.2f"),
+    ("look.lid_shadow", "Lidschatten", 0.0, 1.0, "%.2f"),
+    ("look.lid_band", "Lid in der Spiegelung", 0.0, 1.0, "%.2f"),
+    ("look.sclera_roughness", "Lederhaut-Rauheit (nass)", 0.03, 0.25, "%.3f"),
+    ("look.irregularity_mm", "Unregelmäßigkeit Größe mm", 0.4, 4.0, "%.2f"),
+    ("look.lid_shadow_mm", "Lidschatten Breite mm", 0.5, 6.0, "%.2f"),
+    ("look.lid_upper", "Oberlid-Kante (Höhe)", 0.0, 0.8, "%.3f"),
+    ("look.lid_lower", "Unterlid-Kante (Höhe)", -0.8, 0.0, "%.3f"),
+)
+LOOK_HINT = "Reflexe zeichnen nur in Qualität 'voll' (das Eye Lab stellt sie beim Öffnen ein)."
+
+
+def value(spec, field: str):
+    """A control's current value: an `EyeSpec` field, or a look value ("look.<name>"; the starting look's while the eye
+    has none)."""
+    if field.startswith(LOOK_PREFIX):
+        return look_value(spec, field[len(LOOK_PREFIX):])
+    return getattr(spec, field)
+
+
+def new_pattern(app) -> bool:
+    """Another irregularity pattern for the selected eyes (the look's seed + 1; one Undo step)."""
+    eyes = selected_eyes(app)
+    if not eyes:
+        return False
+    return app.set_eye(**{LOOK_PREFIX + "seed": (look_value(eyes[0].eye, "seed") + 1) % (2 ** 31)})
+
+
+def reset_look(app) -> bool:
+    """The selected eyes without a look (neutral, as before phase 3); one Undo step."""
+    return app.set_eye(look=None)
 
 
 #: The gaze modes as the panel names them (`mirai.eye_gaze`).

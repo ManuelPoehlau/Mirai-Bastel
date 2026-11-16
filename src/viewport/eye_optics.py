@@ -477,3 +477,197 @@ def worklight_light(n, light: dict) -> np.ndarray:
     key = wrap(np.sum(n * np.asarray(light["u_key_dir"]), -1), light["u_key_wrap"])[..., None]
     fill = wrap(np.sum(n * np.asarray(light["u_fill_dir"]), -1), light["u_fill_wrap"])[..., None]
     return light["u_ambient"] + np.asarray(light["u_key_color"]) * key + np.asarray(light["u_fill_color"]) * fill
+
+
+# -- the look (Eye LookDev phase 3; `core.EyeLook`, Manu I-5 / I-8 / I-10, 2026-11-16) ---------------------------------
+# GLSL twins in `eye_shaders.LOOK_LIB_SRC`, drawn only in the "full" tier and only for an eye whose look has an amount
+# above 0 (`look_active`). Every term is neutral at amount 0. All constants `PROVISIONAL`.
+
+#: The irregularity texture (`film_noise`): tileable, NOISE_SIZE² RGB8 with mip maps. R / G: the gradient of a smooth
+#: height field (its length has RMS 1; stored clipped to ±NOISE_GRADIENT_MAX), B: a smooth roughness noise in [-1, 1].
+NOISE_SIZE = 256
+NOISE_FEATURES = 16.0  # bumps across one tile
+NOISE_SEED = 11
+NOISE_GRADIENT_MAX = 3.0
+#: The irregularity's roughness change (assessment §C.2: about 0.03-0.07 around the cornea's 0.04): + s (a + b nb) with
+#: s = irregularity / IRREGULAR_FULL_DEG, at most 1.
+IRREGULAR_ROUGHNESS = (0.01, 0.02)
+IRREGULAR_FULL_DEG = 1.0
+#: The lid band (I-10): the lash edge seen from the eye, (length in eye radii, angle above the forward axis in degrees)
+#: from the lid margin. A reflected ray passing beyond that edge sees lid, lashes or brow (dark).
+UPPER_LASH = (0.6, 25.0)
+LOWER_LASH = (0.3, -25.0)
+LID_BAND_SOFT = math.radians(6.0)
+#: The soft key highlight (I-8): an area light at the Worklight key, the studio key softbox's aspect (18 : 13), half size
+#: at softness 1 in degrees; the energy is the point highlight's (KEY_IRRADIANCE), so a larger area has a lower peak.
+KEY_SOFT_HALF = (10.0, 7.2)
+#: The amounts of `core.EyeLook` (neutral at 0).
+LOOK_AMOUNTS = ("wet_sclera", "irregularity_deg", "highlight_softness", "lid_shadow", "lid_band")
+
+
+def look_active(look) -> bool:
+    """True when an `EyeLook` changes the picture (some amount above 0)."""
+    return look is not None and any(getattr(look, name) > 0.0 for name in LOOK_AMOUNTS)
+
+
+def lash_offset(lash) -> tuple[float, float]:
+    """(dy, dz) of a lash edge from its margin."""
+    length, angle = lash
+    return length * math.sin(math.radians(angle)), length * math.cos(math.radians(angle))
+
+
+def film_noise(size: int = NOISE_SIZE, features: float = NOISE_FEATURES, seed: int = NOISE_SEED) -> np.ndarray:
+    """The irregularity texture as stored: uint8 (size, size, 3), row j / column i = the texel at t = (j + 0.5) / size,
+    s = (i + 0.5) / size (the first row is the bottom one, as pyglet uploads it). Deterministic and tileable (periodic
+    spectral synthesis)."""
+    rng = np.random.default_rng(seed)
+    k = np.fft.fftfreq(size) * size  # cycles per tile
+    kx, ky = np.meshgrid(k, k)  # kx along s (columns), ky along t (rows)
+    low = np.exp(-(np.hypot(kx, ky) / features) ** 2)
+    height = np.fft.fft2(rng.random((size, size)) - 0.5) * low
+    gx = np.real(np.fft.ifft2(2j * math.pi * kx * height))
+    gy = np.real(np.fft.ifft2(2j * math.pi * ky * height))
+    norm = math.sqrt(float(np.mean(gx * gx + gy * gy)))
+    rough = np.real(np.fft.ifft2(np.fft.fft2(rng.random((size, size)) - 0.5) * np.exp(-(np.hypot(kx, ky) / (0.5 * features)) ** 2)))
+    rough = np.clip(rough / (2.5 * float(np.std(rough))), -1.0, 1.0)
+    channels = np.stack([np.clip(gx / norm / NOISE_GRADIENT_MAX, -1.0, 1.0),
+                         np.clip(gy / norm / NOISE_GRADIENT_MAX, -1.0, 1.0), rough], -1)
+    return np.round((0.5 + 0.5 * channels) * 255.0).astype(np.uint8)
+
+
+def film_decode(texel) -> np.ndarray:
+    """A texel as the shader reads it (`film_sample`): (gradient x, gradient y, roughness noise)."""
+    t = np.asarray(texel, dtype=np.float64)
+    return (t * 2.0 - 1.0) * np.array([NOISE_GRADIENT_MAX, NOISE_GRADIENT_MAX, 1.0])
+
+
+_MASK64 = (1 << 64) - 1
+
+
+def _splitmix64(x: int) -> int:
+    x = (x + 0x9E3779B97F4A7C15) & _MASK64
+    x = ((x ^ (x >> 30)) * 0xBF58476D1CE4E5B9) & _MASK64
+    x = ((x ^ (x >> 27)) * 0x94D049BB133111EB) & _MASK64
+    return x ^ (x >> 31)
+
+
+def noise_offset(variation: int, seed: int) -> tuple[float, float]:
+    """Where an eye reads the shared irregularity texture: a fixed point of the tile per (object, look seed), so two eyes
+    never show the same pattern (assessment §C.2 "per-eye variation") and a new seed gives a new one."""
+    a = _splitmix64(((int(variation) & 0xFFFFFFFF) << 32) | (int(seed) & 0xFFFFFFFF))
+    b = _splitmix64(a)
+    return (a >> 11) / float(1 << 53), (b >> 11) / float(1 << 53)
+
+
+def look_values(look, variation: int = 0) -> dict:
+    """The look's derived numbers (GL-free; `eye_pass.look_uniforms` names them): tilt (tan), roughness share, noise
+    scale and offset, lid (upper, lower, shadow width), soft highlight half size and radiance."""
+    tilt = math.tan(math.radians(look.irregularity_deg))
+    soft = look.highlight_softness
+    half = (math.radians(KEY_SOFT_HALF[0]) * soft, math.radians(KEY_SOFT_HALF[1]) * soft)
+    return {
+        "tilt": tilt, "rough_s": min(look.irregularity_deg / IRREGULAR_FULL_DEG, 1.0),
+        "noise_scale": 1.0 / (MM * look.irregularity_mm * NOISE_FEATURES), "noise_offset": noise_offset(variation, look.seed),
+        "lid": (look.lid_upper, look.lid_lower, look.lid_shadow_mm * MM),
+        "soft_half": half, "soft_radiance": KEY_IRRADIANCE / (4.0 * half[0] * half[1]) if soft > 0.0 else 0.0,
+    }
+
+
+def film_uv(p, scale: float, offset) -> np.ndarray:
+    """Irregularity texture coordinates of eye-local surface points: the angle from the eye axis along the azimuth
+    (an azimuthal equidistant map, continuous over the cornea, the limbus and the sclera), `scale` tiles per radian."""
+    p = np.asarray(p, dtype=np.float64)
+    rho = np.hypot(p[..., 0], p[..., 1])
+    theta = np.arctan2(rho, p[..., 2])
+    k = np.where(rho > 1e-6, theta / np.where(rho > 1e-6, rho, 1.0), 1.0 / np.maximum(p[..., 2], 1e-6))
+    return p[..., :2] * (k * scale)[..., None] + np.asarray(offset, dtype=np.float64)
+
+
+def film_frame(p):
+    """(T_u, T_v): the surface directions of `film_uv`'s two axes at eye-local points `p` (on the sphere through p)."""
+    s = normalize(p)
+    rho = np.hypot(s[..., 0], s[..., 1])
+    safe = np.where(rho > 1e-9, rho, 1.0)
+    cphi = np.where(rho > 1e-9, s[..., 0] / safe, 1.0)
+    sphi = np.where(rho > 1e-9, s[..., 1] / safe, 0.0)
+    ct, st = s[..., 2], rho
+    e_t = np.stack([ct * cphi, ct * sphi, -st], -1)
+    e_p = np.stack([-sphi, cphi, np.zeros_like(cphi)], -1)
+    return cphi[..., None] * e_t - sphi[..., None] * e_p, sphi[..., None] * e_t + cphi[..., None] * e_p
+
+
+def film_normal(n, p, g, tilt: float) -> np.ndarray:
+    """The reflection normal tilted by the irregularity gradient `g` (..., 2) at points `p`: n + tilt (g_u T_u + g_v T_v),
+    normalized. Only the reflection uses it (assessment §C.2: perturbing the refraction would make the iris swim)."""
+    tu, tv = film_frame(p)
+    g = np.asarray(g, dtype=np.float64)
+    return normalize(np.asarray(n, dtype=np.float64) + tilt * (g[..., :1] * tu + g[..., 1:2] * tv))
+
+
+def film_roughness(base, nb, rough_s: float):
+    return np.asarray(base, dtype=np.float64) + rough_s * (IRREGULAR_ROUGHNESS[0] + IRREGULAR_ROUGHNESS[1] * np.asarray(nb))
+
+
+def lid_shadow_weight(p_rest, lid) -> np.ndarray:
+    """I-10 lid shadow (rest frame): 0 more than the shadow width below the upper lid margin, 1 at and above it."""
+    upper, _lower, width = lid
+    return _smooth((np.asarray(p_rest, dtype=np.float64)[..., 1] - (upper - width)) / width)
+
+
+def lid_margin_z(x, y, g: EyeGeometry):
+    """z of the eyeball's front surface (cornea inside the limbus, else sclera) at eye-local (x, y)."""
+    x, y = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+    r2 = x * x + y * y
+    zs = np.sqrt(np.maximum(1.0 - r2, 0.0))
+    zc = g.anterior_centre_z + np.sqrt(np.maximum(g.cornea_radius ** 2 - r2, 0.0))
+    return np.where(r2 < g.limbus_radius ** 2, np.maximum(zs, zc), zs)
+
+
+def _elevation(y, z):
+    y, z = np.asarray(y, dtype=np.float64), np.asarray(z, dtype=np.float64)
+    defined = (np.abs(y) + np.abs(z)) > 1e-6
+    return np.where(defined, np.arctan2(y, z), 0.0)
+
+
+def lid_occlusion(p_rest, r_rest, roughness, lid, g: EyeGeometry) -> np.ndarray:
+    """I-10 lid band (rest frame): how much the lid / lashes hide what the reflected ray `r_rest` from `p_rest` would
+    see, 0..1. The lid is a straight edge across the eye at the margin height, its lashes reaching to a lash edge
+    (UPPER_LASH / LOWER_LASH); a ray rising above the upper edge (or falling below the lower one) as seen from the point
+    is hidden, soft over LID_BAND_SOFT and the reflection's own blur. The elevations are taken in the y-z plane."""
+    p, r = np.asarray(p_rest, dtype=np.float64), np.asarray(r_rest, dtype=np.float64)
+    upper, lower, _width = lid
+    lobe = TD_SIGMA_SCALE * (np.asarray(roughness, dtype=np.float64) ** 2) ** TD_SIGMA_POWER
+    soft = np.sqrt(LID_BAND_SOFT ** 2 + lobe * lobe)
+    e_r = _elevation(r[..., 1], r[..., 2])
+    out = []
+    for margin, lash, sign in ((upper, UPPER_LASH, 1.0), (lower, LOWER_LASH, -1.0)):
+        dy, dz = lash_offset(lash)
+        tip_y, tip_z = margin + dy, lid_margin_z(p[..., 0], margin, g) + dz
+        e_tip = np.arctan2(tip_y - p[..., 1], tip_z - p[..., 2])
+        t = np.clip((e_r - (e_tip - soft)) / (2.0 * soft), 0.0, 1.0)
+        step = t * t * (3.0 - 2.0 * t)
+        out.append(step if sign > 0 else 1.0 - step)
+    return np.maximum(out[0], out[1])
+
+
+def area_key(r, c, up_ref, roughness, half, radiance, right_ref=(1.0, 0.0, 0.0)) -> np.ndarray:
+    """I-8 soft highlight: the radiance a lobe of `roughness` around the reflected direction `r` sees of a rectangular
+    area light of half size `half` (radians) centred on the key direction `c`, oriented to `up_ref` (the view's up; the
+    studio's softboxes are oriented the same way). `right_ref` stands in where the key is parallel to `up_ref`."""
+    r, c, up_ref = (np.asarray(v, dtype=np.float64) for v in (r, c, up_ref))
+    right = np.cross(up_ref, c)
+    length = np.linalg.norm(right, axis=-1, keepdims=True)
+    right = np.where(length > 1e-4, right / np.maximum(length, 1e-300), np.asarray(right_ref, dtype=np.float64))
+    up = np.cross(c, right)
+    lobe = TD_SIGMA_SCALE * (np.asarray(roughness, dtype=np.float64) ** 2) ** TD_SIGMA_POWER
+    sigma = np.sqrt(STUDIO_EDGE_SIGMA ** 2 + lobe * lobe)
+    dc = np.sum(r * c, -1)
+    x = np.arctan2(np.sum(r * right, -1), dc + 1e-12)
+    y = np.arctan2(np.sum(r * up, -1), dc + 1e-12)
+    s = np.clip(dc / 0.25, 0.0, 1.0)
+
+    def box(v, hw):
+        k = 1.0 / (math.sqrt(2.0) * sigma)
+        return 0.5 * (_erf((v + hw) * k) - _erf((v - hw) * k))
+
+    return radiance * box(x, half[0]) * box(y, half[1]) * (s * s * (3.0 - 2.0 * s))

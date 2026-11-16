@@ -1,8 +1,10 @@
 """Eye LookDev phase 2 (Manu 2026-11-16, I-1..I-3) on the app path, headless: live preview with one Undo step on
-commit, eyes on / off as view state, the Eye Lab's isolation, framing and restore, the quality tier, look presets."""
+commit, eyes on / off as view state, the Eye Lab's isolation, framing and restore, the quality tier, look presets.
+Phase 3 (I-5): the look values (`core.EyeLook`) with Undo, preview, file v10, presets, variation and rest frame."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 
 import pytest
@@ -131,7 +133,7 @@ def test_presets_save_load_apply_keep_the_iris_fit(app, preset_dir):
     assert app.save_eye_preset("Gollum nass") is True
     data = json.loads((preset_dir / "gollum_nass.json").read_text(encoding="utf-8"))
     assert data["name"] == "Gollum nass" and "fit_pupil" not in data["values"]
-    assert [p.name for p in app.eye_presets()] == [eye_presets.BUILTIN_NAME, "Gollum nass"]
+    assert [p.name for p in app.eye_presets()] == [eye_presets.BUILTIN_NAME, eye_presets.LOOK_START_NAME, "Gollum nass"]
     depth = _depth(app)
     assert app.apply_eye_preset(eye_presets.BUILTIN_NAME) is True and _depth(app) == depth + 1
     assert eye.eye.limbus_level == 0 and eye.eye.pupil_radius == DEFAULT_EYE.pupil_radius
@@ -147,5 +149,82 @@ def test_an_invalid_preset_file_is_skipped_with_its_reason(preset_dir):
     (preset_dir / "odd.json").write_text('{"name": "Odd", "values": {"fit_pupil": 0.3}}', encoding="utf-8")
     (preset_dir / "broken.json").write_text("{", encoding="utf-8")
     presets, problems = eye_presets.load_presets(preset_dir)
-    assert [p.name for p in presets] == [eye_presets.BUILTIN_NAME]
+    assert [p.name for p in presets] == [eye_presets.BUILTIN_NAME, eye_presets.LOOK_START_NAME]
     assert len(problems) == 3 and any("unknown" in p for p in problems)
+
+
+# -- Eye LookDev phase 3: the look on the app path (Manu I-5 / I-8 / I-10, 2026-11-16) ---------------------------------
+
+
+def test_a_look_value_is_one_undo_step_previews_live_and_saves_as_v10(app, tmp_path):
+    from mirai.eye_object import DEFAULT_LOOK
+
+    eye = app.add_eye()
+    depth = _depth(app)
+    assert app.preview_eye(**{"look.wet_sclera": 0.4}) is True
+    assert app.viewport._eye_entries[eye.id].spec.look.wet_sclera == 0.4 and eye.eye.look is None
+    assert app.set_eye(**{"look.wet_sclera": 0.6}) is True and _depth(app) == depth + 1
+    assert eye.eye.look == dataclasses.replace(DEFAULT_LOOK, wet_sclera=0.6)
+    assert app.set_eye(**{"look.lid_band": 0.5}) is True  # merges into the eye's own look
+    assert (eye.eye.look.wet_sclera, eye.eye.look.lid_band) == (0.6, 0.5)
+    assert app.set_eye(**{"look.lid_upper": -0.9}) is False and "lid_lower" in app.status_message
+    path = tmp_path / "look.mirai.json"
+    assert app.save_scene_file(path) is True
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 10
+    fresh = Application()
+    fresh.init_scene("cube")
+    fresh.load_scene("file", scene_path=path)
+    assert [o.eye.look for o in fresh.scene.objects.values() if o.eye is not None] == [eye.eye.look]
+    app.key_press(CTRL_Z)
+    app.key_press(CTRL_Z)
+    assert eye.eye.look is None and app.save_scene_file(path) is True
+    assert json.loads(path.read_text(encoding="utf-8"))["version"] == 9  # no look: the file as before phase 3
+
+
+def test_the_eye_entry_carries_its_variation_and_rest_frame(app):
+    """The irregularity pattern is the object's own (two eyes, a mirror copy included, never share one), and with the
+    gaze turning an eye that has a look the entry carries its own placement as the lid's rest frame."""
+    from mirai import object_space
+
+    eye = app.add_eye()
+    app.set_eye(**{"look.lid_shadow": 0.4})
+    app.selection.objects = {eye.id}
+    copy = app.mirror_copy("X")
+    assert copy is not None and copy.eye == eye.eye
+    drawn = app.viewport._eye_entries
+    assert (drawn[eye.id].variation, drawn[copy.id].variation) == (int(eye.id), int(copy.id))
+    assert drawn[eye.id].rest_matrix is None  # no gaze: drawn = rest
+    app.set_eye_gaze_angles(20.0, 10.0)
+    drawn = app.viewport._eye_entries
+    assert drawn[eye.id].rest_matrix == tuple(object_space.model_matrix(eye))
+    assert app.viewport.object_entries[eye.id].model_matrix != list(drawn[eye.id].rest_matrix)
+
+
+def test_presets_carry_the_look_and_the_starting_look_keeps_the_rest(app, preset_dir):
+    eye = app.add_eye()
+    app.set_eye(limbus_level=3, **{"look.wet_sclera": 0.5, "look.seed": 4})
+    assert app.save_eye_preset("Nass") is True
+    data = json.loads((preset_dir / "nass.json").read_text(encoding="utf-8"))
+    assert data["values"]["look"]["wet_sclera"] == 0.5 and data["values"]["look"]["seed"] == 4
+    app.set_eye(look=None, limbus_level=1)
+    assert app.apply_eye_preset("Nass") is True and eye.eye.look.wet_sclera == 0.5 and eye.eye.limbus_level == 3
+    assert app.apply_eye_preset(eye_presets.LOOK_START_NAME) is True
+    assert eye.eye.limbus_level == 3 and eye.eye.look == eye_presets.LOOK_START["look"]  # only the look changed
+    (preset_dir / "old.json").write_text('{"name": "Alt", "values": {"limbus_level": 2}}', encoding="utf-8")
+    assert app.apply_eye_preset("Alt") is True and eye.eye.look == eye_presets.LOOK_START["look"]  # pre-phase-3 file
+    (preset_dir / "bad.json").write_text('{"name": "Bad", "values": {"look": {"wet_sclera": 2}}}', encoding="utf-8")
+    assert "Bad" not in [p.name for p in app.eye_presets()]
+    assert app.apply_eye_preset(eye_presets.BUILTIN_NAME) is True and eye.eye.look is None
+
+
+def test_eye_lab_look_controls(app):
+    from gui import eye_model as em
+    from mirai.eye_object import DEFAULT_LOOK
+
+    eye = app.add_eye()
+    for field, _label, lo, hi, _fmt in em.LOOK_SLIDERS:
+        assert field.startswith("look.") and lo <= em.value(eye.eye, field) <= hi
+    assert {row[0][5:] for row in em.LOOK_SLIDERS} | {"seed"} == set(DEFAULT_LOOK.to_dict())
+    assert em.new_pattern(app) is True and eye.eye.look.seed == DEFAULT_LOOK.seed + 1
+    assert em.set_value(app, "look.irregularity_deg", 0.8) is True and em.value(eye.eye, "look.irregularity_deg") == 0.8
+    assert em.reset_look(app) is True and eye.eye.look is None

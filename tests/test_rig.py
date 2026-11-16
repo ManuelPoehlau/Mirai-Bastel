@@ -220,7 +220,7 @@ def test_versions_2_to_8_are_read():
     assert data["version"] == 7
     loaded = scene_from_dict(data)
     assert loaded.rig == scene.rig and loaded.mesh.layer_items(lid) == scene.mesh.layer_items(lid)
-    data["version"] = 10  # the first unknown version (9 = eyes, AD-033)
+    data["version"] = 11  # the first unknown version (9 = eyes, AD-033; 10 = eye looks, Eye LookDev phase 3)
     with pytest.raises(ValueError):
         scene_from_dict(data)
 

@@ -3,8 +3,11 @@
 code is untouched; with no eye in the scene nothing here runs.
 
 `EyeDraw` is what the viewport needs per eye (the app resolves it: `mirai.controllers.objects`); `EyeDisplay` the view
-state (preview on / off, reflection, refraction - not saved, no Undo, Q-E3). GL state: opaque, depth test + write,
+state (preview on / off, reflection, refraction, tier - not saved, no Undo, Q-E3). GL state: opaque, depth test + write,
 no blending, back faces culled, the store's polygon offset (the wire overlay keeps drawing over it); restored after.
+
+Eye LookDev phase 3: an eye whose `EyeSpec.look` has an amount above 0 is drawn with the `LOOK` program in the "full"
+tier (`uses_look`); "fast" and every eye without a look draw with the program before phase 3, at its cost.
 """
 
 from __future__ import annotations
@@ -19,13 +22,14 @@ from .material import SurfaceFinish
 
 #: The iris texture's unit (any unit the Worklight's face data does not use while the pass runs).
 IRIS_UNIT = 1
+#: The irregularity texture's unit (phase 3).
+NOISE_UNIT = 2
 #: P1b's pupil colour (sRGB, display-referred like every albedo here).
 PUPIL_ALBEDO = (0.012, 0.012, 0.012)
 REFLECTIONS = tuple(es.REFLECTIONS)
 REFRACTIONS = tuple(es.VARIANT_IDS)
 #: The quality tier (assessment 2026-11-16 §D change 3): "fast" in the modelling view, "full" while the Eye Lab window
-#: is open. Phase 2 only carries the value; the optional shading terms that "fast" will drop arrive in phase 3, so both
-#: tiers draw the same pixels today (no program key, no define).
+#: is open. "fast" draws without the look (phase 3), so it draws and costs what it did before phase 3.
 TIERS = ("fast", "full")
 
 
@@ -40,6 +44,11 @@ class EyeDraw:
     sclera_colour: tuple[float, float, float]
     finish: SurfaceFinish
     cornea_triangles: int
+    #: Phase 3: the eye's own placement without the gaze (column-major 4x4; None = as drawn). The lid shadow and band
+    #: stay with the head in this rest frame while the eye turns.
+    rest_matrix: tuple | None = None
+    #: Phase 3: which part of the irregularity texture this eye reads (the app passes the object's id).
+    variation: int = 0
 
 
 @dataclass(frozen=True)
@@ -85,6 +94,33 @@ def eye_uniforms(draw: EyeDraw) -> dict:
     return values
 
 
+def uses_look(draw: EyeDraw, display: EyeDisplay) -> bool:
+    """Phase 3: draw `draw` with its look (the "full" tier and a look with an amount above 0)."""
+    return display.tier == "full" and eo.look_active(getattr(draw.spec, "look", None))
+
+
+def rest_rotation(draw: EyeDraw, model) -> tuple[float, ...]:
+    """The 3x3 rotation (column-major) from the eye's drawn local frame to its rest frame: inverse(rest) * model."""
+    if draw.rest_matrix is None:
+        return (1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    rest = np.asarray(draw.rest_matrix, dtype=np.float64).reshape(4, 4).T
+    drawn = np.asarray(model, dtype=np.float64).reshape(4, 4).T
+    m = np.linalg.solve(rest[:3, :3], drawn[:3, :3])
+    return tuple(float(v) for v in m.T.ravel())
+
+
+def look_uniforms(draw: EyeDraw) -> dict:
+    """The look's uniforms (GL-free; `eye_optics.look_values`); the rest frame is added by the draw."""
+    look = draw.spec.look
+    v = eo.look_values(look, draw.variation)
+    return {
+        "u_wet": look.wet_sclera, "u_sclera_roughness": look.sclera_roughness, "u_lid_shadow": look.lid_shadow,
+        "u_lid_band": look.lid_band, "u_tilt": v["tilt"], "u_rough_s": v["rough_s"], "u_noise_scale": v["noise_scale"],
+        "u_noise_offset": v["noise_offset"], "u_lid": v["lid"], "u_soft_half": v["soft_half"],
+        "u_soft_radiance": v["soft_radiance"],
+    }
+
+
 class EyePass:
     """Programs (per variant), the procedural iris texture and the draw. Created by the viewport on the first eye."""
 
@@ -92,20 +128,25 @@ class EyePass:
         self.programs: dict = {}
         self._procedural: dict = {}
         self._ring_colours: dict = {}
+        self._noise = None
         #: Test hook: draw the ray classes (red iris, green pupil, blue limbal tissue, yellow sclera).
         self.debug_kind = False
+        #: Test hook: in the "full" tier, draw an eye with any look (also one at amount 0) with the LOOK program - the
+        #: check that every term is neutral at 0.
+        self.force_look = False
 
-    def program(self, display: EyeDisplay, level: int, fit: bool):
+    def program(self, display: EyeDisplay, level: int, fit: bool, look: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore
 
-        key = (display.refraction, int(level), display.reflection, bool(fit), self.debug_kind)
+        key = (display.refraction, int(level), display.reflection, bool(fit), self.debug_kind, bool(look))
         program = self.programs.get(key)
         if program is None:
             attributes = GLRenderStore.program().attributes
             locations = {"position": attributes["position"]["location"], "normal": attributes["normal"]["location"]}
-            sources = es.shell_sources(locations, display.refraction, level, display.reflection, fit, self.debug_kind)
+            sources = es.shell_sources(locations, display.refraction, level, display.reflection, fit, self.debug_kind,
+                                       look)
             program = ShaderProgram(*(Shader(src, kind) for src, kind in sources))
             self.programs[key] = program
         return program
@@ -127,6 +168,25 @@ class EyePass:
             gl.glBindTexture(texture.target, 0)
             self._procedural[key] = texture
         return texture
+
+    def noise_texture(self):
+        """The irregularity texture (`eye_optics.film_noise`), built once: repeating, mip-mapped, so the irregularity
+        fades with distance instead of shimmering (there is no MSAA)."""
+        from pyglet import gl, image
+
+        if self._noise is None:
+            data = eo.film_noise()
+            size = data.shape[0]
+            texture = image.ImageData(size, size, "RGB", data.tobytes(), pitch=size * 3).get_texture()
+            gl.glBindTexture(texture.target, texture.id)
+            gl.glTexParameteri(texture.target, gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT)
+            gl.glTexParameteri(texture.target, gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT)
+            gl.glGenerateMipmap(texture.target)
+            gl.glTexParameteri(texture.target, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR_MIPMAP_LINEAR)
+            gl.glTexParameteri(texture.target, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+            gl.glBindTexture(texture.target, 0)
+            self._noise = texture
+        return self._noise
 
     def limbal_colour(self, draw: EyeDraw) -> tuple[float, float, float]:
         """The limbal colour: the eye's own (`colour_source` "shader"), or the iris image's outer ring ("image"; the
@@ -180,12 +240,18 @@ class EyePass:
             texture = self.procedural_texture(draw.spec)
         values = eye_uniforms(draw)
         values["u_limbus_albedo"] = self.limbal_colour(draw)
-        program = self.program(display, draw.spec.limbus_level, "u_fit_lab" in values)
+        look = uses_look(draw, display) or (self.force_look and display.tier == "full" and draw.spec.look is not None)
+        program = self.program(display, draw.spec.limbus_level, "u_fit_lab" in values, look)
         model = store.uniform_data("model_uniforms")
         model = list(model) if len(model) == 16 else [1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0]
         values.update(light)
         values.update({"u_view": camera[0:16], "u_proj": camera[16:32], "u_model": model,
                        "u_model_inv": _inverse(model), "u_iris_texture": IRIS_UNIT})
+        noise = None
+        if look:
+            noise = self.noise_texture()
+            values.update(look_uniforms(draw))
+            values.update({"u_rest": rest_rotation(draw, model), "u_noise_texture": NOISE_UNIT})
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw, not once per value
         for name, value in values.items():
@@ -193,6 +259,9 @@ class EyePass:
                 program[name] = value
         gl.glActiveTexture(gl.GL_TEXTURE0 + IRIS_UNIT)
         gl.glBindTexture(texture.target, texture.id)
+        if noise is not None:
+            gl.glActiveTexture(gl.GL_TEXTURE0 + NOISE_UNIT)
+            gl.glBindTexture(noise.target, noise.id)
         gl.glActiveTexture(gl.GL_TEXTURE0)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthMask(gl.GL_TRUE)
@@ -210,6 +279,9 @@ class EyePass:
         gl.glDisable(gl.GL_DEPTH_TEST)
         gl.glActiveTexture(gl.GL_TEXTURE0 + IRIS_UNIT)
         gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+        if noise is not None:
+            gl.glActiveTexture(gl.GL_TEXTURE0 + NOISE_UNIT)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
         gl.glActiveTexture(gl.GL_TEXTURE0)
         program.stop()
         return True
@@ -221,3 +293,6 @@ class EyePass:
         for texture in self._procedural.values():
             texture.delete()
         self._procedural.clear()
+        if self._noise is not None:
+            self._noise.delete()
+            self._noise = None

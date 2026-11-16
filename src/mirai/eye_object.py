@@ -14,7 +14,7 @@ from __future__ import annotations
 import math
 from dataclasses import replace
 
-from core import EyeSpec, Mesh, ObjectMaterial, ObjectTransform
+from core import EyeLook, EyeSpec, Mesh, ObjectMaterial, ObjectTransform
 
 from viewport.eye_optics import EyeGeometry
 
@@ -51,6 +51,24 @@ DEFAULT_EYE = EyeSpec(
     overlap_mm=0.0,
     asymmetry=False,
 )
+
+#: The app's starting look (Eye LookDev phase 3, `PROVISIONAL`): every amount at 0 (= neutral, the eye as before), the
+#: shaping values where a first slider move starts. A look exists only once a look value is set (`with_changes`).
+DEFAULT_LOOK = EyeLook(
+    wet_sclera=0.0,
+    sclera_roughness=0.08,
+    irregularity_deg=0.0,
+    irregularity_mm=1.5,
+    seed=0,
+    highlight_softness=0.0,
+    lid_shadow=0.0,
+    lid_shadow_mm=2.0,
+    lid_band=0.0,
+    lid_upper=0.37,
+    lid_lower=-0.47,
+)
+#: `with_changes` keys of the look values: "look.<EyeLook field>".
+LOOK_PREFIX = "look."
 
 #: The values whose change rebuilds the shell (the rest only changes the shading).
 SHAPE_FIELDS = ("cornea_radius", "limbus_radius")
@@ -120,8 +138,20 @@ def shell_mesh(spec: EyeSpec, segments: int = SEGMENTS, sclera_rings: int = SCLE
 
 
 def with_changes(spec: EyeSpec, **changes) -> EyeSpec:
-    """A validated copy (`ValueError` from `EyeSpec` on an invalid combination)."""
-    return replace(spec, **changes)
+    """A validated copy (`ValueError` from `EyeSpec` / `EyeLook` on an invalid combination). A key "look.<field>" changes
+    one look value: on the eye's own look, or on `DEFAULT_LOOK` when it has none yet (so each eye keeps its other look
+    values); `look=None` removes the look (neutral)."""
+    look_changes = {key[len(LOOK_PREFIX):]: value for key, value in changes.items() if key.startswith(LOOK_PREFIX)}
+    plain = {key: value for key, value in changes.items() if not key.startswith(LOOK_PREFIX)}
+    if look_changes:
+        base = plain.get("look", spec.look) or DEFAULT_LOOK
+        plain["look"] = replace(base, **look_changes)
+    return replace(spec, **plain)
+
+
+def look_value(spec: EyeSpec, name: str):
+    """One look value of `spec` (its own look, else the starting look's)."""
+    return getattr(spec.look or DEFAULT_LOOK, name)
 
 
 def shape_changed(before: EyeSpec, after: EyeSpec) -> bool:

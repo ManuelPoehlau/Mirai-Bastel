@@ -18,6 +18,12 @@ Manu's go 2026-11-15). Every function of `EYE_LIB_SRC` has a NumPy twin in `eye_
 - cornea: P1b's ray (V2 / V3) to the analytic iris / pupil / limbal tissue, P1c's L1–L3 and the overlap /
   asymmetry; sclera: P1c's colour band, normal blend and translucent band (with the L3 fast path and its 2-pixel
   margin).
+
+**The look** (Eye LookDev phase 3, `core.EyeLook`; define `LOOK`, set only in the "full" tier for an eye whose look has
+an amount above 0 - otherwise the program is exactly the one before phase 3): the wet film over the sclera, the
+irregularity of the film's reflection normal (a mip-mapped noise texture), the lid shadow on the eyeball and the lid
+band in the reflection (both in the eye's rest frame, `u_rest`), the soft key highlight. `LOOK_LIB_SRC` holds the
+parity-tested functions (NumPy twins in `eye_optics`); every term is neutral at amount 0.
 """
 
 from __future__ import annotations
@@ -303,6 +309,82 @@ vec3 iris_cone_normal(vec3 hit) {{
 }}
 """
 
+LOOK_LIB_SRC = f"""
+const float NOISE_GRADIENT_MAX = {eo.NOISE_GRADIENT_MAX!r};
+const vec2 IRREGULAR_ROUGHNESS = vec2{tuple(float(v) for v in eo.IRREGULAR_ROUGHNESS)!r};
+const vec2 UPPER_LASH = vec2{eo.lash_offset(eo.UPPER_LASH)!r};
+const vec2 LOWER_LASH = vec2{eo.lash_offset(eo.LOWER_LASH)!r};
+const float LID_BAND_SOFT = {eo.LID_BAND_SOFT!r};
+
+// The look's numbers (eye_optics.look_values).
+uniform float u_tilt;
+uniform float u_rough_s;
+uniform float u_noise_scale;
+uniform vec2 u_noise_offset;
+uniform vec3 u_lid;
+uniform vec2 u_soft_half;
+uniform float u_soft_radiance;
+
+// -- the film's irregularity (eye_optics.film_uv / film_frame / film_normal / film_roughness), eye-local
+vec2 film_uv(vec3 p) {{
+    float rho = length(p.xy);
+    float theta = atan(rho, p.z);
+    float k = rho > 1e-6 ? theta / rho : 1.0 / max(p.z, 1e-6);
+    return p.xy * (k * u_noise_scale) + u_noise_offset;
+}}
+vec3 film_normal(vec3 n, vec3 p, vec2 g) {{
+    vec3 s = normalize(p);
+    float rho = length(s.xy);
+    float cphi = rho > 1e-9 ? s.x / rho : 1.0;
+    float sphi = rho > 1e-9 ? s.y / rho : 0.0;
+    vec3 e_t = vec3(s.z * cphi, s.z * sphi, -rho);
+    vec3 e_p = vec3(-sphi, cphi, 0.0);
+    vec3 tu = cphi * e_t - sphi * e_p;
+    vec3 tv = sphi * e_t + cphi * e_p;
+    return normalize(n + u_tilt * (g.x * tu + g.y * tv));
+}}
+float film_roughness(float base, float nb) {{
+    return base + u_rough_s * (IRREGULAR_ROUGHNESS.x + IRREGULAR_ROUGHNESS.y * nb);
+}}
+
+// -- the lid (eye_optics.lid_shadow_weight / lid_occlusion), the eye's rest frame
+float lid_shadow_weight(vec3 p) {{
+    return limbus_smooth((p.y - (u_lid.x - u_lid.z)) / u_lid.z);
+}}
+float lid_margin_z(float x, float y) {{
+    float r2 = x * x + y * y;
+    float zs = sqrt(max(1.0 - r2, 0.0));
+    float zc = u_ant_centre_z + sqrt(max(u_ant_radius * u_ant_radius - r2, 0.0));
+    return r2 < u_limbus_radius * u_limbus_radius ? max(zs, zc) : zs;
+}}
+float elevation(float y, float z) {{ return abs(y) + abs(z) > 1e-6 ? atan(y, z) : 0.0; }}
+float lid_occlusion(vec3 p, vec3 r, float roughness) {{
+    float lobe = TD_SIGMA_SCALE * pow(roughness * roughness, TD_SIGMA_POWER);
+    float soft = sqrt(LID_BAND_SOFT * LID_BAND_SOFT + lobe * lobe);
+    float e_r = elevation(r.y, r.z);
+    float e_up = atan(u_lid.x + UPPER_LASH.x - p.y, lid_margin_z(p.x, u_lid.x) + UPPER_LASH.y - p.z);
+    float e_low = atan(u_lid.y + LOWER_LASH.x - p.y, lid_margin_z(p.x, u_lid.y) + LOWER_LASH.y - p.z);
+    float upper = limbus_smooth((e_r - (e_up - soft)) / (2.0 * soft));
+    float lower = 1.0 - limbus_smooth((e_r - (e_low - soft)) / (2.0 * soft));
+    return max(upper, lower);
+}}
+
+// -- the soft key highlight (eye_optics.area_key), world space
+float area_key(vec3 r, vec3 c, vec3 up_ref, vec3 right_ref, float roughness) {{
+    vec3 right = cross(up_ref, c);
+    float len = length(right);
+    right = len > 1e-4 ? right / len : right_ref;
+    vec3 up = cross(c, right);
+    float lobe = TD_SIGMA_SCALE * pow(roughness * roughness, TD_SIGMA_POWER);
+    float sigma = sqrt(STUDIO_EDGE_SIGMA * STUDIO_EDGE_SIGMA + lobe * lobe);
+    float dc = dot(r, c);
+    float x = atan(dot(r, right), dc + 1e-12);
+    float y = atan(dot(r, up), dc + 1e-12);
+    return u_soft_radiance * box_profile(x, u_soft_half.x, sigma) * box_profile(y, u_soft_half.y, sigma)
+         * smoothstep(0.0, 0.25, dc);
+}}
+"""
+
 SHELL_VERTEX_SRC = """#version 330 core
 layout(location = {position}) in vec3 position;
 layout(location = {normal}) in vec3 normal;
@@ -334,6 +416,14 @@ uniform float u_fill_specular;
 uniform float u_cornea_f0;
 uniform float u_cornea_roughness;
 uniform float u_key_irradiance;
+#ifdef LOOK
+uniform float u_wet;
+uniform float u_sclera_roughness;
+uniform float u_lid_shadow;
+uniform float u_lid_band;
+uniform mat3 u_rest;
+uniform sampler2D u_noise_texture;
+#endif
 out vec4 out_color;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
@@ -357,6 +447,35 @@ vec3 cornea_reflection(vec3 n, vec3 v) {
 #endif
     return key;
 }
+#ifdef LOOK
+
+// The irregularity texel at an eye-local surface point: (gradient u, gradient v, roughness noise).
+vec3 film_sample(vec3 p) {
+    vec3 t = texture(u_noise_texture, film_uv(p)).rgb * 2.0 - 1.0;
+    return vec3(t.xy * NOISE_GRADIENT_MAX, t.z);
+}
+
+// The key's highlight: the point highlight as before, or (I-8) the soft area highlight of the same energy.
+vec3 key_reflection(vec3 n, vec3 v, float roughness) {
+    if (u_soft_radiance > 0.0) {
+        mat3 view_t = transpose(mat3(u_view));
+        float w = area_key(reflect(-v, n), u_key_dir, view_t[1], view_t[0], roughness);
+        return u_key_color * (w * env_brdf_approx(u_cornea_f0, roughness, max(dot(n, v), 1e-4)));
+    }
+    return u_key_color * (u_key_irradiance * direct_specular(n, v, u_key_dir, roughness, u_cornea_f0));
+}
+
+// The wet film's reflection (cornea_reflection with the film's normal and roughness), dimmed by the lid band.
+vec3 film_reflection(vec3 n, vec3 v, float roughness, float band) {
+    vec3 c = key_reflection(n, v, roughness);
+#if REFLECTION == 1
+    vec3 r_view = mat3(u_view) * reflect(-v, n);
+    float nv = max(dot(n, v), 1e-4);
+    c += td_env(r_view, roughness) * env_brdf_approx(u_cornea_f0, roughness, nv);
+#endif
+    return c * (1.0 - band);
+}
+#endif
 
 void main() {
     vec3 camera = -transpose(mat3(u_view)) * u_view[3].xyz;
@@ -437,7 +556,22 @@ void main() {
         }
         vec3 n_world = to_world(ns);
         float fresnel = schlick_scalar(u_cornea_f0, max(dot(n_world, v_world), 0.0));
+#ifdef LOOK
+        vec3 p_rest = u_rest * entry;
+        inside *= 1.0 - u_lid_shadow * lid_shadow_weight(p_rest);
+        vec3 n_film = ns;
+        float rough = u_cornea_roughness;
+        if (u_tilt > 0.0) {
+            vec3 g = film_sample(entry);
+            n_film = film_normal(ns, entry, g.xy);
+            rough = film_roughness(rough, g.z);
+        }
+        float band = u_lid_band > 0.0 ? u_lid_band * lid_occlusion(p_rest, u_rest * reflect(dir, n_film), rough) : 0.0;
+        colour = (1.0 - fresnel) * transmit_inner * inside
+               + display_add(film_reflection(to_world(n_film), v_world, rough, band));
+#else
         colour = (1.0 - fresnel) * transmit_inner * inside + display_add(cornea_reflection(n_world, v_world));
+#endif
     } else {
 #ifdef DEBUG_KIND
         out_color = vec4(1.0, 1.0, 0.0, 1.0);
@@ -474,9 +608,37 @@ void main() {
         // The Worklight's own highlight (non-local viewer), with the eye's finish.
         vec3 n_world = to_world(n);
         vec3 view_axis = normalize(transpose(mat3(u_view)) * vec3(0.0, 0.0, 1.0));
+#ifdef LOOK
+        vec3 p_rest = u_rest * p;
+        colour *= 1.0 - u_lid_shadow * lid_shadow_weight(p_rest);
+        vec3 highlight = vec3(u_specular * dot(u_key_color, LUMA) * blinn_phong(n_world, u_key_dir, view_axis,
+                                                                               u_spec_exponent)
+                              + u_fill_specular * dot(u_fill_color, LUMA) * blinn_phong(n_world, u_fill_dir, view_axis,
+                                                                                         u_spec_exponent));
+        if (u_wet > 0.0) {
+            // The wet film continues over the sclera (one film across the limbus: the cornea's roughness at the ring,
+            // the sclera's beyond the normal transition); it replaces the Worklight's plastic highlight by `u_wet`.
+            vec3 n_film = n;
+            float rough = mix(u_cornea_roughness, u_sclera_roughness, limbus_smooth(u / (2.0 * u_normal_w)));
+            if (u_tilt > 0.0) {
+                vec3 g = film_sample(p);
+                n_film = film_normal(n, p, g.xy);
+                rough = film_roughness(rough, g.z);
+            }
+            vec3 nf_world = to_world(n_film);
+            float f = schlick_scalar(u_cornea_f0, max(dot(nf_world, v_world), 0.0));
+            float band = u_lid_band > 0.0 ? u_lid_band * lid_occlusion(p_rest, u_rest * reflect(dir, n_film), rough)
+                                          : 0.0;
+            colour = (1.0 - u_wet * f) * colour + (1.0 - u_wet) * highlight
+                   + u_wet * display_add(film_reflection(nf_world, v_world, rough, band));
+        } else {
+            colour += highlight;
+        }
+#else
         colour += vec3(u_specular * dot(u_key_color, LUMA) * blinn_phong(n_world, u_key_dir, view_axis, u_spec_exponent)
                      + u_fill_specular * dot(u_fill_color, LUMA) * blinn_phong(n_world, u_fill_dir, view_axis,
                                                                                u_spec_exponent));
+#endif
     }
     out_color = vec4(colour, 1.0);
 }
@@ -528,13 +690,24 @@ void main() {
         o.xyz = td_env(normalize(a.xyz), a.w);
     } else if (u_func == 8) {
         o.xyz = worklight_light(normalize(a.xyz));
+    } else if (u_func == 9) {
+        o.xy = film_uv(a.xyz);
+    } else if (u_func == 10) {
+        o.xyz = film_normal(normalize(a.xyz), b.xyz, c.xy);
+    } else if (u_func == 11) {
+        o.xy = vec2(film_roughness(a.x, a.y), lid_shadow_weight(b.xyz));
+    } else if (u_func == 12) {
+        o.x = lid_occlusion(a.xyz, normalize(b.xyz), c.x);
+    } else if (u_func == 13) {
+        o.x = area_key(normalize(a.xyz), normalize(b.xyz), normalize(c.xyz), vec3(1.0, 0.0, 0.0), a.w);
     }
     out_value = o;
 }
 """
 
 PARITY_FUNCS = {"trace_hit": 0, "trace_entry": 1, "iris_st": 2, "coords": 3, "weights": 4, "normal_blend": 5,
-                "sclera_through": 6, "td_env": 7, "worklight_light": 8}
+                "sclera_through": 6, "td_env": 7, "worklight_light": 8, "film_uv": 9, "film_normal": 10,
+                "film_roughness_shadow": 11, "lid_occlusion": 12, "area_key": 13}
 
 FULLSCREEN_VERTEX_SRC = """#version 330 core
 layout(location = 0) in vec2 a_position;
@@ -549,12 +722,44 @@ def _header(**defines) -> str:
 
 
 def shell_sources(locations: dict[str, int], variant: str, level: int, reflection: str, fit: bool,
-                  debug_kind: bool = False) -> list[tuple[str, str]]:
+                  debug_kind: bool = False, look: bool = False) -> list[tuple[str, str]]:
+    """The shell program's sources. Without `look` the fragment source is the one before phase 3, character for
+    character (`test_gl_eye_pass.py` pins that), so the "fast" tier and an eye without a look draw and cost as before."""
     header = _header(VARIANT=VARIANT_IDS[variant], LIMBUS_LEVEL=int(level), REFLECTION=REFLECTIONS[reflection],
-                     IRIS_FIT=1 if fit else None, DEBUG_KIND=1 if debug_kind else None)
-    return [(SHELL_VERTEX_SRC.format(**locations), "vertex"), (header + EYE_LIB_SRC + SHELL_FRAGMENT_BODY, "fragment")]
+                     IRIS_FIT=1 if fit else None, DEBUG_KIND=1 if debug_kind else None, LOOK=1 if look else None)
+    library = EYE_LIB_SRC + (LOOK_LIB_SRC if look else "")
+    body = SHELL_FRAGMENT_BODY if look else _without_look(SHELL_FRAGMENT_BODY)
+    return [(SHELL_VERTEX_SRC.format(**locations), "vertex"), (header + library + body, "fragment")]
+
+
+def _without_look(source: str) -> str:
+    """`source` with its `#ifdef LOOK` blocks resolved as the preprocessor would without LOOK (kept: the `#else` part).
+    Nested `#if` inside a LOOK block are carried along; LOOK blocks themselves are not nested."""
+    out, state, depth = [], None, 0  # state: None outside, "if" / "else" inside a LOOK block
+    for line in source.splitlines(keepends=True):
+        stripped = line.strip()
+        if state is None:
+            if stripped == "#ifdef LOOK":
+                state, depth = "if", 0
+            else:
+                out.append(line)
+            continue
+        if stripped.startswith("#if"):
+            depth += 1
+        elif depth and stripped == "#endif":
+            depth -= 1
+        elif not depth and stripped == "#else":
+            state = "else"
+            continue
+        elif not depth and stripped == "#endif":
+            state = None
+            continue
+        if state == "else":
+            out.append(line)
+    return "".join(out)
 
 
 def parity_sources(fit: bool) -> list[tuple[str, str]]:
     return [(FULLSCREEN_VERTEX_SRC, "vertex"),
-            (_header(IRIS_FIT=1 if fit else None) + EYE_LIB_SRC + PARITY_FRAGMENT_BODY, "fragment")]
+            (_header(IRIS_FIT=1 if fit else None, LOOK=1) + EYE_LIB_SRC + LOOK_LIB_SRC + PARITY_FRAGMENT_BODY,
+             "fragment")]

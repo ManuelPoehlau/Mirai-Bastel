@@ -3,9 +3,9 @@
 **Status:** Discovery (2026-11-16, English with a German summary): research and architecture assessment, **no decision,
 no code change**. Filed after Manu approved the assessment as a document; every implementation phase in §G needs its
 own go, and the decisions in §I are Manu's and are not made here.
-**Since then (2026-11-16, later):** E-4 is measured and phases 0, 1 and 2 are built - see the
+**Since then (2026-11-16, later):** E-4 is measured and phases 0, 1, 2 and 3 are built - see the
 [addendum](#addendum-2026-11-16-later-e-4-measured-phases-0-and-1-built) at the end, which corrects two statements of
-§A and §F.
+§A and §F, and the [phase 3 addendum](#addendum-2026-11-16-latest-phase-3-built).
 **Baseline:** branch `claude/relaxed-brown-pf8ybr` @ `dd3c44b`.
 **Sources:** [AD-033](../architecture/AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md),
 [Lookdev P0 audit](LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md),
@@ -484,3 +484,23 @@ now cleared). **Still open from §I:** I-6, I-7, I-9, I-11, I-13, I-14.
   not assumed results.
 - **Standing rule:** keep the lightweight real-time approach; the existing viewport and modelling interaction are not
   sacrificed for eye-specific effects (the "fast" tier and the default path stay as cheap as today).
+
+## Addendum 2026-11-16 (latest): phase 3 built
+
+Built as [AD-033 §17](../architecture/AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md) describes, on the decisions above (I-5,
+I-8, I-10, I-12): roadmap #1 wet sclera, #2 irregularity, #3 lid shadow and lid band, #6 soft key highlight, as
+`core.EyeLook` (`EyeSpec.look`, scene format v10), drawn only in the "full" tier. Acceptance per §H row 3:
+
+- **Met in the container (TESTED [C]):** every amount at 0 draws bit-identically (also forced into the new program);
+  "fast", an eye without a look and a scene without eyes use the program before phase 3 (its source unchanged for all
+  64 variants); GPU parity for every new function; no extra frame-to-frame flicker at modelling distance in a stepped
+  orbit (+0.01–0.03 grey levels); the oracle and the existing `test_gl_eye_pass` cases green.
+- **Open, Manu's:** the cost on the reference PC within the I-12 budget (`probe_eye_preview.py`, new `lab` view and
+  `look` rows - the container's llvmpipe numbers are no hardware evidence), and the practical test against the stills
+  (AD-033 §17, German checklist).
+
+Deviations from §C / §D, each with its reason in AD-033 §17: per-eye variation from the object id mixed with a look
+seed instead of a mirrored seed; the shadow is the upper lid's only and independent of the key direction; no canthal
+tilt; the softened highlight is a softbox-shaped area light at the key (I-8 kept the key highlight, the studio softbox
+stays where it is). A built-in preset "Reflexe (Startwerte)" (look values only, `PROVISIONAL`) gives the practical test
+a starting point; I-6 stays open. **Still open from §I:** I-6, I-7, I-9, I-11, I-13, I-14.

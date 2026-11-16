@@ -421,6 +421,15 @@ def test_eye_panel_draws_an_eye_and_leaves_gl_state_as_found():
         run.render_frame(window)
         assert snapshot_gl_state() == before
         assert len(layer.panel_rects) == rects + 1
+        # Eye LookDev phase 3: a look drawn in the "full" tier (LOOK program, noise texture on its unit) with the lab
+        # window's "Reflexe" section; still the GL state as found.
+        assert app.set_eye(**{"look.wet_sclera": 0.7, "look.irregularity_deg": 0.5, "look.lid_band": 0.6}) is True
+        run.render_frame(window)  # the change re-sends the entries once; the LOOK program and noise are created
+        run.render_frame(window)
+        before = snapshot_gl_state()
+        run.render_frame(window)
+        assert snapshot_gl_state() == before
+        assert app.viewport.eye_pass._noise is not None
         app.close_eye_lab()
         run.render_frame(window)
         assert len(layer.panel_rects) == rects

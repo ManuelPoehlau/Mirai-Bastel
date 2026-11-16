@@ -5,8 +5,9 @@ the eye shading (M3) and the Core field + format v9 approved; Q-E3 … Q-E5 as p
 (decision record at the end). **IMPLEMENTED E-1 … E-3 (2026-11-15, container: TESTED)**, as built in §11 (with the
 deviations from the draft, each with its reason); **E-4 MEASURED on the reference PC (Manu, 2026-11-16, §15)**;
 **§14 (2026-11-16): view twins of eyes and teeth beside a morph target's editing view**; **§16 (2026-11-16): Eye
-LookDev phase 2, compact panel "Auge" and the Eye Lab window**. Names and numbers not covered by a decision stay
-`PROVISIONAL`.
+LookDev phase 2, compact panel "Auge" and the Eye Lab window**; **§17 (2026-11-16): Eye LookDev phase 3, the
+reflections (`EyeLook`, scene format v10; container: TESTED, reference-PC cost and practical test open)**. Names and
+numbers not covered by a decision stay `PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
 §8 (decisions incl. those of 2026-11-14 / 15); [eye lab README](../../experiments/lookdev_eye_lab/README.md) (P1, P1b,
@@ -392,6 +393,107 @@ Verdikt: KEEP / ITERATE / REJECT, gern je Punkt.
 
 **Verdikt Manu, 2026-11-16: „1-6 Keep“** — alle sechs Punkte KEEP. Das Layout bleibt `PROVISIONAL` bis zu einer
 eigenen GUI-Entscheidung, das Verhalten ist abgenommen.
+
+
+## 17. Addendum 2026-11-16: Eye LookDev phase 3 - the reflections (`PROVISIONAL` values)
+
+**Manu, 2026-11-16** ([assessment](../research/EYE_LOOKDEV_PHASE2_ASSESSMENT_2026-11-16.md) §I and "Phase 3
+decisions"): **I-5** "Core Change erlaubt" (the look values as a nested group in `EyeSpec`, format v10); **I-8** keep
+the Worklight-key highlight in studio mode but soften it (broader, lower peak, no isolated white dot, still the key's
+corneal reflection); **I-10** lid shadow and reflected lid band as subtle, separate, independently adjustable values,
+neutral at 0, replaceable by geometry later, no texture baking; **I-12** 60 FPS target, 30 FPS minimum in the Eye Lab
+close-up, the new effects about 4 ms, 8 ms at most, measured on the reference PC; the "fast" tier and the default path
+stay as cheap as before. Built: roadmap #1, #2, #3, #6 (assessment §C).
+
+**Data (Core, CORE_V1_FREEZE §7.1 2026-11-16).** `core.EyeLook` (frozen, validated, no defaults in the Core) and
+`EyeSpec.look: EyeLook | None = None`. `None` = neutral, the eye as before. The scene file writes **version 10** only
+when an eye has a look (`"eye": {..., "look": {...}}`); an eye without one is written exactly as in v9 and a file
+without looks stays v9. The app's starting values are `mirai.eye_object.DEFAULT_LOOK` (every amount 0).
+
+| Field | Meaning | Neutral / start |
+|---|---|---|
+| `wet_sclera` 0–1 | the wet film over the sclera: the cornea's reflection (key + studio) continues beyond the limbus; it replaces the Worklight's plastic highlight on the sclera by this share and takes the film's Fresnel share from the diffuse | 0 |
+| `sclera_roughness` | the sclera film's roughness, blended from the cornea's 0.04 at the limbus over twice the normal transition | 0.08 |
+| `irregularity_deg` 0–10 | RMS tilt of the film's *reflection* normal (cornea, and the sclera film); the refraction is untouched, so the iris does not swim. The roughness rises with it by 0.01 ± 0.02 at 1° and more (assessment §C.2: 0.03–0.07) | 0 |
+| `irregularity_mm` | the size of the irregularity's bumps | 1.5 |
+| `seed` | another pattern (button "Neues Muster"); mixed with the object id, so two eyes never share one | 0 |
+| `highlight_softness` 0–1 | I-8: at 0 the point highlight as before; above 0 a rectangular area light at the Worklight key (the studio key softbox's 18 : 13 shape, half size up to 10° × 7.2°) with the point light's energy, so a larger area has a lower peak. In both reflection modes | 0 |
+| `lid_shadow` 0–1, `lid_shadow_mm` | I-10: the diffuse light of eyeball and iris darkened from the upper lid margin downward over the width (upper lid only) | 0, 2 mm |
+| `lid_band` 0–1 | I-10: the film's reflection darkened where the reflected ray would see lid, lashes or brow: rising above the upper lash edge (0.6 eye radii = 7 mm from the margin, 25° above forward) or falling below the lower one (3.6 mm, 25° below), as seen from the point, soft over 6° plus the reflection's blur | 0 |
+| `lid_upper`, `lid_lower` | the lid margins' heights in the eye's rest frame (eye radii, +Y up) | 0.37, -0.47 |
+
+**Drawing.**
+- **Tier.** The `LOOK` program is used only in the "full" tier and only for an eye whose look has an amount above 0
+  (`eye_pass.uses_look`). Otherwise the program is the one before phase 3: its fragment source is character for
+  character the old one for all 64 variants (checked against the previous commit while building), so "fast", every
+  eye without a look and every scene without eyes draw and cost exactly as before. 64 more variants exist, compiled on
+  first use.
+- **Neutral at 0.** Every term sits behind a uniform branch or multiplies by its amount; forced into the `LOOK`
+  program, a look with every amount at 0 draws the same pixels as no look (tested for V2 / V3 × studio / key).
+- **Rest frame.** The lid terms work in the eye's rest frame (`EyeDraw.rest_matrix` = the eye's own placement; the
+  gaze only turns the drawn matrix), so the lid stays with the head while the eye looks around. The irregularity sits
+  on the eye (it turns with it).
+- **The irregularity texture** (`eye_optics.film_noise`): 256² RGB8, tileable spectral noise (16 bumps per tile),
+  R / G the gradient of a height field, B a roughness noise; repeat, mip maps, trilinear, on unit 2. Mapped by the angle
+  from the eye axis (continuous over cornea, limbus and sclera). Each eye reads its own part of the tile
+  (`noise_offset(object id, seed)`); a mirror copy and a duplicate have new ids, so they differ (the assessment's
+  "a mirror copy should flip it" is met this way; the studio is not mirrored either, so a mirrored pattern would not
+  read as one).
+- **NumPy twins** for every new function in `eye_optics` (`film_uv`, `film_frame` / `film_normal`, `film_roughness`,
+  `lid_shadow_weight`, `lid_occlusion`, `area_key`), GPU parity in `test_gl_eye_pass.py`. The frozen lab has no
+  counterpart; these twins are the reference.
+
+**UI.** The Eye Lab window gains "Reflexe": the five amounts, then sclera roughness, bump size, shadow width, the two
+lid heights, "Neues Muster", "Reflexe zurücksetzen"; live preview while held, one Undo step on release, as every lab
+value. A hint shows when the tier is "schnell". The compact panel is unchanged (I-2). `set_eye` / `preview_eye` take
+`"look.<field>"` keys, merged into each selected eye's own look. **Presets** carry the look as a nested object; a
+preset saved before phase 3 (no `"look"`) leaves an eye's look alone. New built-in **"Reflexe (Startwerte)"**: only
+look values (wet 0.7, irregularity 0.5°, softness 0.6, lid shadow 0.3, lid band 0.7), so it keeps anatomy, limbus and
+iris - an agent starting point from container renders, not an artist decision (I-6 stays open).
+
+**Cost.** Measured in the container only (llvmpipe, software: not a hardware number). There the look costs far more
+with the studio reflection than with "key only", because the sclera now evaluates the analytic studio per pixel. On the
+reference PC the analytic studio was cheap at this coverage (E-4: L3 = L0 within 0.1 ms), but the I-12 budget is a
+target to validate, not an assumed result: `probe_eye_preview.py` now has a `lab` view (the Eye Lab's frontal
+close-up) and the rows `look fast` (must equal `L3`), `look full`, `look full key`, with a column `vs L3` = the look's
+own cost. Fallbacks if it is over budget: the reflection "key only" for the lab, or the studio cube (roadmap #11).
+
+**Not in this phase / limits (`PROVISIONAL`).** The lid is a straight horizontal edge per eye: no canthal tilt (it
+would need a mirrored sign on mirror copies), no lid curvature, and the band takes elevations in the eye's y-z plane.
+The shadow is the upper lid's only and does not depend on the key's direction. Both are values on the eye, meant to be
+replaced by geometry-driven shadows and reflections in a later Lookdev step. No tear meniscus (needs the lid
+geometry). The studio's softbox stays where it is (I-8 kept and softened the key highlight; tying the softbox to the
+key was not chosen). The iris terms are phase 4.
+
+**Tests.** `test_eye_object.py` (look value and validation, `with_changes` "look.*", v10 only with a look and v9 again
+without, an invalid look refused), `test_eye_lab.py` (Undo, preview, v10 save / load, presets, variation and rest
+frame, the lab's controls), `test_gl_eye_pass.py` (parity, noise, "fast" ignores the look, neutral at 0, each term only
+where it belongs, lid with the head, no extra flicker at modelling distance, every look variant draws and leaves the GL
+state clean), `test_gui_imgui_window.py` (the lab window with a look), `test_rig.py` (the first unknown version is 11).
+
+### Praxistest für Manu (Deutsch, ca. 15 Minuten, `scenes/Gollum_Head_03.mirai.json`)
+
+Vorher die Kosten messen (das I-12-Budget, Ausgabe schicken):
+`python experiments\drag_cost\probe_eye_preview.py` und `python experiments\drag_cost\probe_eye_preview.py --size 1920 1080`
+(NVIDIA „Maximale Leistung bevorzugen“). Wichtig sind die Zeilen `look full` in der Ansicht `lab` und die Spalte `vs L3`.
+
+1. Szene laden, ein Auge wählen, „Im Eye Lab öffnen“ (Qualität springt auf „voll“). Ohne Reflexe sieht alles aus wie
+   vorher.
+2. Look-Vorlage „Reflexe (Startwerte)“ anwenden: Limbus, Iris-Bild und Anatomie bleiben, nur die Reflexe kommen dazu.
+   Ein Strg+Z nimmt genau das zurück.
+3. „Nasse Lederhaut“ ziehen: die Spiegelung des Studios läuft über den Limbus auf die Lederhaut weiter.
+4. „Unregelmäßigkeit“ und „Größe“ ziehen: Kanten der Softbox-Spiegelung werden unruhig, bleiben glänzend
+   („nass, nicht schmutzig“). „Neues Muster“ wechselt das Muster; das andere Auge hat ein eigenes.
+5. „Key-Glanz weich“ ziehen und den Key mit `L`-Ziehen bewegen: aus dem weißen Punkt wird ein weicher, kleiner
+   Softbox-Reflex, der dem Key folgt.
+6. „Oberlid-Kante“ auf die Lidkante des Kopfes stellen, dann „Lidschatten“ und „Lid in der Spiegelung“: Schatten von
+   oben auf Lederhaut und Iris, dunkles Band oben in der Spiegelung. Blick-Pad bewegen: Schatten und Band bleiben beim
+   Kopf, das Auge dreht sich darunter.
+7. Eye Lab schließen (Qualität „schnell“): die Reflexe verschwinden im Modellier-Viewport, das Bild ist wie vor Phase 3.
+   Im Panel „Qualität voll“ zeigt sie auch dort. Aus Modellierdistanz: kein Flirren beim Orbiten.
+8. Speichern, neu laden: die Reflexe sind da (Datei-Version 10).
+
+Verdikt: KEEP / ITERATE / REJECT, gern je Punkt, dazu der Vergleich mit deinen Stills in denselben drei Ansichten.
 
 
 **Manu, 2026-11-15:** "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm".

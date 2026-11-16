@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-11-15 (AD-033 eyes: `EyeSpec`, `SceneObject.eye`, format version 9); previously 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-11-16 (Eye LookDev phase 3: `EyeLook`, `EyeSpec.look`, format version 10); previously 2026-11-15 (AD-033 eyes: `EyeSpec`, `SceneObject.eye`, format version 9); previously 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -455,6 +455,26 @@ untouched: every existing signature's behaviour on a mesh without UVs (export: o
 vertex record shapes, point layers; (5) tests `tests/test_core_face_uvs.py` (every primitive incl. seams, journal
 exactness, file validation, random sequences against U1 and exact Undo), `tests/mesh_invariants.assert_uv_invariants`,
 `tests/test_obj_uvs.py`, `tests/test_point_layers.py` (the pinned export key list now ends with `"face_uvs"`).
+
+**Decision:** Eye LookDev phase 3, the eye's look, Core part (2026-11-16; [AD-033](AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md)
+§17, [assessment](../research/EYE_LOOKDEV_PHASE2_ASSESSMENT_2026-11-16.md) §D change 1; Manu I-5: "Core Change erlaubt")
+
+Freeze rule (§7): (1) requirement - the eye's reflection and lid values (wet sclera, irregularity, soft key highlight,
+lid shadow, lid band) survive Undo / Redo, save / load, duplicate, mirror copy and presets like every eye value;
+(2) not solvable with the public API: they belong to the eye's value, which the Core validates and the file carries
+(the `EyeSpec` precedent); a side table would live outside the file format; (3) documented in AD-033 §17 and the
+assessment; (4) smallest extension, **data only**: `src/core/scene.py` gains `EyeLook` (frozen, 11 fields, validated
+with `ValueError`: four amounts in [0, 1], `irregularity_deg` in [0, 10], positive sizes, `sclera_roughness` in (0, 1],
+`seed` an int in [0, 2**31), `-1 < lid_lower < lid_upper < 1`; `to_dict` / `from_dict` with exactly the field names) and
+`EyeSpec.look: EyeLook | None = None` (the 18th field, the only one with a default; `None` = neutral; no default numbers
+in the Core - the app's are `mirai.eye_object.DEFAULT_LOOK`). `EyeSpec.to_dict` writes `"look"` only when set and
+`from_dict` accepts it as optional, so an eye without a look is written as in v9. `src/core/serialization.py` writes
+**version 10** only when an eye has a look (else 4–9 as before) and reads 2–10; an invalid look makes the file invalid.
+Exported from `core`. Not touched: `Mesh`, `Operation`, `HistoryStack`, `SceneObject`, every other field and
+signature. Existing tests unchanged except the assertion that pinned 10 as the first unknown version
+(`test_rig.py::test_versions_2_to_8_are_read`: now 11). (5) contract tests `tests/test_eye_object.py` (look validation,
+optional and typed, v10 only with a look and the v9 file again without one, an invalid look refused) and
+`tests/test_eye_lab.py` (the app path: Undo, preview, save / load).
 
 **Decision:** AD-033 eye object, Core part (2026-11-15; [AD-033](AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md) §4; Manu:
 "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm")

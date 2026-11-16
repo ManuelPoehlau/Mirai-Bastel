@@ -1258,7 +1258,11 @@ class ObjectController:
                 spec, preview = obj.eye, self.eye_previews.get(oid)
                 if preview is not None and preview[0] == obj.eye:
                     spec, mesh = preview[1], preview[2]
-                eye = EyeDraw(spec, obj.texture, tuple(colour), finish, cornea_triangles())
+                # Phase 3: the look's lid stays with the head (the rest frame, when the gaze turns the eye), and the
+                # irregularity pattern is the object's own (its id).
+                rest = None if gaze is None or spec.look is None else tuple(self._drawn_matrix(obj, None, twin_offset))
+                eye = EyeDraw(spec, obj.texture, tuple(colour), finish, cornea_triangles(), rest_matrix=rest,
+                              variation=int(oid))
             viewport.set_object_entry(
                 key,
                 mesh,

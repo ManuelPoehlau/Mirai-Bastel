@@ -13,7 +13,7 @@ from __future__ import annotations
 from . import eye_model as em
 from viewport.eye_pass import REFLECTIONS, REFRACTIONS, TIERS
 
-TIER_HINT = "Heute zeichnen beide Stufen gleich; ab Phase 3 lässt 'schnell' die neuen Zusatzterme weg."
+TIER_HINT = "'schnell' zeichnet ohne die Reflexe des Eye Labs (wie vor Phase 3), 'voll' mit ihnen."
 
 
 class _Sliders:
@@ -25,7 +25,7 @@ class _Sliders:
 
     def slider(self, spec, field: str, label: str, lo: float, hi: float, fmt: str, width: float = 170.0) -> None:
         imgui, app = self.imgui, self.app
-        value = self.drag.get(field, getattr(spec, field))
+        value = self.drag.get(field, em.value(spec, field))
         imgui.set_next_item_width(width)
         changed, value = imgui.slider_float(label, float(value), lo, hi, fmt)
         if changed:
@@ -173,6 +173,7 @@ class EyeLabPanel:
             em.set_value(app, "asymmetry", on)
         for field, label, lo, hi, fmt in em.SLIDERS:
             self.sliders.slider(spec, field, label, lo, hi, fmt)
+        self.draw_look(st)
         imgui.separator()
         imgui.text_disabled(st.image_text)
         imgui.set_next_item_width(220.0)
@@ -191,6 +192,25 @@ class EyeLabPanel:
             app.save_eye_preset(self.preset_buf)
         if imgui.button("Schließen"):
             app.close_eye_lab()
+
+    def draw_look(self, st: em.EyePanelState) -> None:
+        """Phase 3: the reflections (`core.EyeLook`), live preview while held, one Undo step per release."""
+        imgui, app = self.imgui, self.app
+        spec = st.spec
+        imgui.separator()
+        imgui.text_disabled("Reflexe (Phase 3, gespeichert)")
+        if st.tier != "full":
+            imgui.text_colored(imgui.ImVec4(0.95, 0.75, 0.35, 1.0), em.LOOK_HINT)
+        for field, label, lo, hi, fmt in em.LOOK_SLIDERS:
+            self.sliders.slider(spec, field, label, lo, hi, fmt)
+        imgui.text_disabled(f"Muster {em.value(spec, 'look.seed')}")
+        imgui.same_line()
+        if imgui.small_button("Neues Muster"):
+            em.new_pattern(app)
+        if spec.look is not None:
+            imgui.same_line()
+            if imgui.small_button("Reflexe zurücksetzen"):
+                em.reset_look(app)
 
 
 def draw_gaze(imgui, app, st: em.EyePanelState, pad_size: tuple[float, float]) -> None:
