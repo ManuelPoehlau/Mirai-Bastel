@@ -38,6 +38,8 @@ This file is for AI collaborators. [AGENTS.md](AGENTS.md) holds the project phil
 
 For size L work see `MIRAI_BASTEL_DEVELOPMENT_SYSTEM.md` (§5 Haltepunkte, §7 Wer macht was) and AGENTS.md §7–§8;
 not needed for S/M tasks.
+End of every finished slice (any size, AGENTS.md §8): say whether the next step belongs in this session or a fresh one
+(and why), and name the suggested Claude model and reasoning effort (Manu, 2026-10-14; repeated 2026-11-16).
 Key rule: never move experiment code to `src/` without an explicit, documented decision. Working philosophy
 (Manu, 2026-10-21): solve rather than re-study, experiments only for material uncertainties, technical
 verification is the agent's job, shared bottlenecks first, larger coherent steps — AGENTS.md §7a.
