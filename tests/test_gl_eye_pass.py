@@ -158,6 +158,31 @@ def test_preview_off_is_the_worklight_draw(gl_window):
     assert np.array_equal(off, _render(gl_window, plain))
 
 
+def test_a_second_entry_on_the_same_shell_draws_the_same_eye_shifted(gl_window):
+    """AD-033 §14: a morph view twin is a second viewport entry on the eye's own mesh with a shifted matrix. Both draw
+    through the eye pass: the frame with the eye and its twin is the eye alone plus the twin alone."""
+    spec, shift = DEFAULT_EYE, 3.0
+    shell = shell_mesh(spec)
+    draw = EyeDraw(spec, None, SCLERA_COLOUR, FINISH, cornea_triangles())
+    moved = _model()
+    moved[12] = shift
+
+    def frame(entries):
+        viewport = Viewport(Mesh(), store_type=GLRenderStore)
+        camera = OrbitCamera(target=(shift / 2.0, 0.0, 0.0), distance=9.0)
+        camera.set_view(math.radians(10.0), 0.0)
+        viewport.bind_camera(camera)
+        viewport.on_camera_changed(aspect=1.0)
+        for key, matrix in entries:
+            viewport.set_object_entry(key, shell, SCLERA_COLOUR, model_matrix=matrix, finish=FINISH, eye=draw)
+        return _render(gl_window, viewport)
+
+    both = frame([("eye", _model()), (("morph_view", "eye"), moved)])
+    own, twin = frame([("eye", _model())]), frame([(("morph_view", "eye"), moved)])
+    assert own.any() and twin.any() and not (own.any(axis=-1) & twin.any(axis=-1)).any()  # two eyes, apart
+    assert np.array_equal(both, own + twin)
+
+
 @pytest.mark.parametrize("level", [0, 1, 2, 3])
 @pytest.mark.parametrize("reflection", ["key", "studio"])
 @pytest.mark.parametrize("variant", ["V2", "V3"])

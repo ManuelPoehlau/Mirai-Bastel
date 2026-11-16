@@ -3,6 +3,9 @@
 **Status:** Discovery (2026-11-16, English with a German summary): research and architecture assessment, **no decision,
 no code change**. Filed after Manu approved the assessment as a document; every implementation phase in §G needs its
 own go, and the decisions in §I are Manu's and are not made here.
+**Since then (2026-11-16, later):** E-4 is measured and phases 0 and 1 are built - see the
+[addendum](#addendum-2026-11-16-later-e-4-measured-phases-0-and-1-built) at the end, which corrects two statements of
+§A and §F.
 **Baseline:** branch `claude/relaxed-brown-pf8ybr` @ `dd3c44b`.
 **Sources:** [AD-033](../architecture/AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md),
 [Lookdev P0 audit](LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md),
@@ -424,3 +427,32 @@ Artistic or product decisions; none is made here.
 
 Action, not a decision: run `python experiments\drag_cost\probe_eye_preview.py` and again with `--size 1920 1080`
 (NVIDIA "Maximale Leistung bevorzugen", `.venv312`), and send the output.
+
+---
+
+## Addendum 2026-11-16 (later): E-4 measured, phases 0 and 1 built
+
+**Manu, 2026-11-16:** the E-4 output of both probe runs, and "Phase 1 go: morph twins for eyes and teeth" (decision I-4:
+twins, for eyes and teeth; the editing view stays beside the base).
+
+**E-4 (MEASURED [RPC]),**
+[`RESULTS_EYE_PREVIEW_REFERENCE_PC_2026-11-16.md`](../../experiments/drag_cost/RESULTS_EYE_PREVIEW_REFERENCE_PC_2026-11-16.md):
+- **GPU.** The whole frame with two eyes costs 1.3 / 2.1 ms (framed head) and 2.7 / 4.8 ms (close on one eye) at
+  1024×768 / 1920×1080, *less* than with the preview off. Limbus level, "key only" and V3 change it by at most 0.4 ms.
+  So the modelling view has room for the roadmap's shading terms; the close-up estimates of §F (eye on half the frame)
+  are still estimates, because the probe's close view puts the eyes on only 7.5–10 % of the frame.
+- **CPU.** The preview added 6–8 ms of wall time per frame for two eyes, about 3.5–4.5 ms of Python per eye.
+  **This corrects §A.4 and §F**, which estimated 1–1.4 ms per eye: the direction was right, the size was three times
+  larger.
+
+**Phase 0, agent part (built).** The chamber angle is computed once per anatomy and the pass reads the active uniforms
+once per draw: 1.80 → 0.90 ms per eye in the container, the same numbers to the shader. The effect on the reference PC
+is not measured yet.
+
+**Phase 1 (built),** [AD-033 §14](../architecture/AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md): while a target's editing
+view is open, every drawn Normal object other than the base is drawn a second time beside the view, as viewport
+entries only. Rule chosen for "eyes and teeth": *every* drawn Normal object, because the scene has no relation that
+says which objects belong to a head (`PROVISIONAL`; a separate body would be repeated too). References stay where
+they are. Acceptance per §H row 1: met in the container tests; the practical test on the Gollum head is Manu's.
+
+**Still open from §I:** every decision except I-4.

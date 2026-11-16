@@ -3,7 +3,8 @@
 **Status:** **DECIDED (Manu, 2026-11-15)**: "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm" — promotion of
 the eye shading (M3) and the Core field + format v9 approved; Q-E3 … Q-E5 as proposed; Q-E6: one scene unit = 1 cm
 (decision record at the end). **IMPLEMENTED E-1 … E-3 (2026-11-15, container: TESTED)**, as built in §11 (with the
-deviations from the draft, each with its reason); **E-4 (cost on the reference PC) open**. Names and numbers not covered
+deviations from the draft, each with its reason); **E-4 MEASURED on the reference PC (Manu, 2026-11-16, §15)**;
+**§14 (2026-11-16): view twins of eyes and teeth beside a morph target's editing view**. Names and numbers not covered
 by a decision stay `PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
@@ -297,7 +298,46 @@ decisions needed from Manu - is assessed in
 nothing in this AD changes). It also notes that §7 quotes the lab's cube-map rows (T-C) while §11 built the analytic
 studio (T-D, about twice the per-pixel cost in the lab); E-4 stays the only source for the real cost.
 
-## Decision record
+## 14. Addendum 2026-11-16: view twins beside a morph target's editing view (`PROVISIONAL`)
+
+**Request (Manu, 2026-11-16):** "Phase 1 go: morph twins for eyes and teeth" (assessment §E / §G phase 1).
+
+**Problem (verified).** A morph target is edited on a transient view object placed beside its base
+(`MorphController.edit_target`, AD-025 §15, J-5 "daneben"). Eyes and teeth are independent objects and stay at the base,
+so the target's sockets and mouth were empty while it was shaped.
+
+**Built:** `ObjectController.view_twins` / `_drawn_matrix`, used by `sync_views`; `AppServices.morph_view_shift`
+(the base's id and the view's world offset). Tests: `tests/test_morph_view_twins.py` (8, headless) and
+`test_gl_eye_pass.py::test_a_second_entry_on_the_same_shell_draws_the_same_eye_shifted`.
+
+- **Rule:** while a view is open, every drawn **Normal** object other than the base gets a second viewport entry,
+  key `("morph_view", ObjectId)`, on its own mesh, with its drawn matrix moved by the view's offset from the base. An eye
+  twin is drawn by the eye pass like its original; any other twin by the Worklight with the object's colour, finish and
+  texture. A hidden object has no twin; a Reference stays where it is; the base has none (the view stands for it).
+- **Viewport only.** No scene object, no pick cache, no outliner row, not selectable, not in the file, no Undo step.
+  The twins go when the view closes (Tab, an Undo that brings back another edit object, a scene load).
+- **Gaze:** a twin eye aims from its own place - at the same point as its original in `camera` and `mouse`, in the same
+  direction for a fixed `target` (the pad sets a direction as seen facing the eyes).
+- **Not built / open:** a twin shows the object's rest shape (a companion that itself has targets dialled in is not
+  mixed); twins of *every* Normal object means a separate body would be repeated too - no "belongs to this head"
+  relation exists in the scene; whether a real eye occludes hover on socket points was not checked.
+
+## 15. Addendum 2026-11-16: E-4 measured on the reference PC, and the eye pass's CPU cost
+
+Run by Manu, raw output and reading in
+[`RESULTS_EYE_PREVIEW_REFERENCE_PC_2026-11-16.md`](../../experiments/drag_cost/RESULTS_EYE_PREVIEW_REFERENCE_PC_2026-11-16.md)
+(`head_basemesh` + two eyes, the whole frame, 1024×768 / 1920×1080; MEASURED [RPC]):
+
+- **GPU:** with the preview on the frame costs 1.3 / 2.1 ms (framed head) and 2.7 / 4.8 ms (close on one eye, the eyes
+  on 10 % / 7.5 % of the frame) - **less** than with the preview off (2.8 / 4.5 and 5.8 / 9.2 ms), because the eye pass
+  is cheaper than the Worklight's own draw of the same shells. L0 = L3 within 0.1 ms; "key only" saves nothing; V3
+  costs 0.07–0.35 ms more.
+- **CPU:** the preview added 6–8 ms of wall time per frame for two eyes - about 3.5–4.5 ms of Python per eye. Cause
+  (container profile): `EyeGeometry.angle`, an 80-step bisection run twice per eye on every frame.
+- **Fixed the same day:** the angle is computed once per anatomy (`eye_optics._chamber_angle`) and the pass reads the
+  program's active uniforms once per draw: 1.80 → 0.90 ms per eye in the container (TESTED [C]), the same numbers to
+  the shader. The effect on the reference PC is an estimate until the probe is run again.
+
 
 **Manu, 2026-11-15:** "Q-E1 ja, Q-E2 ja, Rest wie vorgeschlagen, Einheit cm".
 

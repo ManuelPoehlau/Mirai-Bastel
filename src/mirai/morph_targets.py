@@ -36,6 +36,8 @@ the values, their journal, Undo and the file; this module gives them their meani
   The view lives while it is the edit object: an Undo that brings back another edit object, `4`
   (refused), a scene load or the toggle key close it. Base and view share one visibility (Manu 2026-11-04, I2):
   Hide / Isolate / Show All on either act on the base's hidden set (`Application._hidden_owner`; same IDs).
+  What sits in or on the base (eyes, teeth - every drawn Normal object) is drawn a second time beside the view,
+  as viewport entries only (AD-033 §14, `ObjectController.view_twins`, Manu 2026-11-16).
 
 The module depends on `core` only (plus `interaction` for the keys); `Application` wires it.
 """

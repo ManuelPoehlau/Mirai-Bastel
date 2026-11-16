@@ -116,6 +116,15 @@ class AppServices:
         return self._app._morph.document_object
 
     @property
+    def morph_view_shift(self):
+        """(the base's ObjectId, the world offset of its target's editing view beside it) while that view is open, else
+        None. Reason for the member (AD-033 §14): the object controller draws view-only twins of the base's companion
+        objects (eyes, teeth) beside the view; forwarded, so it does not import the morph controller."""
+        morph = self._app._morph
+        view = morph.view
+        return None if view is None else (view.base_obj.id, tuple(morph.view_shift))
+
+    @property
     def soft_settings(self):
         """The sticky Soft Selection settings (`Application.soft_settings`). Reason for the member (AD-027 M6): a
         gesture reads them at `begin()`; Soft settings stay in `Application` (§3.4)."""

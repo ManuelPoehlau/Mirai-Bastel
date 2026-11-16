@@ -97,6 +97,10 @@ from ..viewport.picking_cache import PickCache
 from .gestures import TRANSFORM_COMMANDS, GestureController, GestureSession, commit_hint, constraint_suffix
 from .services import AppServices
 
+#: AD-033 §14: the first part of the viewport key of a view twin (`ObjectController.view_twins`); the second is the
+#: ObjectId of the object it repeats.
+VIEW_TWIN = "morph_view"
+
 #: AD-021 M2-2 (E-11): in mode `4` W/E/R arm the object gesture instead of a component tool; T (Extrude) stays
 #: component work.
 OBJECT_TRANSFORM_COMMANDS = frozenset({commands.MOVE, commands.ROTATE, commands.SCALE})
@@ -1181,11 +1185,16 @@ class ObjectController:
         display = services.display
         # M2-1: the edit object's placement (mesh uniform + `view·model` for its overlays).
         viewport.set_model_matrix(object_space.model_matrix(scene.edit_object))
-        for key in [key for key in viewport.object_entries if key not in others]:
+        twins = self.view_twins(others)
+        for key in [key for key in viewport.object_entries if key not in others and key not in twins]:
             viewport.remove_object_entry(key)
         highlighted = self.highlighted()
         self.gaze_drawn = gaze = self.gaze_target()
-        for oid, obj in others.items():
+        shift = services.morph_view_shift
+        offset = None if shift is None else shift[1]
+        entries = [(oid, oid, obj, None) for oid, obj in others.items()]
+        entries += [(key, key[1], obj, offset) for key, obj in twins.items()]
+        for key, oid, obj, twin_offset in entries:
             reference = obj.state is ObjectState.REFERENCE
             colour = selected_color(obj, DEFAULT_BASE_COLOR) if oid in highlighted else object_base_color(obj)
             finish = object_finish(obj, display.surface_finish)
@@ -1194,11 +1203,10 @@ class ObjectController:
             if obj.eye is not None and not reference:
                 eye = EyeDraw(obj.eye, obj.texture, tuple(colour), finish, cornea_triangles())
             viewport.set_object_entry(
-                oid,
+                key,
                 obj.mesh,
                 colour,
-                model_matrix=object_space.model_matrix(obj) if gaze is None or obj.eye is None
-                else object_space.placement_matrix(eye_gaze.aimed_transform(obj, gaze), obj.pivot),
+                model_matrix=self._drawn_matrix(obj, gaze, twin_offset),
                 # M2-0 (§7.3): RD-1 Ghost for every Reference on `Alt+D`; RD-3 a Reference is drawn in Wireframe too -
                 # a Normal object follows the display mode.
                 alpha=REFERENCE_GHOST_ALPHA if reference and self.reference_ghost else 1.0,
@@ -1214,6 +1222,42 @@ class ObjectController:
             self._shown_texture(edit, edit.id in highlighted),
         )
         self.highlight_key = self._highlight_signature()
+
+    def view_twins(self, others: dict) -> dict:
+        """AD-033 §14 (Manu 2026-11-16: "morph twins for eyes and teeth"): while a morph target's editing view is open,
+        `(VIEW_TWIN, ObjectId) -> object` for every drawn Normal object other than the base (`others` = the drawn
+        non-edit objects of `sync_views`) - what sits in or on the base (eyes, teeth) is drawn a second time beside the
+        view, shifted as the view is, so the target is shaped around it. Viewport entries only: no scene object, no
+        pick cache, not selectable, never saved, no Undo. A Reference stays where it is (`PROVISIONAL`). {} without a
+        view."""
+        shift = self.services.morph_view_shift
+        if shift is None:
+            return {}
+        base_id = shift[0]
+        return {
+            (VIEW_TWIN, oid): obj
+            for oid, obj in others.items()
+            if oid != base_id and obj.state is ObjectState.NORMAL
+        }
+
+    def _drawn_matrix(self, obj: SceneObject, gaze, twin_offset=None) -> list[float] | None:
+        """The matrix an object's entry is drawn with: its own placement, an eye turned to the gaze point
+        (`mirai.eye_gaze`), and for a view twin (`view_twins`) that placement moved by the editing view's shift. A twin
+        eye aims from its own place - at the same point as its original in the modes that follow something (`camera`,
+        `mouse`), in the same direction for a fixed `target` (the pad sets a direction as seen facing the eyes)."""
+        if twin_offset is None:
+            if gaze is None or obj.eye is None:
+                return object_space.model_matrix(obj)
+            return object_space.placement_matrix(eye_gaze.aimed_transform(obj, gaze), obj.pivot)
+        transform = obj.transform
+        if gaze is not None and obj.eye is not None:
+            fixed = self.services.display.eye_gaze.mode == "target"
+            point = gaze if fixed else tuple(gaze[i] - twin_offset[i] for i in range(3))
+            transform = eye_gaze.aimed_transform(obj, point)
+        matrix = object_space.placement_matrix(transform, obj.pivot)
+        for i in range(3):
+            matrix[12 + i] += twin_offset[i]
+        return matrix
 
     def gaze_eyes(self) -> list[SceneObject]:
         """The eyes the gaze turns: every drawn eye (an eye is never the edit object)."""
@@ -1319,8 +1363,9 @@ class ObjectController:
             cache = self.pick_caches.get(oid)
             if cache is not None:
                 cache.invalidate()
-            if viewport is not None and oid in viewport.object_entries:
-                viewport.object_entries[oid].mark_topology_dirty()
+            for key in (oid, (VIEW_TWIN, oid)):  # the object's entry and its twin beside a morph view (`view_twins`)
+                if viewport is not None and key in viewport.object_entries:
+                    viewport.object_entries[key].mark_topology_dirty()
 
     # -- the edit object (AD-021 M2-4, E-14) ---------------------------------------------------------
 
