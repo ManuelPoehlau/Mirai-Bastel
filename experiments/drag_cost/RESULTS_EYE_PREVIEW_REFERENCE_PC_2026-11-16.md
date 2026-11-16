@@ -58,7 +58,9 @@ preview on drops by about 6–7 ms at 1024×768, to roughly the "preview off" va
 
 ## Open
 
-- A rerun of both commands after the fix (the CPU column).
+- ~~A rerun of both commands after the fix (the CPU column).~~ Done 2026-11-16 with the phase 3 probe: the wall time
+  with the preview on fell by 7.0–7.8 ms, below preview off
+  ([RESULTS_EYE_LOOK_REFERENCE_PC_2026-11-16.md](RESULTS_EYE_LOOK_REFERENCE_PC_2026-11-16.md)).
 - A run without eyes in the same scene, to separate the eye pass's own GPU cost from the head's.
 - The real Gollum scene (`scenes/Gollum_Head_03.mirai.json`: L3, image colour source, an iris image) instead of the
   probe's default eyes.

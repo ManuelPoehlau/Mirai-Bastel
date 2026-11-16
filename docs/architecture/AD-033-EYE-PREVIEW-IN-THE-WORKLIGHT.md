@@ -6,7 +6,8 @@ the eye shading (M3) and the Core field + format v9 approved; Q-E3 … Q-E5 as p
 deviations from the draft, each with its reason); **E-4 MEASURED on the reference PC (Manu, 2026-11-16, §15)**;
 **§14 (2026-11-16): view twins of eyes and teeth beside a morph target's editing view**; **§16 (2026-11-16): Eye
 LookDev phase 2, compact panel "Auge" and the Eye Lab window**; **§17 (2026-11-16): Eye LookDev phase 3, the
-reflections (`EyeLook`, scene format v10; container: TESTED, reference-PC cost and practical test open)**. Names and
+reflections (`EyeLook`, scene format v10; container: TESTED; reference-PC cost MEASURED within the I-12 target;
+practical test open)**. Names and
 numbers not covered by a decision stay `PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
@@ -338,7 +339,9 @@ Run by Manu, raw output and reading in
   (container profile): `EyeGeometry.angle`, an 80-step bisection run twice per eye on every frame.
 - **Fixed the same day:** the angle is computed once per anatomy (`eye_optics._chamber_angle`) and the pass reads the
   program's active uniforms once per draw: 1.80 → 0.90 ms per eye in the container (TESTED [C]), the same numbers to
-  the shader. The effect on the reference PC is an estimate until the probe is run again.
+  the shader. **Measured on the reference PC 2026-11-16** (the phase 3 run): with the preview on the wall time per
+  frame fell by 7.0–7.8 ms, below preview off
+  ([results](../../experiments/drag_cost/RESULTS_EYE_LOOK_REFERENCE_PC_2026-11-16.md)).
 
 
 ## 16. Addendum 2026-11-16: Eye LookDev phase 2 - compact panel "Auge" and the Eye Lab window (`PROVISIONAL` layout)
@@ -451,12 +454,15 @@ preset saved before phase 3 (no `"look"`) leaves an eye's look alone. New built-
 look values (wet 0.7, irregularity 0.5°, softness 0.6, lid shadow 0.3, lid band 0.7), so it keeps anatomy, limbus and
 iris - an agent starting point from container renders, not an artist decision (I-6 stays open).
 
-**Cost.** Measured in the container only (llvmpipe, software: not a hardware number). There the look costs far more
-with the studio reflection than with "key only", because the sclera now evaluates the analytic studio per pixel. On the
-reference PC the analytic studio was cheap at this coverage (E-4: L3 = L0 within 0.1 ms), but the I-12 budget is a
-target to validate, not an assumed result: `probe_eye_preview.py` now has a `lab` view (the Eye Lab's frontal
-close-up) and the rows `look fast` (must equal `L3`), `look full`, `look full key`, with a column `vs L3` = the look's
-own cost. Fallbacks if it is over budget: the reflection "key only" for the lab, or the studio cube (roadmap #11).
+**Cost (MEASURED [RPC], Manu 2026-11-16,
+[results](../../experiments/drag_cost/RESULTS_EYE_LOOK_REFERENCE_PC_2026-11-16.md)).** `probe_eye_preview.py` has a
+`lab` view (the Eye Lab's frontal close-up, the eye about half the frame high) and the rows `look fast` / `look full` /
+`look full key` with the starting look. The look's own GPU cost: **+0.92 ms (1024×768) and +2.28 ms (1920×1080) in the
+Eye Lab view**, at most +3.36 ms (the three-quarter close view, 1920×1080), +0.75 / +1.25 ms at modelling distance -
+**within the I-12 target of about 4 ms in every measured view**; the whole render stays at or below 12.2 ms of wall
+time. `look fast` = `L3` within 0.01 ms: the standing rule holds. "Key only" costs about half (the studio on the sclera
+is the larger part). Not measured: an eye filling the frame height, estimated at about 9 ms (frontal) to 13 ms
+(three-quarter) at 1920×1080 [E], above the 8 ms limit; levers then: "key only", the studio cube (roadmap #11).
 
 **Not in this phase / limits (`PROVISIONAL`).** The lid is a straight horizontal edge per eye: no canthal tilt (it
 would need a mirrored sign on mirror copies), no lid curvature, and the band takes elevations in the eye's y-z plane.
@@ -473,9 +479,7 @@ state clean), `test_gui_imgui_window.py` (the lab window with a look), `test_rig
 
 ### Praxistest für Manu (Deutsch, ca. 15 Minuten, `scenes/Gollum_Head_03.mirai.json`)
 
-Vorher die Kosten messen (das I-12-Budget, Ausgabe schicken):
-`python experiments\drag_cost\probe_eye_preview.py` und `python experiments\drag_cost\probe_eye_preview.py --size 1920 1080`
-(NVIDIA „Maximale Leistung bevorzugen“). Wichtig sind die Zeilen `look full` in der Ansicht `lab` und die Spalte `vs L3`.
+Die Kosten sind gemessen (2026-11-16, „Cost“ oben): innerhalb des I-12-Ziels.
 
 1. Szene laden, ein Auge wählen, „Im Eye Lab öffnen“ (Qualität springt auf „voll“). Ohne Reflexe sieht alles aus wie
    vorher.

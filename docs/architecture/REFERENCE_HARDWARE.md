@@ -182,7 +182,12 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
   2,8 / 4,5 und 5,8 / 9,2 ms. Der Augen-Durchgang ist billiger als das Worklight-Zeichnen derselben Augäpfel.
   Limbus-Stufe, „nur Key-Glanz“ und V3 ändern daran höchstens 0,4 ms.
 - **CPU:** die Vorschau kostete 6–8 ms Wandzeit pro Bild für zwei Augen (etwa 3,5–4,5 ms Python je Auge). Ursache und
-  Behebung vom selben Tag stehen in der Ergebnisdatei; die Wirkung der Behebung ist hier **noch nicht gemessen**.
+  Behebung vom selben Tag stehen in der Ergebnisdatei. **Nach der Behebung gemessen (2026-11-16):** 7,0–7,8 ms weniger
+  Wandzeit pro Bild; mit Vorschau ist das Bild jetzt schneller als ohne.
+- **Eye LookDev Phase 3 (Reflexe, 2026-11-16,
+  [`RESULTS_EYE_LOOK_REFERENCE_PC_2026-11-16.md`](../../experiments/drag_cost/RESULTS_EYE_LOOK_REFERENCE_PC_2026-11-16.md)):**
+  die Reflexe kosten in der Eye-Lab-Großaufnahme (Auge halb so hoch wie das Bild) 0,9 / 2,3 ms GPU zusätzlich,
+  höchstens 3,4 ms in den gemessenen Ansichten; die Stufe „schnell“ kostet so viel wie vorher.
 
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 

@@ -495,9 +495,13 @@ I-8, I-10, I-12): roadmap #1 wet sclera, #2 irregularity, #3 lid shadow and lid 
   "fast", an eye without a look and a scene without eyes use the program before phase 3 (its source unchanged for all
   64 variants); GPU parity for every new function; no extra frame-to-frame flicker at modelling distance in a stepped
   orbit (+0.01–0.03 grey levels); the oracle and the existing `test_gl_eye_pass` cases green.
-- **Open, Manu's:** the cost on the reference PC within the I-12 budget (`probe_eye_preview.py`, new `lab` view and
-  `look` rows - the container's llvmpipe numbers are no hardware evidence), and the practical test against the stills
-  (AD-033 §17, German checklist).
+- **Measured on the reference PC (Manu, 2026-11-16, MEASURED [RPC],
+  [results](../../experiments/drag_cost/RESULTS_EYE_LOOK_REFERENCE_PC_2026-11-16.md)):** the look's own GPU cost in
+  the Eye Lab view +0.92 ms (1024×768) / +2.28 ms (1920×1080), at most +3.36 ms in any measured view - within the I-12
+  target of about 4 ms; "fast" unchanged. §F's estimate for #1-#7 at this size (3.5-4.5 / 7-9 ms) was pessimistic. An
+  eye filling the frame height is estimated above the 8 ms limit at 1920×1080 [E], not measured. The phase 0 CPU fix
+  is measured too: 7.0-7.8 ms less wall time per frame, correcting the open estimate of the first addendum.
+- **Open, Manu's:** the practical test against the stills (AD-033 §17, German checklist).
 
 Deviations from §C / §D, each with its reason in AD-033 §17: per-eye variation from the object id mixed with a look
 seed instead of a mirrored seed; the shadow is the upper lid's only and independent of the key direction; no canthal
