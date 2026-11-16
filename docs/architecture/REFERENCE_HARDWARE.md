@@ -173,6 +173,17 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
   - analytische Softbox ohne Cubemap (T-D): etwa das Doppelte von T-C.
 - **CPU:** Das Vorberechnen der Umgebung dauert 25 s (64²), 40 s (128²) bzw. 71 s (256²) je Kette.
 
+**Gemessen auf dem Referenz-PC (Manu, 2026-11-16), Augen-Vorschau im Worklight (AD-033 E-4)** — gleiche Umgebung;
+`experiments/drag_cost/probe_eye_preview.py`, Rohausgabe und Lesart in
+[`RESULTS_EYE_PREVIEW_REFERENCE_PC_2026-11-16.md`](../../experiments/drag_cost/RESULTS_EYE_PREVIEW_REFERENCE_PC_2026-11-16.md)
+(Referenzkopf mit zwei Augen, ganzes Bild, 1024×768 / 1920×1080):
+
+- **GPU:** mit Vorschau 1,3 / 2,1 ms (gerahmter Kopf) und 2,7 / 4,8 ms (Großaufnahme eines Auges); ohne Vorschau
+  2,8 / 4,5 und 5,8 / 9,2 ms. Der Augen-Durchgang ist billiger als das Worklight-Zeichnen derselben Augäpfel.
+  Limbus-Stufe, „nur Key-Glanz“ und V3 ändern daran höchstens 0,4 ms.
+- **CPU:** die Vorschau kostete 6–8 ms Wandzeit pro Bild für zwei Augen (etwa 3,5–4,5 ms Python je Auge). Ursache und
+  Behebung vom selben Tag stehen in der Ergebnisdatei; die Wirkung der Behebung ist hier **noch nicht gemessen**.
+
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 
 ---

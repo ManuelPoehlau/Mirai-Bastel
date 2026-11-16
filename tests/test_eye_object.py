@@ -15,7 +15,7 @@ import tests._bootstrap  # noqa: F401
 from core import EyeSpec, Mesh, Scene, SceneObject
 from core.ids import ObjectId
 from core.serialization import EYE_FORMAT_VERSION, GROUP_FORMAT_VERSION, scene_from_dict, scene_to_dict
-from mirai.eye_object import DEFAULT_EYE, EYE_SCALE_CM, eye_transform, read_fit_sidecar, shape_changed, shell_mesh
+from mirai.eye_object import DEFAULT_EYE, EYE_SCALE_CM, eye_transform, read_fit_sidecar, shape_changed, shell_mesh, with_changes
 from viewport.eye_optics import EyeGeometry
 
 
@@ -26,6 +26,25 @@ def test_default_eye_is_the_labs_eye():
     assert g.iris_radius == pytest.approx(0.5980, abs=1e-4)  # the lab's IRIS_RADIUS
     assert g.angle[0] == pytest.approx(0.466, abs=0.002)  # the chamber angle (P1b: r 5.59 mm)
     assert DEFAULT_EYE.limbus_level == 0 and DEFAULT_EYE.fit_pupil is None and not DEFAULT_EYE.asymmetry
+
+
+def test_chamber_angle_is_computed_once_per_anatomy_and_stays_the_bisections_value():
+    """The eye pass asks for the angle for every eye on every frame (the 80-step bisection was most of its CPU time,
+    reference PC 2026-11-16): one computation per anatomy, the same numbers."""
+    from viewport import eye_optics as eo
+
+    spec = with_changes(DEFAULT_EYE, pupil_radius=0.1234, iris_concavity=0.0271)  # an anatomy no other test uses
+    g = EyeGeometry.from_values(spec)
+    lo, hi = 0.0, eo.POSTERIOR_RADIUS
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        lo, hi = (mid, hi) if float(g.posterior_z(mid)) > float(g.iris_z(mid)) else (lo, mid)
+    before = eo._chamber_angle.cache_info()
+    first = g.angle
+    again = EyeGeometry.from_values(spec).angle  # another instance of the same anatomy
+    after = eo._chamber_angle.cache_info()
+    assert first == again == (lo, float(g.iris_z(lo)))
+    assert after.misses == before.misses + 1 and after.hits == before.hits + 1
 
 
 @pytest.mark.parametrize("changes", [

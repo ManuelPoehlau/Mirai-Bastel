@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 
 import numpy as np
 
@@ -87,14 +88,22 @@ class EyeGeometry:
     @property
     def angle(self) -> tuple[float, float]:
         """(r, z) where the posterior sphere meets the iris cone: the chamber angle (bisection, as the lab)."""
-        lo, hi = 0.0, POSTERIOR_RADIUS
-        for _ in range(80):
-            mid = 0.5 * (lo + hi)
-            if float(self.posterior_z(mid)) > float(self.iris_z(mid)):
-                lo = mid
-            else:
-                hi = mid
-        return lo, float(self.iris_z(lo))
+        return _chamber_angle(self)
+
+
+@lru_cache(maxsize=256)
+def _chamber_angle(g: EyeGeometry) -> tuple[float, float]:
+    """`EyeGeometry.angle`, once per anatomy: the eye pass asks for it for every eye on every frame, and the 80-step
+    bisection was most of that pass's CPU time (reference PC, 2026-11-16: about 3.5 ms per eye and frame,
+    `experiments/drag_cost/RESULTS_EYE_PREVIEW_REFERENCE_PC_2026-11-16.md`). The same numbers as before."""
+    lo, hi = 0.0, POSTERIOR_RADIUS
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        if float(g.posterior_z(mid)) > float(g.iris_z(mid)):
+            lo = mid
+        else:
+            hi = mid
+    return lo, float(g.iris_z(lo))
 
 
 # -- ray primitives (lab `cornea_optics`, GLSL twins in `eye_shaders.EYE_LIB_SRC`) -------------------------------------

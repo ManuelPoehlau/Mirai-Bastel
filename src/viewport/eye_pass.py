@@ -182,8 +182,9 @@ class EyePass:
         values.update({"u_view": camera[0:16], "u_proj": camera[16:32], "u_model": model,
                        "u_model_inv": _inverse(model), "u_iris_texture": IRIS_UNIT})
         program.use()
+        active = program.uniforms  # pyglet builds this dict on every access: once per draw, not once per value
         for name, value in values.items():
-            if name in program.uniforms:
+            if name in active:
                 program[name] = value
         gl.glActiveTexture(gl.GL_TEXTURE0 + IRIS_UNIT)
         gl.glBindTexture(texture.target, texture.id)
