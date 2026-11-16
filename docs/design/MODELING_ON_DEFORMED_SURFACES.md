@@ -245,7 +245,7 @@ decision about which state is authoritative for placement (§11 R-2).
 | Weight editing while posed | **Partially implemented**: runs; selection on the rest cage, shading on the pose | AD-028 §7.1; GUI_STAGE1_HUD §8 ("Die Auswahlpunkte bleiben bewusst am Ruhe-Mesh") |
 | Inverse deformation for position edits (crazyspace / inverse LBS) | **Documented, not implemented** | audit §E "inverse warping"; AD-028 X-7 |
 | Topology changes in the deformed state | **Documented, not implemented** | CHARACTER_SYSTEMS_RESEARCH 6b / EX-D; ROADMAP Rigging status |
-| Pose and morph weight as view state; Undo never touches them | **Implemented and verified** | AD-025 F-11, AD-028 §6; `tests/test_jaw_scenario.py` |
+| Pose and morph weight as view state; Undo never touches them (exception since 2026-11-16: the bake of the mix into the base restores its sliders with its own Undo step; the weights are saved with the scene, AD-025 §19) | **Implemented and verified** | AD-025 F-11 / §19, AD-028 §6; `tests/test_jaw_scenario.py`, `tests/test_morph_bake_and_range.py` |
 | Other bound objects (teeth) showing the pose | **Not implemented** | AD-028 §5.3, F-16 |
 | Symmetric topology and weights in an asymmetric pose | **Unknown / requires investigation** | AD-028 §8.4 (on-plane bones only); no test in a pose |
 | Picking cost on a surface that changes every pose step | **Unknown** (unmeasured) | — |

@@ -3,14 +3,15 @@
 Kein pyglet, kein imgui: nur Lesen über die öffentlichen `Application.morph_*`-Zugriffe. Das Panel zeichnet `state(app)`
 und ruft bei einem Klick dieselben Wege wie die Tasten (`select_morph_target`, `set_morph_weight`, `edit_morph_target`,
 ...); es hält keinen Dokumentzustand. Gewichte und Solo sind Ansicht (kein Undo, nicht gespeichert), Neu / Umbenennen /
-Löschen je ein Undo-Schritt.
+Löschen je ein Undo-Schritt. Seit 2026-11-16 (Manu): Gewichte -100..200 %, mit der Szene gespeichert (`view_state`);
+„In Basis backen“ macht die Mischung zur Ruheform (ein Undo-Schritt, der auch die Regler zurückholt).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mirai.morph_targets import MAX_TARGETS
+from mirai.morph_targets import MAX_TARGETS, REST_WEIGHT
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,11 @@ class MorphPanelState:
     def can_lifecycle(self) -> bool:
         """Neu / Umbenennen / Löschen laufen nur an der Basis (die Controller lehnen sie in der Ansicht ab)."""
         return not self.view_open
+
+    @property
+    def can_bake(self) -> bool:
+        """„In Basis backen“: an der Basis, sobald ein Regler nicht auf 0 % steht (Manu 2026-11-16)."""
+        return self.can_lifecycle and any(r.weight != REST_WEIGHT for r in self.rows)
 
     @property
     def can_create(self) -> bool:

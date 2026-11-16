@@ -216,7 +216,8 @@ negative. A weights layer accepts only `new_point = "interpolate"` (an unweighte
   `(0.0, 0.0, 0.0)`.
 - The Core owns the layers and applies their per-kind arithmetic (combination, frame map, H2 rule); it does not interpret
   their **meaning** (AD-SYM-01 §3 pattern). What a layer stands for — a morph target, its weight, which view shows it —
-  lives in `src/mirai`. A morph target is one vector layer; its weight stays view state (F-11). `Scene.morph_targets`
+  lives in `src/mirai`. A morph target is one vector layer; its weight stays view state (F-11; saved in the file's `"view"`
+  section since §19). `Scene.morph_targets`
   stays reserved and `null`.
 
 **Invariants** (contract-tested): **L1** values only for live vertices and existing layers; **L2** canonical — a value
@@ -469,7 +470,8 @@ here with the measured numbers, status → IMPLEMENTED (Phase 2).
 - ~~**Evaluation location and chain**~~ — decided with Phase 4 (§17.1): CPU (`morph_mix`), the stage chain above H7,
   SubD on the mixed cage, normals from the evaluated mesh. Still open: a GPU path (its trigger in §17.1).
 - ~~**Multi-target evaluation rules**~~ — decided with Phase 4 (§17.1): additive, 0–100 %, no clamping or normalization,
-  drift guard by construction. Still open: correctives / combination shapes, weights beyond 0–100 %.
+  drift guard by construction. Weights −100…200 % since §19 (Manu 2026-11-16). Still open: correctives / combination
+  shapes.
 - **Transfer between different meshes:** retopology, import, linking a mirror copy's targets to its source's, morph
   export (OBJ / glTF).
 - ~~**Editing-view mechanics**~~ — decided with Phase 3 (§15). Still open: editing on a deformed pose; symmetric target
@@ -617,7 +619,7 @@ Requirements taken from the Morph Lab (J-5 "daneben" KEEP, J-3 "relativ", F-11 w
    Connect, Cap), Apply transform, `Shift+S`, saved-region edits, mode `4` and adding objects are refused with
    `"<operation>: on the base only (Tab returns to it)"`. Fail-closed backstop: `translate` reverts a view change that is not a
    position change (a host bypassing the keys) and keeps nothing.
-4. **Weight = view state** (F-11): per object in whole percent, no Undo step, not saved; keys `+`/`-` (10 %), `Shift` (1 %),
+4. **Weight = view state** (F-11): per object in whole percent, no Undo step, not saved (*amended §19: saved, −100…200 %*); keys `+`/`-` (10 %), `Shift` (1 %),
    `Alt` (100 % / 0 %), and hold `N` + mouse left/right (Manu's J-4 "Schieberegler" without window UI; tap `N` = 0 % ↔ last).
    Display through H7: `morph_targets.MorphSurfaceProvider` shows `b + w·d` as the edit object's surface and, H7-E, on the
    base beside the view. **The wire follows the mix** (Manu 2026-10-27, after the first try: "das Wireframe geht nicht
@@ -1040,6 +1042,32 @@ file): gone vertices kept in the table (`test_skin_stage` oracle), edge / face r
 `test_morph_picking`), moved positions not journaled (`test_skin_stage` oracle), the last journal record winning (only
 the new watch test), the skin surface built from the rest shape instead of its input (`test_skin_stage` oracle), new
 vertices not entered (`test_skin_stage` oracle).
+
+## 19. Addendum 2026-11-16: saved sliders, weights −100…200 %, bake the mix into the base (Manu)
+
+Manu 2026-11-16: "Morph Panel Slider Positionen in der Szene speichern. Morph Target Wert in die Basis 'backen' […]
+Außerdem bräuchte ich eine Möglichkeit in einen negativen Bereich und über 100 % zu gehen." Decided in the plan dialogue
+the same day: range −100…200 %, bake = every target ≠ 0 %, sliders to 0, one Undo step that restores the sliders too.
+This amends F-11's "not saved"; the weight stays view state otherwise (a slider move is no Undo step).
+
+- **Range.** `morph_targets.MIN_WEIGHT, MAX_WEIGHT = -100, 200`; `REST_WEIGHT = 0` (off), `FULL_WEIGHT = 100` (A/B
+  default, `Alt`+`+`). The rule of §17.1 is unchanged, now over every weight ≠ 0: `factor(w) = w / 100` (exact ±1.0 at
+  ±100 %, 2.0 at 200 %); the drift guard and the bit-identity with `morph_mix.evaluate` hold as before. The panel slider
+  spans the range, `Ctrl`+click input is clamped (`SliderFlags_.always_clamp`). A negative weight counts as "on" (tap
+  `N`, solo, the A/B memory).
+- **Saved.** `mirai.view_state` writes `"morph": {"weights": [[object index, layer id, %], …], "current": [[object
+  index, layer id], …]}` into the file's optional `"view"` section — not the Core format (older builds ignore it). The
+  object is its position in the file's `objects` list (a load gives new ObjectIds in that order,
+  `scene_objects.replace_scene`); LayerIds travel with the mesh. Entries for a missing object or target are left out; a
+  malformed section is skipped with the other view sections' status line.
+- **Bake** (`MorphController.bake_mix`, `Application.bake_morph_mix`, panel button „In Basis backen“; no key — keys
+  only after Manu's practical test). The shown mix `b + Σ (wᵢ/100)·dᵢ` of the edit object is written as its rest
+  positions (`morph_targets.bake_positions`, sparse, bit-identical to the shown surface), its weights go to 0 %: the
+  picture does not change. The targets keep their offsets — relative (J-3), so they now act on the new base. One
+  `_mesh_transaction` with `MorphWeightsCommand` as its companion: Undo brings back the old positions **and** the
+  sliders, Redo bakes again. Refused on a target's editing view, inside an interaction and with every weight at 0 %.
+- Tests: `tests/test_morph_bake_and_range.py`; the "not saved" assertions of `test_morph_targets` and
+  `test_jaw_scenario` now assert the slider comes back.
 
 ---
 

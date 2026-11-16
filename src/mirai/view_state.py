@@ -1,7 +1,8 @@
 """Ansichts-Zustand einer Szene speichern und laden (Manu 2026-11-07).
 
 Shading, Wireframe, Region-Farben, Symmetrie-Anzeige, Worklight, Glanz, Kamera (Ansicht, Fokus, Ortho),
-Referenz-Ghost, Texturen und die SubD-Vorschau sollen beim Öffnen einer gespeicherten Szene nicht neu
+Referenz-Ghost, Texturen, die SubD-Vorschau und die Morph-Regler (Gewichte und aktuelles Ziel je Objekt, Manu
+2026-11-16) sollen beim Öffnen einer gespeicherten Szene nicht neu
 eingestellt werden müssen. Der Zustand reist in der Szenendatei unter dem optionalen Schlüssel `"view"`
 (neben `objects`, `rig`, ...): `core.serialization` ignoriert unbekannte Schlüssel, das Core-Format
 (Version, Vertrag) bleibt unverändert, und ältere Builds lesen die Datei weiter (sie verlieren nur die Ansicht).
@@ -23,6 +24,9 @@ from typing import Any
 from viewport.light_rig import PRESETS, SPACE_CAMERA, SPACE_WORLD, LightRig
 from viewport.material import SurfaceFinish
 
+from core import LayerId
+
+from .morph_targets import MAX_WEIGHT, MIN_WEIGHT, morph_target_ids
 from .subdivision.preview import LEVELS, VIEW_ORDER
 from .viewport.display import DisplayMode
 
@@ -71,7 +75,25 @@ def capture(app) -> dict:
             "secondary_strength": subd.secondary_strength,
             "lines_shown": bool(subd.lines_shown),
         },
+        "morph": _capture_morph(app),
     }
+
+
+def _capture_morph(app) -> dict:
+    """The morph sliders: [object index, layer id, weight] of every existing target other than 0 % and [object index,
+    layer id] of each object's current target. The object is its position in the file's `objects` list (a load gives
+    the objects new ObjectIds in that order, `scene_objects.replace_scene`); LayerIds survive with the mesh."""
+    provider = app.morph.provider
+    objects = app._morph.document_scene().objects
+    weights, current = [], []
+    for index, (oid, obj) in enumerate(objects.items()):
+        for lid, weight in sorted(provider.object_weights(oid).items(), key=lambda item: int(item[0])):
+            weights.append([index, int(lid), int(weight)])
+        if morph_target_ids(obj.mesh):
+            lid = provider.current_target(oid)
+            if lid is not None:
+                current.append([index, int(lid)])
+    return {"weights": weights, "current": current}
 
 
 # -- apply --------------------------------------------------------------------------------------
@@ -103,6 +125,7 @@ def apply(app, view: Any) -> list[str]:
         ("subd", _apply_subd),
         ("symmetry_display", _apply_symmetry),
         ("reference_ghost", _apply_ghost),
+        ("morph", _apply_morph),
     ):
         if name not in view:
             continue
@@ -203,3 +226,40 @@ def _apply_ghost(app, raw: Any) -> None:
     controller = app._objects
     controller.reference_ghost = _flag(raw)
     controller.sync_views()
+
+
+def _int(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"not an int: {value!r}")
+    return value
+
+
+def _apply_morph(app, raw: dict) -> None:
+    """Puts the saved sliders back. Entries for an object or target the scene does not have are left out; a malformed
+    entry makes the whole section skipped (nothing set)."""
+    objects = list(app.scene.objects.values())  # the file's order (`replace_scene`)
+    weights, current = [], []
+    for entry in raw.get("weights", []):
+        index, lid, weight = (_int(v) for v in entry)
+        weights.append((index, LayerId(lid), max(MIN_WEIGHT, min(MAX_WEIGHT, weight))))
+    for entry in raw.get("current", []):
+        index, lid = (_int(v) for v in entry)
+        current.append((index, LayerId(lid)))
+
+    def alive(index, lid):
+        """The object at `index` when it has the target `lid`, else None."""
+        if not 0 <= index < len(objects):
+            return None
+        obj = objects[index]
+        return obj.id if lid in morph_target_ids(obj.mesh) else None
+
+    provider = app.morph.provider
+    for index, lid, weight in weights:
+        oid = alive(index, lid)
+        if oid is not None:
+            provider.set_weight(oid, weight, lid)
+    for index, lid in current:
+        oid = alive(index, lid)
+        if oid is not None:
+            provider.set_current(oid, lid)
+    app.morph.refresh()

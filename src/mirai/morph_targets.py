@@ -9,8 +9,10 @@ the values, their journal, Undo and the file; this module gives them their meani
   layer-only `_mesh_transaction`. Phase 4: up to `MAX_TARGETS` per mesh; one of them is the
   **current target** (`MorphSurfaceProvider.current`, view state) that Tab, `N` and `+`/`-` act on,
   switched with `MORPH_NEXT` / `MORPH_PREVIOUS`; a new target becomes current.
-- **Weight** (`MorphSurfaceProvider.weights`): view state per object and target in whole percent — no
-  Undo step, not saved (F-11, Manu 2026-10-17). The viewport shows the additive mix `b + Σ wᵢ·dᵢ`
+- **Weight** (`MorphSurfaceProvider.weights`): view state per object and target in whole percent, -100 .. 200 —
+  no Undo step (F-11, Manu 2026-10-17); saved with the scene in its `"view"` section (`mirai.view_state`, Manu
+  2026-11-16). **Bake** (`MorphController.bake_mix`, Manu 2026-11-16): the shown mix becomes the base's rest shape,
+  its weights go to 0 % - one Undo step that brings back positions and weights (`MorphWeightsCommand` as companion). The viewport shows the additive mix `b + Σ wᵢ·dᵢ`
   (`morph_mix`, the evaluation rule and its drift guard) through the H7 replacement surface: the edit
   object's faces (`surface_mesh`) and, H7-E, object entries (`entry_surfaces`, the base beside the
   editing view). The wire follows the mix (`wire_follows_surface`, Manu 2026-10-27). Since 2026-11-03
@@ -53,7 +55,7 @@ from core import HistoryStack, Mesh
 from core.mesh import LayerKind
 from core.operations import MeshDeltaCommand, record_mesh_change
 
-from .morph_mix import MixSurface, mix_position, offset_keys as _offset_keys, rest_state as _rest_state
+from .morph_mix import MixSurface, factor, mix_position, offset_keys as _offset_keys, rest_state as _rest_state
 from .morph_mix import topology_touched as _topology_touched
 from .surface_positions import SurfacePositions
 
@@ -76,8 +78,11 @@ NEW_TARGET_PREFIX = "Target"
 #: What MORPH_RENAME (the key) cycles through; the morph panel's text field (AD-030 §13) passes any name to
 #: `rename_morph_target(name, lid)`. `PROVISIONAL`.
 RENAME_CYCLE = ("Smile", "Blink", "Jaw open", "Brow up", "Frown", "Pucker", "Cheek puff", "Sneer")
-#: Weight range and steps in whole percent (Morph Lab F-8: exact at 0 % and 100 %).
-MIN_WEIGHT, MAX_WEIGHT = 0, 100
+#: Weight range and steps in whole percent (Morph Lab F-8: exact at 0 % and 100 %). Manu 2026-11-16: below 0 (the
+#: opposite direction) and above 100 % (exaggerated), -100 .. 200 %.
+MIN_WEIGHT, MAX_WEIGHT = -100, 200
+#: The weight that shows no offset (the rest shape; "off") and the full target (the A/B default, Alt+Plus).
+REST_WEIGHT, FULL_WEIGHT = 0, 100
 WEIGHT_STEP, WEIGHT_FINE_STEP = 10, 1
 #: Hold-key weight drag (Manu J-4 "Schieberegler", without window UI yet): pixels per percent.
 DRAG_PIXELS_PER_PERCENT = 3.0
@@ -132,9 +137,9 @@ def blend(b, d, weight: int) -> tuple:
     """One target's evaluated position: `b` at 0 %, exactly `b + d` at 100 %, else `b + w·d` (exact where
     the offset is zero, exactly mirrored for mirrored inputs). Several targets: `morph_mix.mix_position`,
     which equals this for one."""
-    if weight <= MIN_WEIGHT:
+    if weight == REST_WEIGHT:
         return tuple(b)
-    return mix_position(b, [(1.0 if weight >= MAX_WEIGHT else weight / 100.0, d)])
+    return mix_position(b, [(factor(weight), d)])
 
 
 # -- keys (context `morph`, PROVISIONAL) -------------------------------------------------------------
@@ -164,7 +169,7 @@ MORPH_KEYS: tuple[MorphKey, ...] = (
     MorphKey(_key("minus"), commands.MORPH_WEIGHT_DOWN, f"Gewicht -{WEIGHT_STEP} %"),
     MorphKey(_key("plus", "shift"), commands.MORPH_WEIGHT_UP_FINE, f"Gewicht +{WEIGHT_FINE_STEP} %"),
     MorphKey(_key("minus", "shift"), commands.MORPH_WEIGHT_DOWN_FINE, f"Gewicht -{WEIGHT_FINE_STEP} %"),
-    MorphKey(_key("plus", "alt"), commands.MORPH_WEIGHT_FULL, "Gewicht 100 %"),
+    MorphKey(_key("plus", "alt"), commands.MORPH_WEIGHT_FULL, f"Gewicht {FULL_WEIGHT} %"),
     MorphKey(_key("minus", "alt"), commands.MORPH_WEIGHT_ZERO, "Gewicht 0 %"),
     MorphKey(_key("n", "shift"), commands.MORPH_NEXT, "Nächstes Ziel (Tab, N und +/- wirken auf das aktuelle)"),
     MorphKey(_key("n", "alt"), commands.MORPH_PREVIOUS, "Voriges Ziel"),
@@ -366,18 +371,68 @@ def view_placement(base_obj, world_width: float):
     )
 
 
+# -- bake (Manu 2026-11-16) ------------------------------------------------------------------------
+
+
+def bake_positions(base: Mesh, weights: dict) -> dict:
+    """The mix of `weights` (LayerId -> whole percent) at every vertex it moves: VertexId -> position, by the module
+    rule (`mix_position`, ascending LayerId order - bit-identical to `morph_mix.evaluate` and the shown surface).
+    Sparse: only vertices with a non-zero offset in an active target."""
+    order = sorted((lid for lid, w in weights.items() if w != 0), key=int)
+    touched = set()
+    for lid in order:
+        touched.update(v for v, d in base.layer_items(lid) if d != _ZERO)
+    out = {}
+    for v in sorted(touched, key=int):
+        if not base.is_valid_vertex(v):
+            continue
+        terms = []
+        for lid in order:
+            d = base.layer_value(lid, v)
+            if d != _ZERO:
+                terms.append((factor(weights[lid]), d))
+        out[v] = mix_position(base.vertex_position(v), terms)
+    return out
+
+
+class MorphWeightsCommand:
+    """The weights of one object as a History step (only as the bake's companion, `MorphController.bake_mix`): Undo
+    puts `before` back, Redo `after` - so Ctrl+Z after a bake shows the old base with its sliders as they were."""
+
+    def __init__(self, provider: "MorphSurfaceProvider", object_id, before: dict, after: dict,
+                 refresh: Callable[[], None], description: str = "Morph weights") -> None:
+        self.provider = provider
+        self.object_id = object_id
+        self.before = dict(before)
+        self.after = dict(after)
+        self.refresh = refresh
+        self.description = description
+
+    def _show(self, weights: dict) -> None:
+        provider = self.provider
+        for lid in set(provider.weights.get(self.object_id, {})) | set(weights):
+            provider.set_weight(self.object_id, weights.get(lid, REST_WEIGHT), lid)
+        self.refresh()
+
+    def undo(self) -> None:
+        self._show(self.before)
+
+    def redo(self) -> None:
+        self._show(self.after)
+
+
 # -- display (H7 provider) -------------------------------------------------------------------------
 
 
 class MorphSurfaceProvider:
     """H7 provider (`sync(mesh, selection) -> moved`, `surface_mesh`, `dirty`, H7-E `entry_surfaces` /
-    `entry_moved`): the mix `b + Σ wᵢ·dᵢ` (`morph_mix`) of every object with a target above 0 %. Never
+    `entry_moved`): the mix `b + Σ wᵢ·dᵢ` (`morph_mix`) of every object with a target other than 0 %. Never
     writes a scene mesh. Weights and the current target are view state per object (F-11): no Undo
-    step, not saved; a weight belongs to a target and goes with it."""
+    step (saved with the scene, `view_state`, 2026-11-16); a weight belongs to a target and goes with it."""
 
     def __init__(self, scene_of: Callable) -> None:
         self._scene_of = scene_of
-        #: ObjectId -> {LayerId: weight in whole percent} (above 0 only; view state, F-11)
+        #: ObjectId -> {LayerId: weight in whole percent} (other than 0 only; view state, F-11)
         self.weights: dict = {}
         #: ObjectId -> the current target (AD-025 Phase 4): the one Tab, N and +/- act on
         self.current: dict = {}
@@ -431,10 +486,10 @@ class MorphSurfaceProvider:
     def weight(self, object_id, lid=None) -> int:
         """The weight of `lid` (default: the current target) in whole percent."""
         lid = self.current_target(object_id) if lid is None else lid
-        return self.weights.get(object_id, {}).get(lid, MIN_WEIGHT)
+        return self.weights.get(object_id, {}).get(lid, REST_WEIGHT)
 
     def object_weights(self, object_id) -> dict:
-        """{LayerId: weight} of the object's targets above 0 % (only targets that exist)."""
+        """{LayerId: weight} of the object's targets other than 0 % (only targets that exist)."""
         mesh = self._mesh_of(object_id)
         if mesh is None:
             return {}
@@ -448,7 +503,7 @@ class MorphSurfaceProvider:
             return weight
         if weight != self.weight(object_id, lid):
             per = self.weights.setdefault(object_id, {})
-            if weight == MIN_WEIGHT:
+            if weight == REST_WEIGHT:
                 per.pop(lid, None)
                 if not per:
                     self.weights.pop(object_id, None)
@@ -480,7 +535,7 @@ class MorphSurfaceProvider:
 
     def mix_of(self, object_id) -> Optional[SurfacePositions]:
         """The object's evaluated mix (a `SurfacePositions`: its mesh's IDs and topology, the mix's positions) while
-        one of its targets is above 0 %, else None (0 %, no target, not synced yet). MODELING_ON_DEFORMED_SURFACES
+        one of its targets is other than 0 %, else None (0 %, no target, not synced yet). MODELING_ON_DEFORMED_SURFACES
         §15: the cage the base is picked and edited on - read only (the view has no write path)."""
         surface = self._surfaces.get(object_id)
         obj = self._scene_of().objects.get(object_id)

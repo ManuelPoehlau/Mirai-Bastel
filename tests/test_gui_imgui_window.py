@@ -340,7 +340,7 @@ def test_morph_panel_slider_drag_sets_the_weight_without_history(env):
     window.dispatch_event("on_mouse_release", *end, mouse.LEFT, 0)
     _frame(window, 2)
     weight = app.morph_weight
-    assert 40 <= weight <= 75, weight
+    assert 60 <= weight <= 110, weight  # 60 % of the -100..200 range (Manu 2026-11-16)
     assert len(app.history._undo_stack) == depth
     assert calls["press"] == 0 and calls["drag"] == 0
     assert f"{weight} %" in app.status_message  # eine Meldung beim Loslassen

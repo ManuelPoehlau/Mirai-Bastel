@@ -456,7 +456,7 @@ def test_c1_whole_mesh_rotate_in_component_mode_leaves_offsets_bit_identical():
 # -- weight and display -----------------------------------------------------------------------------
 
 
-def test_the_weight_is_view_state_no_history_not_saved(tmp_path):
+def test_the_weight_is_view_state_no_history_saved_with_the_scene(tmp_path):
     app, base = _with_target()
     _sculpt(app, {_grid_vertex(app, 1, 1)})
     history, mirror = len(app.history), len(app._selection_undo_stack)
@@ -470,9 +470,13 @@ def test_the_weight_is_view_state_no_history_not_saved(tmp_path):
     assert base.mesh.export_state() == state
     path = tmp_path / "w.mirai.json"
     app.save_scene_file(path)
-    assert "weight" not in path.read_text(encoding="utf-8").lower()
+    data = json.loads(path.read_text(encoding="utf-8"))
+    # Manu 2026-11-16: the sliders travel in the file's view section (no longer "not saved"), outside the Core format
+    assert data["view"]["morph"]["weights"] == [[0, int(app.morph_current_target), 100]]  # [object index, layer, %]
+    assert all("weight" not in json.dumps(obj).lower() for obj in data["objects"])
     app.load_scene("file", scene_path=path)
-    assert app.morph_weight == 0
+    assert app.morph_weight == 100
+    assert len(app.history) == 0
 
 
 def test_the_weight_drag_follows_the_mouse():
