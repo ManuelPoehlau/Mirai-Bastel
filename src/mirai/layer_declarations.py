@@ -251,6 +251,10 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "add_eye": "new mesh",
         "set_eye": "new mesh",
         "set_eye_iris_image": "non-mesh",
+        # Eye LookDev phase 5: the import writes an image file and sets texture, fit and height source; the reset of
+        # the iris values never changes the shell's shape
+        "import_eye_iris": "non-mesh",
+        "reset_eye_iris": "non-mesh",
         "add_reference": "new mesh",
         "import_obj": "new mesh",
         "init_scene": "new mesh",

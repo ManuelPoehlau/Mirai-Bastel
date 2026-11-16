@@ -14,6 +14,8 @@ Eye LookDev phase 3: the Eye Lab's section "Reflexe" sets the look values (`LOOK
 `mirai.eye_object.with_changes` merges into each eye's own look); they draw only in the quality "voll".
 Eye LookDev phase 4: the section "Iris" sets the iris values (`IRIS_SLIDERS`, fields "look.iris.<name>"), the relief's
 height source and "Iris zurücksetzen"; they draw only in the quality "voll" as well.
+Eye LookDev phase 5: "Iris importieren ..." below the image field (`gui.iris_import_model`); "Iris zurücksetzen" keeps
+the height source (`Application.reset_eye_iris`).
 """
 
 from __future__ import annotations
@@ -103,7 +105,7 @@ def reset_look(app) -> bool:
 
 def reset_iris(app) -> bool:
     """The selected eyes without iris values (neutral, as before phase 4; the reflections stay); one Undo step."""
-    return app.set_eye(**{LOOK_PREFIX + "iris": None})
+    return app.reset_eye_iris()
 
 
 #: The gaze modes as the panel names them (`mirai.eye_gaze`).

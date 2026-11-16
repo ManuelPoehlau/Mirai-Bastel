@@ -182,8 +182,12 @@ def test_eye_lab_iris_controls(app):
     assert names == set(DEFAULT_IRIS.to_dict()) and set(em.RELIEF_SOURCE_LABELS) == {"luminance", "alpha"}
     assert em.set_value(app, "look.iris.relief_source", "alpha") is True
     assert em.value(eye.eye, "look.iris.relief_source") == "alpha"
-    assert em.set_value(app, "look.wet_sclera", 0.4) is True
-    assert em.reset_iris(app) is True and eye.eye.look.iris is None and eye.eye.look.wet_sclera == 0.4
+    assert em.set_value(app, "look.wet_sclera", 0.4) is True and em.set_value(app, "look.iris.relief", 0.3) is True
+    # phase 5 (Manu 2026-11-16): the height source belongs to the iris image's import, so the reset keeps it
+    assert em.reset_iris(app) is True and eye.eye.look.wet_sclera == 0.4
+    assert eye.eye.look.iris == dataclasses.replace(DEFAULT_IRIS, relief_source="alpha")
+    em.set_value(app, "look.iris.relief_source", "luminance")
+    assert em.reset_iris(app) is True and eye.eye.look.iris is None  # with the default source: no iris values
 
 
 def test_iris_values_draw_only_in_the_full_tier(app):

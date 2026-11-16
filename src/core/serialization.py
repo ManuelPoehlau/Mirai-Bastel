@@ -37,6 +37,14 @@ den Schlüssel: keine). Wie Version 5 nur geschrieben, wenn ein Mesh UVs oder ei
 4 bzw. 5), damit ein älterer Build die Datei ablehnt, statt UVs und Textur beim Speichern still zu
 verlieren. Gelesen werden 2-6.
 
+Texturpfade relativ zur Szenendatei (Eye LookDev Phase 5, Manu 2026-11-16, AD-026 §7; keine neue Versionsnummer,
+dieses Modul schreibt und liest `"texture"` weiter unverändert): ein relativer Pfad bedeutet "relativ zum Ordner der
+Szenendatei", mit `/` getrennt. `src/mirai` (`mirai.texture_files`) schreibt eine Textur, die im Ordner der Szene oder
+darunter liegt, so; jede andere absolut wie bisher, und löst beim Lesen relative Pfade gegen den Szenenordner auf (im
+Speicher ist ein Texturpfad absolut). Ein älterer Build liest einen relativen Pfad gegen sein Arbeitsverzeichnis, findet
+die Textur dann in der Regel nicht und zeigt das Objekt ohne sie; den Text des Pfads behält er und schreibt ihn beim
+Speichern unverändert zurück (kein Datenverlust).
+
 Version 7 (Rig und Gewichte, AD-028 §3.6, CORE_V1_FREEZE §7.1 2026-11-02) ist additiv: `"rig"` ist
 `null` oder `{"bone_id_counter", "bones": [{"id", "name", "parent", "head", "tail", "roll"}, ...]}`
 (geprüft über `core.rig.Rig`; ein ungültiges Rig macht die Datei ungültig), ein Gewichts-Layer reist

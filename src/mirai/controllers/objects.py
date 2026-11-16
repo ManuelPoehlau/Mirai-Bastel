@@ -41,6 +41,7 @@ from ..eye_object import (
     cornea_triangles,
     eye_material,
     eye_transform,
+    keep_relief_source as keep_relief_source_of,
     read_fit_sidecar,
     shape_changed,
     shell_mesh,
@@ -430,10 +431,11 @@ class ObjectController:
             return None
         return eyes
 
-    def set_eye(self, label: str = "Eye", **changes) -> bool:
+    def set_eye(self, label: str = "Eye", keep_relief_source: bool = False, **changes) -> bool:
         """Set any `EyeSpec` values on every selected eye; one Undo step. A change of the anatomy that shapes the shell
         (`eye_object.SHAPE_FIELDS`) rebuilds the shell. An invalid combination is refused with the reason (status line)
-        and nothing changes. True = an eye changed."""
+        and nothing changes. True = an eye changed. `keep_relief_source` (presets, "Iris zurücksetzen"; phase 5): each
+        eye keeps its relief's height source, which belongs to its iris image (`eye_object.keep_relief_source`)."""
         had_preview = bool(self.eye_previews)
         self.eye_previews.clear()  # a commit (or its refusal) ends the live preview
         eyes = self.eye_targets(label)
@@ -446,6 +448,8 @@ class ObjectController:
         for obj in eyes:
             try:
                 after = with_changes(obj.eye, **changes)
+                if keep_relief_source:
+                    after = keep_relief_source_of(obj.eye, after)
             except ValueError as exc:
                 services.status(f"{label}: {exc}")
                 if had_preview:
@@ -520,7 +524,7 @@ class ObjectController:
         if eyes is None:
             return False
         services = self.services
-        texture = None if path is None else str(path)
+        texture = None if path is None else os.path.abspath(path)
         if path is not None and not path.is_file():
             services.status(f"{label}: {path} not found")
             return False
@@ -529,9 +533,23 @@ class ObjectController:
             services.status(f"{label}: {note}")
             return False
         fit_values = dict(fit_pupil=None, fit_limbus=None, hold_outer_color=False) if fit is None else fit
+        if not self.apply_iris_image(eyes, texture, fit_values, label):
+            return False
+        fit_text = "planar" if fit is None else f"fit pupil {fit['fit_pupil']:g} / iris edge {fit['fit_limbus']:g}"
+        services.status(f"{label}: {'removed' if texture is None else Path(texture).name} ({fit_text})")
+        return True
+
+    def apply_iris_image(self, eyes, texture: str | None, changes: dict, label: str) -> bool:
+        """`texture` and the eye values `changes` (the fit, phase 5 also the relief's height source) on `eyes` as one Undo
+        step. False (status line) when nothing changes or a value is refused."""
+        services = self.services
         planned, textures = [], []
         for obj in eyes:
-            after = with_changes(obj.eye, **fit_values)
+            try:
+                after = with_changes(obj.eye, **changes)
+            except ValueError as exc:
+                services.status(f"{label}: {exc}")
+                return False
             if after != obj.eye:
                 planned.append((obj, obj.eye, after, obj.mesh, obj.mesh))
             if obj.texture != texture:
@@ -551,8 +569,6 @@ class ObjectController:
         services.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, label))
         services.record_selection_history(before, mesh_step=False)
         self.sync_views()
-        fit_text = "planar" if fit is None else f"fit pupil {fit['fit_pupil']:g} / iris edge {fit['fit_limbus']:g}"
-        services.status(f"{label}: {'removed' if texture is None else Path(texture).name} ({fit_text})")
         return True
 
     def export_obj(self, path: str | Path) -> bool:
