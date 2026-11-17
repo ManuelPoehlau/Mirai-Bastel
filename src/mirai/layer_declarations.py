@@ -306,6 +306,9 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "delete_morph_target": MORPH,
         "edit_morph_target": MORPH,
         "leave_morph_target": MORPH,
+        # Manu 2026-11-16: "In Basis backen" - the shown mix becomes the rest shape and the weights go to 0 % in one Undo
+        # step; the morph controller rewrites positions and layers itself (and refuses in a target's editing view)
+        "bake_morph_mix": MORPH,
     }
 )
 
