@@ -5,6 +5,10 @@ gestures and the three stage-7 policies. Names, keys and texts `PROVISIONAL`.
   Pivot, tail = the centre of the component selection, both to world; parent = the current bone; creates the rig if
   absent), `BONE_RENAME` (a name list), `BONE_DELETE` (a `CompositeCommand`: one `MeshDeltaCommand` per bound mesh -
   the bone's share to its parent, `skin_weights.delete_bone_weights` - and the rig without the bone).
+- **Bone tool 01** (2026-11-17, AD-028 addendum): the chain-click tool (`bone_chain.BoneChainSession`, begun by
+  `begin_chain`: no key), `edit_bone` (a bone's name, parent, head, tail, roll at rest, one Undo step; refused while
+  posed), `delete_bone` by id, and the two weight operations as values (`weights_from_group_value`,
+  `set_weight_value`: the gestures' own stroke, committed at once, for the panel).
 - **Pose** (view state, §6; no History, not saved, a load starts at rest): `BoneId -> BonePose`, the current bone,
   the last pose (for the rest <-> pose toggle) and the pose mode. Written to the skin stage through
   `services.skin.provider.set_pose`. A deleted bone's pose channel goes with it and does not come back on Undo.
@@ -27,7 +31,7 @@ import math
 import re
 from typing import Optional
 
-from core import BoneId, PointLayerInfo, SelectionMode
+from core import Bone, BoneId, PointLayerInfo, SelectionMode
 from core.mesh import LayerKind, MeshChange
 from core.operations import MeshDeltaCommand, record_mesh_change
 from core.operations.transform import SEAM_TOLERANCE
@@ -55,6 +59,7 @@ from ..subdivision import SUBD_COMMANDS
 from ..subdivision.preview import key_label
 from ..symmetry import vertex_correspondence
 from ..viewport import gizmo as _gizmo
+from .bone_chain import BoneChainSession
 from .gestures import (
     TRANSFORM_COMMANDS,
     GestureController,
@@ -122,6 +127,9 @@ _PLACEMENT_LABELS = {
 }
 
 _I3 = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+
+#: `edit_bone`: a field left at this is not changed (None is a value: no parent).
+KEEP = object()
 
 
 # -- small vector maths (rows, as `object_space`) ------------------------------------------------------------
@@ -417,6 +425,17 @@ class _WeightsGesture(_RigGesture):
         self._show_share()
         self.services.status(self.describe())
 
+    def apply_once(self) -> bool:
+        """A value that did not come from the mouse (the panel): one write from the press values, one History entry -
+        the gesture's own stroke, committed at once."""
+        try:
+            self._write()
+        except Exception:
+            self.abort()
+            self.end()
+            raise
+        return self.commit()
+
     def _show_share(self) -> None:
         """The current bone's share on the shading overlay (§8.4), so the width shows also at rest."""
         stroke = self.stroke
@@ -626,6 +645,8 @@ class SkeletonController:
         self.last_pose: dict = {}
         self.current: Optional[BoneId] = None
         self.pose_mode = False
+        #: the chain tool snaps to object pivots and bone ends (view state, not saved; the panel's checkbox)
+        self.chain_snap = True
         self._bound: dict = {}  # id(mesh) -> [mesh, watch, bound]
         #: the three stage-7 policies, in order (AD-028 §8.2)
         self.policies = (self.pose_mode_refusal, self.posed_refusal, self.placement_refusal)
@@ -642,6 +663,12 @@ class SkeletonController:
         Undo step. Not drawn, not picked, skipped by next / previous."""
         rig = self.rig
         return frozenset() if rig is None else rig.hidden_ids()
+
+    @property
+    def chain(self) -> Optional[BoneChainSession]:
+        """The running bone chain session, None without one."""
+        session = self.services.interaction.session
+        return session if isinstance(session, BoneChainSession) else None
 
     @property
     def current_bone(self) -> Optional[BoneId]:
@@ -695,6 +722,9 @@ class SkeletonController:
 
     def reset(self) -> None:
         """A new scene: rest pose, no current bone, pose mode off (the pose is not saved, §6)."""
+        chain = self.chain
+        if chain is not None:
+            chain.end(quiet=True)  # a loaded scene has no chain to continue
         self.pose, self.last_pose = {}, {}
         self.current = None
         self.pose_mode = False
@@ -714,8 +744,11 @@ class SkeletonController:
             self.pose_mode = False
 
     def after_history(self) -> None:
-        """After Undo / Redo: the rig may have lost or regained bones."""
+        """After Undo / Redo: the rig may have lost or regained bones; a running chain follows the history."""
         self._prune()
+        chain = self.chain
+        if chain is not None:
+            chain.resync()
 
     def leave_pose_mode(self) -> None:
         if self.pose_mode:
@@ -787,17 +820,14 @@ class SkeletonController:
             return False
         scene = services.scene
         rig = scene.rig if scene.rig is not None else Rig()
-        names = {b.name for b in rig.bones}
-        n = len(rig.bones) + 1
-        while f"Bone {n}" in names:
-            n += 1
+        name = self.free_bone_name(rig)
         parent = self.current_bone
-        after, bid = rig.with_new_bone(f"Bone {n}", head, tail, parent=parent)
-        self._push_rig(after, f"Add bone 'Bone {n}'")
+        after, bid = rig.with_new_bone(name, head, tail, parent=parent)
+        self._push_rig(after, f"Add bone {name!r}")
         self.current = bid
         under = f" under {self.bone_name(parent)!r}" if parent is not None else ""
         services.status(
-            f"Bone 'Bone {n}' added{under} (pivot -> selection centre). {self.key_text(commands.WEIGHTS_FROM_GROUP)}"
+            f"Bone {name!r} added{under} (pivot -> selection centre). {self.key_text(commands.WEIGHTS_FROM_GROUP)}"
             f" held = weights from the active group, {self.key_text(commands.POSE_MODE)} = pose mode"
         )
         return True
@@ -835,15 +865,18 @@ class SkeletonController:
         services.status(f"Bone {old!r} is now {name!r} (again: next name)")
         return True
 
-    def delete_bone(self) -> bool:
-        """`BONE_DELETE` (§8.3): the current bone; its weights to its parent (or the object) in every bound mesh
-        (`skin_weights.delete_bone_weights`), its children re-parented; one entry for all of it. Its pose channel
-        goes; the parent becomes current."""
+    def delete_bone(self, bone: Optional[BoneId] = None) -> bool:
+        """`BONE_DELETE` (§8.3): the current bone (or `bone`, the panel's button); its weights to its parent (or the
+        object) in every bound mesh (`skin_weights.delete_bone_weights`), its children re-parented; one entry for all of
+        it. Its pose channel goes; the parent becomes current."""
         services = self.services
         label = "Delete bone"
         if self._busy(label):
             return False
-        bone = self.current_bone
+        if bone is None:
+            bone = self.current_bone
+        elif self.rig is None or not self.rig.has_bone(bone):
+            return False
         if bone is None:
             services.status(f"{label}: no bone")
             return False
@@ -965,6 +998,201 @@ class SkeletonController:
         services.status(f"Bone {self.bone_name(bone)!r} back at rest")
         return True
 
+    # -- Bone tool 01: the chain tool, editing a bone, the panel's weight values (2026-11-17) -------------------
+
+    @staticmethod
+    def free_bone_name(rig: Rig) -> str:
+        """`Bone n`, the first not taken (n from the bone count + 1)."""
+        names = {b.name for b in rig.bones}
+        n = len(rig.bones) + 1
+        while f"Bone {n}" in names:
+            n += 1
+        return f"Bone {n}"
+
+    def chain_blocker(self) -> Optional[str]:
+        """Why the chain tool cannot start now (pure; the panel greys its button with it), None = it can: an
+        interaction runs, a selection drag runs, no viewport, a morph target's editing view, or the rig is posed."""
+        services = self.services
+        owner = services.interaction_owner
+        if owner is not None:
+            return f"not while the {owner} interaction runs"
+        if services.drag_select is not None:
+            return "not while a selection drag runs"
+        if services.viewport is None:
+            return "no viewport"
+        if services.morph_view_shift is not None:
+            return "on the base only (Tab returns to it)"
+        if self.posed():
+            return f"the rig is posed - {self.key_text(commands.POSE_TOGGLE_REST)} = rest pose first"
+        return None
+
+    def edit_blocker(self) -> Optional[str]:
+        """Why a bone cannot be edited now (pure), None = it can: an interaction runs, or the rig is posed (a bone's
+        rest frame is edited at rest)."""
+        owner = self.services.interaction_owner
+        if owner is not None:
+            return f"not while the {owner} interaction runs"
+        if self.posed():
+            return f"the rig is posed - {self.key_text(commands.POSE_TOGGLE_REST)} = rest pose first (a bone's rest frame is edited at rest)"
+        return None
+
+    def begin_chain(self, root: bool = False) -> bool:
+        """Starts the chain tool (`bone_chain`; the panel's button, no key). The first bone's parent is the current
+        bone, or none for `root`. Refused (`chain_blocker`): while an interaction runs, while posed, in a morph target's
+        editing view and without a viewport."""
+        services = self.services
+        reason = self.chain_blocker()
+        if reason is not None:
+            if services.viewport is not None:
+                services.status(f"Bone chain: {reason}")
+            return False
+        self.leave_pose_mode()
+        parent = None if root else self.current_bone
+        session = BoneChainSession(self, parent)
+        services.interaction.start(session)
+        services.set_hovered(None)
+        services.refresh_hover()
+        services.status(session.hint())
+        return True
+
+    def end_chain(self) -> bool:
+        """The panel's "end chain" (Esc does the same through `Application`). True = a chain ended."""
+        chain = self.chain
+        return chain is not None and chain.end()
+
+    def finish_chain(self, session: BoneChainSession) -> None:
+        """The session leaves the slot (`BoneChainSession.end`); the weight view shows the share of the bone that is
+        current now."""
+        self.services.interaction.end(session)
+        self.services.soft_preview_refresh()
+
+    def add_chain_bone(self, head, tail, parent: Optional[BoneId]) -> Optional[Bone]:
+        """One chain click's bone: `head` -> `tail` (world) under `parent`, one History step (`BONE_ADD`'s
+        `RigCommand`), current from now on. None (a status line says why) = nothing changed."""
+        services = self.services
+        scene = services.scene
+        rig = scene.rig if scene.rig is not None else Rig()
+        if parent is not None and not rig.has_bone(parent):
+            parent = None  # an Undo went past the bone the chain was started under
+            services.status("Bone chain: its parent bone is gone (Undo) - the new bone has no parent")
+        name = self.free_bone_name(rig)
+        try:
+            after, bid = rig.with_new_bone(name, head, tail, parent=parent)
+        except ValueError as exc:
+            services.status(f"Bone chain: {exc}")
+            return None
+        self._push_rig(after, f"Add bone {name!r}")
+        self.current = bid
+        return after.bone(bid)
+
+    def edit_bone(
+        self, bone: BoneId, *, name=KEEP, parent=KEEP, head=KEEP, tail=KEEP, roll=KEEP
+    ) -> bool:
+        """Edit a bone's rest frame, name or parent - one Undo step, at rest only (a bone's rest frame under a pose
+        would move the posed surface under the user's hands, AD-028 §7.1: "rest pose first").
+
+        `head` / `tail` are world positions, `roll` radians, `parent` a `BoneId` or None (a root); a field left at `KEEP`
+        stays. What it does to the rest of the scene (AD-028 addendum 2026-11-17):
+
+        - **Weights** are keyed by `BoneId` and are not touched; the mesh and its rest shape are not touched either, so
+          the rest display is bit-identical before and after. Only a later pose deforms around the new rest frame.
+        - **Children** keep their own rest frames (world space): moving a bone does not drag its children; re-parenting
+          changes the hierarchy only (`Rig.with_bone`).
+        - **Pose values** are local to the bone's rest frame (`BonePose`): while posed the edit is refused, and a
+          remembered pose (the rest <-> pose toggle) is applied in the new frame afterwards - the jaw opens about the
+          new hinge by the same turn."""
+        services = self.services
+        label = "Edit bone"
+        rig = self.rig
+        if rig is None or not rig.has_bone(bone):
+            services.status(f"{label}: no such bone")
+            return False
+        reason = self.edit_blocker()
+        if reason is not None:
+            services.status(f"{label}: {reason}")
+            return False
+        old = rig.bone(bone)
+        changes = {}
+        parts = []
+        if name is not KEEP:
+            taken = {b.name for b in rig.bones} - {old.name}
+            clean = name.strip() if isinstance(name, str) else name
+            if not clean or clean in taken or len(clean) > 64 or not clean.isprintable():
+                services.status(f"{label}: {clean!r} is not a free name")
+                return False
+            if clean != old.name:
+                changes["name"] = clean
+                parts.append("name")
+        if parent is not KEEP:
+            if parent is not None and not rig.has_bone(parent):
+                services.status(f"{label}: no such parent bone")
+                return False
+            if parent is not None and (parent == bone or bone in rig.ancestors(parent)):
+                where = "itself" if parent == bone else f"its own child {rig.bone(parent).name!r}"
+                services.status(f"{label}: {old.name!r} cannot be a child of {where} (a bone hierarchy has no cycle)")
+                return False
+            if parent != old.parent:
+                changes["parent"] = parent
+                parts.append("parent")
+        for field, value in (("head", head), ("tail", tail)):
+            if value is not KEEP:
+                point = tuple(float(c) for c in value)
+                if point != getattr(old, field):
+                    changes[field] = point
+                    parts.append(field)
+        if roll is not KEEP and float(roll) != old.roll:
+            changes["roll"] = float(roll)
+            parts.append("roll")
+        if not changes:
+            return False
+        try:
+            new = dataclasses.replace(old, **changes)  # `Bone` validates: finite, a length > 0
+            after = rig.with_bone(new)
+        except (ValueError, TypeError) as exc:
+            services.status(f"{label}: {exc}")
+            return False
+        self._push_rig(after, f"Edit bone {old.name!r}: {', '.join(parts)}")
+        services.status(
+            f"Bone {new.name!r}: {', '.join(parts)} changed (rest edit - weights stay, the rest shape is untouched;"
+            f" Ctrl+Z takes it back)"
+        )
+        return True
+
+    def _weight_work_ready(self, label: str) -> bool:
+        """The panel's weight operations: no interaction running (a gesture, a chain), a viewport."""
+        services = self.services
+        if services.viewport is None or self._busy(label):
+            return False
+        return True
+
+    def weights_from_group_value(self, percent: float) -> bool:
+        """"Weights from group" with a width given as a number (the panel): the `FalloffGesture`'s stroke at `percent` of
+        the mesh's bounding radius, committed at once - one History entry, the refusals of the key (§8.4)."""
+        label = "Weights from group"
+        if not self._weight_work_ready(label):
+            return False
+        gesture = self._falloff_gesture(label, None, (None, True))
+        if gesture is None:
+            return False
+        gesture.start_percent = max(0.0, min(FALLOFF_MAX_PERCENT, float(percent)))
+        gesture._cache = None
+        self.services.interaction.start(gesture)
+        return gesture.apply_once()
+
+    def set_weight_value(self, value: float) -> bool:
+        """"Set weight" with a value given as a number (the panel): the `WeightGesture`'s stroke - the selection, the
+        Soft field if Soft is on - at `value` 0-1, committed at once; one History entry, the refusals of the key."""
+        label = "Set weight"
+        if not self._weight_work_ready(label):
+            return False
+        gesture = self._weight_gesture(label, None, (None, True))
+        if gesture is None:
+            return False
+        gesture.start = gesture.value = max(0.0, min(1.0, float(value)))
+        gesture.ctrl_snap_ok = False  # a number is not snapped to tenths
+        self.services.interaction.start(gesture)
+        return gesture.apply_once()
+
     # -- the gestures -------------------------------------------------------------------------------
 
     def arm_bone_gesture(self, command: str, key: str, origin) -> bool:
@@ -1013,48 +1241,57 @@ class SkeletonController:
                 return False
         return True
 
-    def arm_falloff(self, key: str, origin) -> bool:
+    def _falloff_gesture(self, label: str, key, origin) -> Optional[FalloffGesture]:
+        """The `FalloffGesture` for the current bone and the active group, or None with the refusal posted (§8.4). Not
+        yet in the slot."""
         services = self.services
-        label = "Weights from group"
         picked = self._weights_refusal(label)
         if picked is None:
-            return False
+            return None
         bone, mesh = picked
         group = services.active_region
         faces = live_faces(mesh, group) if group is not None else frozenset()
         if not faces:
             services.status(f"{label}: make a group first (Ctrl+G on the faces)")
-            return False
+            return None
         seeds = {v for f in faces for v in mesh.face_vertices(f)}
         try:
-            gesture = FalloffGesture(self, key, origin, bone, seeds, group)
+            return FalloffGesture(self, key, origin, bone, seeds, group)
         except SoftSymmetryRefusal as exc:
             services.status(f"{label}: refused - {exc}")
+            return None
+
+    def arm_falloff(self, key: str, origin) -> bool:
+        services = self.services
+        label = "Weights from group"
+        gesture = self._falloff_gesture(label, key, origin)
+        if gesture is None:
             return False
         services.interaction.start(gesture)
         services.set_hovered(None)
         services.status(
-            f"{label} {group!r} -> {self.bone_name(bone)!r}: mouse left/right = falloff width"
+            f"{label} {gesture.group!r} -> {self.bone_name(gesture.bone)!r}: mouse left/right = falloff width"
             f" ({gesture.start_percent:.0f} %), release {key.upper()} to commit, Esc cancels"
         )
         return True
 
-    def arm_weight(self, key: str, origin) -> bool:
+    def _weight_gesture(self, label: str, key, origin) -> Optional[WeightGesture]:
+        """The `WeightGesture` for the current bone on the selection (the Soft field if Soft is on), or None with the
+        refusal posted. Not yet in the slot."""
         services = self.services
-        label = "Set weight"
         picked = self._weights_refusal(label)
         if picked is None:
-            return False
+            return None
         bone, mesh = picked
         selection = services.selection
         seeds = resolve_selection_vertices(mesh, selection, selection.mode)
         mask = services.mask_values(seeds)
         if not seeds:
             services.status(f"{label}: select points first")
-            return False
+            return None
         if mask and all(mask.get(v, 0.0) >= MASK_FULL for v in seeds):
             services.status(f"{label}: all selected points are masked (Ctrl+M unmasks)")
-            return False
+            return None
         soft = services.soft_settings
         field = None
         if soft.enabled:
@@ -1062,14 +1299,21 @@ class SkeletonController:
                 field = self.gestures.smooth_soft_weights(seeds, soft)
             except SoftSymmetryRefusal as exc:
                 services.status(f"{label}: refused - {exc}")
-                return False
-        gesture = WeightGesture(self, key, origin, bone, seeds, field)
+                return None
+        return WeightGesture(self, key, origin, bone, seeds, field)
+
+    def arm_weight(self, key: str, origin) -> bool:
+        services = self.services
+        label = "Set weight"
+        gesture = self._weight_gesture(label, key, origin)
+        if gesture is None:
+            return False
         services.interaction.start(gesture)
         services.set_hovered(None)
-        soft_note = " (Soft: wheel = radius)" if field is not None else ""
+        soft_note = " (Soft: wheel = radius)" if gesture.field_weights is not None else ""
         services.status(
-            f"{label} {self.bone_name(bone)!r}: {len(seeds)} points at {gesture.start:.2f}{soft_note} - mouse"
-            f" left/right = value (Ctrl: steps of 0.1), release {key.upper()} to commit"
+            f"{label} {self.bone_name(gesture.bone)!r}: {len(gesture.seeds)} points at {gesture.start:.2f}{soft_note} -"
+            f" mouse left/right = value (Ctrl: steps of 0.1), release {key.upper()} to commit"
         )
         return True
 
@@ -1127,15 +1371,14 @@ class SkeletonController:
         """Line items in world space (§8.5): a line head -> tail per bone in its posed placement and a small cross at
         its head; the current bone highlighted; dimmed outside pose mode."""
         segments = self.posed_segments()
-        if not segments:
-            return []
+        chain = self.chain
         current = self.current_bone
         items = []
         for bid, head, tail in segments:
             if bid in self.hidden:
                 continue
             color = COLOR_BONE_CURRENT if bid == current else COLOR_BONE
-            if not self.pose_mode:
+            if not self.pose_mode and chain is None:  # (a bone chain draws them at full strength)
                 color = color[:3] + (BONE_DIM_ALPHA,)
             width = BONE_LINE_WIDTH_CURRENT if bid == current else BONE_LINE_WIDTH
             arm = _gizmo.gizmo_size(camera, head, scale) * BONE_CROSS_RATIO
@@ -1145,6 +1388,8 @@ class SkeletonController:
                           head[0] + d[0] * arm, head[1] + d[1] * arm, head[2] + d[2] * arm]
             items.append(_gizmo.DrawItem((*head, *tail), color, "lines", width))
             items.append(_gizmo.DrawItem(tuple(cross), color, "lines", BONE_LINE_WIDTH))
+        if chain is not None:
+            items += chain.items(camera, scale)  # the pending bone and the marker under the cursor
         return items
 
     def status_text(self) -> str | None:
@@ -1158,6 +1403,8 @@ class SkeletonController:
                  f"{n} bone{'s' if n != 1 else ''}", "posed" if self.posed() else "rest"]
         if self.pose_mode:
             parts.append("pose mode")
+        if self.chain is not None:
+            parts.append("bone chain")
         return " · ".join(parts)
 
     # -- the stage-7 policies (pure) ----------------------------------------------------------------

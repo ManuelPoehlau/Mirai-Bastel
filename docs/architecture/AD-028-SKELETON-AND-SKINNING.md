@@ -174,6 +174,7 @@ Ende).
   Apply (F-4).
 - **Editing a bone's rest frame after binding** (re-binding) is not in this phase: delete the bone and add it again
   (Undo restores). A rest-edit mode is additive (the weights stay; the deformation follows the new rest).
+  *(2026-11-17: built as `edit_bone`, at rest only - see the [addendum](#addendum-2026-11-17-bone-tool-01-chain-click-pivot-snap-rest-edit-bonepanel).)*
 
 ### 3.3 Weights: the WEIGHTS point layer
 
@@ -537,6 +538,63 @@ details below are `PROVISIONAL`; the Artist test is [GUI_STAGE1_HUD.md §8](../d
   per frame only the sink's `dirty` check while something is shaded (≈ 50-70 ns); 150 orbit frames: no recompute, no push.
   Tests: `tests/test_weight_view.py`.
 
+### Addendum 2026-11-17: Bone tool 01 (chain click, pivot snap, rest edit, Bone / Skin panel)
+
+**Decision Manu 2026-11-17:** bones are placed by hand as a click chain (Maya / 3ds Max style), not from region + selection;
+a snap to an object's pivot is a prerequisite; GUI panels are used, a provisional layout is fine; the hotkey map is full, so
+no new key - everything panel-able is in a panel or menu entry. Eyes / teeth / lids following bones is the next Architecture
+Gate and not part of this. S1-S8 stand; no `src/core` change, no scene-format change, `config/keymap.json` untouched. Names,
+texts, colours, layout and the snap radius are `PROVISIONAL`. Code: `controllers/bone_chain.py`, `controllers/skeleton.py`
+(`begin_chain`, `edit_bone`, ...), `pivot.py` (`snap_candidates`), `gui/bone_model.py` + `gui/bone_panel.py`.
+
+- **Chain tool** (a session in the slot, owner `"bonechain"`, not exclusive; entered from the panel, `Application.start_bone_chain`):
+  the first click sets the head, every further click a tail and starts the next bone, parent = the previous bone. It grabs
+  the plain / Shift LMB click (a drag is no click), hover (the preview: the pending band and a marker coloured by what the
+  point snapped to) and leave; Alt+LMB orbit / pan, the wheel and the view keys are untouched; `allows` lets only Cancel, Undo /
+  Redo, navigation and view state through, everything else is refused silently. Esc or the panel's button ends it; the bones stay.
+- **Parent of the first bone:** the current bone (branching: select the skull, start - the jaw and both eyes hang off it; the
+  head is free, not the parent's tail), or none (`root=True`); a first click that snaps onto an existing bone's **tail**
+  makes that bone the parent and starts exactly at the tail.
+- **Undo granularity (⚠ engineering choice): one step per bone** (`RigCommand`, as `BONE_ADD`). Reason: each click shows its
+  bone at once, so Ctrl+Z takes back what the last click made (Maya's joint tool); one step per chain would let one Undo remove
+  a spine. The pending head follows the history (`resync`): a bone taken back leaves its head as the pending point, a Redo
+  continues from its tail. A head with no bone is no history entry, so Undo drops it first instead of taking back an earlier
+  step. Refused to start: an interaction runs, posed (the clicks pick on the rest cage while the display shows the pose, §7.1),
+  a morph target's editing view, no viewport.
+- **Where a click lands:** (1) the nearest object pivot or bone head / tail within `pivot.POINT_SNAP_PX` = 12 px (depth plays no
+  part: an eyeball's centre inside a solid snaps); (2) `place_pivot` (Shift = vertex / edge, else the middle of the mesh under the
+  cursor, else the plane facing the camera through the pending head) with the symmetry-plane snap (V-3), so a chain down the
+  middle is on the plane to the last bit. The snap is on by default, a checkbox in the panel switches it (`Application.bone_chain_snap`).
+- **Snap to an object's pivot** = `object_space.pivot_world(obj)` = `placement_matrix(transform, pivot) · pivot` =
+  `translation + pivot`. **Finding:** the eye objects of the Gollum scenes carry `pivot (0, 0, 0)` and the placement in the
+  transform; the eye mesh is built around its origin (a sphere of radius 1 - the iris eye's cornea bulges to +z only), so the
+  snapped point is the eyeball's centre to 1e-12 (`tests/test_bone_chain.py`). A tooth's pivot and a group's are plain object
+  origins; nothing is special-cased. The Working Pivot uses the same candidates with **Ctrl** at the click (`PointerTools`,
+  `PROVISIONAL`; without Ctrl its placement is unchanged).
+- **Rest edit** (`Application.edit_bone`, replaces "delete and add again" of §3.2): name, parent, head, tail, roll; one
+  Undo step; the Core `Rig.with_bone` suffices. **Refused while posed** (and while an interaction runs): a rest frame changed under a
+  pose would move the shown surface under the user's hands (§7.1). What it does to the rest: weights are keyed by `BoneId` and
+  are not touched; the mesh is not touched, so the **rest display is bit-identical** before and after (the handoff's stop
+  point "editing changes how weighted meshes evaluate at rest" is not met: it does not); children keep their own world-space rest
+  frames; a re-parent changes the hierarchy only and is refused when it would make a cycle. **Pose values** are local to the
+  bone's rest frame (`BonePose`): the pose is rest while the edit runs, and the remembered pose of the rest <-> pose toggle is
+  applied in the new frame afterwards (the jaw opens about the new hinge by the same turn); only the deformation around the
+  bone changes.
+- **Bone / Skin panel** (`gui/bone_panel.py`, button "Bone" in the toggle bar, closed by default; the state is a pure function
+  of `Application` in `gui/bone_model.py`, no document state, AD-030): the chain buttons (child of the current bone / new root,
+  end), the snap checkbox, the current bone (list, name, parent without the bone's descendants, head / tail as numbers in world
+  space, roll in degrees, hidden, delete), and the skinning section: weights from the active group with a width in % (the key's
+  `FalloffGesture` stroke with a number: `Application.weights_from_group_value`), set weight with a value on the selection
+  (Soft field if Soft is on: `set_weight_value`), the weight view. Number fields commit on leaving the field, one Undo step each;
+  ImGui reads the displayed "%.4f" back on every entered field, so a difference below half a displayed digit is no input.
+  Bones stay in the outliner.
+- **GUI layer exemption (Manu, 2026-11-17):** while any session runs the layer gives the whole mouse to `Application`
+  (AD-030 §2). The bone chain takes only viewport clicks (no held key, no cursor-wrap), so `PANEL_USABLE_OWNERS` exempts owner
+  `"bonechain"`: its panel button and checkbox work while it runs. Every other interaction keeps the precedence.
+- Tests: `tests/test_bone_chain.py` (tool, snaps, the Gollum eyeballs), `test_bone_edit.py`, `test_bone_chain_scenario.py` (the
+  jaw scenario with the bone made by the tool incl. the Gollum head chain), `test_gui_bone_panel_model.py`,
+  `test_gui_bone_panel_window.py` (the real window, own process).
+
 ## 9. Core change (CORE_V1_FREEZE §7)
 
 1. **Requirement:** the jaw scenario (Manu 2026-10-29): bones and weights that survive topology edits, Undo, Knife
@@ -666,8 +724,10 @@ asked.
 
 Weight brush; envelopes; automatic weights (heat, geodesic binding); IK, constraints; animation, keys, timeline;
 bone-driven morphs or correctives; objects parented to bones and rigid parts; per-object evaluated display beyond the
-edit object; GPU skinning or a GPU drawing path; editing on the posed surface; bone rest editing beyond delete + add;
-bone mirroring (L/R) and symmetric weights of off-centre bones; GUI panels; `config/keymap.json`; removing the Morph
+edit object; GPU skinning or a GPU drawing path; editing on the posed surface; bone rest editing beyond delete + add
+*(2026-11-17: built, [addendum](#addendum-2026-11-17-bone-tool-01-chain-click-pivot-snap-rest-edit-bonepanel))*;
+bone mirroring (L/R) and symmetric weights of off-centre bones; GUI panels *(2026-11-17: one Bone / Skin panel, same
+addendum)*; `config/keymap.json`; removing the Morph
 Lab; transfer between meshes (Phase 7).
 
 *(2026-11-03: a long-term product requirement for editing on the posed surface is proposed, pending Manu's review, in
@@ -917,3 +977,35 @@ wenn eine bleiben soll, oder nenne eine andere.
 9. **Messlauf auf deinem PC:** `python experiments/drag_cost/probe_morph_gl.py --only-skin`, die Ausgabe in den Chat
    (die 16,7-ms-Grenze kann nur dein PC bestätigen; sie entscheidet, ob ein GPU-Zeichenweg das nächste Thema wird).
    → **Gemessen 2026-11-07:** [`experiments/drag_cost/RESULTS_SKIN_IMGUI_REFERENCE_PC_2026-11-07.md`](../../experiments/drag_cost/RESULTS_SKIN_IMGUI_REFERENCE_PC_2026-11-07.md) — P-1-Grenze hält für Kopf und Körper ≤ 15 %; gollum_20k OVER (H5c bestätigt); _sync_geometry 73–77 % des Pose-Schritts (Hypothese bestätigt).
+
+## Praxistest Bone-Werkzeug 01 für Manu (Deutsch, ca. 20 Minuten)
+
+Ein Durchgang, keine Abhakliste: melde dich, wenn etwas Probleme macht. Gollum-Szene laden (`Gollum_Head_03` hat noch kein
+Rig; `Gollum_Head_01*` hat einen ausgeblendeten Knochen „Neck“). Keine neue Taste: alles über den Knopf **„Bone“** in der
+Leiste oben links (neben „Morph“ und „Auge“); `Esc` beendet die Kette. Alles `PROVISIONAL` (Texte, Farben, Layout, Radius
+12 px).
+
+1. **Kette Hals → Schädel.** Knopf „Bone“ öffnet das Panel, „Kette starten“ (ohne Knochen: „ohne Parent“). Klick = Kopf des
+   Halses, Klick = Spitze (= Kopf des Schädels), Klick = Spitze des Schädels. Der Vorschau-Knochen und ein Kreuz folgen
+   dem Cursor; `Strg+Z` nimmt den letzten Knochen zurück (die Kette läuft von seinem Kopf weiter), noch einmal nur einen
+   Kopf ohne Knochen. `Esc` beendet.
+2. **Kiefer und Augen vom Schädel abzweigen.** Im Panel (oder im Outliner) den Schädel als aktuellen Knochen wählen, „Kette
+   starten (Kind von 'Bone 2')“, Kopf in das Kiefergelenk, Spitze ans Kinn, `Esc`. Dasselbe für jedes Auge. Ein erster Klick auf
+   die Spitze eines vorhandenen Knochens setzt dort fort; „Neue Wurzel“ beginnt ohne Parent.
+3. **Einrasten am Pivot eines Auges.** Beim Kopf eines Augen-Knochens den Cursor in etwa 12 Pixel Nähe der Augapfelmitte
+   führen: ein cyan Kreuz und in der Statuszeile „pivot of 'Eye'“; der Klick sitzt exakt in der Mitte des Augapfels (auch
+   wenn sie unter der Haut liegt). Zähne und Gruppen haben nur ihren Objekt-Ursprung als Pivot, keine Sonderbehandlung.
+   `Shift` = Punkt / Kante des Meshs, in der Mitte rastet der Klick exakt auf die Symmetrieebene. Das Häkchen „Einrasten“
+   schaltet es ab. `P` halten + `Strg`-Klick setzt auch den Working Pivot auf einen Objekt-Pivot.
+4. **Knochen nach dem Binden verschieben.** Gewichte wie gewohnt (Gruppe „Jaw“, im Panel „Anwenden“ mit Breite), dann im Panel
+   den Kopf des Kiefers als Zahl ändern (Enter): Gewichte und Ruheform bleiben, `Strg+Z` holt es zurück. Pose-Modus (`5`),
+   Kiefer mit `E` drehen: er dreht sich um das neue Gelenk. In der Pose zeigt das Panel „Nur in der Ruhe-Pose
+   editierbar“ (`6` = Ruhe).
+5. **Das Panel.** Namen ändern (Enter; ein belegter Name wird abgelehnt), Parent umhängen (die Liste enthält den Knochen selbst
+   und seine Kinder nicht), Zahlen für Kopf / Spitze / Roll eingeben, „Gewicht setzen“ mit Wert auf eine Punktauswahl (`1`),
+   „Gewichtsansicht“ an / aus, „Ausgeblendet“, „Löschen“ (die Gewichte gehen an den Parent).
+6. **Undo/Redo und Speichern/Laden** mit der Kette: jeder Knochen ein Schritt; `Strg+S`, neu laden: Knochen (auch der
+   ausgeblendete „Neck“ in `Gollum_Head_01*`), Namen, Parent und Zahlen sind unverändert.
+
+Nicht geprüft und offen für deinen PC: das Aussehen und die Bedienung im echten Fenster (Fenster-Test nur unter xvfb), die
+Mausführung des Klicks über dem Panel, HiDPI.

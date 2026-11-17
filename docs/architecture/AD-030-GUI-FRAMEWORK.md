@@ -252,3 +252,18 @@ Tasten (gleiche Ablehnungen). Neue/erweiterte `Application`-Methoden sind Ansich
 Methoden (`layer_declarations.METHOD_CLASSES` unverändert; Gate-Test grün). Tests: `tests/test_gui_morph_panel_model.py`
 (headless), `tests/test_gui_imgui_window.py` (Neu, Name-Klick, Solo, Regler ziehen ohne History, Umbenennen, Ansicht).
 Praxistest Manu offen.
+
+
+## 14. Bone-/Skin-Panel und eine Ausnahme im Layer (2026-11-17, Manu)
+
+Das Bone-/Skin-Panel (Knopf „Bone“, Standard zu; `gui/bone_panel.py`, Logik `gui/bone_model.py`) ist ein weiteres Panel auf demselben
+Layer: es liest `Application`, ruft dieselben Wege wie die Tasten und das Kettenwerkzeug und hält keinen Dokumentzustand
+(nur Eingabepuffer der Felder). Inhalt und Verhalten: [AD-028, Addendum 2026-11-17](AD-028-SKELETON-AND-SKINNING.md#addendum-2026-11-17-bone-tool-01-chain-click-pivot-snap-rest-edit-bonepanel).
+Keine Taste, `config/keymap.json` unverändert.
+
+**Ausnahme (Manu 2026-11-17, auf Nachfrage freigegeben):** §2 „eine Geste hat Vorrang“ (`ImguiLayer._gesture_running`: solange
+irgendeine Session läuft, gehört `Application` die ganze Maus) macht das Panel während einer Bone-Kette unbedienbar - „Kette
+beenden“ und das Einrasten-Häkchen wären genau dann tot. `PANEL_USABLE_OWNERS = {"bonechain"}` nimmt nur diese Session aus (sie
+nimmt nur Viewport-Klicks, keine gehaltene Taste, kein Cursor-Wrap); ein im Panel begonnener Klick erreicht den Viewport und die
+Kette weiter nie (`InputGate` unverändert), jede andere Interaktion behält den Vorrang. Test: `tests/test_gui_bone_panel_window.py`.
+

@@ -38,7 +38,8 @@ from ..interaction.session import (
 )
 from ..interaction.tools import resolve_selection_vertices
 from ..interaction.tools.selection_helpers import selection_pivot
-from ..pivot import WorkingPivot, place_pivot, snap_to_plane
+from .. import object_space
+from ..pivot import WorkingPivot, nearest_screen_point, place_pivot, snap_candidates, snap_to_plane
 from ..subdivision import SUBD_COMMANDS
 from ..viewport.box_select import normalized_rect, stroke_samples
 from ..viewport.look_controls import DRAG_DEGREES_PER_PIXEL
@@ -180,7 +181,7 @@ class PivotHold(_Hold):
             self.before = controller.working_pivot
             self.placed = False
             services.status(
-                f"Working Pivot: click to place (inside the mesh; Shift = vertex / edge), release {key.upper()} to"
+                f"Working Pivot: click to place (inside the mesh; Shift = vertex / edge, Ctrl = object pivot / bone end), release {key.upper()} to"
                 " finish, tap = off / on"
             )
         self.key = key
@@ -202,14 +203,14 @@ class PivotHold(_Hold):
                 and not self.dragging
                 and services.cursor is not None
             ):
-                self.place_at(*services.cursor, snap="shift" in input.modifiers)
+                self.place_at(*services.cursor, snap="shift" in input.modifiers, objects="ctrl" in input.modifiers)
                 self.dragging = True
                 return True
             return PASS
         if isinstance(event, Drag):
             if event.command is None and self.dragging:
                 cursor = services.cursor
-                return cursor is not None and self.place_at(*cursor, snap=services.modifiers[0])
+                return cursor is not None and self.place_at(*cursor, snap=services.modifiers[0], objects=services.modifiers[1])
             return PASS
         if isinstance(event, Release):
             if event.raw and self.dragging and event.button == "LEFT":
@@ -222,7 +223,7 @@ class PivotHold(_Hold):
             if self.key is None:
                 return PASS
             # Placing the pivot: the marker preview shows where a click lands; no selection hover.
-            self.preview = self.point_at(event.x, event.y, snap=services.modifiers[0])
+            self.preview = self.point_at(event.x, event.y, snap=services.modifiers[0], objects=services.modifiers[1])
             return services.set_hovered(None)
         if isinstance(event, Command) and event.command == commands.CANCEL and self.key is not None:
             return self.cancel()
@@ -239,13 +240,20 @@ class PivotHold(_Hold):
         vertex_ids = resolve_selection_vertices(mesh, selection, selection.mode)
         return selection_pivot(mesh, vertex_ids) if vertex_ids else None
 
-    def point_at(self, x: float, y: float, snap: bool):
+    def point_at(self, x: float, y: float, snap: bool, objects: bool = False):
         """The pivot point a click at (x, y) would place; with symmetry on, snapped onto the plane when it is
-        within `PIVOT_PLANE_SNAP_PX` on screen (V-3, every placement mode, also the preview)."""
+        within `PIVOT_PLANE_SNAP_PX` on screen (V-3, every placement mode, also the preview). `objects` (Ctrl,
+        Bone tool 01, 2026-11-17, `PROVISIONAL`): the nearest object pivot or bone end within `POINT_SNAP_PX` wins
+        over everything else - the pivot is placed exactly there (an eyeball's centre)."""
         services = self._controller.services
         width, height = (int(v) for v in services.viewport_size)
         camera = services.edit_camera
         mesh = services.scene.mesh
+        if objects:
+            hit = nearest_screen_point(services.camera, snap_candidates(services.scene), x, y, width, height)
+            if hit is not None:
+                self.on_plane = False
+                return object_space.to_object(services.scene.edit_object, hit[1])
         point = place_pivot(
             camera, mesh, x, y, width, height,
             snap=snap, anchor=self.anchor(), cache=services.pick_cache, occlusion=services.display.show_faces,
@@ -258,11 +266,11 @@ class PivotHold(_Hold):
             )
         return point
 
-    def place_at(self, x: float, y: float, snap: bool) -> bool:
+    def place_at(self, x: float, y: float, snap: bool, objects: bool = False) -> bool:
         """Places the pivot under (x, y) and switches it on - no History entry (U-3). True = placed."""
         controller = self._controller
         services = controller.services
-        point = self.point_at(x, y, snap)
+        point = self.point_at(x, y, snap, objects)
         if point is None:
             services.status("Working Pivot: no point under the cursor")
             return False

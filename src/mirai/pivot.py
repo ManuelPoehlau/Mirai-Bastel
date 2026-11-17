@@ -24,6 +24,7 @@ from dataclasses import dataclass, replace
 
 from core import ObjectId
 
+from .object_space import pivot_world
 from .topology.knife_pick import knife_pick
 from .viewport import vecmath as v
 from .viewport.camera import ray_plane_point
@@ -112,6 +113,57 @@ def place_pivot(
     if point is not None:
         return point
     return view_plane_point(camera, sx, sy, width, height, tuple(camera.target) if anchor is None else anchor)
+
+
+#: Bone tool 01 (2026-11-17, `PROVISIONAL`): screen distance in pixels within which a click snaps to an object's
+#: pivot or to a bone's head / tail.
+POINT_SNAP_PX: float = 12.0
+
+
+def snap_candidates(scene, avoid: Vec3 | None = None) -> list:
+    """`((kind, id, name), world point)` in priority order - bone tails, bone heads, object pivots: the places a click may
+    snap to (`nearest_screen_point`). Hidden bones and hidden objects are not offered; `avoid` (a point) is not either
+    - the bone chain's pending head, where a snap would make a zero-length bone. An object's pivot is its plain origin
+    (`object_space.pivot_world`): the eyeball's centre for an eye, nothing more for a tooth or a group."""
+    out = []
+
+    def usable(point) -> bool:
+        return avoid is None or v.length(v.sub(point, avoid)) > 1e-9
+
+    rig = scene.rig
+    if rig is not None:
+        hidden = rig.hidden_ids()
+        for bone in rig.bones:
+            if bone.id not in hidden and usable(bone.tail):
+                out.append((("tail", bone.id, bone.name), bone.tail))
+        for bone in rig.bones:
+            if bone.id not in hidden and usable(bone.head):
+                out.append((("head", bone.id, bone.name), bone.head))
+    for obj in scene.objects.values():
+        if not obj.hidden:
+            point = pivot_world(obj)
+            if usable(point):
+                out.append((("pivot", obj.id, obj.name), point))
+    return out
+
+
+def nearest_screen_point(
+    camera, candidates, sx: float, sy: float, width: int, height: int, radius_px: float = POINT_SNAP_PX
+):
+    """The candidate whose screen projection is nearest to (sx, sy) and within `radius_px`: `(key, point)`, else None.
+    `candidates` = `(key, world_point)` pairs in priority order - on an exact tie the earlier one wins, so a bone's tail
+    listed before an object's pivot at the same place is what a click takes. A point behind the camera is no
+    candidate. Depth plays no part (a pivot inside a solid, like an eyeball's centre, snaps all the same)."""
+    best = None
+    best_d2 = float("inf")
+    for key, point in candidates:
+        projected = camera.project_to_screen(point, width, height)
+        if projected is None:
+            continue
+        d2 = (projected[0] - sx) ** 2 + (projected[1] - sy) ** 2
+        if d2 < best_d2:  # strict: the earlier candidate keeps an exact tie
+            best, best_d2 = (key, point), d2
+    return best if best is not None and best_d2 <= radius_px * radius_px else None
 
 
 def snap_to_plane(

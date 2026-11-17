@@ -290,6 +290,16 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "rename_bone": "non-mesh",
         # AD-030: the eye on bones sets `Bone.hidden` (a `RigCommand`, no mesh change)
         "set_bones_hidden": "non-mesh",
+        # Bone tool 01 (2026-11-17): the chain tool and bone edits change the rig only (a `RigCommand` each); a bone's
+        # delete and the two weight values rewrite weights themselves, as their keys do (RIG, like BONE_DELETE)
+        "bone_chain_blocker": "non-mesh",
+        "bone_edit_blocker": "non-mesh",
+        "start_bone_chain": "non-mesh",
+        "end_bone_chain": "non-mesh",
+        "edit_bone": "non-mesh",
+        "delete_bone": RIG,
+        "weights_from_group_value": RIG,
+        "set_weight_value": RIG,
         # AD-025 Phase 3: the target lifecycle (one layer-only Undo step each) and the editing view
         "create_morph_target": MORPH,
         "rename_morph_target": MORPH,

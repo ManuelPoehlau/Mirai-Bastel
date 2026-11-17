@@ -27,6 +27,11 @@ def modifiers_from_pyglet(bits: int) -> frozenset[str]:
     )
 
 
+#: Sessions under which the panels stay usable (Manu 2026-11-17, Bone tool 01): the bone chain takes viewport clicks only,
+#: no held key and no cursor-wrap, and its panel ("end chain", snap) has to be clickable while it runs. Every other
+#: interaction keeps the precedence of AD-030 §2.
+PANEL_USABLE_OWNERS = frozenset({"bonechain"})
+
 GL_STATE_NAMES = (
     "depth_test", "blend", "cull_face", "scissor_test", "blend_src", "blend_dst", "program", "vao", "array_buffer",
     "active_texture", "viewport", "depth_mask", "polygon_mode",
@@ -97,6 +102,8 @@ class ImguiLayer:
         self.morph_open = True
         self.eye = None  # AD-033 §6: das Augen-Panel (Knopf „Auge“, Standard zu)
         self.eye_open = False
+        self.bone = None  # Bone tool 01 (2026-11-17): das Bone- und Skin-Panel (Knopf „Bone“, Standard zu)
+        self.bone_open = False
         self.eye_lab = None  # Eye LookDev Phase 2 (I-1): das Eye-Lab-Fenster, offen solange `app.eye_lab_open`
         self.popup_open = False  # ein Menü/Dialog des Layers ist offen: ihm gehört die ganze Maus (letzter Frame)
 
@@ -142,6 +149,9 @@ class ImguiLayer:
 
         self.eye = EyePanel(imgui, self.app, self)
         self.eye_lab = EyeLabPanel(imgui, self.app, self)
+        from .bone_panel import BonePanel
+
+        self.bone = BonePanel(imgui, self.app, self)
         if self.services is not None:
             from .goz_panel import GozPanel
             from .menus import Menus
@@ -203,7 +213,8 @@ class ImguiLayer:
         """Eine Geste von `Application` (W/E/R/T gehalten, Knife, Maus-Geste) hat Vorrang: das Panel fängt dann keine Maus,
         sonst stockt Move/Rotate/Scale und der Cursor-Wrap, sobald der Zeiger über das Panel läuft."""
         app = self.app
-        return app.interaction_owner is not None or app.pointer.active
+        owner = app.interaction_owner
+        return (owner is not None and owner not in PANEL_USABLE_OWNERS) or app.pointer.active
 
     def _over_panel(self, x: float, y: float) -> bool:
         if self._gesture_running() or self._blocked():
@@ -373,6 +384,11 @@ class ImguiLayer:
             imgui.same_line()
             if imgui.small_button("Auge " + ("[-]" if self.eye_open else "[+]")):
                 self.eye_open = not self.eye_open
+        if self.bone is not None:
+            imgui.same_line()
+            if imgui.small_button("Bone " + ("[-]" if self.bone_open else "[+]")):
+                self.bone_open = not self.bone_open
+            self._remember("toggle", "bone")
         pos, size = imgui.get_window_pos(), imgui.get_window_size()
         rects.append((pos.x, pos.y, size.x, size.y))
         imgui.end()
@@ -403,6 +419,15 @@ class ImguiLayer:
             imgui.begin("Morph", None, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
                         | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
             self.morph.draw()
+            pos, size = imgui.get_window_pos(), imgui.get_window_size()
+            imgui.end()
+            rects.append((pos.x, pos.y, size.x, size.y))
+        if self.bone is not None and self.bone_open:
+            w = self.window.get_size()[0]
+            imgui.set_next_window_pos(imgui.ImVec2(max(8.0, w - 420.0), self.PANEL_POS[1]), imgui.Cond_.first_use_ever)
+            imgui.begin("Bone / Skin", None, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
+                        | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
+            self.bone.draw()
             pos, size = imgui.get_window_pos(), imgui.get_window_size()
             imgui.end()
             rects.append((pos.x, pos.y, size.x, size.y))

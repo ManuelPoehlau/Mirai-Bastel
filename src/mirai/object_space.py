@@ -95,6 +95,15 @@ def axis_to_world(obj: SceneObject, a: Vec3) -> Vec3:
     return _rotate(t.rotation, a)
 
 
+def pivot_world(obj: SceneObject) -> Vec3:
+    """Where the object's pivot is in world space: the placement applied to its own pivot point,
+    `placement_matrix(transform, pivot) · pivot` = `translation + pivot` (rotation and scale about the pivot leave
+    it where it is). The point the snap to an object's pivot (bone chain, Working Pivot) lands on. An object's pivot
+    is a plain origin: for an eye it is the eyeball's centre because the eye mesh is built around its origin
+    (`tests/test_bone_chain.py` checks it on the Gollum scenes); for a group or a tooth it is the origin and nothing more."""
+    return to_world(obj, obj.pivot)
+
+
 def model_matrix(obj: SceneObject) -> list[float] | None:
     """4x4 Objekt -> Welt, spaltenweise wie `OrbitCamera.build_view_matrix` (GL); None = Identität."""
     if is_identity(obj.transform):

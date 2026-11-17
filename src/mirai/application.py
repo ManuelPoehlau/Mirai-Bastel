@@ -1165,6 +1165,60 @@ class Application:
         """Outliner eye on bones (view state: no Undo step, not saved). See `SkeletonController.set_hidden`."""
         return self._skeleton.set_hidden(bone_ids, hidden)
 
+    # -- Bone tool 01 (2026-11-17, `controllers.bone_chain`, AD-028 addendum; the panel's entries, no keys) -----
+
+    def start_bone_chain(self, root: bool = False) -> bool:
+        """Starts the chain tool: clicks place bones (head, then a tail per click; each bone one Undo step), Esc or
+        `end_bone_chain` ends it. The first bone is a child of the current bone, or a root with `root`. See
+        `SkeletonController.begin_chain` for the refusals."""
+        return self._skeleton.begin_chain(root)
+
+    def end_bone_chain(self) -> bool:
+        """Ends a running chain (as Esc). True = a chain ended."""
+        return self._skeleton.end_chain()
+
+    @property
+    def bone_chain_active(self) -> bool:
+        return self._skeleton.chain is not None
+
+    @property
+    def bone_chain_blocker(self) -> str | None:
+        """Why the chain tool cannot start now (None = it can); pure, for the panel."""
+        return self._skeleton.chain_blocker()
+
+    @property
+    def bone_edit_blocker(self) -> str | None:
+        """Why a bone cannot be edited now (None = it can; posed, or an interaction runs); pure, for the panel."""
+        return self._skeleton.edit_blocker()
+
+    @property
+    def bone_chain_snap(self) -> bool:
+        """The chain tool snaps to object pivots and bone heads / tails (view state, not saved; default on)."""
+        return self._skeleton.chain_snap
+
+    @bone_chain_snap.setter
+    def bone_chain_snap(self, on: bool) -> None:
+        self._skeleton.chain_snap = bool(on)
+
+    def edit_bone(self, bone_id, **fields) -> bool:
+        """Edit a bone at rest: `name`, `parent` (a BoneId or None), `head` / `tail` (world positions), `roll`
+        (radians); one Undo step; refused while posed. Weights stay (keyed by BoneId). See `SkeletonController.edit_bone`."""
+        return self._skeleton.edit_bone(bone_id, **fields)
+
+    def delete_bone(self, bone_id=None) -> bool:
+        """Delete a bone (default: the current one) like `BONE_DELETE`: its weights go to its parent, one Undo step."""
+        return self._skeleton.delete_bone(bone_id)
+
+    def weights_from_group_value(self, percent: float) -> bool:
+        """The current bone's weights from the active group at a falloff width in % of the mesh's bounding radius (the
+        key's gesture with a number instead of the mouse); one Undo step."""
+        return self._skeleton.weights_from_group_value(percent)
+
+    def set_weight_value(self, value: float) -> bool:
+        """The current bone's weight `value` (0-1) on the selection, with the Soft field if Soft is on (the key's gesture
+        with a number instead of the mouse); one Undo step."""
+        return self._skeleton.set_weight_value(value)
+
     def import_obj(self, path: str | Path) -> SceneObject | None:
         """OBJ import (SPACE menu, `src/obj_files.py`): the file becomes a new editable object like an
         Add-Mesh primitive (same Undo step, selection and status behaviour), named after the file.
@@ -1593,6 +1647,9 @@ class Application:
     def _run_undo_redo(self, command: str, ctx: RunContext, context: Optional[dict]) -> bool:
         """E23: from a key a gesture that is only armed is disarmed first (a begun one refused it in `can_run`), and
         the step posts its status and rebuilds the view; from the API only the step."""
+        chain = self._skeleton.chain
+        if chain is not None and command == commands.UNDO and chain.drop_head():
+            return True  # a pending head with no bone is no history entry: Undo takes the head back first
         if ctx.source != "key":
             self._apply_undo_redo(command)
             return True
@@ -3514,6 +3571,9 @@ class Application:
         claimed = self.interaction.claim(Command(commands.CANCEL, RunContext("key")))  # the Working Pivot
         if claimed is not PASS:
             return claimed
+        chain = self._skeleton.chain
+        if chain is not None:
+            return chain.cancel()  # Esc ends the bone chain (the bones it made stay)
         gesture = self._gesture
         if gesture is None:
             return False
@@ -5622,4 +5682,7 @@ class Application:
         """Sauberes Herunterfahren: aktives Tool deaktivieren (kein stale State);
         eine laufende Knife-Session wird verworfen (wie Esc)."""
         self._knife.shutdown()
+        chain = self._skeleton.chain
+        if chain is not None:
+            chain.end(quiet=True)
         self.tool_manager.deactivate()
