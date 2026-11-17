@@ -1,8 +1,10 @@
 # Eye LookDev: the sclera surface — research and architecture audit (AD-035 research)
 
-**Status:** Discovery (2026-11-17, English with a German summary): research and architecture assessment, **no
-decision, no code change, nothing committed**. Every implementation step in §9 needs Manu's go; the decisions in §10
-are Manu's and are not made here.
+**Status:** Discovery (2026-11-17, English with a German summary): research and architecture assessment.
+**Decided and implemented the same day:** Manu approved M1 with S-1 … S-13 as recommended in §10 (S-13: clamp; S-11:
+photo import deferred to M2); **M1 is implemented** - see [AD-035](../architecture/AD-035-SCLERA-COLOUR-MAP.md) for the
+decision record, what was built, the deviations, the tests and the open reference-PC measurement. The text below is the
+assessment as written before the decision (its line numbers refer to `e22f22f`).
 **Baseline:** `main` @ `e22f22f` (verified: the working branch was identical to `origin/main`; latest eye commit
 `05cdee8` "phase 5 - the iris import in the Eye Lab").
 **Sources:** [AD-033](../architecture/AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md) (§4–§19),

@@ -107,6 +107,7 @@ class EyeLabPanel:
         self.imgui, self.app, self.layer = imgui, app, layer
         self.sliders = _Sliders(imgui, app)
         self.image_buf = ""
+        self.sclera_buf = ""
         self.preset_buf = ""
         self.importer = IrisImportSection(imgui, app)
 
@@ -177,6 +178,7 @@ class EyeLabPanel:
             self.sliders.slider(spec, field, label, lo, hi, fmt)
         self.draw_look(st)
         self.draw_iris(st)
+        self.draw_sclera(st)
         imgui.separator()
         imgui.text_disabled(st.image_text)
         imgui.set_next_item_width(220.0)
@@ -196,6 +198,28 @@ class EyeLabPanel:
             app.save_eye_preset(self.preset_buf)
         if imgui.button("Schließen"):
             app.close_eye_lab()
+
+    def draw_sclera(self, st: em.EyePanelState) -> None:
+        """AD-035 M1: "Lederhaut" - the sclera's colour map (status, path field, load / remove; `PROVISIONAL` layout).
+        Loading another image replaces the map; each action is one Undo step."""
+        imgui, app = self.imgui, self.app
+        imgui.separator()
+        imgui.text_disabled("Lederhaut (Farbbild, gespeichert)")
+        imgui.text(st.sclera_text)
+        if st.sclera_path is not None and imgui.is_item_hovered():
+            imgui.set_tooltip(st.sclera_path)
+        imgui.set_next_item_width(220.0)
+        _, self.sclera_buf = imgui.input_text("##sclera", self.sclera_buf)
+        imgui.same_line()
+        if imgui.small_button("Lederhaut-Bild laden"):
+            em.set_sclera_image(app, self.sclera_buf)
+        if st.sclera_path is not None:
+            imgui.same_line()
+            if imgui.small_button("Bild entfernen##sclera"):
+                em.set_sclera_image(app, None)
+        imgui.push_text_wrap_pos(imgui.get_cursor_pos_x() + 360.0)
+        imgui.text_disabled(em.SCLERA_HINT)
+        imgui.pop_text_wrap_pos()
 
     def draw_look(self, st: em.EyePanelState) -> None:
         """Phase 3: the reflections (`core.EyeLook`), live preview while held, one Undo step per release."""

@@ -16,6 +16,9 @@ Eye LookDev phase 4: the section "Iris" sets the iris values (`IRIS_SLIDERS`, fi
 height source and "Iris zurücksetzen"; they draw only in the quality "voll" as well.
 Eye LookDev phase 5: "Iris importieren ..." below the image field (`gui.iris_import_model`); "Iris zurücksetzen" keeps
 the height source (`Application.reset_eye_iris`).
+AD-035 M1 (Manu 2026-11-17): the Eye Lab's section "Lederhaut" - the sclera's colour map (`sclera_text`, `SCLERA_HINT`)
+loaded, replaced and removed through `Application.set_eye_sclera_image` (one Undo step each). The compact panel has no
+sclera control.
 """
 
 from __future__ import annotations
@@ -26,6 +29,8 @@ from core import SelectionMode
 
 from mirai.eye_gaze import FOCUS_RANGE, GAZE_MODES, PAD_DEGREES
 from mirai.eye_object import LOOK_PREFIX, look_value
+from mirai.sclera_map import HINT as SCLERA_HINT
+from mirai.sclera_map import status_text as sclera_status_text
 from viewport.eye_pass import REFLECTIONS, REFRACTIONS, TIERS
 
 LEVEL_LABELS = ("L0 wie P1b", "L1 Farbband", "L2 + Normalen", "L3 + durchscheinend")
@@ -170,6 +175,16 @@ class EyePanelState:
             f"Anpassung {spec.fit_pupil:g} / {spec.fit_limbus:g}" + (", Rand gehalten" if spec.hold_outer_color else ""))
         return f"Iris: {name} ({fit})"
 
+    @property
+    def sclera_text(self) -> str:
+        """AD-035: the first eye's sclera map - "Grundfarbe (kein Bild)", its file name, or why it is not drawn (not
+        found, too large: the eye draws its base colour and keeps the path)."""
+        return sclera_status_text(self.spec.sclera_texture) if self.eyes else ""
+
+    @property
+    def sclera_path(self) -> str | None:
+        return self.spec.sclera_texture if self.eyes else None
+
 
 def selected_eyes(app) -> tuple:
     """The selected eyes in mode `4` (a selected group stands for its members), in id order."""
@@ -214,6 +229,18 @@ def preview_value(app, field: str, value) -> bool:
 def end_preview(app) -> bool:
     """A slider let go without a change: back to the eyes' own values."""
     return app.preview_eye()
+
+
+def set_sclera_image(app, text: str | None) -> bool:
+    """AD-035: the path typed in the Eye Lab's sclera field (quotes and blanks stripped; empty = nothing) loads the map
+    on every selected eye; None removes it. One Undo step; refused with the reason in the status line."""
+    if text is None:
+        return app.set_eye_sclera_image(None)
+    path = text.strip().strip('"').strip()
+    if not path:
+        app.set_status("Sclera image: type a path first")
+        return False
+    return app.set_eye_sclera_image(path)
 
 
 def preset_names(app) -> list[str]:

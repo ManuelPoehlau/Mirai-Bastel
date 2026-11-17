@@ -483,6 +483,19 @@ def test_eye_panel_draws_an_eye_and_leaves_gl_state_as_found():
             assert snapshot_gl_state() == before
             lab.importer.draft = None
             lab.importer._set_texture(None)
+        # AD-035 M1: a sclera colour map (the repository's synthetic map) drawn with the lab's "Lederhaut" section,
+        # untinted in the lab (S-4); still the GL state as found.
+        synthetic = (Path(__file__).resolve().parents[1] / "docs" / "research" / "eye_sclera_assets_2026-11-17"
+                     / "synthetic_sclera_front_disc_1024.png")
+        assert app.set_eye_sclera_image(str(synthetic)) is True
+        run.render_frame(window)
+        run.render_frame(window)
+        before = snapshot_gl_state()
+        run.render_frame(window)
+        assert snapshot_gl_state() == before
+        drawn = app.viewport._eye_entries[eye.id]
+        assert drawn.sclera_texture == str(synthetic) and drawn.sclera_tint[3] == 0.0
+        assert any(key[-1] for key in app.viewport.eye_pass.programs)  # the SCLERA_MAP program drew
         app.close_eye_lab()
         run.render_frame(window)
         assert len(layer.panel_rects) == rects

@@ -10,6 +10,9 @@ A path is absolute on any platform when it is absolute for POSIX or for Windows 
 Windows path read on Linux is never joined to the scene directory. A missing texture keeps its path (the round trip
 writes the same string back).
 
+AD-035 M1 (2026-11-17): an eye's sclera colour map (`EyeSpec.sclera_texture`) gets the same treatment - resolved on
+load, written relative on save and copied beside the scene (`Application._copy_eye_images`).
+
 **Copies beside the scene.** `<scene stem>_textures/` (the ZBrush bridge's convention, `interop.goz.texture`, Manu
 2026-11-06). A copy is named by its content (`<stem>_<10 hex of SHA-256>.<ext>`), so the same image is stored once,
 and an existing file is never overwritten: a file of that name with other content gets the next free `_2`, `_3` ...

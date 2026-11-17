@@ -2,7 +2,8 @@
 
 A preset is a named bundle of `core.EyeSpec` values. Applying it is one `Application.set_eye` call, so it is one Undo
 step and needs no new document entity. The iris image's own values (`fit_pupil`, `fit_limbus`, `hold_outer_color`)
-belong to that image and are never part of a preset, so a preset never breaks an eye's iris fit.
+belong to that image and are never part of a preset, so a preset never breaks an eye's iris fit. AD-035 M1: the same
+for the sclera's colour map (`sclera_texture`, `IMAGE_FIELDS`).
 
 The built-in presets are the app's default eye (L0, `eye_object.DEFAULT_EYE`) and, since Eye LookDev phase 3, a
 starting look for the reflections (`LOOK_START`: only the `look` values, so it keeps the eye's anatomy and limbus;
@@ -33,8 +34,9 @@ from .eye_object import DEFAULT_EYE, DEFAULT_IRIS, DEFAULT_LOOK, LOOK_PREFIX, wi
 
 #: Where saved presets live: in the repo, relative to its root (same on Windows and Linux), like `config/keymap.json`.
 PRESET_DIR = Path(__file__).resolve().parents[2] / "config" / "eye_presets"
-#: The iris image's fit values: they stay with the image, not with a look.
-IMAGE_FIELDS = ("fit_pupil", "fit_limbus", "hold_outer_color")
+#: The images and the iris image's fit values: they stay with the eye, not with a look. AD-035 M1 (S-9): the sclera's
+#: colour map (`EyeSpec.sclera_texture`) as well - a preset neither writes, replaces nor removes it.
+IMAGE_FIELDS = ("fit_pupil", "fit_limbus", "hold_outer_color", "sclera_texture")
 PRESET_FIELDS = tuple(f.name for f in fields(EyeSpec) if f.name not in IMAGE_FIELDS)
 #: Phase 4: a preset may hold only the iris values (no other look value changes).
 IRIS_KEY = LOOK_PREFIX + "iris"

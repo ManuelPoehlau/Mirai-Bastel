@@ -894,3 +894,46 @@ def iris_height(rgb: np.ndarray, pupil_share: float, edge_share: float) -> np.nd
     if rms <= 1e-9:
         return np.full((h, w), 0.5)
     return 0.5 + 0.5 * np.clip(detail / (HEIGHT_RANGE * rms), -1.0, 1.0) * mask
+
+
+# -- the sclera's colour map (AD-035 M1, Manu 2026-11-17 S-1 / S-13): the limbus-anchored front disc ------------------
+
+#: The limbus's radius in the map, a share of half its width (`mirai.sclera_map.LIMBUS_SHARE`).
+SCLERA_LIMBUS_SHARE = 0.25
+#: The map's inscribed circle lies this far (degrees) from the front pole; beyond it the rim is held (clamped).
+SCLERA_RIM_DEG = 130.0
+SCLERA_RIM = math.radians(SCLERA_RIM_DEG)
+
+
+def sclera_st(p, theta_ring: float) -> np.ndarray:
+    """Map coordinates (s right = eye-local +X, t up = +Y, as the iris image) of eye-local points `p` on the sclera or
+    the cornea: the image is the eye seen from the front. The radius in the image (share of half its width) is linear in
+    the angle θ from the front pole on each side of the limbus (`theta_ring` = asin(limbus radius) -> `SCLERA_LIMBUS_SHARE`,
+    `SCLERA_RIM` -> 1), so the painted limbus stays on the anatomy's limbus; beyond the rim the rim's colour is held.
+    One formula for both sides of the ring (continuous there); at the front pole the radius goes to 0 (no direction
+    needed), at the back pole (beyond the rim) any direction lands on the rim circle."""
+    p = np.asarray(p, dtype=np.float64)
+    rho = np.hypot(p[..., 0], p[..., 1])
+    theta = np.arctan2(rho, p[..., 2])
+    inner = SCLERA_LIMBUS_SHARE * theta / theta_ring
+    outer = SCLERA_LIMBUS_SHARE + (1.0 - SCLERA_LIMBUS_SHARE) * (theta - theta_ring) / (SCLERA_RIM - theta_ring)
+    r = np.minimum(np.where(theta < theta_ring, inner, outer), 1.0)
+    safe = np.where(rho > 1e-6, rho, 1.0)
+    direction = np.where((rho > 1e-6)[..., None], p[..., :2] / safe[..., None], np.array([1.0, 0.0]))
+    return 0.5 + 0.5 * r[..., None] * direction
+
+
+def sclera_texel(image: np.ndarray, st) -> np.ndarray:
+    """The map's colour at `st`, bilinear at full resolution with the edge held (the pass's sampler: CLAMP_TO_EDGE).
+    `image` rows run top-down as a file is read (row 0 = the top, t = 1); RGB in 0..1."""
+    st = np.asarray(st, dtype=np.float64)
+    h, w = image.shape[:2]
+    x = np.clip(st[..., 0] * w - 0.5, 0.0, w - 1.0)
+    y = np.clip((1.0 - st[..., 1]) * h - 0.5, 0.0, h - 1.0)
+    x0, y0 = np.floor(x).astype(int), np.floor(y).astype(int)
+    x1, y1 = np.minimum(x0 + 1, w - 1), np.minimum(y0 + 1, h - 1)
+    fx, fy = (x - x0)[..., None], (y - y0)[..., None]
+    img = np.asarray(image, dtype=np.float64)
+    top = img[y0, x0] * (1.0 - fx) + img[y0, x1] * fx
+    bottom = img[y1, x0] * (1.0 - fx) + img[y1, x1] * fx
+    return top * (1.0 - fy) + bottom * fy

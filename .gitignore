@@ -59,6 +59,8 @@ obj/
 /eye_import/
 # Manu's own iris photo (I-9 decision 2026-11-16: never in the public repository) - its copies beside a scene
 scenes/**/iris_custom_*
+# AD-035 M1 (S-12, 2026-11-17): Manu's own sclera maps / photos, named sclera_custom*, stay local - their copies too
+scenes/**/sclera_custom_*
 
 # ZBrush bridge inbox (AD-029): tickets and staged copies written by src/interop/goz/helper.py
 /goz/

@@ -715,6 +715,9 @@ class Application:
             for obj in loaded.objects.values():  # phase 5: a scene-relative texture path is absolute in memory
                 if obj.texture is not None:
                     obj.texture = texture_files.resolve(obj.texture, scene_path.parent)
+                if obj.eye is not None and obj.eye.sclera_texture is not None:  # AD-035: the sclera's map likewise
+                    obj.eye = dataclasses.replace(
+                        obj.eye, sclera_texture=texture_files.resolve(obj.eye.sclera_texture, scene_path.parent))
             replace_scene(self.scene, loaded)
             self.scene_path = scene_path
             # View state (`mirai.view_state`) rides in the file beside the core envelope; `load_scene` applies it.
@@ -986,6 +989,7 @@ class Application:
                 "isolate": self.display.eye_isolate, "tier": self.display.eye_tier,
             }
             self.set_eye_display(tier="full")
+            self._objects.sync_views()  # AD-035 S-4: the lab's eyes are drawn without the selection tint
         self.frame_eye(eyes[0], frontal=True)
         self._set_status(f"Eye Lab: {eyes[0].name!r} (closing it restores camera, isolation and quality)")
         return True
@@ -1003,6 +1007,7 @@ class Application:
         self.restore_camera_state()
         self.set_eye_isolate(lab["isolate"])
         self.set_eye_display(tier=lab["tier"])
+        self._objects.sync_views()  # AD-035 S-4: the selection tint is back on a selected eye
         self._set_status("Eye Lab closed")
         return True
 
@@ -1087,6 +1092,12 @@ class Application:
         `hold_outer_color`) sets the radial fit in the same step; without one the fit is cleared (planar). None removes
         the image. True = something changed."""
         return self._objects.set_eye_iris_image(None if path is None else Path(path))
+
+    def set_eye_sclera_image(self, path: str | Path | None) -> bool:
+        """AD-035 M1 (Manu 2026-11-17): the sclera's colour map of every selected eye (`EyeSpec.sclera_texture`; the
+        front-disc layout, `mirai.sclera_map`), one Undo step; assign, replace (another image) and remove (None) alike.
+        Refused with the reason for a missing file, an unknown format or an image above 2048². True = an eye changed."""
+        return self._objects.set_eye_sclera_image(None if path is None else Path(path))
 
     def import_eye_iris(self, source: str | Path, landmarks, kind: str = "photo", correct: bool = True,
                         keep_alpha: bool = False, hold_outer_color: bool = True) -> bool:
@@ -1369,13 +1380,18 @@ class Application:
         path = Path(os.path.abspath(path))
         document = self._morph.document_scene()
         path.parent.mkdir(parents=True, exist_ok=True)
-        copies, missing = self._copy_iris_images(document, path)  # OSError: nothing written, nothing changed
+        # OSError: nothing written, nothing changed
+        copies, sclera_copies, missing = self._copy_eye_images(document, path)
         data = scene_to_dict(document)
         data[view_state.VIEW_KEY] = view_state.capture(self)
         for raw in data["objects"]:
             texture = raw.get("texture")
             if texture is not None:
                 raw["texture"] = texture_files.to_file(copies.get(raw["id"], texture), path.parent)
+            eye = raw.get("eye")
+            if eye is not None and eye.get("sclera_texture") is not None:  # AD-035: the sclera's map likewise
+                eye["sclera_texture"] = texture_files.to_file(sclera_copies.get(raw["id"], eye["sclera_texture"]),
+                                                              path.parent)
         text = json.dumps(data, indent=2)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")
@@ -1385,38 +1401,48 @@ class Application:
         for obj in document.objects.values():
             if int(obj.id) in copies:
                 obj.texture = copies[int(obj.id)]
-        if copies:
+            if int(obj.id) in sclera_copies:
+                obj.eye = dataclasses.replace(obj.eye, sclera_texture=sclera_copies[int(obj.id)])
+        if copies or sclera_copies:
             self._objects.sync_views()  # the entries draw from the copy from now on
         self.scene_path = path
         notes = []
+        folder = texture_files.scene_texture_dir(path).name
         if copies:
-            notes.append(f"iris image copied to {texture_files.scene_texture_dir(path).name}/")
+            notes.append(f"iris image copied to {folder}/")
+        if sclera_copies:
+            notes.append(f"sclera image copied to {folder}/")
         if missing:
-            notes.append(f"iris image not found, path kept: {', '.join(sorted(missing))}")
+            notes.append(f"image not found, path kept: {', '.join(sorted(missing))}")
         self._set_status(f"Saved scene: {path}" + (f" ({'; '.join(notes)})" if notes else ""))
         return True
 
-    def _copy_iris_images(self, document, path: Path) -> tuple[dict[int, str], set[str]]:
-        """Phase 5 (I-9, Manu 2026-11-16): every eye's iris image that is not yet in the scene's own
-        `<stem>_textures/` is copied there byte for byte under its content name (`texture_files.copy_into`; never
-        overwrites). Returns ({object id: the copy's path}, names of images that do not exist - their path is kept).
-        Only iris images: other textures are not copied (they are written scene-relative when they lie below the scene
-        directory). `OSError` when a copy fails (the caller writes nothing then)."""
+    def _copy_eye_images(self, document, path: Path) -> tuple[dict[int, str], dict[int, str], set[str]]:
+        """Phase 5 (I-9, Manu 2026-11-16) and AD-035 S-10 (2026-11-17): every eye's images - the iris image
+        (`obj.texture`) and the sclera's colour map (`EyeSpec.sclera_texture`) - that are not yet in the scene's own
+        `<stem>_textures/` are copied there byte for byte under their content name (`texture_files.copy_into`; never
+        overwrites, never deletes). Returns ({object id: the iris copy}, {object id: the sclera copy}, names of images
+        that do not exist - their path is kept). Only an eye's images: other textures are not copied (they are written
+        scene-relative when they lie below the scene directory). `OSError` when a copy fails (the caller writes nothing
+        then)."""
         directory = texture_files.scene_texture_dir(path)
         copies: dict[int, str] = {}
+        sclera_copies: dict[int, str] = {}
         missing: set[str] = set()
         done: dict[str, str] = {}
         for obj in document.objects.values():
-            texture = obj.texture
-            if obj.eye is None or texture is None or texture_files.inside(texture, directory):
+            if obj.eye is None:
                 continue
-            if texture not in done:
-                if not os.path.isfile(texture):
-                    missing.add(Path(texture).name)
+            for image, out in ((obj.texture, copies), (obj.eye.sclera_texture, sclera_copies)):
+                if image is None or texture_files.inside(image, directory):
                     continue
-                done[texture] = str(texture_files.copy_into(texture, directory))
-            copies[int(obj.id)] = done[texture]
-        return copies, missing
+                if image not in done:
+                    if not os.path.isfile(image):
+                        missing.add(Path(image).name)
+                        continue
+                    done[image] = str(texture_files.copy_into(image, directory))
+                out[int(obj.id)] = done[image]
+        return copies, sclera_copies, missing
 
     def dispatch_command(
         self, command: str, context: Optional[dict] = None, **params

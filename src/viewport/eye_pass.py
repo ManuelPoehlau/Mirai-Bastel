@@ -15,6 +15,12 @@ brightness (or the procedural iris), the pass binds its own copy of the iris ima
 (`relief_texture`, `eye_optics.iris_height`), built once per image file and fit. With the key through the cornea on, it
 bakes the eye's key table first (`iris_table`, 64² RGBA16F: one evaluation of the path per texel instead of per pixel),
 again only when the key in the eye's frame, the anatomy or a key value changes.
+
+AD-035 M1 (Manu 2026-11-17): an eye whose `EyeDraw.sclera_texture` loads is drawn with the `SCLERA_MAP` program in both
+tiers (S-3): the map comes from the shared `GLRenderStore.texture` cache (no second cache) and is bound to
+`SCLERA_UNIT` with the pass's own sampler object (trilinear, CLAMP_TO_EDGE: the front disc reaches the image's edge, and
+the shared texture's REPEAT would bleed the opposite edge in), so the cached texture object is never changed. A map that
+does not load draws the base colour, with the program before AD-035.
 """
 
 from __future__ import annotations
@@ -33,6 +39,11 @@ IRIS_UNIT = 1
 NOISE_UNIT = 2
 #: The key's table (phase 4): its unit while the eye draws.
 TABLE_UNIT = 3
+#: AD-035: the sclera's colour map.
+SCLERA_UNIT = 4
+#: AD-035 S-8: a map larger than this on either side is not drawn (= `mirai.sclera_map.MAX_SIZE`, which refuses it
+#: on assignment; this catches a file replaced on disk between two view syncs).
+SCLERA_MAX_SIZE = 2048
 #: P1b's pupil colour (sRGB, display-referred like every albedo here).
 PUPIL_ALBEDO = (0.012, 0.012, 0.012)
 REFLECTIONS = tuple(es.REFLECTIONS)
@@ -45,8 +56,8 @@ TIERS = ("fast", "full")
 @dataclass(frozen=True)
 class EyeDraw:
     """One eye entry: its values (`core.EyeSpec`), its iris image (None = the procedural iris), the sclera colour (the
-    object's resolved base colour, selection tint included) and finish, and how many leading triangles of its shell are
-    the corneal cap."""
+    object's resolved base colour, selection tint included - none in the Eye Lab, AD-035 S-4) and finish, and how many
+    leading triangles of its shell are the corneal cap."""
 
     spec: object
     texture: str | None
@@ -58,6 +69,10 @@ class EyeDraw:
     rest_matrix: tuple | None = None
     #: Phase 3: which part of the irregularity texture this eye reads (the app passes the object's id).
     variation: int = 0
+    #: AD-035: the sclera's colour map (a usable file, `mirai.sclera_map.drawable`; None = the base colour) and the
+    #: selection tint drawn over it (rgb, share; share 0 = none).
+    sclera_texture: str | None = None
+    sclera_tint: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
 
 
 @dataclass(frozen=True)
@@ -190,20 +205,26 @@ class EyePass:
         #: Test hook: the same for the iris values (phase 4): an eye whose look has iris values at amount 0 is drawn
         #: with the IRIS program.
         self.force_iris = False
+        #: AD-035: the sclera map's sampler objects, {mip-mapped: sampler id} (created on the first map).
+        self._samplers: dict = {}
+        #: {GL texture id: (the texture object, mip-mapped)} - the loader's filter, read once per loaded map.
+        self._sclera_filters: dict = {}
 
-    def program(self, display: EyeDisplay, level: int, fit: bool, look: bool = False, iris: bool = False):
+    def program(self, display: EyeDisplay, level: int, fit: bool, look: bool = False, iris: bool = False,
+                sclera: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore
 
         iris = bool(iris and look)
-        key = (display.refraction, int(level), display.reflection, bool(fit), self.debug_kind, bool(look), iris)
+        key = (display.refraction, int(level), display.reflection, bool(fit), self.debug_kind, bool(look), iris,
+               bool(sclera))
         program = self.programs.get(key)
         if program is None:
             attributes = GLRenderStore.program().attributes
             locations = {"position": attributes["position"]["location"], "normal": attributes["normal"]["location"]}
             sources = es.shell_sources(locations, display.refraction, level, display.reflection, fit, self.debug_kind,
-                                       look, iris)
+                                       look, iris, sclera)
             program = ShaderProgram(*(Shader(src, kind) for src, kind in sources))
             self.programs[key] = program
         return program
@@ -244,6 +265,35 @@ class EyePass:
             gl.glBindTexture(texture.target, 0)
             self._noise = texture
         return self._noise
+
+    def sclera_sampler(self, texture) -> int:
+        """AD-035: the sampler for a sclera map - trilinear when the shared loader made mip levels (`load_texture` falls
+        back to GL_LINEAR without them; a mip-mapped filter on such a texture would make it incomplete), linear
+        magnification, CLAMP_TO_EDGE. A sampler object leaves the shared texture's own parameters alone."""
+        import ctypes
+
+        from pyglet import gl
+
+        known = self._sclera_filters.get(texture.id)
+        if known is None or known[0] is not texture:  # once per loaded texture object, not per frame
+            current = gl.GLint()
+            gl.glBindTexture(texture.target, texture.id)
+            gl.glGetTexParameteriv(texture.target, gl.GL_TEXTURE_MIN_FILTER, ctypes.byref(current))
+            gl.glBindTexture(texture.target, 0)
+            known = self._sclera_filters[texture.id] = (texture, current.value == gl.GL_LINEAR_MIPMAP_LINEAR)
+        mipmapped = known[1]
+        sampler = self._samplers.get(mipmapped)
+        if sampler is None:
+            ident = gl.GLuint()
+            gl.glGenSamplers(1, ctypes.byref(ident))
+            sampler = ident.value
+            gl.glSamplerParameteri(sampler, gl.GL_TEXTURE_MIN_FILTER,
+                                   gl.GL_LINEAR_MIPMAP_LINEAR if mipmapped else gl.GL_LINEAR)
+            gl.glSamplerParameteri(sampler, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+            gl.glSamplerParameteri(sampler, gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP_TO_EDGE)
+            gl.glSamplerParameteri(sampler, gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP_TO_EDGE)
+            self._samplers[mipmapped] = sampler
+        return sampler
 
     def iris_table(self, draw: EyeDraw, values: dict):
         """Phase 4: the eye's key table (`eye_shaders.IRIS_LIGHT_SRC` / `eye_optics.iris_light_table`), baked into a
@@ -424,7 +474,10 @@ class EyePass:
         iris = look and (uses_iris(draw, display) or (self.force_iris and draw.spec.look.iris is not None))
         if iris and derived_relief(draw):
             texture = self.relief_texture(draw) or texture
-        program = self.program(display, draw.spec.limbus_level, "u_fit_lab" in values, look, iris)
+        sclera = GLRenderStore.texture(draw.sclera_texture) if draw.sclera_texture else None
+        if sclera is not None and max(sclera.width, sclera.height) > SCLERA_MAX_SIZE:
+            sclera = None  # the base colour, as for a missing file
+        program = self.program(display, draw.spec.limbus_level, "u_fit_lab" in values, look, iris, sclera is not None)
         model = store.uniform_data("model_uniforms")
         model = list(model) if len(model) == 16 else [1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0]
         values.update(light)
@@ -443,6 +496,10 @@ class EyePass:
                 if table is None:  # no float framebuffer: the Worklight's key, as without these values
                     values["u_iris_key"] = 0.0
             values["u_iris_table"] = TABLE_UNIT
+        sampler = None
+        if sclera is not None:
+            sampler = self.sclera_sampler(sclera)
+            values.update({"u_sclera_texture": SCLERA_UNIT, "u_sclera_tint": tuple(draw.sclera_tint)})
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw, not once per value
         for name, value in values.items():
@@ -456,6 +513,10 @@ class EyePass:
         if table is not None:
             gl.glActiveTexture(gl.GL_TEXTURE0 + TABLE_UNIT)
             gl.glBindTexture(gl.GL_TEXTURE_2D, table)
+        if sclera is not None:
+            gl.glActiveTexture(gl.GL_TEXTURE0 + SCLERA_UNIT)
+            gl.glBindTexture(sclera.target, sclera.id)
+            gl.glBindSampler(SCLERA_UNIT, sampler)
         gl.glActiveTexture(gl.GL_TEXTURE0)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthMask(gl.GL_TRUE)
@@ -479,6 +540,10 @@ class EyePass:
         if table is not None:
             gl.glActiveTexture(gl.GL_TEXTURE0 + TABLE_UNIT)
             gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+        if sclera is not None:
+            gl.glBindSampler(SCLERA_UNIT, 0)
+            gl.glActiveTexture(gl.GL_TEXTURE0 + SCLERA_UNIT)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
         gl.glActiveTexture(gl.GL_TEXTURE0)
         program.stop()
         return True
@@ -497,6 +562,15 @@ class EyePass:
             if texture is not None:
                 texture.delete()
         self._relief.clear()
+        if self._samplers:
+            import ctypes
+
+            from pyglet import gl
+
+            for sampler in self._samplers.values():
+                gl.glDeleteSamplers(1, ctypes.byref(gl.GLuint(sampler)))
+            self._samplers.clear()
+        self._sclera_filters.clear()
         if self._tables or self._table_program is not None:
             import ctypes
 

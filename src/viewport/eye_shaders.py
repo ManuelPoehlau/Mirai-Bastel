@@ -33,6 +33,13 @@ The key's path is traced once per eye into a small table (`IRIS_LIGHT_SRC`, `iri
 the key, the gaze or a value changes) and read per pixel: tracing it per pixel cost the reference PC +13 ms in the Eye
 Lab view at 1920×1080 (2026-11-16). `IRIS_LIGHT_SRC` and `IRIS_LIB_SRC` hold the parity-tested functions; every term is
 neutral at amount 0.
+
+**The sclera's colour map** (AD-035 M1, Manu 2026-11-17; define `SCLERA_MAP`, set for an eye whose map is usable, in
+both tiers - S-3): the two places that read the sclera's colour (the sclera, and the limbal tissue at the cornea's entry
+point) read `sclera_albedo(point)` instead - the map at the limbus-anchored front disc (`SCLERA_LIB_SRC.sclera_st`,
+NumPy twin `eye_optics.sclera_st`), the same mapping on both sides of the ring. Nothing else reads the albedo, so the
+wet film, the reflections, the lid terms and the iris are untouched. Without the define the source is the one before
+AD-035 character for character (`test_gl_eye_pass.py` pins every variant's source).
 """
 
 from __future__ import annotations
@@ -538,6 +545,24 @@ vec2 pupil_weights(float r, float width) {
 }
 """
 
+SCLERA_LIB_SRC = f"""
+const float SCLERA_LIMBUS_SHARE = {eo.SCLERA_LIMBUS_SHARE!r};
+const float SCLERA_RIM = {eo.SCLERA_RIM!r};
+
+// -- the sclera's colour map (eye_optics.sclera_st, AD-035): the limbus-anchored front disc, eye-local. The radius in
+// the image is linear in the angle from the front pole on each side of the limbus (the ring -> SCLERA_LIMBUS_SHARE, the
+// rim -> 1, held beyond); no seam, and at the front pole the radius is 0, so the direction's choice there is moot.
+vec2 sclera_st(vec3 p) {{
+    float rho = length(p.xy);
+    float theta = atan(rho, p.z);
+    float r = theta < u_theta_ring
+        ? SCLERA_LIMBUS_SHARE * theta / u_theta_ring
+        : SCLERA_LIMBUS_SHARE + (1.0 - SCLERA_LIMBUS_SHARE) * (theta - u_theta_ring) / (SCLERA_RIM - u_theta_ring);
+    vec2 dir = rho > 1e-6 ? p.xy / rho : vec2(1.0, 0.0);
+    return vec2(0.5) + 0.5 * min(r, 1.0) * dir;
+}}
+"""
+
 SHELL_VERTEX_SRC = """#version 330 core
 layout(location = {position}) in vec3 position;
 layout(location = {normal}) in vec3 normal;
@@ -577,6 +602,10 @@ uniform float u_lid_band;
 uniform mat3 u_rest;
 uniform sampler2D u_noise_texture;
 #endif
+#ifdef SCLERA_MAP
+uniform sampler2D u_sclera_texture;
+uniform vec4 u_sclera_tint;
+#endif
 out vec4 out_color;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
@@ -584,6 +613,14 @@ const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 vec3 to_world(vec3 n_local) { return normalize(mat3(u_model) * n_local); }
 
 vec3 lit(vec3 albedo, vec3 n_local) { return albedo * worklight_light(to_world(n_local)); }
+#ifdef SCLERA_MAP
+
+// AD-035: the sclera's colour at an eye-local point - its map (RGB; alpha ignored, S-6), the selection tint over it
+// (rgb, share; share 0 in the Eye Lab, S-4). Called only outside per-pixel branches (implicit derivatives).
+vec3 sclera_albedo(vec3 p) {
+    return mix(texture(u_sclera_texture, sclera_st(p)).rgb, u_sclera_tint.rgb, u_sclera_tint.a);
+}
+#endif
 #ifdef IRIS
 
 // Phase 4: the iris's diffuse light - the Worklight's (`lit`), its key traced through the cornea (roadmap #4): the
@@ -718,10 +755,19 @@ void main() {
 #else
         vec3 ns = n;
 #endif
+#ifdef SCLERA_MAP
+        vec3 sclera_entry = sclera_albedo(entry);  // the limbal tissue's sclera colour, the same map as beyond the ring
+#if LIMBUS_LEVEL >= 1
+        vec3 tissue = lit(limbus_tint(colour_weight(us), u_limbus_albedo, sclera_entry), ns);
+#else
+        vec3 tissue = lit(mix(u_limbus_albedo, sclera_entry, limbus_weight(length(entry.xy))), ns);
+#endif
+#else
 #if LIMBUS_LEVEL >= 1
         vec3 tissue = lit(limbus_tint(colour_weight(us), u_limbus_albedo, u_sclera_albedo), ns);
 #else
         vec3 tissue = lit(mix(u_limbus_albedo, u_sclera_albedo, limbus_weight(length(entry.xy))), ns);
+#endif
 #endif
         vec3 inside;
         if (kind == KIND_LIMBUS) {
@@ -799,10 +845,19 @@ void main() {
 #else
         vec3 n = n_s;
 #endif
+#ifdef SCLERA_MAP
+        vec3 sclera_here = sclera_albedo(p);
+#if LIMBUS_LEVEL >= 1
+        vec3 albedo = limbus_tint(colour_weight(us), u_limbus_albedo, sclera_here);
+#else
+        vec3 albedo = sclera_here;
+#endif
+#else
 #if LIMBUS_LEVEL >= 1
         vec3 albedo = limbus_tint(colour_weight(us), u_limbus_albedo, u_sclera_albedo);
 #else
         vec3 albedo = u_sclera_albedo;
+#endif
 #endif
         colour = lit(albedo, n);
 #if LIMBUS_LEVEL >= 3
@@ -926,6 +981,8 @@ void main() {
         o.xy = pupil_weights(a.x, a.y);
     } else if (u_func == 18) {
         o = iris_table_value(a.xy);
+    } else if (u_func == 19) {
+        o.xy = sclera_st(a.xyz);
     }
     out_value = o;
 }
@@ -951,7 +1008,7 @@ PARITY_FUNCS = {"trace_hit": 0, "trace_entry": 1, "iris_st": 2, "coords": 3, "we
                 "sclera_through": 6, "td_env": 7, "worklight_light": 8, "film_uv": 9, "film_normal": 10,
                 "film_roughness_shadow": 11, "lid_occlusion": 12, "area_key": 13, "iris_key_terms": 14,
                 "iris_light_path": 15, "relief_normal": 16, "pupil_weights": 17,
-                "iris_table_value": 18}
+                "iris_table_value": 18, "sclera_st": 19}
 
 FULLSCREEN_VERTEX_SRC = """#version 330 core
 layout(location = 0) in vec2 a_position;
@@ -966,17 +1023,21 @@ def _header(**defines) -> str:
 
 
 def shell_sources(locations: dict[str, int], variant: str, level: int, reflection: str, fit: bool,
-                  debug_kind: bool = False, look: bool = False, iris: bool = False) -> list[tuple[str, str]]:
+                  debug_kind: bool = False, look: bool = False, iris: bool = False,
+                  sclera: bool = False) -> list[tuple[str, str]]:
     """The shell program's sources. Without `look` the fragment source is the one before phase 3, character for
     character (`test_gl_eye_pass.py` pins that), so the "fast" tier and an eye without a look draw and cost as before;
-    without `iris` it is the one of phase 3. `iris` needs `look` (the iris values live in the look)."""
+    without `iris` it is the one of phase 3. `iris` needs `look` (the iris values live in the look). Without `sclera`
+    (AD-035: the sclera's colour map) the source is the one before AD-035, character for character."""
     iris = bool(iris and look)
     header = _header(VARIANT=VARIANT_IDS[variant], LIMBUS_LEVEL=int(level), REFLECTION=REFLECTIONS[reflection],
                      IRIS_FIT=1 if fit else None, DEBUG_KIND=1 if debug_kind else None, LOOK=1 if look else None,
-                     IRIS=1 if iris else None)
-    library = EYE_LIB_SRC + (LOOK_LIB_SRC if look else "") + (IRIS_LIB_SRC if iris else "")
+                     IRIS=1 if iris else None, SCLERA_MAP=1 if sclera else None)
+    library = (EYE_LIB_SRC + (LOOK_LIB_SRC if look else "") + (IRIS_LIB_SRC if iris else "")
+               + (SCLERA_LIB_SRC if sclera else ""))
     body = SHELL_FRAGMENT_BODY if iris else _without(SHELL_FRAGMENT_BODY, "IRIS")
     body = body if look else _without(body, "LOOK")
+    body = body if sclera else _without(body, "SCLERA_MAP")
     return [(SHELL_VERTEX_SRC.format(**locations), "vertex"), (header + library + body, "fragment")]
 
 
@@ -1010,7 +1071,7 @@ def _without(source: str, name: str) -> str:
 def parity_sources(fit: bool) -> list[tuple[str, str]]:
     return [(FULLSCREEN_VERTEX_SRC, "vertex"),
             (_header(IRIS_FIT=1 if fit else None, LOOK=1, IRIS=1) + EYE_LIB_SRC + LOOK_LIB_SRC + IRIS_LIGHT_SRC
-             + IRIS_LIB_SRC
+             + IRIS_LIB_SRC + SCLERA_LIB_SRC
              + PARITY_FRAGMENT_BODY,
              "fragment")]
 

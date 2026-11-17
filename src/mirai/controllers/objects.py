@@ -35,7 +35,7 @@ from core.scene import IDENTITY_TRANSFORM
 from viewport.eye_pass import EyeDraw
 from viewport.gl_render_store import DEFAULT_BASE_COLOR
 
-from .. import eye_gaze, object_space
+from .. import eye_gaze, object_space, sclera_map
 from ..eye_object import (
     DEFAULT_EYE,
     cornea_triangles,
@@ -85,6 +85,8 @@ from ..scene_objects import (
     pair_names,
     plan_object_delete,
     resync_command,
+    SELECTED_TINT,
+    SELECTED_TINT_SHARE,
     selected_color,
     subtree_depth_first,
     unique_object_name,
@@ -537,6 +539,28 @@ class ObjectController:
             return False
         fit_text = "planar" if fit is None else f"fit pupil {fit['fit_pupil']:g} / iris edge {fit['fit_limbus']:g}"
         services.status(f"{label}: {'removed' if texture is None else Path(texture).name} ({fit_text})")
+        return True
+
+    def set_eye_sclera_image(self, path: Path | None) -> bool:
+        """AD-035 M1: the sclera's colour map of every selected eye (`EyeSpec.sclera_texture`, an absolute path), one
+        Undo step (`set_eye`: assign, replace and remove alike). A missing file, an unknown format or one larger than
+        `sclera_map.MAX_SIZE` is refused with the reason and nothing changes. None removes the map. The iris image, its
+        fit and the look are not touched. True = an eye changed."""
+        label = "Sclera image"
+        services = self.services
+        note = ""
+        if path is not None:
+            if not path.is_file():
+                services.status(f"{label}: {path} not found")
+                return False
+            result = sclera_map.check(path)
+            if not result.usable:
+                services.status(f"{label}: {path.name}: {result.problem}")
+                return False
+            note = f" ({result.note})" if result.note else ""
+        if not self.set_eye(label, sclera_texture=None if path is None else os.path.abspath(path)):
+            return False
+        services.status(f"{label}: {'removed, base colour' if path is None else path.name}{note}")
         return True
 
     def apply_iris_image(self, eyes, texture: str | None, changes: dict, label: str) -> bool:
@@ -1259,6 +1283,9 @@ class ObjectController:
         for key in [key for key in viewport.object_entries if key not in others and key not in twins]:
             viewport.remove_object_entry(key)
         highlighted = self.highlighted()
+        # AD-035 S-4 (Manu 2026-11-17): while the Eye Lab is open an eye is drawn in its own colour, never tinted as
+        # selected (its colour, base or map, is what is being judged); other objects keep the tint.
+        eye_lab = display.eye_lab is not None
         self.gaze_drawn = gaze = self.gaze_target()
         shift = services.morph_view_shift
         offset = None if shift is None else shift[1]
@@ -1266,7 +1293,8 @@ class ObjectController:
         entries += [(key, key[1], obj, offset) for key, obj in twins.items()]
         for key, oid, obj, twin_offset in entries:
             reference = obj.state is ObjectState.REFERENCE
-            colour = selected_color(obj, DEFAULT_BASE_COLOR) if oid in highlighted else object_base_color(obj)
+            tinted = oid in highlighted and not (eye_lab and obj.eye is not None)
+            colour = selected_color(obj, DEFAULT_BASE_COLOR) if tinted else object_base_color(obj)
             finish = object_finish(obj, display.surface_finish)
             # AD-033: a Normal eye is drawn by the eye pass (its iris image goes there, not to the Worklight store).
             eye, mesh = None, obj.mesh
@@ -1277,8 +1305,10 @@ class ObjectController:
                 # Phase 3: the look's lid stays with the head (the rest frame, when the gaze turns the eye), and the
                 # irregularity pattern is the object's own (its id).
                 rest = None if gaze is None or spec.look is None else tuple(self._drawn_matrix(obj, None, twin_offset))
+                # AD-035: the sclera's map when its file is usable (else the base colour), the tint over it.
                 eye = EyeDraw(spec, obj.texture, tuple(colour), finish, cornea_triangles(), rest_matrix=rest,
-                              variation=int(oid))
+                              variation=int(oid), sclera_texture=sclera_map.drawable(spec.sclera_texture),
+                              sclera_tint=(*SELECTED_TINT, SELECTED_TINT_SHARE) if tinted else (0.0, 0.0, 0.0, 0.0))
             viewport.set_object_entry(
                 key,
                 mesh,
@@ -1411,6 +1441,7 @@ class ObjectController:
         scene = self.services.scene
         return (
             self.highlighted(),
+            self.services.display.eye_lab is not None,  # AD-035 S-4: no selection tint on eyes in the Eye Lab
             scene.edit_object_id,
             tuple(
                 (oid, obj.state, obj.material, obj.texture, obj.hidden, obj.parent, obj.eye, id(obj.mesh))

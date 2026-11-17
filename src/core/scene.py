@@ -292,7 +292,9 @@ class EyeSpec:
     (sclera radius 12 mm) and scale with the eye. The iris image is the object's `texture` (AD-026); `fit_pupil` /
     `fit_limbus` say where the image's own pupil edge / iris edge lie (shares of half the image width; both None = the
     planar mapping), `hold_outer_color` holds the iris-edge colour beyond the limbus. `look` (Eye LookDev phase 3, scene
-    format v10) is the optional `EyeLook`; `None` = neutral, the eye as before phase 3."""
+    format v10) is the optional `EyeLook`; `None` = neutral, the eye as before phase 3. `sclera_texture` (AD-035 M1,
+    scene format v12) is the optional path of the sclera's colour map - a plain string like `SceneObject.texture`, whose
+    meaning (scene-relative on disk, the image's layout) `src/mirai` decides; `None` = no map, the sclera's base colour."""
 
     cornea_radius: float
     limbus_radius: float
@@ -312,11 +314,15 @@ class EyeSpec:
     overlap_mm: float
     asymmetry: bool
     look: EyeLook | None = None
+    sclera_texture: str | None = None
 
     def __post_init__(self) -> None:
         put = lambda name, value: object.__setattr__(self, name, value)  # noqa: E731
         if self.look is not None and not isinstance(self.look, EyeLook):
             raise ValueError(f"look: expected an EyeLook or None, got {self.look!r}")
+        if self.sclera_texture is not None and (not isinstance(self.sclera_texture, str)
+                                                or not self.sclera_texture.strip() or "\0" in self.sclera_texture):
+            raise ValueError(f"sclera_texture: expected a non-empty path or None, got {self.sclera_texture!r}")
         for name in ("cornea_radius", "limbus_radius", "iris_root_z", "iris_concavity", "pupil_radius", "band_mm",
                      "strength", "normal_mm", "falloff", "overlap_mm"):
             put(name, _finite(getattr(self, name), name))
@@ -363,19 +369,24 @@ class EyeSpec:
             "limbal_colour": list(self.limbal_colour), "band_mm": self.band_mm, "strength": self.strength,
             "normal_mm": self.normal_mm, "falloff": self.falloff, "overlap_mm": self.overlap_mm,
             "asymmetry": self.asymmetry,
-        } | ({} if self.look is None else {"look": self.look.to_dict()})  # absent = neutral, so v9 eyes stay as they were
+        } | ({} if self.look is None else {"look": self.look.to_dict()}) | (  # absent = neutral: v9 eyes as they were
+            {} if self.sclera_texture is None else {"sclera_texture": self.sclera_texture})  # absent = none (v9-v11)
+
+    #: The optional keys (absent in a file = None): the look (v10) and the sclera map (v12).
+    _OPTIONAL = ("look", "sclera_texture")
 
     @classmethod
     def from_dict(cls, raw: dict) -> "EyeSpec":
         if not isinstance(raw, dict):
             raise ValueError(f"eye: expected an object, got {raw!r}")
-        names = [f.name for f in fields(cls) if f.name != "look"]
+        names = [f.name for f in fields(cls) if f.name not in cls._OPTIONAL]
         missing = [n for n in names if n not in raw]
-        unknown = sorted(set(raw) - set(names) - {"look"})
+        unknown = sorted(set(raw) - set(names) - set(cls._OPTIONAL))
         if missing or unknown:
             raise ValueError(f"eye: missing {missing}, unknown {unknown}")
         look = raw.get("look")
-        return cls(**{n: raw[n] for n in names}, look=None if look is None else EyeLook.from_dict(look))
+        return cls(**{n: raw[n] for n in names}, look=None if look is None else EyeLook.from_dict(look),
+                   sclera_texture=raw.get("sclera_texture"))
 
 
 @dataclass(frozen=True)

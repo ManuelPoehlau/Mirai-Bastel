@@ -1089,3 +1089,364 @@ def test_iris_table_is_baked_once_per_key_and_leaves_the_gl_state(gl_window):
     viewport.render()
     assert passes.table_bakes == bakes + 2
     assert snapshot_gl_state() == before and gl.glGetError() == gl.GL_NO_ERROR
+
+
+# -- AD-035 M1: the sclera's colour map (Manu 2026-11-17, S-1 .. S-13) -------------------------------------------------
+
+#: Every shell variant's sources without a map (2 refractions x 4 levels x 2 reflections x fit x debug x look x iris),
+#: float literals normalised to 9 significant digits (the generated constants' last digit may differ between NumPy
+#: builds), hashed in order. Taken from `main` @ 5187c31 - the sources before AD-035.
+PINNED_SOURCES_SHA256 = "0424ad123610865eb4ab55a577a9605f9e3726f337b3d0ad3d9332f3477e001a"
+SCLERA_ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "docs", "research",
+                             "eye_sclera_assets_2026-11-17")
+SYNTHETIC_MAP = os.path.normpath(os.path.join(SCLERA_ASSETS, "synthetic_sclera_front_disc_1024.png"))
+#: The gradient test map: R = s, G = t (scaled into 0.15 .. 0.95), so a pixel's colour tells where it sampled.
+GRADIENT_LO, GRADIENT_SPAN = 0.15, 0.8
+
+
+def _source_digest(**kw) -> str:
+    import hashlib
+    import itertools
+    import re
+
+    floats = re.compile(r"-?\d+\.\d+(?:e[-+]?\d+)?")
+    digest = hashlib.sha256()
+    locations = {"position": 0, "normal": 1}
+    for variant, level, reflection, fit, debug, look, iris in itertools.product(
+            ("V2", "V3"), range(4), ("key", "studio"), (False, True), (False, True), (False, True), (False, True)):
+        for src, _kind in es.shell_sources(locations, variant, level, reflection, fit, debug, look, iris, **kw):
+            digest.update(floats.sub(lambda m: f"{float(m.group(0)):.9g}", src).encode())
+    return digest.hexdigest()
+
+
+def test_sources_without_a_map_are_the_ones_before_ad035():
+    """AD-035 §6: an eye without a sclera map draws with the program before AD-035, character for character."""
+    assert _source_digest() == _source_digest(sclera=False) == PINNED_SOURCES_SHA256
+    locations = {"position": 0, "normal": 1}
+    for look, iris in ((False, False), (True, False), (True, True)):
+        plain = es.shell_sources(locations, "V2", 3, "studio", True, look=look, iris=iris)[1][0]
+        assert "SCLERA_MAP" not in plain and "sclera_albedo(" not in plain and "u_sclera_texture" not in plain
+        mapped = es.shell_sources(locations, "V2", 3, "studio", True, look=look, iris=iris, sclera=True)[1][0]
+        assert "#define SCLERA_MAP 1\n" in mapped and "vec3 sclera_albedo(vec3 p)" in mapped
+        assert "sclera_albedo(entry)" in mapped and "sclera_albedo(p)" in mapped  # the two reads, one mapping
+
+
+def test_sclera_st_glsl_matches_numpy(parity):
+    """The front disc's GLSL against `eye_optics.sclera_st`: sclera and cornea points, both poles, beyond the rim."""
+    rng = np.random.default_rng(23)
+    n = N
+    theta = np.concatenate([rng.uniform(0.0, np.pi, n - 6), [0.0, 1e-7, np.pi, np.pi - 1e-7, eo.SCLERA_RIM, 2.5]])
+    phi = rng.uniform(0.0, 2.0 * np.pi, n)
+    radius = np.where(rng.uniform(size=n) < 0.3, rng.uniform(0.9, 1.1, n), 1.0)  # cornea entries lie off the sphere
+    p = radius[:, None] * np.stack([np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)], -1)
+    x = _pack(p)
+    a = _f32(x)
+    got = parity[False].run("sclera_st", x)[:, :2]
+    ring = math.asin(G.limbus_radius)
+    ref = eo.sclera_st(a[:, :3], ring)
+    assert np.all(np.isfinite(got)) and np.abs(got - ref).max() < 2e-5
+    r = 2.0 * np.hypot(ref[:, 0] - 0.5, ref[:, 1] - 0.5)
+    on_ring = np.abs(np.arctan2(np.hypot(a[:, 0], a[:, 1]), a[:, 2]) - ring) < 1e-9
+    assert np.all(r <= 1.0 + 1e-12) and np.all(np.abs(r[on_ring] - eo.SCLERA_LIMBUS_SHARE) < 1e-9)
+    assert np.abs(got[n - 6] - 0.5).max() < 1e-6 and np.abs(got[n - 5] - 0.5).max() < 1e-6  # the front pole: centre
+
+
+def test_the_disc_is_anchored_to_the_anatomys_limbus():
+    """The painted limbus stays on the eye's limbus when the limbus radius changes; the rim stays at 130 deg."""
+    for limbus in (0.42, 0.49, 0.58):
+        ring = math.asin(limbus)
+        points = np.array([[limbus * math.cos(a), limbus * math.sin(a), math.sqrt(1 - limbus ** 2)]
+                           for a in np.linspace(0, 2 * np.pi, 13)])
+        st = eo.sclera_st(points, ring)
+        assert np.allclose(np.hypot(st[:, 0] - 0.5, st[:, 1] - 0.5), 0.5 * eo.SCLERA_LIMBUS_SHARE, atol=1e-12)
+        rim = np.array([[math.sin(eo.SCLERA_RIM), 0.0, math.cos(eo.SCLERA_RIM)]])
+        assert np.allclose(eo.sclera_st(rim, ring), [[1.0, 0.5]], atol=1e-12)
+    up = eo.sclera_st(np.array([[0.0, 0.6, 0.8], [0.6, 0.0, 0.8]]), math.asin(0.49))
+    assert up[0, 1] > 0.5 and abs(up[0, 0] - 0.5) < 1e-12 and up[1, 0] > 0.5  # image up = +Y, right = +X
+
+
+@pytest.fixture(scope="module")
+def sclera_maps(gl_window):
+    """PNG maps for the GL tests (pyglet decodes them as the app does): the gradient, white, black, uniform colours."""
+    from mirai.iris_import import encode_png
+
+    size = 512
+    tmp = tempfile.TemporaryDirectory()
+    t, s = np.mgrid[0:size, 0:size]
+    st = (np.stack([s, size - 1 - t], -1) + 0.5) / size  # file rows run top-down: t = 1 at row 0
+    paths = {}
+
+    def write(name, rgb):
+        rgba = np.empty((size, size, 4), np.uint8)
+        rgba[..., :3] = np.clip(np.round(np.broadcast_to(rgb, (size, size, 3)) * 255.0), 0, 255)
+        rgba[..., 3] = 255
+        path = os.path.join(tmp.name, f"{name}.png")
+        with open(path, "wb") as fh:
+            fh.write(encode_png(rgba))
+        paths[name] = path
+
+    gradient = np.concatenate([GRADIENT_LO + GRADIENT_SPAN * st, np.full((size, size, 1), 0.55)], -1)
+    write("gradient", gradient)
+    write("white", np.ones(3))
+    write("black", np.zeros(3))
+    write("base", np.asarray(SCLERA_COLOUR))
+    paths["base_colour"] = tuple(round(c * 255.0) / 255.0 for c in SCLERA_COLOUR)  # what the map stores
+    paths["synthetic"] = SYNTHETIC_MAP
+    yield paths
+    tmp.cleanup()
+
+
+def _model_turned(yaw_deg=0.0, pitch_deg=0.0, scale=SCALE) -> list[float]:
+    """A placement turned like a gaze (yaw about +Y, then pitch about +X), column-major."""
+    cy, sy = math.cos(math.radians(yaw_deg)), math.sin(math.radians(yaw_deg))
+    cp, sp = math.cos(math.radians(pitch_deg)), math.sin(math.radians(pitch_deg))
+    yaw = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+    pitch = np.array([[1, 0, 0], [0, cp, -sp], [0, sp, cp]])
+    m = np.eye(4)
+    m[:3, :3] = scale * (yaw @ pitch)
+    return [float(v) for v in m.T.ravel()]
+
+
+def _map_render(gl_window, spec=DEFAULT_EYE, sclera=None, colour=SCLERA_COLOUR, tint=(0.0, 0.0, 0.0, 0.0), yaw=0.0,
+                pitch=0.0, distance=6.0, model=None, tier="fast", reflection="studio"):
+    viewport = Viewport(Mesh(), store_type=GLRenderStore)
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=distance)
+    camera.set_view(math.radians(yaw), math.radians(pitch))
+    viewport.bind_camera(camera)
+    viewport.on_camera_changed(aspect=1.0)
+    draw = EyeDraw(spec, None, tuple(colour), FINISH, cornea_triangles(), variation=3, sclera_texture=sclera,
+                   sclera_tint=tuple(tint))
+    viewport.set_object_entry("eye", shell_mesh(spec), tuple(colour), model_matrix=model or _model(), finish=FINISH,
+                              eye=draw)
+    viewport.set_eye_display(tier=tier, reflection=reflection)
+    return _render(gl_window, viewport), camera, viewport
+
+
+def _local_rays(camera, model):
+    """Eye-local rays through the pixel centres (row 0 = top) for any placement `model` (column-major)."""
+    view = np.array(camera.build_view_matrix()).reshape(4, 4).T
+    proj = np.array(camera.build_projection_matrix(1.0)).reshape(4, 4).T
+    inv = np.linalg.inv(proj @ view)
+    to_local = np.linalg.inv(np.asarray(model, dtype=np.float64).reshape(4, 4).T)
+    px = (np.arange(SIZE) + 0.5) / SIZE * 2.0 - 1.0
+    x, y = np.meshgrid(px, -px)
+    near = np.stack([x, y, -np.ones_like(x), np.ones_like(x)], -1) @ inv.T
+    far = np.stack([x, y, np.ones_like(x), np.ones_like(x)], -1) @ inv.T
+    near, far = (near / near[..., 3:]) @ to_local.T, (far / far[..., 3:]) @ to_local.T
+    eye = to_local @ np.append(np.asarray(camera.eye(), dtype=np.float64), 1.0)
+    return eye[:3], eo.normalize(far[..., :3] - near[..., :3])
+
+
+def _map_points(camera, model, variant="V2"):
+    """Per pixel: the eye-local point whose sclera colour the shader reads (the sclera hit, or the cornea's entry - for
+    the limbal tissue and its cover over the iris) and its class (-1 sclera, LIMBUS cornea, 0 none), with a 2-pixel
+    margin from every class boundary. Where the cornea shows no sclera colour (the open iris, the pupil) the recovered
+    albedo is invalid anyway (`_albedo`: nothing lit)."""
+    eye, d = _local_rays(camera, model)
+    tr = eo.trace(eye, d, variant, G)
+    hit_s, ts = eo.sphere_entry(np.broadcast_to(eye, d.shape), d, np.zeros(3), 1.0)
+    ps = eye + ts[..., None] * d
+    hit_a, ta = eo.sphere_entry(np.broadcast_to(eye, d.shape), d, np.array([0.0, 0.0, G.anterior_centre_z]),
+                                G.cornea_radius)
+    sclera = hit_s & (ps[..., 2] < G.limbus_z) & (~hit_a | (ts < ta) | (tr.kind == eo.MISS))
+    kinds = np.where(sclera, -1, np.where(tr.kind != eo.MISS, eo.LIMBUS, 0))  # cornea: tissue or its cover
+    point = np.where(sclera[..., None], ps, tr.entry)
+    keep = kinds != 0
+    for axis in (0, 1):
+        for shift in (1, 2):
+            keep &= (np.roll(kinds, shift, axis) == kinds) & (np.roll(kinds, -shift, axis) == kinds)
+    return point, kinds, keep
+
+
+def _albedo(gl_window, maps, name, **scene):
+    """The albedo the shader read per pixel, recovered from three frames: the colour is linear in the albedo with
+    everything else (reflections, highlights, lid band) added independently, so (M - K) / (W - K) is the map's
+    value. Returns (albedo, valid, camera)."""
+    frames = {}
+    for key in (name, "white", "black"):
+        frames[key], camera, _ = _map_render(gl_window, sclera=maps[key], **scene)
+    lit = (frames["white"] - frames["black"]).astype(np.float64)
+    valid = (lit[..., :2] > 50).all(-1) & (frames["white"] < 255).all(-1)  # light enough, nothing clipped
+    return (frames[name] - frames["black"]) / np.maximum(lit, 1.0), valid, camera
+
+
+#: The limbal tissue's colour = the sclera's (strength 0), and an overlap that lays it over the iris's edge, so the
+#: cornea's side of the ring shows the map over a band of pixels (the cover is linear in the albedo as well).
+L1_FLAT = dataclasses.replace(DEFAULT_EYE, limbus_level=1, strength=0.0, overlap_mm=0.8, asymmetry=True)
+
+
+@pytest.mark.parametrize("yaw, pitch, gaze, tier", [
+    (0.0, 0.0, (0.0, 0.0), "fast"),       # frontal at rest
+    (0.0, 0.0, (25.0, 12.0), "fast"),     # frontal, the eye turned by a gaze
+    (40.0, 10.0, (0.0, 0.0), "full"),     # three-quarter
+    (40.0, 10.0, (-20.0, 8.0), "full"),   # three-quarter with a gaze
+    (78.0, 0.0, (0.0, 0.0), "fast"),      # side
+    (180.0, 0.0, (0.0, 0.0), "fast"),     # the back (isolated orbit only): the held rim
+])
+def test_the_map_is_sampled_where_the_numpy_twin_says_on_both_sides_of_the_limbus(gl_window, sclera_maps, yaw, pitch,
+                                                                                  gaze, tier):
+    """The colour each pixel read equals the gradient map at `eye_optics.sclera_st` of its eye-local point - on the
+    sclera and on the limbal tissue seen through the cornea, at rest and turned by a gaze, from the front, three-quarter,
+    side and back: the mapping is eye-local (it turns with the eye) and the same on both sides of the ring."""
+    model = _model_turned(*gaze)
+    spec = dataclasses.replace(L1_FLAT, look=dataclasses.replace(DEFAULT_LOOK, wet_sclera=0.8, irregularity_deg=0.5,
+                                                                  lid_shadow=0.3, lid_band=0.7))
+    albedo, valid, camera = _albedo(gl_window, sclera_maps, "gradient", spec=spec, yaw=yaw, pitch=pitch, model=model,
+                                    distance=4.5, tier=tier)
+    point, kinds, keep = _map_points(camera, model)
+    theta = np.arctan2(np.hypot(point[..., 0], point[..., 1]), point[..., 2])
+    use = keep & valid & (theta < math.radians(172.0))  # the back pole itself: any direction, a coarse mip there
+    st = eo.sclera_st(point, math.asin(G.limbus_radius))
+    expected = GRADIENT_LO + GRADIENT_SPAN * st
+    error = np.abs(albedo[..., :2] - expected).max(-1)
+    assert use.sum() > 1500, use.sum()
+    assert np.percentile(error[use], 50) < 0.012 and np.percentile(error[use], 99) < 0.04, (
+        np.percentile(error[use], 50), np.percentile(error[use], 99))
+    tissue = use & (kinds == eo.LIMBUS)
+    if yaw < 60.0:
+        assert tissue.sum() > 50 and np.percentile(error[tissue], 99) < 0.04  # the cornea's side of the ring
+
+
+def test_no_step_at_the_limbus(gl_window, sclera_maps):
+    """Neighbouring pixels on either side of the ring (one reads the sclera branch, the other the cornea's limbal
+    tissue) read neighbouring map values: the step across the ring is no larger than between neighbours elsewhere."""
+    albedo, valid, camera = _albedo(gl_window, sclera_maps, "gradient", spec=L1_FLAT, distance=3.2, yaw=15.0)
+    _point, kinds, _keep = _map_points(camera, _model())
+    steps_ring, steps_else = [], []
+    for axis in (0, 1):
+        other, other_valid, other_kind = (np.roll(a, -1, axis) for a in (albedo, valid, kinds))
+        pair = valid & other_valid & (kinds != 0) & (other_kind != 0)
+        step = np.abs(other - albedo)[..., :2].max(-1)
+        across = pair & (kinds != other_kind)
+        steps_ring.append(step[across])
+        steps_else.append(step[pair & (kinds == other_kind)])
+    ring, rest = np.concatenate(steps_ring), np.concatenate(steps_else)
+    assert len(ring) > 40 and len(rest) > 2000
+    assert np.percentile(ring, 95) <= np.percentile(rest, 99) + 0.01, (np.percentile(ring, 95), np.percentile(rest, 99))
+
+
+def test_the_synthetic_map_reads_as_painted(gl_window, sclera_maps):
+    """The repository's synthetic map (`docs/research/eye_sclera_assets_2026-11-17/`) in the Eye Lab's close-up: the
+    colour read on the sclera equals the image at the twin's coordinates (bilinear, full resolution - the close-up is
+    about one texel per pixel; vessels make single pixels differ through the mip choice, so the median is checked)."""
+    from mirai.iris_import import read_rgba
+
+    image = read_rgba(SYNTHETIC_MAP)[..., :3] / 255.0
+    spec = dataclasses.replace(L3_EYE, look=dataclasses.replace(DEFAULT_LOOK, wet_sclera=0.7, irregularity_deg=0.5))
+    albedo, valid, camera = _albedo(gl_window, sclera_maps, "synthetic", spec=spec, distance=3.0, yaw=10.0,
+                                    tier="full")
+    point, kinds, keep = _map_points(camera, _model())
+    use = keep & valid & (kinds == -1)
+    expected = eo.sclera_texel(image, eo.sclera_st(point, math.asin(G.limbus_radius)))
+    error = np.abs(albedo - expected).max(-1)
+    assert use.sum() > 3000
+    assert np.median(error[use]) < 0.02 and np.percentile(error[use], 90) < 0.06, (
+        np.median(error[use]), np.percentile(error[use], 90))
+
+
+@pytest.mark.parametrize("tier, level", [("fast", 0), ("fast", 3), ("full", 3)])
+def test_a_uniform_map_draws_the_eye_as_its_base_colour_of_that_colour(gl_window, sclera_maps, tier, level):
+    """S-7: the map replaces the base colour and nothing else - a map of one colour draws the same pixels as an eye of
+    that base colour without a map (L0 / L3, fast and full with the wet film, irregularity, lid shadow and band, the
+    iris values)."""
+    spec = dataclasses.replace(L3_EYE, limbus_level=level, look=dataclasses.replace(
+        DEFAULT_LOOK, wet_sclera=0.8, irregularity_deg=0.6, highlight_softness=0.5, lid_shadow=0.4, lid_band=0.8,
+        iris=dataclasses.replace(DEFAULT_IRIS, light=1.0, crescent=1.0, rim_shadow=0.6, pupil_edge_mm=0.1)))
+    base = sclera_maps["base_colour"]
+    for yaw in (0.0, 35.0):
+        mapped, _, _ = _map_render(gl_window, spec, sclera_maps["base"], colour=base, yaw=yaw, distance=4.0, tier=tier)
+        plain, _, _ = _map_render(gl_window, spec, None, colour=base, yaw=yaw, distance=4.0, tier=tier)
+        assert np.abs(mapped - plain).max() <= 1, (yaw, np.abs(mapped - plain).max())
+
+
+def test_reflections_and_the_wet_film_do_not_depend_on_the_map(gl_window, sclera_maps):
+    """§6 / audit §2.5, with the wet film fully on: at a black albedo only what is added independently of it remains -
+    the film's and the cornea's reflections, dimmed by the lid band. That reflection-only frame is the same with a black
+    map (the base colour set to grey, unused) and with a black base colour without a map. And the synthetic map's own
+    contribution (the frame minus the black-map frame) is only scaled by the film's transmission (1 - F): never larger
+    than without the film, and most of it remains - the map changes what the light falls on, not the reflection."""
+    spec = dataclasses.replace(L3_EYE, look=dataclasses.replace(DEFAULT_LOOK, wet_sclera=1.0, irregularity_deg=0.7,
+                                                                 highlight_softness=0.4, lid_band=0.8))
+    for yaw in (0.0, 30.0):
+        mapped, _, _ = _map_render(gl_window, spec, sclera_maps["black"], colour=(0.6, 0.6, 0.6), yaw=yaw, tier="full")
+        plain, _, _ = _map_render(gl_window, spec, None, colour=(0.0, 0.0, 0.0), yaw=yaw, tier="full")
+        assert np.abs(mapped - plain).max() <= 1 and mapped.max() > 60  # the reflections are there
+    wet = {name: _map_render(gl_window, spec, sclera_maps[name], yaw=20.0, tier="full")[0]
+           for name in ("synthetic", "black", "white")}
+    dry_spec = dataclasses.replace(spec, look=dataclasses.replace(spec.look, wet_sclera=0.0, lid_band=0.0))
+    dry = {name: _map_render(gl_window, dry_spec, sclera_maps[name], yaw=20.0, tier="full")[0]
+           for name in ("synthetic", "black")}
+    # the map's own contribution scales with the film's transmission (1 - F); the reflection term cancels exactly
+    contrib_wet = (wet["synthetic"] - wet["black"]).astype(float)
+    contrib_dry = (dry["synthetic"] - dry["black"]).astype(float)
+    assert np.all(contrib_wet <= contrib_dry + 1) and contrib_wet.sum() > 0.8 * contrib_dry.sum()
+
+
+def test_the_selection_tint_goes_over_the_map_and_none_is_the_map(gl_window, sclera_maps):
+    """S-4: outside the Eye Lab a selected eye's map is tinted as a selected object's colour is; the app sends no tint
+    while the Eye Lab is open (`test_eye_sclera.py`), and then the eye draws its map as it is."""
+    from mirai.scene_objects import SELECTED_TINT, SELECTED_TINT_SHARE
+
+    tint = (*SELECTED_TINT, SELECTED_TINT_SHARE)
+    tinted, _, _ = _map_render(gl_window, DEFAULT_EYE, sclera_maps["white"], tint=tint, yaw=20.0)
+    colour = tuple(1.0 + SELECTED_TINT_SHARE * (t - 1.0) for t in SELECTED_TINT)
+    expected, _, _ = _map_render(gl_window, DEFAULT_EYE, None, colour=colour, yaw=20.0)
+    assert np.abs(tinted - expected).max() <= 1
+    untinted, _, _ = _map_render(gl_window, DEFAULT_EYE, sclera_maps["white"], yaw=20.0)
+    white, _, _ = _map_render(gl_window, DEFAULT_EYE, None, colour=(1.0, 1.0, 1.0), yaw=20.0)
+    assert np.abs(untinted - white).max() <= 1 and np.any(untinted != tinted)
+
+
+def test_a_missing_map_draws_the_base_colour_with_the_program_before(gl_window, sclera_maps):
+    plain, _, viewport = _map_render(gl_window, DEFAULT_EYE, None, yaw=20.0)
+    missing, _, viewport2 = _map_render(gl_window, DEFAULT_EYE, os.path.join(tempfile.gettempdir(), "no_such.png"),
+                                        yaw=20.0)
+    assert np.array_equal(plain, missing)
+    assert not any(key[-1] for key in viewport2.eye_pass.programs)  # no SCLERA_MAP program was built
+
+
+@pytest.mark.parametrize("level", [0, 3])
+@pytest.mark.parametrize("reflection", ["key", "studio"])
+@pytest.mark.parametrize("variant", ["V2", "V3"])
+@pytest.mark.parametrize("tier", ["fast", "full"])
+def test_map_programs_draw_and_leave_the_gl_state_clean(gl_window, sclera_maps, level, reflection, variant, tier):
+    """Every map variant compiles and draws in both tiers (S-3); afterwards no sampler or texture is left on the map's
+    unit, the active unit is 0, and the shared cached texture keeps its own REPEAT wrap (the pass's sampler clamps)."""
+    from pyglet import gl
+
+    from gui.imgui_layer import snapshot_gl_state
+    from viewport.eye_pass import SCLERA_UNIT
+
+    spec = dataclasses.replace(_iris(light=1.0, crescent=1.0, relief=0.5, pupil_edge_mm=0.1), limbus_level=level,
+                               fit_pupil=0.22, fit_limbus=0.88)
+    spec = dataclasses.replace(spec, look=dataclasses.replace(spec.look, wet_sclera=0.7, lid_band=0.6))
+    viewport = Viewport(Mesh(), store_type=GLRenderStore)
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=6.0)
+    camera.set_view(math.radians(25.0), 0.0)
+    viewport.bind_camera(camera)
+    viewport.on_camera_changed(aspect=1.0)
+    draw = EyeDraw(spec, None, SCLERA_COLOUR, FINISH, cornea_triangles(), variation=3,
+                   sclera_texture=sclera_maps["synthetic"])
+    viewport.set_object_entry("eye", shell_mesh(spec), SCLERA_COLOUR, model_matrix=_model(), finish=FINISH, eye=draw)
+    viewport.set_eye_display(reflection=reflection, refraction=variant, tier=tier)
+    img = _render(gl_window, viewport)
+    assert np.sum(img.max(-1) > 0) > 3000
+    assert any(key[-1] for key in viewport.eye_pass.programs)  # the SCLERA_MAP program drew
+    before = snapshot_gl_state()
+    viewport.render()
+    assert snapshot_gl_state() == before
+    unit, sampler, bound = gl.GLint(), gl.GLint(), gl.GLint()
+    gl.glGetIntegerv(gl.GL_ACTIVE_TEXTURE, ctypes.byref(unit))
+    assert unit.value == gl.GL_TEXTURE0
+    gl.glActiveTexture(gl.GL_TEXTURE0 + SCLERA_UNIT)
+    gl.glGetIntegerv(gl.GL_SAMPLER_BINDING, ctypes.byref(sampler))
+    gl.glGetIntegerv(gl.GL_TEXTURE_BINDING_2D, ctypes.byref(bound))
+    gl.glActiveTexture(gl.GL_TEXTURE0)
+    assert sampler.value == 0 and bound.value == 0
+    texture = GLRenderStore.texture(sclera_maps["synthetic"])
+    wrap = gl.GLint()
+    gl.glBindTexture(texture.target, texture.id)
+    gl.glGetTexParameteriv(texture.target, gl.GL_TEXTURE_WRAP_S, ctypes.byref(wrap))
+    gl.glBindTexture(texture.target, 0)
+    assert wrap.value == gl.GL_REPEAT
+    assert gl.glGetError() == gl.GL_NO_ERROR

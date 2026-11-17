@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-11-16 (Eye LookDev phase 3: `EyeLook`, `EyeSpec.look`, format version 10); previously 2026-11-15 (AD-033 eyes: `EyeSpec`, `SceneObject.eye`, format version 9); previously 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-11-17 (AD-035 M1: `EyeSpec.sclera_texture`, format version 12); previously 2026-11-16 (Eye LookDev phase 4: `EyeIris`, `EyeLook.iris`, format version 11); previously 2026-11-16 (Eye LookDev phase 3: `EyeLook`, `EyeSpec.look`, format version 10); previously 2026-11-15 (AD-033 eyes: `EyeSpec`, `SceneObject.eye`, format version 9); previously 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -455,6 +455,26 @@ untouched: every existing signature's behaviour on a mesh without UVs (export: o
 vertex record shapes, point layers; (5) tests `tests/test_core_face_uvs.py` (every primitive incl. seams, journal
 exactness, file validation, random sequences against U1 and exact Undo), `tests/mesh_invariants.assert_uv_invariants`,
 `tests/test_obj_uvs.py`, `tests/test_point_layers.py` (the pinned export key list now ends with `"face_uvs"`).
+
+**Decision:** AD-035 M1, the sclera's colour map, Core part (2026-11-17; [AD-035](AD-035-SCLERA-COLOUR-MAP.md) §2,
+[research audit](../research/EYE_LOOKDEV_SCLERA_SURFACE_ASSESSMENT_2026-11-17.md) §6 option O1; Manu: "M1 is approved
+for implementation … This task authorizes the required additive Core change and scene format v12", S-2)
+
+Freeze rule (§7): (1) requirement - an eye's sclera colour map survives Undo / Redo, save / load, Save As, duplicate,
+mirror copy and the morph-view twins like every eye value, independently of the iris image (`SceneObject.texture`);
+(2) not solvable with the public API: it belongs to the eye's value, which the Core validates and the file carries (the
+`EyeSpec` / `EyeLook` precedent); `SceneObject.texture` is the iris image (AD-033 §4.1) and a second object slot would
+need every copy path extended by hand (audit §6 O2); (3) documented in AD-035 and the audit; (4) smallest extension,
+**data only**: `src/core/scene.py` gains `EyeSpec.sclera_texture: str | None = None` (the 19th field, after `look`;
+`None` = no map; otherwise a non-empty string without NUL, else `ValueError`; a plain path string whose meaning -
+scene-relative on disk, the image's layout - `src/mirai` decides, as for `SceneObject.texture`). `EyeSpec.to_dict`
+writes `"sclera_texture"` only when set and `from_dict` accepts it as optional (absent or `null` = none), so **v9-v11
+files read unchanged**. `src/core/serialization.py` writes **version 12** only when an eye has a map (else 4-11 as
+before) and reads 2-12; an invalid path makes the file invalid. Not touched: `Mesh`, `Operation`, `HistoryStack`,
+`SceneObject`, `EyeLook`, `EyeIris`, every other field and signature. Existing tests unchanged except the assertion
+that pinned 12 as the first unknown version (`test_rig.py::test_versions_2_to_8_are_read`: now 13). (5) contract tests
+`tests/test_eye_sclera.py` (validation, optional, v9-v11 written and read as before, v12 only with a map and the older
+version again without it, 13 refused, an invalid path refused; the app path: Undo, copies, save / load, presets).
 
 **Decision:** Eye LookDev phase 4, the iris values, Core part (2026-11-16; [AD-033](AD-033-EYE-PREVIEW-IN-THE-WORKLIGHT.md)
 §18, [assessment](../research/EYE_LOOKDEV_PHASE2_ASSESSMENT_2026-11-16.md) §C roadmap #4, #5, #7; Manu: "1 go (v11)")

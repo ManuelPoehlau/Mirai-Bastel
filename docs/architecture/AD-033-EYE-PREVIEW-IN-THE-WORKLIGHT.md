@@ -9,7 +9,9 @@ LookDev phase 2, compact panel "Auge" and the Eye Lab window**; **§17 (2026-11-
 reflections (`EyeLook`, scene format v10; container: TESTED; reference-PC cost MEASURED within the I-12 target;
 practical test KEEP)**; **§18 (2026-11-16): Eye LookDev phase 4, the iris (`EyeIris`, scene format v11; container:
 TESTED; reference-PC cost MEASURED within the I-12 target after the key table; practical test KEEP)**; **§19
-(2026-11-16): Eye LookDev phase 5, the iris import (no Core change; container: TESTED; practical test pending)**. Names
+(2026-11-16): Eye LookDev phase 5, the iris import (no Core change; container: TESTED; practical test pending)**;
+**§20 (2026-11-17): the sclera's colour map → [AD-035](AD-035-SCLERA-COLOUR-MAP.md)** (`EyeSpec.sclera_texture`, format
+v12, a `SCLERA_MAP` variant of the eye pass). Names
 and numbers not covered by a decision stay `PROVISIONAL`.
 **Baseline:** branch `ccr-b9573f5a-a1shci` @ `a216691` (lab state of 2026-11-14; `src/` as on `main`).
 **Sources:** [Lookdev P0 audit](../research/LOOKDEV_P0_CODEBASE_AUDIT_2026-11-13.md) §4 (seam, option B), §6 (risks),
@@ -763,3 +765,11 @@ Verdikt: KEEP / ITERATE / REJECT, gern je Punkt.
 | Q-E4 reflection | as proposed: the cornea reflects the studio environment by default; key highlight only as a setting |
 | Q-E5 editing | as proposed: component editing of an eye is refused (its shape comes from its values) |
 | Q-E6 size | **one scene unit = 1 cm**: a new eye is 2.4 units across (sclera radius 1.2 = the object's uniform scale; eye-local 1 = the sclera radius) |
+
+## 20. Pointer 2026-11-17: the sclera's colour map (AD-035)
+
+Eye LookDev M1 adds an optional sclera colour map per eye: [AD-035](AD-035-SCLERA-COLOUR-MAP.md). For this document:
+the eye pass gains a `SCLERA_MAP` variant (unit 4, the pass's own sampler) that replaces the sclera colour at its two
+reads; without a map every program is the one described here, character for character. `SceneObject.texture` stays the
+iris image (§4.1); the sclera map is `EyeSpec.sclera_texture` (format v12). While the Eye Lab is open eyes are drawn
+without the selection tint (AD-035 S-4, the audit's F-1).
