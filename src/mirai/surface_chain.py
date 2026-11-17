@@ -21,8 +21,9 @@ changing the viewport: it is an additive layer *above* the H7 contract.
 
 No stage writes a scene mesh. Picking, selection, hover and the tools read the drawn *cage* - the morph
 stage's mix while a target is dialled in (MODELING_ON_DEFORMED_SURFACES §15, AD-013 H7-R2 addendum: queries
-on a replacement surface with the edit mesh's IDs, never written back), else the edit mesh; never the SubD
-surface ((d): the cage lines show the mixed cage) and never the posed surface ((b), AD-028 §7.1).
+on a replacement surface with the edit mesh's IDs, never written back) or, while the rig is posed and the mesh bound,
+the skin stage's posed surface (2026-11-17, MODELING_ON_DEFORMED_SURFACES §16, AD-028 §7.1; position and topology edits stay
+refused there), else the edit mesh; never the SubD surface ((d): the cage lines show the cage).
 """
 
 from __future__ import annotations

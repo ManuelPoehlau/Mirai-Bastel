@@ -24,8 +24,8 @@ sets a tail and starts the next bone, whose parent is the previous one. The sess
   a spine. After an Undo / Redo the pending head follows the history (`resync`): the bone taken back leaves its head
   as the pending point, a Redo continues from the bone's tail. A pending head with no bone yet is no history entry, so
   Undo drops it first (`drop_head`) instead of taking back an earlier step.
-- **Refused to start:** while an interaction runs, while the rig is posed (the clicks pick on the rest cage, the
-  display shows the pose: AD-028 §7.1), in a morph target's editing view, without a viewport.
+- **Refused to start:** while an interaction runs, while the rig is posed (a bone is placed at rest while the
+  display shows the pose; the click would aim on the pose: AD-028 §7.1), in a morph target's editing view, without a viewport.
 """
 
 from __future__ import annotations

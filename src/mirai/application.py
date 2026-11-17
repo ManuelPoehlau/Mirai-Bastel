@@ -4877,15 +4877,19 @@ class Application:
         )
 
     def _query_cage(self) -> SurfacePositions | None:
-        """MODELING_ON_DEFORMED_SURFACES §15 (Manu 2026-11-03): the morph mix of the edit object (a `SurfacePositions`,
-        O1) while a target is dialled in above 0 % and the chain shows it - the cage hover, picks, overlays and screen mappings read. None
-        = the rest shape: no target or 0 % (bit-identical to before), posed (§15 (b): S5, the rest cage), a foreign
-        host in the slot. The viewport's cage source (`Viewport.set_cage_source`); never written back."""
-        morph = self.morph.provider
-        if morph.surface_mesh is None or not self.surface_chain.holds(morph):
-            return None
+        """MODELING_ON_DEFORMED_SURFACES §15 (Manu 2026-11-03) and §16 (the pose): the surface the window shows for the
+        edit object (a `SurfacePositions`, O1) - the cage hover, picks, overlays and screen mappings read.
+        - **Posed and bound** (the skin stage shows the edit object): the posed surface, which already includes a
+          morph mix underneath (the skin stage reads it). Selection and Soft bands sit where the pose draws them;
+          position and topology edits stay refused there (AD-028 §7.1), so no write ever maps through it.
+        - **Else the morph mix** while a target is dialled in above 0 % and the chain shows it.
+        None = the rest shape: no target or 0 % and not posed (bit-identical to before), a foreign host in the slot.
+        The viewport's cage source (`Viewport.set_cage_source`); never written back."""
         skin = self.skin.provider
         if skin.surface_mesh is not None and self.surface_chain.holds(skin) and skin.posed():
+            return skin.surface_mesh
+        morph = self.morph.provider
+        if morph.surface_mesh is None or not self.surface_chain.holds(morph):
             return None
         return morph.mix_of(self.scene.edit_object_id)
 
@@ -4896,8 +4900,9 @@ class Application:
         viewport = self.viewport
         if viewport is None:
             return self.scene.mesh
-        if viewport.cage_mesh is None and not self.morph.provider.object_weights(self.scene.edit_object_id):
-            return self.scene.mesh  # no target above 0 %: nothing is synced early, exactly as before
+        if (viewport.cage_mesh is None and not self.morph.provider.object_weights(self.scene.edit_object_id)
+                and not self.skin.provider.pose):
+            return self.scene.mesh  # no target above 0 % and no pose: nothing is synced early, exactly as before
         cage = viewport.sync_cage()
         return cage if cage is not None else self.scene.mesh
 

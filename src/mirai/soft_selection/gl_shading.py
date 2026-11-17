@@ -16,7 +16,8 @@ Deformed cage (GUI Phase A3, 2026-11-03, `PROVISIONAL`): with a cage source set 
 patched in place) the triangles are placed at the cage's positions, so the shading sits on the surface the window
 shows (the wire follows it too); the topology still comes from the synced edit mesh. A watch on the cage makes a
 pose or weight step re-sync the positions; with nothing shaded the cage is not watched. Picking, the selection and
-the Soft bands stay on the rest cage (AD-028 §5.2).
+the Soft bands read the viewport's cage (`Application._query_cage`: the posed surface while posed, else the morph mix;
+AD-028 §7.1, 2026-11-17); the Soft field is still computed on the rest mesh.
 """
 
 from __future__ import annotations

@@ -2,8 +2,8 @@
 
 While a target is dialled in on the edit object, hover, click, Box / Lasso / Paint, the Knife, every
 selection / tool overlay and the drag mappings act on the drawn mix `b + Σ wᵢ·dᵢ`; edits still change the
-base (rest positions). At 0 % and without targets everything is bit-identical to before; in a pose the
-rest cage stays (§15 (b), S5). Headless: the CPU picker (`TraceStore`); the GPU ID-buffer path on the mix
+base (rest positions). At 0 % and without targets everything is bit-identical to before; in a pose the cage is
+the posed surface (§16, `tests/test_posed_picking.py`). Headless: the CPU picker (`TraceStore`); the GPU ID-buffer path on the mix
 is `tests/test_gl_morph_picking.py`.
 
 Acceptance (§15): DS-AC1 (the picked element is the one drawn under the cursor; rest and mix differ by
@@ -481,10 +481,10 @@ def test_symmetry_markers_sit_on_the_mix():
     assert lid is not None
 
 
-# -- (b): in a pose the rest cage stays -------------------------------------------------------------------
+# -- in a pose the posed surface is the cage (§16; it was the rest cage until 2026-11-17, §15 (b)) -------
 
 
-def test_posed_keeps_picking_on_the_rest_cage():
+def test_posed_picks_on_the_posed_surface_with_the_morph_mix_underneath():
     from tests.test_skin_stage import _bind, _bone_pose, _rig
 
     app = _app(4)
@@ -497,10 +497,12 @@ def test_posed_keeps_picking_on_the_rest_cage():
     app.skin.provider.set_pose({BoneId(1): _bone_pose(rng)})
     app.update_viewport(0.0)
     assert app.skin.provider.surface_mesh is not None
-    assert app.viewport.cage_mesh is None and app._query_mesh() is mesh
+    assert app.viewport.cage_mesh is app.skin.provider.surface_mesh and app._query_mesh() is app.viewport.cage_mesh
     app.selection.mode = V
     v = _grid_vertex(app, 2, 2)
-    assert _hover(app, mesh.vertex_position(v)) == v  # the rest cage, as before (AD-028 §7.1)
+    posed = app.skin.provider.surface_mesh.vertex_position(v)
+    assert posed != morph_mix.evaluate(mesh, app.morph.provider.object_weights(app.scene.edit_object_id))[v]  # the pose moved it
+    assert _hover(app, posed) == v  # the drawn, posed point (AD-028 §7.1, MODELING_ON_DEFORMED_SURFACES §16)
     app.skin.provider.set_pose({})
     app.update_viewport(0.0)
     assert app.viewport.cage_mesh is app.morph.provider.surface_mesh

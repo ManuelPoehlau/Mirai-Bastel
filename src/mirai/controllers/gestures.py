@@ -208,7 +208,8 @@ SURFACE_SLIDE_ZERO_PX = 1e-9
 
 def shown_shift(services):
     """MODELING_ON_DEFORMED_SURFACES §15: `vid -> (dx, dy, dz)` from a vertex's rest position to where it is drawn
-    (the morph mix), or None without a shown mix (0 %, no target, posed: the rest shape, unchanged). A base edit moves
+    (the morph mix), or None without a shown mix (0 %, no target: the rest shape, unchanged; posed: the posed surface
+    is the cage too since §16, but every position edit is refused there, so no gesture reaches this). A base edit moves
     a drawn point by its rest delta (the mix adds a constant offset per point), so the shift holds for the gesture."""
     shown, mesh = services.query_mesh, services.scene.mesh
     if shown is mesh:

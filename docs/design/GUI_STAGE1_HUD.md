@@ -280,8 +280,8 @@ Architektur: **W1a, Entscheidung Manu 2026-11-03** — die Ansicht ist ein Anzei
   (AD-028-Praxistest Schritt 5). **Behoben im bestehenden Kanal:** die Flächenfärbung (`GLSoftShadingOverlay`) bekommt
   eine Käfig-Quelle (`set_cage_source`, `Application._shown_cage`: die gezeigte Pose-Fläche, sonst die Morph-Mischung —
   dasselbe Mesh mit denselben IDs, das die Kanten schon zeigen) und liest die Positionen dort; ein Watch auf diese
-  Fläche lässt einen Pose-Schritt die Positionen nachziehen. Topologie, Auswahl, Picking und die Soft-**Bänder**
-  bleiben am Ruhekäfig (AD-028 §5.2). Das gilt für jede Flächenfärbung, also auch Soft-Vorschau und Gesten.
+  Fläche lässt einen Pose-Schritt die Positionen nachziehen. Topologie bleibt die des Edit-Meshes. *(Stand 2026-11-17: Auswahl,
+  Picking und die Soft-**Bänder** sitzen ebenfalls auf der gezeigten Pose-Fläche, [MODELING_ON_DEFORMED_SURFACES §16](MODELING_ON_DEFORMED_SURFACES.md#16-decided-slice-picking-on-the-posed-surface-for-setting-weights-manu-2026-11-17); das Feld wird weiter an der Ruheform gemessen.)* Das gilt für jede Flächenfärbung, also auch Soft-Vorschau und Gesten.
 - **`8` mit eingeschalteter Ansicht:** der Strich der Geste umfasst schon alle Punkte, die den Knochen beim Drücken
   hatten — die Färbung während des Zugs ist darum die volle Ansicht, kein Ausschnitt.
 

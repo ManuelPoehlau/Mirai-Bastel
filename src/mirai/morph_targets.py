@@ -18,8 +18,9 @@ the values, their journal, Undo and the file; this module gives them their meani
   editing view). The wire follows the mix (`wire_follows_surface`, Manu 2026-10-27). Since 2026-11-03
   (Manu, MODELING_ON_DEFORMED_SURFACES §15; AD-013 H7-R2 addendum) hover, picking, the overlays, the Knife and
   the drag mappings act on the edit object's mix too (`mix_of`, the app's `_query_cage`), read only: every
-  edit still writes the base (rest positions); at 0 %, in a pose and on the editing view the rest shape stays
-  the cage (Morph Lab 6a "Picking auf der Ruheform" superseded for base editing above 0 %). Morph + SubD together (H5b, Phase 4): the provider is the first stage of the app's
+  edit still writes the base (rest positions); at 0 % and on the editing view the rest shape stays the cage, and in a
+  pose the cage is the posed surface (MODELING_ON_DEFORMED_SURFACES §16, 2026-11-17; position and topology edits stay
+  refused there) - Morph Lab 6a "Picking auf der Ruheform" superseded for base editing above 0 %. Morph + SubD together (H5b, Phase 4): the provider is the first stage of the app's
   `surface_chain.SurfaceChain`, the SubD preview reads the mixed cage (`MorphDisplay`).
 - **Editing view** (H4, the §11 "editing-view mechanics" decided here, AD-025 §15): `TargetView`.
   The target is edited *beside* the base, as in the Morph Lab (J-5): a transient scene object whose

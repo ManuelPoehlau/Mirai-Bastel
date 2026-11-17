@@ -9,6 +9,8 @@ Usage (from the repo root, Windows and Linux alike; opens a hidden pyglet window
     python experiments/drag_cost/probe_morph_gl.py --memory             # Phase 4: layer memory, no window
     python experiments/drag_cost/probe_morph_gl.py --only-skin          # AD-028: pose steps of a jaw-like region
     python experiments/drag_cost/probe_morph_gl.py --only-picking       # §15: hover on the mix, weight step with a selection
+    python experiments/drag_cost/probe_morph_gl.py --only-pose-picking --assets scenes/Gollum_Head_rigging_test.mirai.json
+                                                                        # §16: hover / pose step / weight step in a pose
 
 Headless container: prefix with `xvfb-run -a`.
 
@@ -55,6 +57,14 @@ offset; the offsets are a smooth bump):
                  the frame) in vertex / edge / face mode at 0 % (the rest cage, as before) and at 60 % (the ID
                  pass and the overlays on the mix), GPU path; and the hold-N weight step with 40 selected vertices
                  shown at 0 -> 100 % (since §15 the selection overlay follows the mix every step).
+
+- `pose picking` (MODELING_ON_DEFORMED_SURFACES §16, `--only-pose-picking`; an asset may be a `.mirai.json` scene with
+                 its own rig - the jaw is bone 2 - else the jaw-like rig of the skin rows, region 15 %): hover (the
+                 120-cursor sweep, GPU path) at rest and with the jaw posed open (the ID pass and the overlays on the
+                 posed surface); the pose step as the hand makes it (pose mode, E held) with nothing selected and with
+                 40 selected vertices (since §16 the selection overlay follows the pose every step); and the hold-8
+                 weight step with the 40 selected vertices in the pose (the posed cage follows every weight write).
+                 Compare with the same probe on the commit before §16 ("before" = the rest cage).
 
 Numbers from a container must be labelled as such (`docs/architecture/REFERENCE_HARDWARE.md` §4); only
 the reference PC decides the 16.7 ms bar. Output is plain ASCII.
@@ -123,6 +133,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="AD-028: pose steps of a jaw-like region (5 / 15 / 100 %%), plain, with a target, with SubD")
     parser.add_argument("--only-picking", action="store_true",
                         help="MODELING_ON_DEFORMED_SURFACES §15: hover on the mix and the weight step with a selection")
+    parser.add_argument("--only-pose-picking", action="store_true",
+                        help="§16 rows: hover / pose step / weight step with the rig posed")
     parser.add_argument("--memory", action="store_true",
                         help="Phase 4: layer memory and journal cost only (no window; default assets gollum_20k, gollum)")
     return parser
@@ -142,7 +154,12 @@ def build_app(path: Path):
 
     window = pyglet.window.Window(width=WIDTH, height=HEIGHT, visible=False)
     app = Application()
-    app.init_scene("obj", obj_path=path, **src_main.GL_TYPES)
+    if path.suffix == ".json":  # a scene file (with its rig and weights)
+        app.init_scene("cube", **src_main.GL_TYPES)
+        app.load_scene("file", scene_path=path, **src_main.GL_TYPES)
+        app.camera.set_view(0.0, 0.1)
+    else:
+        app.init_scene("obj", obj_path=path, **src_main.GL_TYPES)
     app.frame_scene()
     app.set_viewport_size(WIDTH, HEIGHT)
     app.update_viewport(0.0)
@@ -612,6 +629,96 @@ def picking_rows(path: Path, steps: int) -> list[str]:
     return lines
 
 
+def _open_jaw(app, degrees: float = 30.0) -> None:
+    """The jaw bone (the scene's bone 2, else the probe rig's jaw) turned about X: positive opens the mouth."""
+    from core import BoneId
+    from mirai.skinning import BonePose
+
+    rig = app.scene.rig
+    jaw = BoneId(1) if rig.has_bone(BoneId(1)) and len(rig.bones) > 1 else rig.bones[0].id
+    c, s = math.cos(math.radians(degrees)), math.sin(math.radians(degrees))
+    app._skeleton.set_pose({jaw: BonePose(rotation=((1.0, 0.0, 0.0), (0.0, c, -s), (0.0, s, c)))})
+    app._skeleton.current = jaw
+
+
+def pose_weight_rows(app, steps: int) -> tuple[Stats, Stats]:
+    """`steps` hold-8 weight steps of the current bone in the pose (one mouse move each, back and forth) + the frame;
+    returns (step, draw)."""
+    e = _key("8")
+    app.pointer_motion(560, 300, 0.0, 0.0)
+    app.key_press(e)
+    app.pointer_motion(560, 300, 4.0, 0.0)
+    frame(app)
+    samples, draws = [], []
+    for i in range(steps):
+        dx = 4.0 if (i // 20) % 2 == 0 else -4.0
+        t0 = time.perf_counter()
+        app.pointer_motion(560, 300, dx, 0.0)
+        _, draw = frame(app)
+        samples.append((time.perf_counter() - t0) * 1000.0 - draw)
+        draws.append(draw)
+    app.key_release(e)
+    return Stats.of(samples), Stats.of(draws)
+
+
+def pose_picking_rows(path: Path, steps: int, zero_morph: bool = False) -> list[str]:
+    """§16 rows (module docstring, `pose picking`). `zero_morph`: every morph target of the scene at 0 %, so the
+    rest rows are the plain edit mesh (no mix as cage)."""
+    from core import SelectionMode
+    from mirai.morph_targets import morph_target_ids
+
+    window, app = build_app(path)
+    name, count = path.stem, len(app.scene.mesh.all_vertex_ids())
+    if app.scene.rig is None:
+        rig_region(app, 15)
+    if zero_morph:
+        for lid in morph_target_ids(app.scene.mesh):
+            app.set_morph_weight(0, lid)
+        name += " (morph 0 %)"
+    else:
+        name += " (as saved)"
+    lines = []
+    cursors = [(250 + (i % 12) * 25.0, 200 + (i // 12) * 20.0) for i in range(120)]
+
+    def hover(label: str) -> None:
+        frame(app)
+        cells = []
+        for mode in (SelectionMode.VERTEX, SelectionMode.EDGE, SelectionMode.FACE):
+            app.selection.mode = mode
+            samples = []
+            for x, y in cursors:
+                t0 = time.perf_counter()
+                app.pointer_motion(x, y)
+                _, draw = frame(app)
+                samples.append((time.perf_counter() - t0) * 1000.0 - draw)
+            cells.append(f"{mode.name.lower()} {Stats.of(samples).text()}")
+        cage = "rest" if app.viewport.cage_mesh is None else "posed" if app.posed else "mix"
+        lines.append(f"{name:<26} {count:>6} V  hover {label} ({cage}, GPU {app._gpu_pick_mesh() is not None}): "
+                     + " | ".join(cells))
+
+    hover("at rest")
+    _open_jaw(app)
+    hover("jaw open")
+    app._skeleton.set_pose({})
+    frame(app)
+    app.selection.mode = SelectionMode.VERTEX
+    for selected in (0, 40):
+        if selected:
+            app.selection.set(set(grow_region(app.scene.mesh, selected)))
+            app.viewport.on_selection_changed()
+        step = pose_rows(app, steps)
+        verdict = "ok" if step.p95 <= THRESHOLD_P95_MS else "OVER"
+        lines.append(f"{name:<26} {count:>6} V  pose step, {selected:>2} selected {step.text()}  [{verdict}]")
+    _open_jaw(app)
+    frame(app)
+    step, draw = pose_weight_rows(app, steps)
+    verdict = "ok" if step.p95 <= THRESHOLD_P95_MS else "OVER"
+    lines.append(f"{name:<26} {count:>6} V  weight step in the pose, 40 selected {step.text()}  [{verdict}]"
+                 f"  (draw p50 {draw.p50:.2f})")
+    window.close()
+    return lines
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     if args.memory:
@@ -626,6 +733,14 @@ def main(argv=None) -> int:
     if args.only_skin:
         for path in paths:
             rows = skin_rows(path, args.steps)
+            if not lines:
+                lines = _header(args)
+            lines += rows
+        print("\n".join(lines))
+        return 0
+    if args.only_pose_picking:
+        for path in paths:
+            rows = pose_picking_rows(path, args.steps) + pose_picking_rows(path, args.steps, zero_morph=True)
             if not lines:
                 lines = _header(args)
             lines += rows

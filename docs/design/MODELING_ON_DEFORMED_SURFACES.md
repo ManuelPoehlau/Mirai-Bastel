@@ -2,10 +2,12 @@
 
 **Status:** **PROPOSED (2026-11-03), pending Manu's review**, except the first slice: **picking and hover on the
 morph mix while editing the base, decided by Manu 2026-11-03 (chat), §15**; **built 2026-11-03 (§15 implementation
-note), awaiting Manu's practical test**. The rest
+note), awaiting Manu's practical test**; **and the same for the pose, for setting weights: hover and picking on the
+posed surface, decided by Manu 2026-11-17 (chat), §16, built 2026-11-17, awaiting his practical test**. The rest
 is not decided, not an architecture decision, no Artist verdict, no implementation commitment. Every decided rule it touches stays in force until Manu decides otherwise:
-AD-028 §7.1 (S5, "Modellieren nur in Ruhe"), AD-025 §15 (H4/J-5, the target edited beside the base), AD-013 H7-R2
-(the replacement surface is display only; amended 2026-11-03 for queries on the morph mix, §15), Morph Lab 6a ("Picking
+AD-028 §7.1 (S5, "Modellieren nur in Ruhe": position and topology edits stay refused in a pose; picking in a pose moved
+to the posed surface by §16), AD-025 §15 (H4/J-5, the target edited beside the base), AD-013 H7-R2
+(the replacement surface is display only; amended 2026-11-03 for queries on the morph mix, §15, and 2026-11-17 for queries on the posed surface, §16), Morph Lab 6a ("Picking
 auf der Ruheform hilft"; superseded for base editing above 0 % by §15).
 **Mode (M5):** Discovery: requirement and audit (§0–§14, written without code changes). §15: Production (2026-11-03).
 The §6 baseline is the state at `34d2ba2`; §15's implementation note says what changed since.
@@ -79,7 +81,7 @@ langfristige Ziel nur zur Wahl, z. B. als umschaltbaren Bezug.
   rest position and weight set puts a new point on the flat surface both at rest and in the pose. Measured
   deviations reach 10.8 % of the edge length at a 25° jaw with a hard weight step, and the inverse can be singular
   (§6.2). **(T)/(M) under skinning need a product rule, not just an algorithm.**
-- **Inconsistency today [V]:** posed rig edits are refused because picks would land on the rest cage (AD-028 §7.1). A
+- **Inconsistency today [V]:** posed rig edits are refused because they would land on the rest cage (AD-028 §7.1; picks themselves sit on the posed surface since 2026-11-17, §16). A
   dialled-in morph has exactly the same misalignment but refuses nothing and shows no hint.
 - **External practice [B]:** Blender's knife cuts on the deformed cage and maps the hit back by applying the same
   barycentric weights to the original triangle (the rule AD-025 already uses). Its loop cut warns on armature- or
@@ -138,7 +140,8 @@ mouth. New points land where aimed. All targets, weights and regions follow.
 "`Loop Insert: the mesh is posed (6 = rest pose)`" (`src/mirai/controllers/skeleton.py:1120–1137`,
 `src/mirai/application.py:3103`; `tests/test_application_rig.py:426`, `tests/test_jaw_scenario.py:120–129`).
 Selection and weight gestures run, on the rest cage. Only the face shading follows the pose
-(`set_cage_source`, `src/mirai/soft_selection/gl_shading.py:14–20`, `tests/test_weight_view.py:271`). The supported
+(`set_cage_source`, `src/mirai/soft_selection/gl_shading.py:14–20`, `tests/test_weight_view.py:271`).
+*(2026-11-17, §16: selection, hover, overlays and Soft bands now sit on the posed surface too; the refusal stays.)* The supported
 path is `6` → cut at rest → `6`. The new loop then follows jaw and smile by the weights rule
 (`tests/test_jaw_scenario.py:152`).
 
@@ -234,15 +237,15 @@ decision about which state is authoritative for placement (§11 R-2).
 | Evaluated display: morph mix, skin, SubD as one chain; edit object and the morph base beside its view (H7-E) | **Implemented and verified** | `src/mirai/surface_chain.py`, `morph_mix.py`, `skinning.py`; `tests/test_morph_multi.py`, `tests/test_skin_stage.py`, `tests/test_jaw_scenario.py` |
 | Wire follows the evaluated surface | **Implemented and verified** | `src/viewport/viewport.py:506–520`, `:757–763`; `tests/test_morph_targets.py:653` |
 | Face shading (Soft preview, weight view, weight gestures) on the evaluated surface | **Implemented and verified** (one overlay) | `src/mirai/soft_selection/gl_shading.py:14–20`, `:121`; `src/mirai/application.py:688`, `:2844`; `tests/test_weight_view.py:271` |
-| Selection, hover, edge/face highlight overlays on the evaluated surface | **Not implemented** (deliberately on rest; pinned) — *morph: implemented 2026-11-03, §15.1; pose: unchanged* | `src/viewport/viewport.py:726–736`; `tests/test_morph_targets.py:653`, `tests/test_morph_multi.py:487` |
-| Picking (CPU, GPU ID buffers, box, lasso) on the evaluated surface | **Not implemented** (rest cage; H7-R2) — *morph: implemented 2026-11-03, §15.1; pose: unchanged* | `src/mirai/application.py:3630–3730`; `src/viewport/viewport.py:840–851` (the ID pass draws the edit `RenderMesh`); `src/mirai/viewport/gpu_picking.py:36–80`; `tests/test_skin_stage.py:335` |
-| Tool previews and spatial queries (Knife target and planner, Soft field and bands, gizmo pivot, transform drag projection) | **Not implemented** (rest) — *morph: implemented 2026-11-03, §15.1; pose: unchanged* | `src/mirai/controllers/knife.py:567–576`; `src/mirai/application.py:2948–2974` (Soft field on `scene.mesh`), `:4067` (gizmo pivot = rest centroid; in pose mode the bone's posed head) |
+| Selection, hover, edge/face highlight overlays on the evaluated surface | **Not implemented** (deliberately on rest; pinned) — *morph: implemented 2026-11-03, §15.1; pose: implemented 2026-11-17, §16* | `src/viewport/viewport.py:726–736`; `tests/test_morph_targets.py:653`, `tests/test_morph_multi.py:487` |
+| Picking (CPU, GPU ID buffers, box, lasso) on the evaluated surface | **Not implemented** (rest cage; H7-R2) — *morph: implemented 2026-11-03, §15.1; pose: implemented 2026-11-17, §16* | `src/mirai/application.py:3630–3730`; `src/viewport/viewport.py:840–851` (the ID pass draws the edit `RenderMesh`); `src/mirai/viewport/gpu_picking.py:36–80`; `tests/test_skin_stage.py:335` |
+| Tool previews and spatial queries (Knife target and planner, Soft field and bands, gizmo pivot, transform drag projection) | **Not implemented** (rest) — *morph: implemented 2026-11-03, §15.1; pose: only the Soft bands and the gizmo pivot, 2026-11-17, §16 (Knife, drags: refused there; the Soft field stays at rest)* | `src/mirai/controllers/knife.py:567–576`; `src/mirai/application.py:2948–2974` (Soft field on `scene.mesh`), `:4067` (gizmo pivot = rest centroid; in pose mode the bone's posed head) |
 | Topology operations while a morph mix is shown | **Partially implemented**: run and propagate exactly, aim on the rest cage, no hint | AD-025 §16; `src/mirai/layer_declarations.py:75`; `tests/test_layer_topology_ops.py:335`, `:406`, `:527` |
 | Topology and position operations while posed and bound | **Not implemented**: refused (decided, S5) | `src/mirai/controllers/skeleton.py:1120–1137`; `src/mirai/layer_declarations.py:298–313`; `src/mirai/application.py:3103–3109`; `tests/test_application_rig.py:426`, `:447` |
 | Topology at rest on a mesh with targets and weights, coherent in every later state | **Implemented and verified** | AD-025 §3/§16, AD-028 §4; `tests/test_layer_knife.py`, `tests/test_weights_topology_ops.py:161`, `:303`; `tests/test_jaw_scenario.py:152`, `:171` |
 | Editing a target's shape on an evaluated, ID-identical copy (the editing view) | **Implemented and verified**: shape only, one target at 100 %, at rest, beside the base | `src/mirai/morph_targets.py:205–222` (`TranslatingHistory`), `:281–326` (`TargetView.translate`); `tests/test_morph_targets.py` |
 | Shaping a target in the pose (corrective in pose) | **Not implemented** | AD-028 §5.2 (the view has no layers); §15 "bone-driven morphs or correctives" out of scope |
-| Weight editing while posed | **Partially implemented**: runs; selection on the rest cage, shading on the pose | AD-028 §7.1; GUI_STAGE1_HUD §8 ("Die Auswahlpunkte bleiben bewusst am Ruhe-Mesh") |
+| Weight editing while posed | **Implemented 2026-11-17 (§16)**: runs; selection, hover, picks, bands and shading on the pose (until then: selection on the rest cage) | AD-028 §7.1; GUI_STAGE1_HUD §8 |
 | Inverse deformation for position edits (crazyspace / inverse LBS) | **Documented, not implemented** | audit §E "inverse warping"; AD-028 X-7 |
 | Topology changes in the deformed state | **Documented, not implemented** | CHARACTER_SYSTEMS_RESEARCH 6b / EX-D; ROADMAP Rigging status |
 | Pose and morph weight as view state; Undo never touches them (exception since 2026-11-16: the bake of the mix into the base restores its sliders with its own Undo step; the weights are saved with the scene, AD-025 §19) | **Implemented and verified** | AD-025 F-11 / §19, AD-028 §6; `tests/test_jaw_scenario.py`, `tests/test_morph_bake_and_range.py` |
@@ -410,7 +413,7 @@ not a plan; the order is Manu's (Kurzfassung question 4):
 | Stage | What the artist gets | Covers | Needs first |
 |---|---|---|---|
 | 0, today | cut at rest, see the pose with one key; values propagate exactly | E at rest | — |
-| 1, aligned query | selection, hover and overlays on the visible surface (also for weight setting in the pose); edits still at rest / refused in the pose | DS-F1, F2, F11; AC1, AC2 | a review of H7-R2; Manu on 6a (default or toggle) |
+| 1, aligned query | selection, hover and overlays on the visible surface (also for weight setting in the pose); edits still at rest / refused in the pose. *Built: morph 2026-11-03 (§15), pose 2026-11-17 (§16)* | DS-F1, F2, F11; AC1, AC2 | a review of H7-R2; Manu on 6a (default or toggle) |
 | 2, morph modeling | topology on a dialled-in morph, exact (§5) | A, C (morph); AC3, AC5, AC6 | stage 1; R-3 for position edits |
 | 3, posed topology | topology in the pose under a chosen placement rule with an honest preview | B, C (bone), D; AC4, AC9 | stage 1; R-2; a change of S5 (own AD) |
 | 4, posed shaping | position edits and correctives in the pose (inverse deformation) | D; AC7, AC8 | R-3, R-4; the audit's Phase 7 |
@@ -449,7 +452,7 @@ fresh session with this section as the handoff.
   C-1). Move shows exactly on screen (the morph moves each point by a constant offset). Rotate/Scale turn the rest
   positions while the offsets keep their direction (C-1), so a region with large offsets does not turn rigidly on
   screen. Known, not changed here.
-- (b) **Morph only.** In a pose nothing changes: S5 refusal, selection on the rest cage (AD-028 §7.1).
+- (b) **Morph only.** In a pose nothing changes: S5 refusal, selection on the rest cage (AD-028 §7.1). *(Superseded for picking and overlays 2026-11-17 by §16; the S5 refusal of position and topology edits stands.)*
 - (c) **No rest-picking toggle.** Tap `N` (0 % ↔ last) is the rest reference. Morph Lab 6a ("Picking auf der Ruheform
   hilft") is superseded for base editing at a weight above 0.
 - (d) **SubD on:** picking on the mixed cage (what the cage lines show), not on the SubD surface.
@@ -595,3 +598,112 @@ Start: `python src\main.py`, `Leertaste` → `head_basemesh`. Ziel anlegen (`Ctr
 | 5 | Knife (`C`) im offenen Mund: Punkte auf Kanten und in Flächen, `Enter`. Sitzt der Schnitt genau, wo du geklickt hast, bei 50 % und bei 100 %? | |
 | 6 | `N` antippen (0 %): ist alles wie früher (Hover, Auswahl, Gizmo)? Ist das als Blick auf die Ruheform genug, oder fehlt dir ein Umschalter? | |
 | 7 | Mit SubD (falls du es nutzt): Picking auf dem gemischten Käfig – passt das? | |
+
+## 16. Decided slice: picking on the posed surface, for setting weights (Manu, 2026-11-17)
+
+**Manu (chat, entered by the agent):** „Beim Gewichte-Setzen am Kiefer treffen Hover und Auswahl das Ruhe-Mesh statt der
+gezeigten Pose. Ich komme so nicht an Mundwinkel und Mundinnenraum. Bitte mach es für die Pose wie beim Morph (§15):
+Hover, Klick, Box, Lasso und Paint treffen die gezeigte, gepostete Fläche. Auswahl-Punkte, Hover und die Bänder der
+Soft-Auswahl müssen dort sitzen, wo man sie sieht. Verschieben und Topologie-Änderungen bleiben in der Pose gesperrt
+(6 = Ruhe), das ändert sich (vorerst) nicht. Ohne Pose soll alles exakt wie bisher sein.“
+This is stage 1 of §13 for the pose (selection, hover, overlays on the visible surface "also for weight setting in the
+pose; edits still refused"). Mode (M5): Production, size M. It replaces §15 (b) for picking and overlays only.
+
+**Reading of the decision** (`PROVISIONAL`, Manu corrects in one sentence):
+
+- (a) **Cage = what the pose draws.** While the rig is posed and the edit mesh is bound, hover, click, Box, Lasso, Paint
+  (GPU and CPU), the selection / hover / edge / face overlays, the wire, the Soft bands, mask points, symmetry markers and
+  the gizmo pivot read the skin stage's posed surface, which includes a morph mix underneath (the skin stage reads it).
+- (b) **Writes stay refused.** Move / Rotate / Scale, the Knife, Loop Insert and every other position or topology command
+  stay refused in a pose (AD-028 §7.1; "vorerst"); weights, morph-layer commands, selection and Undo run as before. Hence
+  no pick on the posed surface is ever mapped back to a rest position, and none of §15's drag mappings is reached in a pose.
+- (c) **Soft field intrinsic.** The influence field of a Soft selection is still computed on the rest mesh (as with the
+  morph mix); only where its band points and the face shading sit changes. Reading, since "the bands where one sees them" is
+  about the picture; Manu corrects if he wants the radius measured on the posed surface.
+- (d) **No pose, no change.** Without a pose, without a weights layer (no skin surface) or after `6` (rest): the edit mesh
+  or the §15 morph mix as before, bit-identical. SubD: the cage is the posed cage, never the SubD surface (§15 (d)).
+
+**Mechanism.** One line in the one place that names a cage: `Application._query_cage` returns the skin stage's
+`surface_mesh` while `skin.posed()` and the chain holds the stage, else the morph mix as in §15. Everything else was
+already built on the cage (§15.1): the viewport's cage source and its overlays, `follows_cage` overlays (Soft bands, mask
+points), the symmetry markers, the GPU ID pass on the surface's own `RenderMesh` (under SubD a never drawn one of the cage),
+`sync_cage()` before every pick. `Application._query_mesh` no longer returns early when a pose is set, so a pick right
+after a pose step or a weight write (no frame in between) reads an up-to-date cage. Code: `src/mirai/application.py`
+(`_query_cage`, `_query_mesh`). The Soft shading overlay already read the posed surface (`_shown_cage`, GUI Phase A3).
+Decided text changed in the same commit: AD-028 §7.1 (and §5.2, S5, the weight-view addendum, X-8), AD-013 H7-R2 ("H7-R2
+amended: queries on the posed surface"), AD-025 §6 / §15.1 item 4, AD-020 and GUI_STAGE1_HUD §8 (bands), the docstrings of
+`skinning.py`, `surface_chain.py`, `morph_targets.py`, `viewport.py`, `gl_shading.py`, `bone_chain.py`; `docs/ATELIER.md`.
+
+**Tests.** `tests/test_posed_picking.py` (24, headless CPU picker): hover at every vertex / edge / face anchor (drawn
+anchor = the drawn element, the rest anchor gets what is drawn there), with and without a morph target underneath; a 154-cursor
+sweep equals the picker on an independent mesh at `skinning.evaluate` positions, with occlusion; click selects the drawn
+element and writes nothing; Box / Lasso / Paint select the drawn elements; selection points, hover and highlight lines,
+wire and gizmo pivot sit on the posed surface and follow a pose step with no frame in between; `follows_cage` overlays get
+the posed surface (and the edit mesh at rest); under SubD the cage is the posed cage; an unbound mesh in a pose keeps the
+rest cage; without a pose picking is the rest cage, and back from a pose (`6`) it is exact. Gollum rigging scene
+(`scenes/Gollum_Head_rigging_test.mirai.json`, jaw bone turned 18° and 30°): the mouth corner and the inside of the mouth
+are hovered at their drawn anchors (and not at their rest anchors), edges / faces / Box / Lasso / Paint there equal the
+oracle, the real Soft band overlay sits on the posed surface, W / E / R / I are refused with the mesh and History
+untouched, and Set weight (`8`) on a corner picked in the pose writes the weight, after which the very next pick reads the
+new drawn position. `tests/test_gl_posed_picking.py` (15, GL, compact and slot layouts): the ID pass draws the posed
+surface (face IDs at pixel centres = the CPU oracle, ≥ 20 pixels differ from the rest shape), vertex / edge hover and Box
+agree, a pick right after a pose step, under SubD the never drawn posed-cage `RenderMesh` (also after a pose step), at rest the
+edit mesh, and the Gollum jaw (mouth points hit at their drawn pixels, ≤ 40 % at their rest pixels). Changed with the
+decision: `test_morph_picking.py::test_posed_picks_on_the_posed_surface_with_the_morph_mix_underneath` and
+`test_surface_display_state.py::test_the_posed_surface_shows_hide_and_colours_and_is_the_picking_cage` (they pinned the
+rest cage). **Mutation check by hand:** the old `_query_cage` fails 23 of the 24 CPU tests (the 24th, the unbound mesh, is
+the unchanged case) and the GL id-pass tests.
+
+**Measured [C]** (container, Linux, 4 cores, Python 3.13.18, Mesa llvmpipe; `xvfb-run -a python
+experiments/drag_cost/probe_morph_gl.py --only-pose-picking --assets scenes/Gollum_Head_rigging_test.mirai.json --steps 100`;
+2254 V; GPU path; p50 / p95 ms, two runs each; before = the same probe on the commit before §16, `ef6853a`, with the rest
+cage in the pose):
+
+| Row (Gollum rigging scene) | before | after |
+|---|---|---|
+| hover at rest, morph 0 %, V / E / F (cage None) | 0.90–0.92 / 0.82–0.92 / 0.56–0.63 | 0.89–0.90 / 0.94–0.96 / 0.59–0.64 (same code path, within the spread) |
+| hover, jaw open, morph 0 %, V / E / F | 1.05–1.06 / 1.06–1.08 / 0.75–0.79 (rest cage) | 1.13–1.19 / 1.10–1.11 / 0.81–0.89 (posed surface) |
+| hover, jaw open, morph as saved, V / E / F | 1.00–1.02 / 0.92–0.95 / 0.76–0.81 | 1.17–1.28 / 1.01–1.15 / 0.82–0.88 |
+| pose step (`5`, E held), nothing selected | 1.68–1.84 (p95 ≤ 2.55) | 2.07–2.74 (p95 ≤ 3.39) |
+| pose step, 40 vertices selected | 1.65–1.82 (p95 ≤ 2.49) | 2.08–3.08 (p95 ≤ 3.95) |
+| weight step in the pose (`8` held), 40 selected | 10.0–11.2 (p95 ≤ 16.65); draw p50 ≈ 9 | 11.1–11.5 (p95 ≤ 16.63); draw p50 ≈ 9 |
+
+CPU path (no GPU picking; headless, 120-cursor sweep × 3, `pointer_motion` + frame): before / after within the spread
+of repeated runs, 0.5–0.9 / 1.3–1.7 / 0.5–0.7 ms p50 for V / E / F in every state.
+**Reading.** Without a pose nothing changed (the same code path; the only added work is one `pose` truth test in
+`_query_mesh`). GPU hover in the pose costs about 0.1–0.2 ms more at p50 (the ID pass draws the buffers the posed
+surface already has; the cost is the cage read and the overlays). A pose step costs about 0.4–0.6 ms more at p50 (the
+selection overlays, the wire and the `follows_cage` overlays now follow the pose every step; the 0-selected row also
+pays the cage watch and the wire). The weight step is unchanged within the spread (the frame is dominated by the
+software rasteriser, ≈ 9 ms). All rows stay far under the 16.7 ms bar (the weight step's p95 sits at it in the
+container with and without the change: llvmpipe draw time). **Reference PC:** run the same command there (Python
+there ≈ 2× slower); the scene is `scenes/Gollum_Head_rigging_test.mirai.json`.
+
+**Limits (known, not changed):** position and topology edits stay refused in a pose; the Soft field is computed at rest;
+the Working Pivot and the Re-Symmetrize preview stay at rest; a bone placed (`Ctrl+J`) is refused in a pose; the posed
+surface of another object (teeth, eyes beside the edit object) is not a cage; no inverse deformation (X-7).
+
+**Next:** Manu's practical test (below). A later stage (§13: posed topology, or position edits in the pose) needs his
+answers to Kurzfassung 1–3 and its own AD (S5). Same session or fresh: fresh is fine (this section is the handoff);
+suggested model and effort for a review or the next slice: Claude Opus, effort high.
+
+### Praxistest für Manu: Picking in der Pose (ca. 10 Minuten)
+
+Technisch geprüft (Tests oben): Hover, Klick, Box, Lasso und Malen treffen in der Pose die gezeigte Fläche; Auswahlpunkte,
+Hover, Linien, Wire und Soft-Bänder sitzen dort, wo man sie sieht; Verschieben und Topologie sind in der Pose weiter
+gesperrt; ohne Pose ist alles wie vorher. Offen ist nur, wie es sich anfühlt. **Meine Lesart** (bitte in einem Satz
+korrigieren, falls falsch): der Soft-Radius wird weiter an der Ruheform gemessen, nur die Punkte und Bänder sitzen auf
+der Pose; `6` bleibt dein Blick auf die Ruheform.
+
+Start: `python src\main.py`, `Leertaste` → `Gollum_Head_rigging_test`. Kiefer öffnen: `5` (Pose-Modus), mit `Alt+J` auf
+„Bone 2“ (Kiefer), `X` halten bis die Achse stimmt, `E` halten und die Maus nach unten ziehen, bis der Mund offen ist.
+
+| # | Schritt | Dein Verdikt |
+|---|---|---|
+| 1 | `1`: Hover über Mundwinkel und im Mundinnenraum bei offenem Kiefer — leuchtet immer der Punkt auf, den du *siehst*? Auch in `2` / `3`. | |
+| 2 | Klick, Box, Lasso und Malen am Mundwinkel und im Mundinnenraum: wird genau das Sichtbare ausgewählt? Sitzen die Auswahlpunkte auf den gezeigten Punkten? | |
+| 3 | `O` (Soft an) mit einem Mundwinkel-Punkt: sitzen die Bänder auf der geöffneten Fläche? Passt der Radius, oder willst du ihn auf der Pose gemessen (Lesart c)? | |
+| 4 | `8` halten, Maus nach rechts: das Gewicht am gewählten Punkt ändert sich; wandert die Auswahl danach richtig mit der Pose mit? Dann den Kiefer weiter drehen: bleiben die Punkte auf der Fläche? | |
+| 5 | `W` / `E` / `R` / `I` auf der Auswahl in der Pose: weiterhin abgelehnt mit „the mesh is posed (6 = rest pose)“? | |
+| 6 | `6` (Ruhe): ist alles wie früher (Hover, Auswahl, Gizmo)? Ein Morph-Ziel dazuschalten (`N`): trifft der Hover die Pose mit dem Morph darunter? | |
+| 7 | Gefühl: ist Hover in der Pose genauso flüssig wie in Ruhe (Messung: ca. 0,1–0,2 ms mehr, kaum spürbar)? | |

@@ -141,7 +141,7 @@ Eintrag ohne Ersatz wird wie bisher gezeichnet. Fehlt das Attribut, ändert sich
 Käfig-Quelle (2026-11-03, MODELING_ON_DEFORMED_SURFACES §15, AD-013 H7-R2-Addendum): `set_cage_source(fn)`
 gibt dem Viewport eine Funktion, die nach dem Provider-Sync den **gezeigten Käfig** liefert - ein Mesh (oder eine
 Sicht mit dessen Abfrage-API, s. o.) mit den IDs und der Topologie des Edit-Mesh an den gezeichneten Positionen
-(die Morph-Mischung) oder None
+(die Morph-Mischung, seit 2026-11-17 in einer Pose die gepostete Fläche, §16) oder None
 (= das Edit-Mesh selbst). Ist einer gesetzt, lesen Auswahl-, Hover-, Kanten- und Flächen-Overlays seine
 Positionen (`overlay_mesh()`), ebenso Zusatz-Overlays mit `follows_cage = True`; der GPU-Pick zeichnet sein
 ID-Buffer aus diesem Käfig (`gpu_pick_mesh()`: der RenderMesh der Ersatzfläche, wenn sie der Käfig ist, sonst

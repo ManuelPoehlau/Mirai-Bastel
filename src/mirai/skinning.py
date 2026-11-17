@@ -35,9 +35,10 @@ change, and LBS runs column by column in the rule's order - bit-identical to `ev
 mesh (or the morph base beside its editing view, H7-E) has a weights layer; at rest the chain is
 today's. While a later stage (SubD) is wanted it keeps the edit object's surface at rest too
 (`keep_edit_surface`, as the morph stage does), so a rest <-> pose toggle patches positions instead of
-switching SubD's input (a rebuild). Picking, selection, hover and every tool stay on the rest cage while
-posed, also with a morph dialled in (MODELING_ON_DEFORMED_SURFACES §15 (b): the morph-mix picking stops in a
-pose); the wire follows the surface. Only the edit object and the morph base beside its view show the pose
+switching SubD's input (a rebuild). Picking, selection, hover and the overlays act on this posed surface (the
+cage, `Application._query_cage`; MODELING_ON_DEFORMED_SURFACES §16, 2026-11-17: weights are set at the mouth corner
+and inside the mouth; until then they stayed on the rest cage, §15 (b)), also with a morph dialled in; position and
+topology edits stay refused in a pose (AD-028 §7.1); the wire follows the surface. Only the edit object and the morph base beside its view show the pose
 (§5.3, F-16).
 """
 
@@ -573,7 +574,7 @@ class SkinSurfaceProvider:
         self.entry_moved: dict = {}
         self.surface_topology_changed = False
         self.entry_topology_changed: set = set()
-        #: the wire is drawn at the posed surface (as for the mix); picking stays on the rest cage
+        #: the wire is drawn at the posed surface (as for the mix); picking and the overlays read it as the cage (§16)
         self.wire_follows_surface = True
         #: show the edit object's surface at rest too while a later stage (SubD) reads it (§5.2)
         self.keep_edit_surface = False

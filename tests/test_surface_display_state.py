@@ -293,7 +293,7 @@ def test_mix_kept_at_zero_percent_under_a_refusing_subd_shows_the_state():
 # -- the posed surface (Manu I4) ------------------------------------------------------------------------------
 
 
-def test_the_posed_surface_shows_hide_and_colours_and_picking_stays_at_rest():
+def test_the_posed_surface_shows_hide_and_colours_and_is_the_picking_cage():
     app = _app(3)
     rng = random.Random(4)
     mesh = app.scene.mesh
@@ -308,7 +308,7 @@ def test_the_posed_surface_shows_hide_and_colours_and_picking_stays_at_rest():
     rm = app.viewport.surface_render_mesh
     assert rm is not None and rm.mesh is app.skin.provider.surface_mesh
     assert _dead_faces(rm) == hidden and rm._tints == tints
-    assert app.viewport.cage_mesh is None  # picks read the rest cage (AD-028 S5), with the same hidden set
+    assert app.viewport.cage_mesh is rm.mesh  # picks read the posed surface (§16), with the same hidden set
     assert _dead_faces(app.viewport.render_mesh) == hidden
 
 

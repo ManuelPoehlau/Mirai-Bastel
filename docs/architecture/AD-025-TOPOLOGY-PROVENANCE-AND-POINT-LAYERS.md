@@ -375,7 +375,7 @@ is measured too slow. Corner-domain data (UVs) would use the same primitive hook
 - Nothing visible changes before Phase 3; Phase 2 is Core plus tests.
 - With targets, the base's picking, selection and the tools stay on the rest shape (F-11 "hilft"). *(Superseded
   2026-11-03, Manu, [MODELING_ON_DEFORMED_SURFACES §15](../design/MODELING_ON_DEFORMED_SURFACES.md#15-decided-first-slice-picking-on-the-morph-mix-manu-2026-11-03): with a target dialled in above 0 % they act on the drawn mix; edits still change the base;
-  at 0 %, in a pose and on the editing view the rest shape stays.)*
+  at 0 %, in a pose and on the editing view the rest shape stays. Since 2026-11-17 a pose is the exception: picking and the overlays sit on the posed surface, which includes the mix, [§16](../design/MODELING_ON_DEFORMED_SURFACES.md#16-decided-slice-picking-on-the-posed-surface-for-setting-weights-manu-2026-11-17); position and topology edits stay refused there.)*
 - An expression follows later base edits (J-3); a whole-mesh rotate / scale in `1`/`2`/`3` is an edit, and Re-Symmetrize
   evens out the base only (§4.3). The first point is asked as a one-line confirmation (Kurzfassung).
 
@@ -824,7 +824,7 @@ or Phase 6 (skinning; the weights kind gets the Phase 5 rules for free).
   entry surfaces. A foreign host (the Morph Lab) keeps the slot. While SubD is on, the mix of an edit mesh with targets
   is kept even at 0 % (`keep_edit_surface`), so a weight step patches SubD's positions instead of switching its input.
   Skinning (Phase 6) slots in between as its own stage (audit §E: morph → skin → SubD). Picking, selection, hover and the
-  tools stay on the rest-shape cage (Morph Lab 6a, §15); the SubD cage lines and the morph wire follow the mix.
+  tools stay on the rest-shape cage (Morph Lab 6a, §15; since 2026-11-17 the posed surface is the cage while posed, §16); the SubD cage lines and the morph wire follow the mix.
   *(Amended 2026-11-03, [MODELING_ON_DEFORMED_SURFACES §15](../design/MODELING_ON_DEFORMED_SURFACES.md#15-decided-first-slice-picking-on-the-morph-mix-manu-2026-11-03) (d): with SubD on they act on the mixed cage, never on the SubD surface.)*
 - **No GPU path in this phase** (the assignment's condition "if the CPU path cannot meet fluid on head and body with 10
   targets"): in the container every head row and every body row with sparse targets is far under the bar; the only rows

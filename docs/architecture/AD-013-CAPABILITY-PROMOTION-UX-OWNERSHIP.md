@@ -1465,7 +1465,8 @@ and cannot hide it.
 - **H7-R1 — inert by default.** Without a provider nothing changes (test: `tests/test_viewport_surface_provider.py`).
   `src/main.py` and `Application` never set a provider.
 - **H7-R2 — display only.** The surface is derived and never written back; no picking, no History, no document state.
-  *(Amended 2026-11-03: read-only queries on an ID-identical cage — "H7-R2 amended: queries on the morph mix" below.)*
+  *(Amended 2026-11-03: read-only queries on an ID-identical cage — "H7-R2 amended: queries on the morph mix" below.
+  Amended again 2026-11-17: the cage may also be the posed surface — "H7-R2 amended: queries on the posed surface" below.)*
 - **H7-R3 — the host follows H2-R4.** The SubD Lab uses only the public allow-list of H2-R4: read-only state (`bindings` with
   `set_default` for its own context `subd_lab` at start-up, `interaction_owner`, the edit mesh), `set_status`, `key_press`
   from the window adapter, the one-time setup in its `run.py`, the H1 overlay hook and now H7. It writes no gate data and
@@ -1556,13 +1557,39 @@ hits what is visible. Production, implemented in the same change.
   the cage, e.g. the mixed cage under SubD). `Viewport.sync_cage()` brings it up to date for a pick between an edit
   and the next frame. Without a source, or with None, nothing changes (H7-R1 holds).
 - **Who names a cage:** only `Application._query_cage`: the morph mix of the edit object (`MorphSurfaceProvider.mix_of`)
-  while one of its targets is above 0 % and the chain shows it. Not the SubD surface (§15 (d)), not the posed skin
-  surface (§15 (b), AD-028 §7.1 S5 unchanged), not a foreign host's surface (the Morph Lab keeps the slot; its
-  picking is unchanged). Edits always write the edit mesh; the Knife maps an interior point to its rest position
+  while one of its targets is above 0 % and the chain shows it *(and, since 2026-11-17, the posed surface while posed and
+  bound: "H7-R2 amended: queries on the posed surface" below; this bullet is the 2026-11-03 state: until then a pose
+  kept the rest cage, §15 (b))*. Not the SubD surface (§15 (d)), not a foreign host's surface (the Morph Lab keeps the
+  slot; its picking is unchanged). Edits always write the edit mesh; the Knife maps an interior point to its rest position
   Σ oⱼ·bⱼ from its origin (exact on the mix, AD-025 §16.1).
 - **H7-R1, H7-R3, H7-R4 unchanged.** One provider; the cage source is not a second provider.
 - Not reviewed independently (AGENTS §6: the change is additive, reversible by not setting a source, and Manu decided
   the product behaviour); the GL tests pin the ID pass on the mix (`tests/test_gl_morph_picking.py`).
+
+### H7-R2 amended: queries on the posed surface (2026-11-17)
+
+**Decision (Manu, 2026-11-17, chat; [MODELING_ON_DEFORMED_SURFACES §16](../design/MODELING_ON_DEFORMED_SURFACES.md#16-decided-slice-picking-on-the-posed-surface-for-setting-weights-manu-2026-11-17)):**
+when setting weights on the jaw the hover and the selection hit the rest mesh, not the pose shown, so the mouth corner
+and the inside of the mouth could not be reached. Do for the pose what §15 did for the morph mix. Production,
+implemented in the same change.
+
+- **H7-R2 amended again — the cage may be the posed surface.** Same mechanism as the morph mix, no new API:
+  `Viewport.set_cage_source` and `Application._query_cage`. While the rig is posed and the edit mesh is bound (the skin
+  stage shows the edit object), the cage is the skin stage's surface (`SkinSurfaceProvider.surface_mesh`, a
+  `SurfacePositions` with the edit mesh's IDs and topology; it already includes the morph mix, the skin stage reads it).
+  Selection / hover / edge / face overlays, the wire, the opt-in extra overlays (`follows_cage`: Soft bands, mask points;
+  the symmetry markers through their own `cage` callable) and the GPU ID pass (`gpu_pick_mesh`: the surface's own
+  `RenderMesh`, or under SubD a never drawn one of the posed cage) read it; so do hover, click, Box, Lasso and Paint
+  (CPU and GPU) and the gizmo pivot. Never written back, never in History, never document state.
+- **What stays.** Position and topology edits stay refused in a pose (AD-028 §7.1, "vorerst"): so no write ever maps a
+  pick on the posed surface back to a rest position, and the Knife and the drag mappings never see the posed cage
+  through a gesture. The Soft field is still computed on the rest mesh (intrinsic). The SubD surface is never the cage.
+  Without a pose, without weights (no skin surface) or at rest: bit-identical to before (H7-R1; the pose provider
+  alone decides, `_query_mesh` returns the edit mesh).
+- **H7-R1, H7-R3, H7-R4 unchanged.** One provider; the cage source is not a second provider.
+- Not reviewed independently (AGENTS §6: additive, reversible by not naming the posed surface, and Manu decided the
+  product behaviour); `tests/test_posed_picking.py` and `tests/test_gl_posed_picking.py` pin it (the old pins
+  `test_morph_picking.py::test_posed_...` and `test_surface_display_state.py::test_the_posed_surface_...` changed).
 
 ### H7 note: display state on replacement surfaces (2026-11-04)
 
@@ -1582,7 +1609,7 @@ and Region Colours too.
   `ChainedSurface`). Both caches are keyed by the surface RenderMesh and cleared with it. The former "surface is the
   cage" hide special case is part of the rule.
 - **Unchanged.** H7-R1 (without a provider nothing changes), H7-R2 and its amendment (display, plus read-only queries
-  on the cage; picking in a pose stays on the rest cage, AD-028 §7.1 S5), H7-R3 and H7-R4. The Application still owns
+  on the cage; picking in a pose was on the rest cage until 2026-11-17, now on the posed surface, see the next note), H7-R3 and H7-R4. The Application still owns
   the hidden set and the colours; no provider holds a copy beyond SubD's existing one.
 - **Code:** `src/viewport/viewport.py` (`_sync_surface_display_state`). **Tests:** `tests/test_surface_display_state.py`
   (Application -> chain -> viewport -> RenderMesh), `tests/test_gl_region_tint.py`, `tests/test_gl_morph_picking.py`.

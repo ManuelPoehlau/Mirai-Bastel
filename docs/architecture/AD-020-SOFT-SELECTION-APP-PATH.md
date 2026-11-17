@@ -929,7 +929,7 @@ the display; else, while the weight view is on, the face shading shows the curre
 nothing; else the preview.** Still one routing point (`_soft_show`) and two sinks with only one non-empty; the weight view
 sits inside `_soft_preview_refresh`, so an op's end hands back to it. With the view off, when and how the preview is
 computed is unchanged. The face-shading sink places its triangles on the shown deformed cage (pose, else morph mix)
-when there is one (`set_cage_source`); the bands stay on the rest cage.
+when there is one (`set_cage_source`); the bands' points sit on the shown cage too since 2026-11-17 ([MODELING_ON_DEFORMED_SURFACES §16](../design/MODELING_ON_DEFORMED_SURFACES.md#16-decided-slice-picking-on-the-posed-surface-for-setting-weights-manu-2026-11-17): `follows_cage`); the field is still computed on the rest mesh.
 
 ---
 

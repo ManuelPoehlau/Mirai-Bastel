@@ -52,6 +52,8 @@ mit deinem Go für den Bau:
 - **S5 Modellieren nur in Ruhe:** In einer Pose lehnt die App Verschieben und Topologie am gebundenen Mesh mit Meldung
   ab (Ruhe ↔ Pose ist ein Tastendruck); Gewichte setzen, Morph-Ziele formen, Auswahl und Undo gehen auch in der Pose.
   — *ja / an der Ruheform weiterarbeiten, während die Pose sichtbar bleibt*
+  *(2026-11-17, Manu: Hover, Klick, Box, Lasso und Paint treffen in der Pose die gezeigte, gepostete Fläche — für das
+  Gewichte-Setzen am Mundwinkel und im Mundinnenraum; Verschieben und Topologie bleiben gesperrt, „vorerst". §7.1.)*
 - **S6 Gebundenes Objekt bleibt stehen:** In `4` lässt sich ein Objekt mit Gewichten nicht verschieben, drehen oder
   skalieren (sonst säße es später falsch auf den Knochen); *Transform übernehmen* geht. — *ja / erlauben*
 - **S7 Tempo:** flüssig auf Kopf und Körper; auf gollum_20k mit einem Bereich in Kiefergröße „benutzbar, nicht
@@ -329,8 +331,10 @@ symmetrically (§8.4).
   surface across a rest ↔ pose toggle while SubD is on, so the toggle patches positions instead of rebuilding SubD.
 - **H7-E entry surface:** the morph base beside its editing view shows mix + pose (the skin stage returns an entry
   surface for the base; it wins the merge, F-6). The editing view itself shows the target at rest (it has no layers).
-- Picking, selection, hover and every tool stay on the rest-shape cage (Morph Lab 6a, AD-013 H7); the wire follows the
-  surface (`wire_follows_surface`, as the mix).
+- Picking, selection, hover and the overlays act on this surface *(since 2026-11-17, §7.1; before: on the rest-shape
+  cage, Morph Lab 6a, AD-013 H7)*: `Application._query_cage` names it (the posed surface while posed and bound), read
+  only; the position and topology tools stay refused in a pose; the wire follows the surface (`wire_follows_surface`,
+  as the mix).
 
 ### 5.3 What shows the pose (limits of this phase)
 
@@ -405,9 +409,19 @@ measured and reported ("usable, not fluid" expected); the reference-PC run of th
 - **Allowed while posed:** weight commands (the point of a posed check), morph-layer commands and the editing view (it
   edits offsets at rest on its own unbound copy), rig commands, selection, display, navigation, Undo / Redo, Apply
   transform.
-- **Why refuse** rather than edit at rest under the posed display (X-8): picking and the overlays stay on the rest cage
-  (5.2), so with the jaw open a click on the visible lip would select the closed lip, and a Loop Insert would appear
-  away from where it was aimed — silently confusing. Editing on the posed surface through the inverse blend
+- **Picking and the overlays sit on the posed surface** *(2026-11-17, Manu, [MODELING_ON_DEFORMED_SURFACES §16](../design/MODELING_ON_DEFORMED_SURFACES.md#16-decided-slice-picking-on-the-posed-surface-for-setting-weights-manu-2026-11-17))*:
+  while posed and bound, hover, click, Box, Lasso and Paint hit the drawn, posed surface (the skin stage's, which includes
+  a morph mix underneath), and so do the selection / hover / edge / face overlays, the wire, the Soft bands and the
+  gizmo pivot (the cage of AD-013 H7-R2, read only). Setting weights at the mouth corner and inside the mouth with the
+  jaw open therefore hits what is seen. Not changed: the Soft *field* (it is intrinsic, computed on the rest mesh), and
+  every write still goes to the edit mesh at rest. SubD stays out (the cage is the posed cage, never the SubD surface).
+  Without a pose (or without weights) nothing changes.
+- **Why refuse** rather than edit at rest under the posed display (X-8): a *position or topology* edit is still aimed on
+  the posed surface but would have to land on the rest mesh: with the jaw open a Loop Insert on the visible lip would be
+  placed at the rest position of the picked point, away from where it was aimed, and a Move would map the pointer
+  through the pose (the inverse blend per point) — silently confusing. *(Until 2026-11-17 the reason also was that
+  picking and the overlays sat on the rest cage, so a click on the visible lip selected the closed lip; that part is
+  gone, the refusal of the writes stays unchanged, "vorerst".)* Editing on the posed surface through the inverse blend
   (Blender's crazyspace, the audit's "inverse warping") is Phase 7 (X-7). The toggle makes rest ↔ pose one key each way;
   the edit is carried into the pose by the weights rule (§4).
 
@@ -530,8 +544,9 @@ details below are `PROVISIONAL`; the Artist test is [GUI_STAGE1_HUD.md §8](../d
   share - also the weight gestures' share of §8.4 - lay on the closed jaw, not on the shown, open one. The face-shading
   sink now takes a cage source (`GLSoftShadingOverlay.set_cage_source`, `Application._shown_cage`: the skin stage's
   shown surface, else the morph mix - the mesh with the edit mesh's IDs that the wire already follows) and places its
-  triangles there; a watch on that mesh re-syncs the positions on a pose step. Topology, picking, the selection and the
-  Soft bands stay on the rest cage (§5.2). This holds for every face shading (Soft preview and gestures too).
+  triangles there; a watch on that mesh re-syncs the positions on a pose step. Topology stays the edit mesh's.
+  *(2026-11-17: picking, the selection and the Soft bands sit on the posed surface too, §7.1; the Soft field is still
+  computed on the rest mesh.)* This holds for every face shading (Soft preview and gestures too).
 - **HUD** (A1 strip): primary entry "Weights · Jaw" while on ("Weights · — (no rig)" etc. when there is nothing to show);
   the Soft entry adds "preview hidden (weights view)".
 - **Cost** (container, no GL drawing): a recompute on the head 0.07 / 0.10 ms (p50 / p95), a cached trigger 0.007 ms;
@@ -559,7 +574,7 @@ texts, colours, layout and the snap radius are `PROVISIONAL`. Code: `controllers
   bone at once, so Ctrl+Z takes back what the last click made (Maya's joint tool); one step per chain would let one Undo remove
   a spine. The pending head follows the history (`resync`): a bone taken back leaves its head as the pending point, a Redo
   continues from its tail. A head with no bone is no history entry, so Undo drops it first instead of taking back an earlier
-  step. Refused to start: an interaction runs, posed (the clicks pick on the rest cage while the display shows the pose, §7.1),
+  step. Refused to start: an interaction runs, posed (a bone is placed at rest while the display shows the pose; the click would aim on the pose, §7.1),
   a morph target's editing view, no viewport.
 - **Where a click lands:** (1) the nearest object pivot or bone head / tail within `pivot.POINT_SNAP_PX` = 12 px (depth plays no
   part: an eyeball's centre inside a solid snaps); (2) `place_pivot` (Shift = vertex / edge, else the middle of the mesh under the
@@ -629,7 +644,7 @@ texts, colours, layout and the snap radius are `PROVISIONAL`. Code: `controllers
 | X-5 | GPU skinning now (the audit's "GPU + CPU reference") | positions alone are ≈ 5 % of a pose step (§5.4); SubD, the wire and flat shading read CPU positions (AD-025 §17.1). Its trigger is the reference-PC run (P-1) |
 | X-6 | Pose as document state (saved, undoable; Blender) | the morph-weight rule (F-11) is the decided precedent; animation keys will make pose channels document data deliberately; a pose in History interleaves with modelling steps (S4) |
 | X-7 | Editing on the posed surface (inverse blend matrices, crazyspace) | needs the inverse per-vertex blend for positions and a mapping of picks back to rest space for topology; Phase 7 ("inverse warping", audit §E) |
-| X-8 | Editing at rest while the pose stays visible | picking and overlays on the rest cage under a strongly posed surface: selections and cuts land away from where the artist aims (§7.1) — silently confusing; S5 offers it as the alternative |
+| X-8 | Editing at rest while the pose stays visible | a cut or a move aimed on the posed surface lands at rest, away from where the artist aims (§7.1) — silently confusing; S5 offers it as the alternative. *(2026-11-17: picks and overlays no longer sit on the rest cage; only the write side of this risk remains, and stays refused.)* |
 | X-9 | Bones on the Mesh with topology listeners (AD-005) | superseded: AD-021 §4.9 puts the rig on the Scene; listener data lives outside the journal (AD-025 X-6) |
 | X-10 | Automatic weights (heat diffusion, geodesic voxel binding), envelopes | out of scope (handoff); the group falloff reuses the Soft field instead |
 | X-11 | The Lab's ring-count falloff (F-15) | its width depends on the mesh density (a loop insert before weighting narrows it); the geodesic Soft field is in distance units and is Manu's Soft default (S2) |
@@ -731,7 +746,7 @@ addendum)*; `config/keymap.json`; removing the Morph
 Lab; transfer between meshes (Phase 7).
 
 *(2026-11-03: a long-term product requirement for editing on the posed surface is proposed, pending Manu's review, in
-[MODELING_ON_DEFORMED_SURFACES](../design/MODELING_ON_DEFORMED_SURFACES.md). §7.1 (S5) stays the decided behaviour.)*
+[MODELING_ON_DEFORMED_SURFACES](../design/MODELING_ON_DEFORMED_SURFACES.md). §7.1 (S5) stays the decided behaviour for position and topology edits; picking in the pose: §16 there, 2026-11-17.)*
 
 ## 16. Review disposition
 

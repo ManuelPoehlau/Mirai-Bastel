@@ -87,7 +87,7 @@ Today Mirai always orbits around `OrbitCamera.target` — effectively the scene/
 - **Symmetry:** coordinators run one op on the union of both sides (`symmetric_ops.py`, `move.py:54-63`) → journal contains both sides; plain centroid lands on the plane.
 - **Soft selection:** the transformed set = whole influenced region (`transform.py:284-295`); seeds = pre-op selection.
 - **Morph:** edits in the morph edit view hit the view mesh with real positions, then `TranslatingHistory` (`morph_targets.py:208-226, 283-300`) pushes a layer-only delta on the base. Drawn geometry with a weight > 0 is `MixSurface` (`_query_mesh`, `application.py:3817`).
-- **Rig/pose:** pose is view state (no history); bone edits are `RigCommand`; weight edits are layer-only; picking stays on the rest cage (`skinning.py:30-37`).
+- **Rig/pose:** pose is view state (no history); bone edits are `RigCommand`; weight edits are layer-only; picking sits on the posed surface while posed (MODELING_ON_DEFORMED_SURFACES §16, 2026-11-17; before: the rest cage).
 - **Objects:** one `Mesh` per `SceneObject`, positions object-local (`object_space.to_world`); edit-object switch → `_follow_edit_object` (`application.py:868-886`, also after undo/redo `:3134`).
 
 ---
