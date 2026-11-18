@@ -1,9 +1,9 @@
 # AD-036 — Eyes, teeth and lids on the rig: a bone link for rigid parts, gaze as a pose source, lids by weights
 
-**Status:** **PROPOSED (2026-11-18); Artist decisions taken (Manu, 2026-11-18: "E1 ja, E2 ja, E3 ja, E4 go")** — E1–E4
-as recommended, the Core go given (E4); E5 answered the same day: the teeth stay unbound for now (Manu binds them
-later; the build delivers the capability), the ears are weighted (§16). **Next: the second opinion in the main project (§13), then the
-build** — no code before it. Architecture Gate (Type C) after AD-028's bone tool 01/02; output of the gate: this AD.
+**Status:** **DECIDED (Manu, 2026-11-18: "E1 ja, E2 ja, E3 ja, E4 go"; "ohne Zweitmeinung")** — E1–E4 as recommended,
+the Core go given (E4); E5 answered the same day: the teeth stay unbound for now (Manu binds them later; the build
+delivers the capability), the ears are weighted (§16). No second opinion: the build session proves the §13 points with
+tests first (§16). **Next: the build** (§12), in a fresh session. Architecture Gate (Type C) after AD-028's bone tool 01/02; output of the gate: this AD.
 **Mode (M5):** Architecture Gate. Small throw-away probes only (§8.1; not committed).
 **Baseline:** `main` @ `939df8b` ("scenes: eye bones Auge_Links / Auge_Rechts"). `git log 939df8b..origin/main` is empty
 (fetched 2026-11-18): nothing changed since the handoff. Every code fact below was read there (file:line).
@@ -544,7 +544,11 @@ mirror copy rule (§4.4); linked xor bound (§4.1); the gaze clamp in the head f
 contract tests; (2) links: drawn placement, consumers (§4.3), commands and policies, gaze → eye bones, the lid frame,
 §4.6, the scenario of §10; (3) the "unbound" view and the panel rows, the probe of §8.3.
 
-## 13. Points for the second opinion
+## 13. Points for the second opinion — the build's first checklist
+
+*(2026-11-18, Manu: "ohne Zweitmeinung". The build session — a fresh one, not the author's — proves each point below with
+a test or a recorded check before or with the code that depends on it; a finding that would change E1–E4 goes back to
+Manu, anything else is fixed and noted in the implementation note.)*
 
 1. **No offset** (§4.2): `S_b` rest-relative and absent at rest (F-1), so the link neither moves the object nor goes stale on a
    rest edit — re-check against `skinning.py:121-158` and `edit_bone`.
@@ -593,8 +597,13 @@ untouched); panel layout; AD-028 S1–S8 beyond the amendments of §12.
 | E4 | Go for `SceneObject.bone` and scene format v13 (CORE_V1_FREEZE §7 step 6) | given for the shape of §9.1; if the second opinion changes that shape (the field, its home, the version rules), the change comes back to Manu before the Core slice. The CORE_V1_FREEZE §7.1 entry and its revision line are written with the implementing commit (the AD-028 precedent), not now |
 | E5 | answered (Manu, 2026-11-18): "die Zähne müssen noch nicht gebunden werden, das mache ich später, ich brauch nur die Möglichkeit zu binden. Ohren haben mittlerweile Gewichte." | the build delivers Link / Unlink; the scene file stays without links; the scenario of §10 links the teeth in its own setup (a test fixture); the ears are on `Hals` since `4aa4ae9`; no separate head bone requested (`Hals` stays the head bone, §7) |
 
-Unchanged by the answers: every technical default listed under §11; the build outline of §12; the second-opinion points
-of §13.
+**Second opinion — waived (Manu, 2026-11-18: "ohne Zweitmeinung")**, on the author's assessment: the Core part is one
+additive field with four precedents (material, texture, eye, groups); the riskier app logic (the consumer split, gaze →
+eye bones, §4.6) is provable by tests. Replacement: §13 becomes the build's first checklist, worked through in a fresh
+session (author ≠ checker as far as possible, Development System §6); a finding that would change E1–E4 goes back to
+Manu.
+
+Unchanged by the answers: every technical default listed under §11; the build outline of §12; the points of §13.
 
 ## Prüfung der Vorlage für Manu (Deutsch)
 
@@ -612,5 +621,5 @@ Keine Praxistests, sondern eine Prüfung dieser Vorlage:
    Zahn verschieben: abgelehnt mit Hinweis auf die Ruhe-Taste → Undo/Redo, Loop am Lid, Kiefer-Gelenk nachrücken,
    Knochen löschen, Speichern/Laden: alles bleibt richtig. Stimmt das mit deiner Vorstellung überein?
 
-**Nächster Schritt:** E1–E5 sind beantwortet (2026-11-18). Dann die Zweitmeinung im Hauptprojekt (§13) und der Bau in
-drei Scheiben (§12).
+**Nächster Schritt:** E1–E5 sind beantwortet, ohne Zweitmeinung (2026-11-18). Der Bau beginnt in einer frischen Session;
+sie prüft zuerst die Punkte aus §13 mit Tests. Nur was E1–E4 ändern würde, kommt zu dir zurück.
