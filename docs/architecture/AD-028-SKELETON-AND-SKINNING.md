@@ -624,7 +624,7 @@ panel, no new key. No `src/core` or scene-format change.
   frames. Needs exactly one selected object (mode 4, outliner); an object may be given by id.
 - **Scene** `Gollum_Head_rigging_test`: bones `Auge_Links` / `Auge_Rechts` (ids 5, 6), head = the eyeball's centre, tip on the gaze
   axis, two eyeball radii long (`PROVISIONAL`), roll 0, **parent `Hals`** (the jaw moves, the eyes do not follow it; there is no
-  head bone yet - re-parent in the panel when one exists). The eye objects do not follow the bones: that is the next Architecture Gate.
+  head bone yet - re-parent in the panel when one exists). The eye objects do not follow the bones: that is the next Architecture Gate ([AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md), PROPOSED 2026-11-18).
   Tests: `tests/test_bone_axis.py`.
 
 ## 9. Core change (CORE_V1_FREEZE §7)
