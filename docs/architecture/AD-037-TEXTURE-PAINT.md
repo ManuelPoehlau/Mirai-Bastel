@@ -440,6 +440,20 @@ Verbatim in [`RESULTS_PAINT_PHASE2_REFERENCE_PC_2026-11-18.md`](../../experiment
 0.05 s through the own decoder); 6.35 s fits the system decoder (pyglet's pure-Python PNG path took 1.8 s in the container,
 ×3.4) or a slow first file read. P-G on the reference PC names which.
 
+### 10.8c The second reference-PC run (Manu, 2026-11-18): the slow read found
+
+P-G names it [V]: the reference PC's `Gollum_cbf9c7702d.png` is **another file than the repo's** of that name (470,628
+bytes, RGBA, row filters Sub / Up / **Paeth** on 998 rows; the repo's is 423,554 bytes, RGB, unfiltered), and
+`iris_import._unfilter` reconstructs Average / Paeth rows byte by byte in Python: decode 6,510 ms, the file read 1 ms. That
+was the ~7 s first dab and P-F's 6.4-9.4 s (also in Phase 1: §7.1's "cost per file" guess is ruled out). **Fix:**
+`decode_png(..., slow=False)` refuses such a PNG (`SlowPNG`) and `files.read_image` takes the system decoder first
+(`iris_import.read_rgba`: pyglet, WIC on Windows), the own decoder only behind it; the result is cached per session.
+Pinned: a Paeth PNG reads the same pixels by either path (`test_paint_store.py`). Whether WIC is fast there: the next P-G.
+
+P-D: cage 1.65 s PASS, SubD 1 2.02 s (22 ms over the bar), SubD 2 3.51 s. The probe now splits P-D (map split / raster /
+ownership, tables; container: 12 / 222 / 123 / 25 ms on the cage) so the next run names the part to work on; 1024² stays
+the fast option (P-5). P-A's CPU rows pass on every surface at 3 % and 5 %.
+
 ### 10.8 Not in Phase 2
 
 Several layers in the UI (only the top layer is painted; the stack format has several), blend modes (P-12), the undo

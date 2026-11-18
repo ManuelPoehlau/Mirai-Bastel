@@ -72,9 +72,11 @@ def read_image(path: str) -> np.ndarray:
     data = Path(path).read_bytes()
     read = time.perf_counter() - started
     try:
-        rgba, decoder = decode_png(data), "own"
+        rgba, decoder = decode_png(data, slow=False), "own"
     except ValueError as exc:
-        rgba, decoder = read_rgba(path), f"system ({exc})"  # not a PNG the own decoder reads: what the system can read
+        # not a PNG the own decoder reads fast (AD-037 §10.8c: Paeth rows 6.5 s on the reference PC): the system's decoder
+        # (pyglet: WIC on Windows), which itself falls back to the own one when it cannot
+        rgba, decoder = read_rgba(path), f"system ({exc})"
     last_read.clear()
     last_read.update(path=str(path), bytes=len(data), decoder=decoder, read_s=read,
                      decode_s=time.perf_counter() - started - read)

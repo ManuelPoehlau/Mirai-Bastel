@@ -278,3 +278,49 @@ def test_a_layer_image_of_the_wrong_size_is_refused(tmp_path):
     obj.paint = PaintStack(W, H, (PaintLayer("Haut", str(path)),))
     with pytest.raises(PaintError):
         store.pixels(obj, "Haut")
+
+
+def _paeth_png(rgba: np.ndarray) -> bytes:
+    """A PNG (RGBA, 8 bit) whose every row uses the Paeth filter (what ZBrush-saved textures can carry)."""
+    import struct
+    import zlib
+
+    h, w, _ = rgba.shape
+    bpp, stride = 4, w * 4
+    raw = bytearray()
+    prev = bytes(stride)
+    for y in range(h):
+        line = rgba[y].tobytes()
+        raw.append(4)
+        for i in range(stride):
+            a = line[i - bpp] if i >= bpp else 0
+            b, c = prev[i], prev[i - bpp] if i >= bpp else 0
+            p = a + b - c
+            pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+            pred = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+            raw.append((line[i] - pred) & 0xFF)
+        prev = line
+
+    def chunk(kind, body):
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(raw))) + chunk(b"IEND", b""))
+
+
+def test_a_paeth_png_is_read_right_and_never_through_the_slow_path_first(tmp_path):
+    """AD-037 §10.8c (reference PC: Manu's ZBrush texture had Paeth rows, the own decoder took 6.5 s): `read_image`
+    asks the system decoder first for such a file; the pixels are the same either way; a second read is cached."""
+    from mirai.iris_import import SlowPNG, decode_png
+
+    rgba = np.random.default_rng(4).integers(0, 255, (12, 10, 4), dtype=np.uint8)
+    data = _paeth_png(rgba)
+    assert np.array_equal(decode_png(data), rgba)
+    with pytest.raises(SlowPNG):
+        decode_png(data, slow=False)
+    path = tmp_path / "paeth.png"
+    path.write_bytes(data)
+    files.clear_image_cache()
+    out = files.read_image(str(path))
+    assert np.array_equal(out, rgba) and files.last_read["decoder"].startswith("system")
+    assert files.read_image(str(path)) is out and not out.flags.writeable

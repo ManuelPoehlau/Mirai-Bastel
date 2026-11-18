@@ -279,6 +279,8 @@ def main(argv=None) -> int:
         mib = (texel_map.slot.nbytes + texel_map.bary.nbytes) / 2**20
         print(f"  {kind:6s} {len(mesh.all_face_ids()):6,} faces  {build * 1e3:6.0f} ms"
               f"  ({texel_map.mapped().size:,} texels, {mib:.0f} MiB)  {'PASS' if build <= 2.0 else 'FAIL'}")
+        parts = {**{f"map {k}": v for k, v in texel_map.build_seconds.items()}, "tables": surface.build_seconds["tables"]}
+        print("         " + ", ".join(f"{name} {seconds * 1e3:.0f}" for name, seconds in parts.items()))
     head.paint = PaintStack(size, size, (PaintLayer("Paint 1", None),))
     store = PaintStore()
     base = files.read_base(head, size, size)

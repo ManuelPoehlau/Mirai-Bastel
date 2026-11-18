@@ -58,9 +58,15 @@ class PaintSurface:
         self.mesh = mesh
         self.kind = kind
         self.hidden_faces = frozenset(hidden_faces)
+        import time
+
+        started = time.perf_counter()
         self.map = TexelMap(mesh, width, height)
+        mapped = time.perf_counter()
         self._watch = mesh.watch()
         self._tables()
+        #: seconds of the build: the texel map and the hit / footprint tables (the probe's P-D split)
+        self.build_seconds = {"map": mapped - started, "tables": time.perf_counter() - mapped}
 
     @property
     def width(self) -> int:

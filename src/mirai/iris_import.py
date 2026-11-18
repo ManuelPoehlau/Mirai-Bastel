@@ -110,7 +110,13 @@ def encode_png(rgba: np.ndarray, level: int = 6) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, level)) + chunk(b"IEND", b"")
 
 
-def _unfilter(raw: bytes, width: int, height: int, bpp: int) -> np.ndarray:
+class SlowPNG(ValueError):
+    """The PNG has Average / Paeth rows, which the own decoder reconstructs byte by byte in Python (the reference PC:
+    6.5 s for a 2048² RGBA texture, AD-037 §10.8c) - `decode_png(..., slow=False)` refuses it so the caller can take a
+    native decoder first."""
+
+
+def _unfilter(raw: bytes, width: int, height: int, bpp: int, slow: bool = True) -> np.ndarray:
     stride = width * bpp
     data = np.frombuffer(raw, dtype=np.uint8)
     if data.size < height * (stride + 1):
@@ -119,6 +125,8 @@ def _unfilter(raw: bytes, width: int, height: int, bpp: int) -> np.ndarray:
     kinds, rows = rows[:, 0], rows[:, 1:].copy()
     if np.all(kinds == 0):
         return rows
+    if not slow and np.any((kinds == 3) | (kinds == 4)):
+        raise SlowPNG(f"{int(np.sum((kinds == 3) | (kinds == 4)))} Average / Paeth rows")
     prev = np.zeros(stride, dtype=np.uint8)
     for y in range(height):
         kind, line = int(kinds[y]), rows[y]
@@ -146,8 +154,9 @@ def _unfilter(raw: bytes, width: int, height: int, bpp: int) -> np.ndarray:
     return rows
 
 
-def decode_png(data: bytes) -> np.ndarray:
-    """(h, w, 4) uint8 RGBA, top row first, from a non-interlaced 8- or 16-bit PNG (16 bit keeps the high byte)."""
+def decode_png(data: bytes, slow: bool = True) -> np.ndarray:
+    """(h, w, 4) uint8 RGBA, top row first, from a non-interlaced 8- or 16-bit PNG (16 bit keeps the high byte).
+    `slow` False: `SlowPNG` instead of the per-byte reconstruction of Average / Paeth rows."""
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError("not a PNG")
     pos, idat, palette, header = 8, [], None, None
@@ -170,7 +179,7 @@ def decode_png(data: bytes) -> np.ndarray:
     if interlace or channels is None or depth not in (8, 16) or (colour == 3 and depth != 8):
         raise ValueError("an interlaced or low-bit PNG (save it as 8-bit, not interlaced)")
     size = depth // 8
-    px = _unfilter(zlib.decompress(b"".join(idat)), width, height, channels * size)
+    px = _unfilter(zlib.decompress(b"".join(idat)), width, height, channels * size, slow)
     px = px.reshape(height, width, channels * size)[..., ::size] if size == 2 else px.reshape(height, width, channels)
     out = np.empty((height, width, 4), dtype=np.uint8)
     out[..., 3] = 255

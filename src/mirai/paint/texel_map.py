@@ -37,6 +37,7 @@ Memory at 2048²: 4 bytes of triangle slot and 8 bytes of weights per texel (48 
 from __future__ import annotations
 
 import math
+import time
 from collections.abc import Iterable
 
 import numpy as np
@@ -259,9 +260,12 @@ class TexelMap:
         #: the mapped texels grouped by slot (ascending) right after a rebuild, None once a patch changed the map - the
         #: paint surface's footprint table without sorting 2.8 M texels (reference PC 2026-11-18, P-D)
         self.slot_order: np.ndarray | None = None
+        started = time.perf_counter()
         faces = self.mesh.all_face_ids()
         tris, tri_uvs, tri_face, tri_index = self._split_faces(faces)
+        split = time.perf_counter()
         flat, slot_of, w1, w2, boxes, keep = _raster_all(tri_uvs, self.width, self.height)
+        rastered = time.perf_counter()
         count = int(keep.sum())
         self._grow(max(count + 16, 2 * len(faces) + 16))
         # slots in key order (faces ascend, triangles ascend inside a face): the smallest slot is the smallest key
@@ -295,6 +299,9 @@ class TexelMap:
             ends = np.r_[starts[1:], count]
             self._face_slots = {FaceId(int(f)): list(range(a, b))
                                 for f, a, b in zip(owners[starts].tolist(), starts.tolist(), ends.tolist())}
+        #: seconds of the last rebuild's parts (the probe's P-D split)
+        self.build_seconds = {"split": split - started, "raster": rastered - split,
+                              "ownership": time.perf_counter() - rastered}
 
     def _split_faces(self, faces) -> tuple:
         """Every face's drawn triangles (`triangulate_face` on the source table's positions) and their corner UVs, in key
