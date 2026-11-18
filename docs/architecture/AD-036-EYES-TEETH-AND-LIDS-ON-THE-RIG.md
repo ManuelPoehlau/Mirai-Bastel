@@ -1,7 +1,8 @@
 # AD-036 — Eyes, teeth and lids on the rig: a bone link for rigid parts, gaze as a pose source, lids by weights
 
 **Status:** **PROPOSED (2026-11-18); Artist decisions taken (Manu, 2026-11-18: "E1 ja, E2 ja, E3 ja, E4 go")** — E1–E4
-as recommended, the Core go given (E4); E5 open (§16). **Next: the second opinion in the main project (§13), then the
+as recommended, the Core go given (E4); E5 answered the same day: the teeth stay unbound for now (Manu binds them
+later; the build delivers the capability), the ears are weighted (§16). **Next: the second opinion in the main project (§13), then the
 build** — no code before it. Architecture Gate (Type C) after AD-028's bone tool 01/02; output of the gate: this AD.
 **Mode (M5):** Architecture Gate. Small throw-away probes only (§8.1; not committed).
 **Baseline:** `main` @ `939df8b` ("scenes: eye bones Auge_Links / Auge_Rechts"). `git log 939df8b..origin/main` is empty
@@ -54,13 +55,14 @@ nicht duplizieren, kopieren oder spiegeln, und er ist festgesetzt (nicht mehr ve
 Pose-Schritt für alle sechs Teile zusammen etwa 0,06 ms (im Container), Gewichte kosten pro Zahnpunkt. Gewichte auf
 Zähnen bleiben später möglich (z. B. wenn Zahnfleisch dazukommt) — nichts wird verbaut.
 
-**Beim Lesen der Testszene gefunden:** 406 Punkte des Gollum-Kopfes haben kein Gewicht, fast alle in den Ohren. Bei einer
-Kopfdrehung bleiben die Ohren stehen. Die Regel: Was an keinem Knochen hängt, bleibt in jeder Pose an seinem Platz — bei
+**Beim Lesen der Testszene gefunden:** 406 Punkte des Gollum-Kopfes hatten kein Gewicht, fast alle in den Ohren — bei
+einer Kopfdrehung wären die Ohren stehen geblieben. Inzwischen sind sie gewichtet (2026-11-18); übrig sind 2 Punkte unten
+am Hals, die stehen bleiben sollen. Die Regel: Was an keinem Knochen hängt, bleibt in jeder Pose an seinem Platz — bei
 Punkten wie bei Objekten. Vorschlag: eine Ansicht „nicht gebunden“, die genau diese Punkte zeigt, und im Bone-Panel bei
 jedem Objekt „folgt: Knochen …“.
 
-**Kosten auf deinem PC:** nicht gemessen. Eine Kopfdrehung bewegt 1 848 der 2 254 Kopfpunkte. Nach den Kiefer-Messungen
-erwarte ich „benutzbar, nicht flüssig“ (geschätzt 30–50 ms pro Schritt). Das liegt am Kopf selbst, nicht an Augen oder
+**Kosten auf deinem PC:** nicht gemessen. Eine Kopfdrehung bewegt 2 276 der 2 278 Kopfpunkte (mit den Ohren). Nach den
+Kiefer-Messungen erwarte ich „benutzbar, nicht flüssig“ (geschätzt 45–60 ms pro Schritt). Das liegt am Kopf selbst, nicht an Augen oder
 Zähnen. Den Messlauf beschreibt §8.3.
 
 **Datenformat:** ein neues Feld pro Objekt („folgt Knochen …“), Dateiformat 13 — eine Core-Änderung, die dein Go
@@ -78,7 +80,8 @@ go“; E5 offen** (§16):
 - **E4 Core-Änderung:** das Feld „folgt Knochen“ am Objekt, Dateiformat 13. — *go / nein*
 - **E5 Für das Testszenario:** Welche der vier Zähne (`tooth`, `tooth01`, `Zahn_1`, `Zahn_2`) sind oben, welche unten?
   Sollen die Ohren (heute ohne Gewicht) an den Hals? Ein eigener Kopfknochen zwischen Hals und Kiefer/Augen ist möglich,
-  aber nicht nötig.
+  aber nicht nötig. — *beantwortet: Zähne bindest du später selbst, gebraucht wird nur die Möglichkeit; die Ohren sind
+  gewichtet.*
 
 **Zur Kenntnis (keine Frage):** Einen Fokus-Abstand für den Blick gibt es schon, als Ansichtswert (Standard 25
 Augenradien ≈ 30 cm); er wird nicht gespeichert. Soll er gespeichert werden, geht das wie bei den Morph-Reglern in der
@@ -126,7 +129,7 @@ link does not move the object" — no offset is needed, because the rig's skin t
 | F-15 | The scene format is chosen by content; current maximum 12; object fields `texture` (6), `hidden` / `parent` (8), `eye` (9–12) | [V] `src/core/serialization.py:101-146`, `:188-209` |
 | F-16 | Symmetric weight writing is refused for an off-centre bone ("needs its mirror bone") | [V] AD-028 §8.4; MODELING_ON_DEFORMED_SURFACES §C |
 | F-17 | Bones live in world space; there is no rig transform | [V] AD-028 §3.1 |
-| F-18 | **Test scene** `scenes/Gollum_Head_rigging_test.mirai.json` (v12): bones `Hals` (id 0, root; head at the neck base `(0, −0.118, −0.339)`, tail = `Kiefer`'s head = the jaw hinge), `Kiefer` (1), `Auge_Links` (5), `Auge_Rechts` (6), all children of `Hals`; each eye bone's head equals its eye object's translation (pivot 0) exactly, its tail lies on the eye's +Z (3.79° outward), length 2 eye radii. `Gollum` (edit object, identity placement): 2,254 points, one Skin layer with 1,848 stored values (keys: Hals 1,563, Kiefer 644; 1,091 fully on Hals, 257 fully on Kiefer, 161 with an object share); **406 points unbound, 404 of them at \|x\| > 0.3** (the mesh spans \|x\| ≤ 0.49: the ears). Four teeth (`tooth`, `tooth01`, `Zahn_1`, `Zahn_2`), 16 points each, at the mouth line (y 0.198–0.273), unbound, no parent; two eyes (3,330 points each, mirror pair 19/20) | [C] read from the file |
+| F-18 | **Test scene** `scenes/Gollum_Head_rigging_test.mirai.json` (v12). Bones `Hals` (id 0, root; head at the neck base `(0, −0.118, −0.339)`, tail = `Kiefer`'s head = the jaw hinge), `Kiefer` (1), `Auge_Links` (5), `Auge_Rechts` (6), all children of `Hals`; each eye bone's head equals its eye object's translation (pivot 0) exactly, its tail lies on the eye's +Z (3.79° outward, to 4e-17), length 2 eye radii. **At `939df8b`:** `Gollum` 2,254 points, Skin layer with 1,848 stored values; **406 points unbound, 404 of them at \|x\| > 0.3** (the mesh spans \|x\| ≤ 0.49: the ears). **At `4aa4ae9` (Manu, 2026-11-18, ears weighted):** `Gollum` (edit object, identity placement) 2,278 points, Skin layer with 2,276 stored values (keys: Hals 1,995, Kiefer 628; 127 with an object share), the ears on `Hals`; **2 points unbound** — a mirrored pair at the neck base (y −0.264), where the rest is meant. Unchanged between both: four teeth (`tooth`, `tooth01`, `Zahn_1`, `Zahn_2`), 16 points each, at the mouth line (y 0.198–0.273), unbound, no parent, same placements; two eyes (3,330 points each, a mirror pair; object ids renumbered 2–8 at `4aa4ae9`) | [C] read from the file at both commits |
 
 ## 2. Decision in one screen (the recommendation, "H")
 
@@ -174,7 +177,7 @@ link does not move the object" — no offset is needed, because the rig's skin t
 | **Lids** | (part of the head mesh in every option: weights) | — | weights on the eye bone (§6) |
 | **Same result?** | yes: weight 1.0 gives `A_b·p` = `T⁻¹·S_b·T·p`, i.e. world `S_b·T·p` (F-2) — measured equal to the link on the four teeth to 5.6e-17 [C, §8.1] | `S_b·T·p` | — |
 | **Display path** | skin stage per bound object (F-3; a widening of `shown`), the viewport's entry surfaces | the entry's model matrix in `sync_views` (F-5); the eye pass unchanged | both |
-| **CPU per pose step** | LBS + table 0.33 / 0.42 ms for 4 × 16 tooth points [C] **plus** the viewport's per-point patch ≈ 10.7 µs per point [D: AD-028 §5.4] → ≈ 0.7 ms more [H]; grows with the tooth mesh (a 5,000-point dentition ≈ 55 ms [H]) | 0.06 / 0.08 ms for all six objects incl. the bone transforms [C]; independent of mesh size | B's for rigid parts; the head's patch as today |
+| **CPU per pose step** | LBS + table 0.33–0.38 / 0.42–0.44 ms for 4 × 16 tooth points [C] **plus** the viewport's per-point patch ≈ 10.7 µs per point [D: AD-028 §5.4] → ≈ 0.7 ms more [H]; grows with the tooth mesh (a 5,000-point dentition ≈ 55 ms [H]) | 0.06–0.07 / 0.08–0.09 ms for all six objects incl. the bone transforms [C]; independent of mesh size | B's for rigid parts; the head's patch as today |
 | **GPU** | unchanged (positions re-uploaded per moved point) | unchanged (one uniform per entry) | — |
 | **Undo** | weights through the journal (AD-028); pose no Undo | link / unlink one Undo step each; pose no Undo | both |
 | **Topology edits on the part** | weights interpolate (AD-028 §4); refused while posed (S5) | nothing to carry (no point data); refused while posed for a linked edit object (§4.5) | — |
@@ -401,8 +404,9 @@ on its own until bones can be mirrored.
   A separate head bone (`Kopf`, child of `Hals`, head at the top of the neck; parent of `Kiefer` and the eye bones) gives a
   turn at the skull base — a rigging choice for Manu (E5), possible today with the chain tool and the panel's re-parent;
   the architecture works either way.
-- **In the test scene** 406 points are unbound, 404 of them in the ears (F-18): a head turn leaves the ears behind; the
-  four teeth and the two eyes follow nothing.
+- **In the test scene** 406 points were unbound at `939df8b`, 404 of them in the ears (F-18): a head turn would have left
+  the ears behind. Since `4aa4ae9` the ears are weighted; 2 points at the neck base stay unbound, as meant. The four teeth
+  and the two eyes follow nothing until they are linked.
 - **How the artist sees it** (`PROVISIONAL`, the build's UI choice): (a) a weight-view mode **"unbound"** that shades each
   point's object share `1 − Σw` (the same sink and share cache as the weight view, AD-028 addendum 2026-11-03) — the ears
   light up; (b) in the Bone panel, per selected object "follows: `<bone>`" or "follows no bone", and for the current
@@ -414,25 +418,25 @@ on its own until bones can be mirrored.
 
 Scratch probe (not kept; re-runnable): load `Gollum_Head_rigging_test`; pose `Hals` 20° about Y, `Kiefer` 15° about X,
 both eye bones −10° about X; median / p95 over 2,000 / 400 / 100 repetitions; alternate between two poses so every step
-recomputes.
+recomputes. Run on the scene at `939df8b` and again at `4aa4ae9` (ears weighted); p50 / p95 ms.
 
-| What | Result |
-|---|---|
-| Link route: `skin_transforms` + `S_b ∘ T` for the six objects | **0.059 / 0.080 ms** |
-| Every composed placement a valid `ObjectTransform` (similarity) | yes, all six |
-| Weight 1.0 (LBS via `SkinSurface`) vs the link, world points of the four teeth | worst difference **5.6e-17** |
-| Weights route, four teeth × 16 points, one step (LBS + position table, no viewport patch) | 0.33 / 0.42 ms |
-| A skinned eye shell (3,330 points), one step (LBS + table; hypothetical — not possible, §3.2) | 0.48 / 0.66 ms |
-| The head under a `Hals` step | **1,848 of 2,254 points move**; LBS + table 0.59 / 0.87 ms |
-| A lid-sized region: head points within 1.3 / 1.6 / 2.0 eye radii of the eyeballs, in front of their centres (both eyes) | 466 / 598 / 702 |
+| What | at `939df8b` | at `4aa4ae9` |
+|---|---|---|
+| Link route: `skin_transforms` + `S_b ∘ T` for the six objects | **0.059 / 0.080** | **0.065 / 0.091** |
+| Every composed placement a valid `ObjectTransform` (similarity) | yes, all six | yes, all six |
+| Weight 1.0 (LBS via `SkinSurface`) vs the link, worst world difference on the four teeth | **5.6e-17** | **5.6e-17** |
+| Weights route, four teeth × 16 points, one step (LBS + position table, no viewport patch) | 0.33 / 0.42 | 0.38 / 0.44 |
+| A skinned eye shell (3,330 points), one step (LBS + table; hypothetical — not possible, §3.2) | 0.48 / 0.66 | 0.53 / 1.78 |
+| The head under a `Hals` step: moved points; LBS + table | 1,848 of 2,254; 0.59 / 0.87 | **2,276 of 2,278**; 0.90 / 1.21 |
+| A lid-sized region: head points within 1.3 / 1.6 / 2.0 eye radii of the eyeballs, in front of their centres (both eyes) | 466 / 598 / 702 | 466 / 598 / 702 |
 
 ### 8.2 Structural cost per option
 
 | | Per pose step | Grows with |
 |---|---|---|
-| Link | one similarity per linked object (0.06 ms for six [C]) + the entry's matrix uniform; the existing `sync_views` loop (its own per-call cost unmeasured [H]; it already runs per gaze step) | the number of linked objects |
+| Link | one similarity per linked object (0.06–0.07 ms for six [C]) + the entry's matrix uniform; the existing `sync_views` loop (its own per-call cost unmeasured [H]; it already runs per gaze step) | the number of linked objects |
 | Weights on a rigid part | LBS ≈ 0.1–1 µs per point [C: §8.1; D: AD-028 §17.2] **+ the viewport patch ≈ 10.7 µs per moved point in the container, ≈ 21–27 µs on the reference PC** [D: AD-028 §5.4] | the part's point count |
-| The head turning (any option) | 1,848 moved points ≈ 15–20 ms in the container, ≈ 30–50 ms on the reference PC [H: AD-028 §17.3's GL rows, 928 points 7.0 / 9.8 ms and 1,093 points 11.2 / 17.2 ms] — "usable, not fluid" | the bound points — AD-028 P-1; its remedy is the GPU drawing path (its own AD), not this one |
+| The head turning (any option) | 2,276 moved points (at `4aa4ae9`) ≈ 17–23 ms in the container, ≈ 45–60 ms on the reference PC [H: AD-028 §17.3's GL rows, 928 points 7.0 / 9.8 ms and 1,093 points 11.2 / 17.2 ms, i.e. 7.5–10 µs per point; 21–27 µs per point on the reference PC, §5.4] — "usable, not fluid" | the bound points — AD-028 P-1; its remedy is the GPU drawing path (its own AD), not this one |
 | Gaze driving the eye bones in a pose, lids weighted | the lid points per gaze frame (`camera` / `mouse` move every frame): ≈ 470–700 points → ≈ 5–8 ms container, ≈ 10–19 ms reference PC [H]; plus the pick cache invalidated per frame while hovering (R-11) | the lid region; E2 "ja" keeps it to poses |
 
 ### 8.3 What Manu's PC would need to measure (not built here)
@@ -477,13 +481,14 @@ AD-028 §3.6 reasoning).
 
 `tests/test_rigid_parts_scenario.py` (`PROVISIONAL`), headless, readable named steps in the AD-027 scenario style (as
 `test_jaw_scenario.py`), on `scenes/Gollum_Head_rigging_test.mirai.json`. "Exact" = bit-identical; "≤ ε" = 1e-12 in world
-units. `UPPER` / `LOWER` = Manu's answer to E5 (placeholder until then: `tooth`, `tooth01` upper; `Zahn_1`, `Zahn_2`
-lower). Setup also weights a left upper-lid region (the points of §8.1's 1.3-radius region above the eye's centre that are fully
+units. The scene file carries no links (Manu, 2026-11-18: the teeth are bound later, by him; the build delivers the
+capability), so the test links in its own setup: `UPPER` / `LOWER` is a **test fixture**, not an Artist statement
+(`tooth`, `tooth01` → `Hals`; `Zahn_1`, `Zahn_2` → `Kiefer`; `PROVISIONAL`). Setup also weights a left upper-lid region (the points of §8.1's 1.3-radius region above the eye's centre that are fully
 on `Hals`) 0.5 to `Auge_Links` through the existing set-weight path (the write rule leaves 0.5 on `Hals`).
 
 | # | Step | Expected |
 |---|---|---|
-| 0 | Load; weight view "unbound" on | exactly the 406 unbound points shaded (404 with \|x\| > 0.3); the panel lists the six parts as "follows no bone" |
+| 0 | Load; weight view "unbound" on | exactly the unbound points shaded (at `4aa4ae9`: the 2 points at the neck base); the panel lists the six parts as "follows no bone" |
 | 1 | Link: eyes to `Hals` | refused (head not at the eye centre), nothing changed |
 | 2 | Link: each eye to its eye bone; `UPPER` to `Hals`; `LOWER` to `Kiefer` | one Undo step per command; at rest every entry's matrix exact as before; the file round trip keeps the links (v13) |
 | 3 | **Head turn:** pose mode, `Hals` current, E about world Y 20° | every linked part drawn `S_Hals ∘ T` (≤ ε, the eyes through their identity eye bones); a head point fully on `Hals` and an upper tooth keep their distance (≤ ε); unbound points exactly at rest (the rule); a mode-`4` click on a tooth's drawn place selects it, a click on its rest place does not; the eye pass's lid frame = `S_Hals ∘ T` |
@@ -517,7 +522,7 @@ Only what is his — Intent, Product Truth, Priority, Promotion (DEVCHAT-001 C2)
 | **E2** | Does the gaze move the lids also while modelling at rest? | only in a pose | product truth: modelling while the eyes follow the camera | **ja** — only in a pose |
 | **E3** | Linked parts movable at rest? | yes; refused while posed | a different rule from S6 (bound placement locked), his to accept | **ja** |
 | **E4** | Go for the Core field and format v13 | go | CORE_V1_FREEZE §7 step 6 | **go** |
-| **E5** | Test scene facts: which teeth are upper / lower; the ears to `Hals`; a separate head bone or not | — | his model and rig | open (needed before slice 2's scenario test, §16) |
+| **E5** | Test scene facts: which teeth are upper / lower; the ears to `Hals`; a separate head bone or not | — | his model and rig | teeth later (only the capability now); ears weighted (§16) |
 
 Technical defaults stated, not asked: no stored offset (§4.2); eye guard and eye unlink on bone delete (§5.1, §4.4);
 mirror copy rule (§4.4); linked xor bound (§4.1); the gaze clamp in the head frame (§5.2); twins at rest (§5.5); the
@@ -586,7 +591,7 @@ untouched); panel layout; AD-028 S1–S8 beyond the amendments of §12.
 | E2 | The gaze drives the eye bones only in a pose; at rest it turns the eyeballs only | §5.2's table as written; the "always" alternative of §5.3 is not built |
 | E3 | Linked parts stay movable at rest; refused while posed | §4.5 as written; the S6 lock is not extended to linked objects |
 | E4 | Go for `SceneObject.bone` and scene format v13 (CORE_V1_FREEZE §7 step 6) | given for the shape of §9.1; if the second opinion changes that shape (the field, its home, the version rules), the change comes back to Manu before the Core slice. The CORE_V1_FREEZE §7.1 entry and its revision line are written with the implementing commit (the AD-028 precedent), not now |
-| E5 | open | the scenario of §10 keeps its placeholder (`tooth`, `tooth01` upper; `Zahn_1`, `Zahn_2` lower; the ears unbound, so step 3 asserts that they stay at rest); Manu's answer replaces it before slice 2's scenario test. Not needed for the second opinion or slice 1 |
+| E5 | answered (Manu, 2026-11-18): "die Zähne müssen noch nicht gebunden werden, das mache ich später, ich brauch nur die Möglichkeit zu binden. Ohren haben mittlerweile Gewichte." | the build delivers Link / Unlink; the scene file stays without links; the scenario of §10 links the teeth in its own setup (a test fixture); the ears are on `Hals` since `4aa4ae9`; no separate head bone requested (`Hals` stays the head bone, §7) |
 
 Unchanged by the answers: every technical default listed under §11; the build outline of §12; the second-opinion points
 of §13.
@@ -607,6 +612,5 @@ Keine Praxistests, sondern eine Prüfung dieser Vorlage:
    Zahn verschieben: abgelehnt mit Hinweis auf die Ruhe-Taste → Undo/Redo, Loop am Lid, Kiefer-Gelenk nachrücken,
    Knochen löschen, Speichern/Laden: alles bleibt richtig. Stimmt das mit deiner Vorstellung überein?
 
-**Nächster Schritt:** E1–E4 sind entschieden (2026-11-18). Jetzt die Zweitmeinung im Hauptprojekt (§13), dann der Bau
-in drei Scheiben (§12). E5 (welche Zähne oben/unten, Ohren, Kopfknochen) brauche ich erst für das Testszenario in
-Scheibe 2.
+**Nächster Schritt:** E1–E5 sind beantwortet (2026-11-18). Dann die Zweitmeinung im Hauptprojekt (§13) und der Bau in
+drei Scheiben (§12).
