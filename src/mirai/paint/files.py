@@ -44,14 +44,45 @@ from .store import PaintStore
 PNG_LEVEL = 1
 
 
+#: Decoded images by (path, modification time, size): the reference PC read the 2048² ZBrush texture in 6.35 s
+#: (2026-11-18, P-F "read base"; the container 0.04 s), so the room, the save's flattened image and the eyedropper read it
+#: once per session. A changed file has another stamp; at most `_CACHE_SIZE` images are kept.
+_CACHE: dict[tuple, np.ndarray] = {}
+_CACHE_SIZE = 4
+#: how the last uncached `read_image` went: path, decoder ("own" / "system"), seconds for the file read and the decode
+last_read: dict = {}
+
+
+def clear_image_cache() -> None:
+    _CACHE.clear()
+
+
 def read_image(path: str) -> np.ndarray:
-    """(h, w, 4) uint8 RGBA, top row first: a PNG through the own decoder (pyglet's pure-Python PNG path took 1.8 s for
-    the 2048² ZBrush texture in the container, the own one 0.13 s), anything else through `iris_import.read_rgba`."""
+    """(h, w, 4) uint8 RGBA, top row first, read-only (cached, see `_CACHE`): a PNG through the own decoder (pyglet's
+    pure-Python PNG path took 1.8 s for the 2048² ZBrush texture in the container, the own one 0.13 s), anything else
+    through `iris_import.read_rgba`."""
+    import time
+
+    stat = os.stat(path)
+    key = (os.path.abspath(path), stat.st_mtime_ns, stat.st_size)
+    cached = _CACHE.get(key)
+    if cached is not None:
+        return cached
+    started = time.perf_counter()
     data = Path(path).read_bytes()
+    read = time.perf_counter() - started
     try:
-        return decode_png(data)
-    except ValueError:
-        return read_rgba(path)  # not a PNG the own decoder reads: whatever the system can read
+        rgba, decoder = decode_png(data), "own"
+    except ValueError as exc:
+        rgba, decoder = read_rgba(path), f"system ({exc})"  # not a PNG the own decoder reads: what the system can read
+    last_read.clear()
+    last_read.update(path=str(path), bytes=len(data), decoder=decoder, read_s=read,
+                     decode_s=time.perf_counter() - started - read)
+    rgba.setflags(write=False)
+    while len(_CACHE) >= _CACHE_SIZE:
+        _CACHE.pop(next(iter(_CACHE)))
+    _CACHE[key] = rgba
+    return rgba
 
 
 def read_layer(path: str) -> np.ndarray:

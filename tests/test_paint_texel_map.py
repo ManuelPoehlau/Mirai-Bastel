@@ -323,3 +323,15 @@ def test_texel_rows_start_at_v_zero():
     assert texel_map.surface_points([0])[0] == pytest.approx((0.125, 0.25, 0.0))
     assert texel_map.texel_at(0.99, 0.99) == 15 and texel_map.texel_at(1.0, 0.5) == -1
     assert FaceId(texel_map.tri_face[texel_map.slot[0]]) == mesh.all_face_ids()[0]
+
+
+def test_a_rebuild_hands_out_the_texels_grouped_by_slot_and_a_patch_drops_that():
+    mesh = grid(5)
+    texel_map = TexelMap(mesh, 64, 64)
+    order = texel_map.slot_order
+    assert np.array_equal(np.sort(order), texel_map.mapped())
+    assert np.all(np.diff(texel_map.slot[order]) >= 0)
+    watch = mesh.watch()
+    mesh.set_face_uvs(mesh.all_face_ids()[0], None)
+    texel_map.patch(watch.take())
+    assert texel_map.slot_order is None

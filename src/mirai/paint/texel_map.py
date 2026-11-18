@@ -256,6 +256,9 @@ class TexelMap:
         self._free: list[int] = []
         self._face_slots: dict[FaceId, list[int]] = {}
         self._face_tris: dict[FaceId, tuple] = {}
+        #: the mapped texels grouped by slot (ascending) right after a rebuild, None once a patch changed the map - the
+        #: paint surface's footprint table without sorting 2.8 M texels (reference PC 2026-11-18, P-D)
+        self.slot_order: np.ndarray | None = None
         faces = self.mesh.all_face_ids()
         tris, tri_uvs, tri_face, tri_index = self._split_faces(faces)
         flat, slot_of, w1, w2, boxes, keep = _raster_all(tri_uvs, self.width, self.height)
@@ -282,6 +285,10 @@ class TexelMap:
             weights[:, 0] = w1[win]
             weights[:, 1] = w2[win]
             self.bary[idx] = weights
+            # the candidates come triangle by triangle in key order, so the winners are grouped by ascending slot
+            self.slot_order = idx
+        else:
+            self.slot_order = np.zeros(0, dtype=np.int64)
         if count:
             owners = self.tri_face[:count]
             starts = np.flatnonzero(np.r_[True, owners[1:] != owners[:-1]])
@@ -461,6 +468,7 @@ class TexelMap:
             dirty.add(fid)
         if not dirty:
             return 0
+        self.slot_order = None
         if len(dirty) > max(REBUILD_SHARE * len(self._face_tris), REBUILD_MIN_FACES):
             self.rebuild()
             return -1

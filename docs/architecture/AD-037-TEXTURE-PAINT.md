@@ -424,6 +424,22 @@ schließen, wahrscheinlich weil die Panel Bedienung nicht funktioniert.“
 | Paint fades with a steep view until the release | the live texture's mip policy "deferred": minified levels stayed the old image during the stroke | `display.MIPMAPS` = "frame" (P-B on the reference PC: 4.7 against 4.0 ms per frame at 3 %) |
 | First dab ~7 s at 2048² | not reproduced: in the container the first stroke costs 0.16 s CPU and 0.31 s for its frame (Gollum, real window); its only file access is reading the ZBrush texture as the base - the pattern of P-F's 7-9 s (a cost per file access, §7.1, unverified) | the base is read and the composite shown **when the room opens** (`PaintDisplay.prepare`); the first stroke makes no whole-image composite (pinned). The status line on entry names the base read and the composite time, so the reference PC shows where the time goes |
 
+### 10.8b The reference-PC run of Phase 2 (Manu, 2026-11-18) and the fixes
+
+Verbatim in [`RESULTS_PAINT_PHASE2_REFERENCE_PC_2026-11-18.md`](../../experiments/drag_cost/RESULTS_PAINT_PHASE2_REFERENCE_PC_2026-11-18.md).
+
+| Probe | Reference PC | Verdict / action |
+|---|---|---|
+| P-D room enter, 2048² | cage 1.90 s, SubD 1 2.26 s, SubD 2 3.44 s (3.0-3.6× the container) | cage PASS, SubD 1 / 2 FAIL → the footprint table now comes grouped by slot from the build (`TexelMap.slot_order`; no sort of 2.8 M texels): container 0.35 / 0.44 / 0.74 s (was 0.63 / 0.63 / 1.11) ≈ 1.2 / 1.5 / 2.5 s there [H]; re-run open |
+| P-A total p95 at 3 % / 5 % | cage 13.3 / 21.2, SubD 1 15.7 / 22.9, SubD 2 21.2 / 28.1 ms | PASS except SubD 2 at 3 % (its frame: 10.5 ms for 72k triangles); SubD 2 is not shown on the head (25,000-face cap) |
+| P-B "frame" vs "deferred" | 4.41 vs 4.27 ms p50 | "frame" (§10.8a) costs 0.14 ms per frame |
+| P-C / P-E | −0.07 ms / same image | PASS |
+| P-F first save | 7.79 s, of it **read base 6.35 s**, file writes 12 ms | the cause of the ~7 s first dab as well: reading the 2048² ZBrush texture (container 0.04 s). Not a per-file write cost (§7.1's guess is ruled out for writes). The decoded image is now cached per session (`files.read_image`), the probe prints the read split (P-G: file read, decode, decoder, the PNG's row filters) |
+
+**Open:** why one read of that PNG takes 6.35 s there. The repo's file is stored without row filters (container decode
+0.05 s through the own decoder); 6.35 s fits the system decoder (pyglet's pure-Python PNG path took 1.8 s in the container,
+×3.4) or a slow first file read. P-G on the reference PC names which.
+
 ### 10.8 Not in Phase 2
 
 Several layers in the UI (only the top layer is painted; the stack format has several), blend modes (P-12), the undo

@@ -92,6 +92,36 @@ def load_head():
     return head
 
 
+def png_header(path) -> str:
+    """IHDR and the row filters of a PNG (why a decode is slow: filters 3 / 4 take the own decoder's per-byte loop)."""
+    import struct
+    import zlib
+
+    import numpy as np
+
+    data = Path(path).read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return "not a PNG"
+    pos, idat, header = 8, [], None
+    while pos + 8 <= len(data):
+        (length,) = struct.unpack(">I", data[pos:pos + 4])
+        kind, body = data[pos + 4:pos + 8], data[pos + 8:pos + 8 + length]
+        pos += 12 + length
+        if kind == b"IHDR":
+            header = struct.unpack(">IIBBBBB", body)
+        elif kind == b"IDAT":
+            idat.append(body)
+    width, height, depth, colour, _c, _f, interlace = header
+    text = f"{width} x {height}, {depth} bit, colour type {colour}, interlace {interlace}"
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}.get(colour)
+    if not interlace and channels:
+        stride = width * channels * depth // 8 + 1
+        raw = np.frombuffer(zlib.decompress(b"".join(idat)), np.uint8)
+        counts = np.bincount(raw[:height * stride:stride], minlength=5)
+        text += ", row filters " + " ".join(f"{name} {n}" for name, n in zip(("none", "sub", "up", "avg", "paeth"), counts))
+    return text
+
+
 def surface_mesh(head, kind: str):
     """The mesh the room paints on for `kind`: the head itself, or its SubD level 1 / 2 as the preview derives it."""
     if kind == "cage":
@@ -220,6 +250,22 @@ def main(argv=None) -> int:
     definition = head.mesh.symmetry_definition
     print(f"fixture: {head.name}, {len(head.mesh.all_face_ids())} faces, texture {Path(head.texture).name},"
           f" mirrored dab {'on' if definition is not None else 'off (no symmetry plane)'}")
+
+    print("\nP-G base image (the ZBrush texture the room reads; reference PC 2026-11-18: 6.35 s in P-F)")
+    files.clear_image_cache()
+    t0 = time.perf_counter()
+    files.read_image(head.texture)
+    total = time.perf_counter() - t0
+    info = files.last_read
+    print(f"  {Path(head.texture).name}: {info['bytes']:,} bytes, {png_header(head.texture)}")
+    print(f"  file read {info['read_s'] * 1e3:.0f} ms, decode {info['decode_s'] * 1e3:.0f} ms ({info['decoder']}),"
+          f" total {total * 1e3:.0f} ms")
+    t0 = time.perf_counter()
+    files.read_image(head.texture)
+    print(f"  second read (cached) {(time.perf_counter() - t0) * 1e3:.1f} ms")
+    t0 = time.perf_counter()
+    Path(head.texture).read_bytes()
+    print(f"  plain re-read of the file {(time.perf_counter() - t0) * 1e3:.1f} ms")
 
     print("\nP-D room enter: paint surface build (texel map + tables), ms        bar <= 2000 ms")
     surfaces = {}
@@ -367,7 +413,8 @@ def main(argv=None) -> int:
             mesh_rm.store.release()
         window.close()
 
-    print("\nP-F save of a 4-layer stack")
+    print("\nP-F save of a 4-layer stack (base image cache cleared: a cold read, as at the first save of a session)")
+    files.clear_image_cache()
     head.paint = PaintStack(size, size, tuple(PaintLayer(f"Layer {i + 1}", None) for i in range(4)))
     four = PaintStore()
     rng = np.random.default_rng(1)

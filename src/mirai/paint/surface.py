@@ -90,11 +90,12 @@ class PaintSurface:
         self._row_of[ids] = np.arange(ids.size)
         self._ids = ids
         # the mapped texels grouped by their triangle slot (the footprint gathers per near triangle)
-        texels = self.map.mapped()
-        slots = self.map.slot[texels]
-        order = np.argsort(slots)
-        self._texels = texels[order]
-        counts = np.bincount(slots, minlength=self.map.tri_face.size)
+        texels = self.map.slot_order  # grouped by slot right after a rebuild: no sort
+        if texels is None:
+            texels = self.map.mapped()
+            texels = texels[np.argsort(self.map.slot[texels])]
+        self._texels = texels
+        counts = np.bincount(self.map.slot[texels], minlength=self.map.tri_face.size)
         self._offsets = np.concatenate(([0], np.cumsum(counts)))
         self._hit_tables(geometry=False)
         self._positions()
