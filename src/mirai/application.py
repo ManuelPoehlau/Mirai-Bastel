@@ -569,6 +569,11 @@ class Application:
         # mode, the weight gestures; its three policies are `can_run` stage 7 (pose mode, posed + bound, placement).
         self._skeleton = SkeletonController(self._services, self._gestures)
         self._mode_policies = self._skeleton.policies
+        # AD-036 §5.2: in a pose the gaze drives the eye bones - the skin stage and the linked objects show the user's
+        # pose with those channels replaced; a shown-pose change redraws the linked objects (§4.6).
+        self._skeleton.pose_filter = self._objects.shown_pose
+        self._skeleton.on_pose_shown = self._objects.sync_views
+        self._objects.refresh_pose = self._skeleton.show_pose
 
         # The Knife session (AD-017, `controllers.knife` since AD-027 M3): its settings live in the controller.
         self._knife = KnifeController(self._services)
@@ -1020,7 +1025,7 @@ class Application:
                 return False
             eye = eyes[0]
         center, radius = mesh_center_and_radius(eye.mesh)
-        center, radius = object_space.world_center_and_radius(eye, center, radius)
+        center, radius = object_space.world_center_and_radius(self._objects.placed(eye), center, radius)
         cam = self.camera
         if frontal:
             matrix = self._objects.drawn_matrix(eye)
@@ -1038,11 +1043,11 @@ class Application:
         "camera" / "mouse" / "target"), `focus` (eye radii) and `target` (a world point). Switching to "target" without
         a point freezes the point the eyes look at now; a new focus in "target" keeps the direction. An invalid value
         is refused with the reason; True = it changed."""
-        from .eye_gaze import GazeState, gaze_frame, pad_angles, pad_target
+        from .eye_gaze import GazeState, pad_angles, pad_target
 
         current = self.display.eye_gaze
         wanted = {"mode": current.mode, "focus": current.focus, "target": current.target, **changes}
-        frame = gaze_frame(self._objects.gaze_eyes())
+        frame = self._objects.gaze_frame()
         if wanted["mode"] == "target" and "target" not in changes and (current.mode != "target" or current.target is None):
             wanted["target"] = self._objects.gaze_drawn or (
                 None if frame is None else pad_target(frame, 0.0, 0.0, wanted["focus"]))
@@ -1063,15 +1068,15 @@ class Application:
         self.display.eye_gaze = gaze
         if gaze.mode != current.mode or gaze.focus != current.focus:
             self._set_status(f"Eye gaze: {gaze.mode}, focus {gaze.focus:.3g} eye radii")
-        self._objects.sync_views()
+        self._objects.gaze_changed()  # AD-036: in a pose the gaze drives the eye bones
         return True
 
     def set_eye_gaze_angles(self, yaw: float, pitch: float) -> bool:
         """The gaze pad: every eye looks at the point `yaw` degrees right / `pitch` up (as seen facing the eyes) of
         their mean rest direction, `focus` eye radii away; mode "target". Refused without an eye in the scene."""
-        from .eye_gaze import gaze_frame, pad_target
+        from .eye_gaze import pad_target
 
-        frame = gaze_frame(self._objects.gaze_eyes())
+        frame = self._objects.gaze_frame()
         if frame is None:
             self._set_status("Eye gaze: no eye in the scene")
             return False
@@ -1080,10 +1085,10 @@ class Application:
     def eye_gaze_angles(self) -> tuple[float, float] | None:
         """(yaw, pitch) in degrees of the point the eyes look at now, as the gaze pad shows it; None in mode "rest" or
         without eyes."""
-        from .eye_gaze import gaze_frame, pad_angles
+        from .eye_gaze import pad_angles
 
         target = self._objects.gaze_drawn
-        frame = gaze_frame(self._objects.gaze_eyes())
+        frame = self._objects.gaze_frame()
         return None if target is None or frame is None else pad_angles(frame, target)
 
     def set_eye_iris_image(self, path: str | Path | None) -> bool:
@@ -1244,6 +1249,33 @@ class Application:
         """Delete a bone (default: the current one) like `BONE_DELETE`: its weights go to its parent, one Undo step."""
         return self._skeleton.delete_bone(bone_id)
 
+    # -- AD-036: rigid parts follow a bone (Bone panel; no key) ------------------------------------------------------
+
+    def link_selected_to_bone(self, bone_id=None) -> bool:
+        """The selected objects (mode `4`; a group stands for its members) follow a bone (default: the current one) as
+        rigid parts - one Undo step, at rest only; refused for a weighted mesh and for an eye unless the bone's head is
+        the eyeball's centre (its eye bone). See `SkeletonController.link_selected`."""
+        return self._skeleton.link_selected(bone_id)
+
+    def unlink_selected(self) -> bool:
+        """The selected objects follow no bone - one Undo step, at rest only."""
+        return self._skeleton.unlink_selected()
+
+    @property
+    def bone_link_blocker(self) -> str | None:
+        """Why Link / Unlink cannot run now (None = they can); pure, for the panel."""
+        return self._skeleton.link_blocker()
+
+    def object_bone(self, object_id) -> str | None:
+        """The name of the bone the object follows now; None for no link or a dead one (AD-036 §4.1)."""
+        obj = self.scene.objects.get(object_id)
+        bone = None if obj is None else self._skeleton.linked(obj)
+        return None if bone is None else self._skeleton.bone_name(bone)
+
+    def drawn_transform(self, object_id):
+        """The placement an object is seen with now (AD-036 §4.2): its bone's pose included."""
+        return self._objects.drawn_transform(self.scene.objects[object_id])
+
     def weights_from_group_value(self, percent: float) -> bool:
         """The current bone's weights from the active group at a falloff width in % of the mesh's bounding radius (the
         key's gesture with a number instead of the mouse); one Undo step."""
@@ -1346,7 +1378,7 @@ class Application:
         self.selection.hovered = None
         if self.viewport is not None:
             self.viewport.remove_object_entry(obj.id)
-            self.viewport.set_edit_mesh(obj.mesh, object_space.model_matrix(obj))
+            self.viewport.set_edit_mesh(obj.mesh, self._objects.model_matrix(obj))
         self._tints_seen = None  # the new RenderMesh has no region colours yet
         self._hidden_push()  # the new edit object keeps its own hidden set and mask
         self._soft_refresh_radius()
@@ -5135,7 +5167,7 @@ class Application:
         """The focus (last click or worked area) in world while its object exists, None otherwise."""
         focus = self._orbit_focus
         obj = None if focus is None else self.scene.objects.get(focus.object_id)
-        return None if obj is None else object_space.to_world(obj, focus.position)
+        return None if obj is None else object_space.to_world(self._objects.placed(obj), focus.position)
 
     def set_orbit_focus_world(self, point, object_id=None) -> None:
         """Puts the focus at a world point in the space of `object_id` (default: the focus's own object); used to
@@ -5150,7 +5182,7 @@ class Application:
             self._orbit_focus = None
             return
         source = self._orbit_focus.source if self._orbit_focus is not None else "work"
-        self._orbit_focus = OrbitFocus(oid, object_space.to_object(obj, tuple(point)), source)
+        self._orbit_focus = OrbitFocus(oid, object_space.to_object(self._objects.placed(obj), tuple(point)), source)
 
     def _update_orbit_focus(self, change, snapshots: tuple, source: str = "work") -> None:
         """The worked area of one committed step (or Undo / Redo) becomes the focus; a step without geometric work

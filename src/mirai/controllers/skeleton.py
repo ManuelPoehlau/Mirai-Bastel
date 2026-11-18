@@ -31,13 +31,13 @@ import math
 import re
 from typing import Optional
 
-from core import Bone, BoneId, PointLayerInfo, SelectionMode
+from core import Bone, BoneId, ObjectState, PointLayerInfo, SelectionMode
 from core.mesh import LayerKind, MeshChange
 from core.operations import MeshDeltaCommand, record_mesh_change
 from core.operations.transform import SEAM_TOLERANCE
 from core.rig import Rig, rest_frame
 
-from .. import eye_gaze, object_space, transform_space
+from .. import bone_links, eye_gaze, object_space, transform_space
 from ..interaction import commands
 from ..interaction.dial import DialAngle
 from ..interaction.session import Refusal, RunContext
@@ -51,7 +51,7 @@ from ..mask import FULL as MASK_FULL
 from ..mesh_geometry import mesh_center_and_radius
 from ..morph_targets import WEIGHT_COMMANDS as MORPH_WEIGHT_COMMANDS
 from ..regions import live_faces
-from ..scene_objects import CompositeCommand
+from ..scene_objects import CompositeCommand, group_leaves
 from ..skin_weights import WeightStroke, bone_share, delete_bone_weights, soft_target
 from ..skinning import REST, BonePose, is_posed, skin_layer, skin_transforms
 from ..soft_selection import RADIUS_STEPS_PERCENT, SoftSymmetryRefusal
@@ -189,6 +189,23 @@ class RigCommand:
 
     def redo(self) -> None:
         self.scene.rig = self.after
+
+
+class ObjectLinkCommand:
+    """AD-036 §4.4: links of objects to bones as one History entry: `(object, before, after)` per object (`BoneId` or
+    None each)."""
+
+    def __init__(self, changes: list, description: str) -> None:
+        self.changes = list(changes)
+        self.description = description
+
+    def undo(self) -> None:
+        for obj, before, _ in self.changes:
+            obj.bone = before
+
+    def redo(self) -> None:
+        for obj, _, after in self.changes:
+            obj.bone = after
 
 
 def has_stored_weights(mesh) -> bool:
@@ -650,6 +667,11 @@ class SkeletonController:
         #: the chain tool's constraint for the tip (`bone_chain.AXIS_MODES`; view state, not saved; the panel's switch)
         self.chain_axis = "free"
         self._bound: dict = {}  # id(mesh) -> [mesh, watch, bound]
+        #: AD-036 §5.2: the pose the skin stage and the links are shown - the user's `pose` with the gaze-driven eye
+        #: bones' channels replaced (`ObjectController.shown_pose`); `pose` / `last_pose` stay the user's. Wired by the app.
+        self.pose_filter = lambda pose: pose
+        #: called after the shown pose changed (the app re-draws the linked objects)
+        self.on_pose_shown = lambda: None
         #: the three stage-7 policies, in order (AD-028 §8.2)
         self.policies = (self.pose_mode_refusal, self.posed_refusal, self.placement_refusal)
 
@@ -708,6 +730,10 @@ class SkeletonController:
             entry[2] = has_stored_weights(mesh)
         return entry[2]
 
+    def linked(self, obj) -> Optional[BoneId]:
+        """AD-036 §4.1: the bone `obj` follows now (its link while the rig has the bone), None otherwise."""
+        return bone_links.link_of(self.rig, obj)
+
     def key_text(self, command: str) -> str:
         """The first key bound to `command` (for the texts), or the command name."""
         for inp in self.services.bindings.inputs_for(command):
@@ -718,9 +744,15 @@ class SkeletonController:
     # -- view state -----------------------------------------------------------------------------------
 
     def set_pose(self, pose) -> None:
-        """The pose (identity entries dropped) - the controller's and the skin stage's (§6)."""
+        """The pose (identity entries dropped) - the controller's and, through `pose_filter`, the skin stage's (§6)."""
         self.pose = {b: p for b, p in pose.items() if not p.is_identity}
-        self.services.skin.provider.set_pose(self.pose)
+        self.show_pose()
+
+    def show_pose(self) -> None:
+        """AD-036 §5.2: hand the shown pose (the user's, the gaze-driven eye bones replaced) to the skin stage and the
+        links. Also after a gaze or link change, which can change the shown pose without a pose step."""
+        self.services.skin.provider.set_pose(self.pose_filter(self.pose))
+        self.on_pose_shown()
 
     def reset(self) -> None:
         """A new scene: rest pose, no current bone, pose mode off (the pose is not saved, §6)."""
@@ -746,8 +778,10 @@ class SkeletonController:
             self.pose_mode = False
 
     def after_history(self) -> None:
-        """After Undo / Redo: the rig may have lost or regained bones; a running chain follows the history."""
+        """After Undo / Redo: the rig may have lost or regained bones; a running chain follows the history; a link step
+        may change which eye bones the gaze drives (the shown pose)."""
         self._prune()
+        self.show_pose()
         chain = self.chain
         if chain is not None:
             chain.resync()
@@ -897,12 +931,114 @@ class SkeletonController:
             delta, count = record_mesh_change(mesh, lambda mesh=mesh, lid=lid: delete_bone_weights(mesh, lid, bone, rig))
             if count:
                 parts.append(MeshDeltaCommand(mesh=mesh, delta=delta, description=f"Delete bone weights {obj.name!r}"))
+        # AD-036 §4.4: the objects linked to it follow its parent (a root's are unlinked); an eye is unlinked (its link is
+        # its own eye bone, §5.1). Before the rig changes, so Undo restores the links with the bone.
+        relinks = []
+        for obj in services.scene.objects.values():
+            if obj.bone == bone:
+                after = None if obj.eye is not None else gone.parent
+                relinks.append((obj, obj.bone, after))
+        for obj, _, after in relinks:
+            obj.bone = after
+        if relinks:
+            parts.append(ObjectLinkCommand(relinks, f"Delete bone {gone.name!r}: links"))
         self._push_rig(rig.without_bone(bone), f"Delete bone {gone.name!r}", parts)
         self.current = gone.parent
         self._prune()
+        self.show_pose()
         to = repr(self.bone_name(gone.parent)) if gone.parent is not None else "the object"
-        services.status(f"Bone {gone.name!r} deleted; its weights went to {to} (Ctrl+Z brings it back)")
+        note = ""
+        if relinks:
+            moved = [o.name for o, _, a in relinks if a is not None]
+            freed = [o.name for o, _, a in relinks if a is None]
+            note = "".join([f"; {', '.join(map(repr, moved))} now follow {to}" if moved else "",
+                            f"; {', '.join(map(repr, freed))} follow no bone" if freed else ""])
+        services.status(f"Bone {gone.name!r} deleted; its weights went to {to}{note} (Ctrl+Z brings it back)")
         return True
+
+    # -- AD-036 §4.4: links of rigid parts (Bone panel; names and texts PROVISIONAL, no key) ----------------------
+
+    def link_blocker(self) -> Optional[str]:
+        """Why Link / Unlink cannot run now (None = they can; the panel greys its buttons)."""
+        owner = self.services.interaction_owner
+        if owner is not None:
+            return f"not while the {owner} interaction runs"
+        if self.posed():
+            return f"the rig is posed - links change in the rest pose ({self.key_text(commands.POSE_TOGGLE_REST)})"
+        if self.services.selection.mode is not SelectionMode.OBJECT or not self.services.selection.objects:
+            return "select the parts in mode 4 (or in the Outliner)"
+        return None
+
+    def _link_targets(self, label: str) -> Optional[list]:
+        services = self.services
+        reason = self.link_blocker()
+        if reason is not None:
+            services.status(f"{label}: {reason}")
+            return None
+        selected = group_leaves(services.scene, services.selection.objects)  # a group stands for its members
+        targets = [obj for obj in selected if obj.state is not ObjectState.REFERENCE]
+        if not targets:
+            services.status(f"{label}: only References selected - they stay where they are")
+            return None
+        return targets
+
+    def link_selected(self, bone: Optional[BoneId] = None) -> bool:
+        """Every selected object (group leaves, not References) follows `bone` (default: the current bone) - one Undo
+        step. Refused as a whole while posed, for a bound mesh (linked xor bound, §4.1) and for an eye whose centre is
+        not the bone's head (§5.1). At rest nothing moves (the link is rest-relative, §4.2)."""
+        services = self.services
+        label = "Link to bone"
+        if bone is None:
+            bone = self.current_bone
+        rig = self.rig
+        if bone is None or rig is None or not rig.has_bone(bone):
+            services.status(f"{label}: no bone yet (Bone panel: start a chain)")
+            return False
+        targets = self._link_targets(label)
+        if targets is None:
+            return False
+        name = self.bone_name(bone)
+        for obj in targets:
+            if self.bound(obj.mesh):
+                services.status(f"{label}: {obj.name!r} has weights - a part follows a bone or is weighted, not both")
+                return False
+            if obj.eye is not None and not bone_links.eye_fits_bone(obj, rig, bone):
+                services.status(
+                    f"{label}: {obj.name!r} is an eye - it follows its own eye bone (head at the eyeball's centre:"
+                    f" Bone panel, snap to the eye); {name!r} is not one"
+                )
+                return False
+        changes = [(obj, obj.bone, bone) for obj in targets if obj.bone != bone]
+        if not changes:
+            services.status(f"{label}: {', '.join(repr(o.name) for o in targets)} already follow {name!r}")
+            return False
+        self._push_links(changes, f"Link to bone {name!r}")
+        services.status(f"{', '.join(repr(o.name) for o, _, _ in changes)} follow {name!r} (Ctrl+Z takes it back)")
+        return True
+
+    def unlink_selected(self) -> bool:
+        """The selected objects follow no bone - one Undo step; refused while posed (the part would jump)."""
+        services = self.services
+        label = "Unlink"
+        targets = self._link_targets(label)
+        if targets is None:
+            return False
+        changes = [(obj, obj.bone, None) for obj in targets if obj.bone is not None]
+        if not changes:
+            services.status(f"{label}: {', '.join(repr(o.name) for o in targets)} follow no bone")
+            return False
+        self._push_links(changes, "Unlink from bone")
+        services.status(f"{', '.join(repr(o.name) for o, _, _ in changes)} follow no bone (Ctrl+Z takes it back)")
+        return True
+
+    def _push_links(self, changes: list, description: str) -> None:
+        services = self.services
+        before = services.selection_snapshot()
+        for obj, _, after in changes:
+            obj.bone = after
+        services.history.push(ObjectLinkCommand(changes, description))
+        services.record_selection_history(before, mesh_step=False)
+        self.show_pose()  # an eye's link changes which bones the gaze drives; the links redraw
 
     def step_bone(self, step: int) -> bool:
         services = self.services
@@ -1288,6 +1424,13 @@ class SkeletonController:
             services.status(f"{label}: works from points/edges/faces - press 1/2/3")
             return None
         mesh = services.scene.mesh
+        edit = services.scene.edit_object
+        if edit.bone is not None:
+            services.status(
+                f"{label}: {edit.name!r} follows bone {self.bone_name(edit.bone)!r} - a part follows a bone or is"
+                f" weighted, not both (unlink it first: Bone panel)"
+            )
+            return None
         definition = mesh.symmetry_definition
         if definition is not None and not self._on_plane(bone, definition):
             services.status(
@@ -1392,7 +1535,7 @@ class SkeletonController:
         rig = self.rig
         if rig is None:
             return []
-        transforms = skin_transforms(rig, self.pose)
+        transforms = skin_transforms(rig, self.services.skin.provider.pose)  # the shown pose (a gaze-driven eye bone, AD-036)
         out = []
         for b in rig.bones:
             a = transforms.get(b.id)
@@ -1489,8 +1632,8 @@ class SkeletonController:
         services = self.services
         if not self.posed() or not edits_positions_or_topology(key):
             return None
-        if not self.bound(services.scene.mesh):
-            return None
+        if not self.bound(services.scene.mesh) and self.linked(services.scene.edit_object) is None:
+            return None  # AD-036 §4.5: a linked edit object is refused like a bound one
         return f"{command_label(key)}: the mesh is posed ({self.key_text(commands.POSE_TOGGLE_REST)} = rest pose)"
 
     def posed_refusal(self, command: str, ctx: RunContext) -> Refusal | None:
@@ -1524,5 +1667,12 @@ class SkeletonController:
             for target in candidates:
                 if self.bound(target.mesh):
                     return Refusal(f"{label}: {target.name!r} is locked while bound to the rig")
+                linked = self.linked(target)
+                if linked is not None and self.posed():
+                    # AD-036 §4.5 (E3): a linked part moves at rest; in a pose it rides its bone
+                    return Refusal(
+                        f"{label}: {target.name!r} follows {self.bone_name(linked)!r} - the rig is posed"
+                        f" ({self.key_text(commands.POSE_TOGGLE_REST)} = rest pose)"
+                    )
         return None
 

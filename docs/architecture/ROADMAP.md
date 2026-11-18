@@ -570,10 +570,14 @@ Rigging research may proceed earlier; production rigging should not be pulled fo
 bind pose), weights as the WEIGHTS point layer (≤ 4 influences, carried through every topology operation, Undo and the
 file), CPU linear blend skinning as the chain stage morph → skin → SubD, the pose as view state with a pose mode, the
 weights from a face group and their correction with Soft. Not yet: bone mirroring and symmetric weights of off-centre
-bones, rigid parts / objects parented to bones, IK and constraints, editing on the posed surface, a GPU drawing path
+bones, IK and constraints, editing on the posed surface, a GPU drawing path
 (its trigger: the reference-PC run of the probe, AD-028 §5.4), animation. Editing on the visible, deformed surface
 (morph, pose, both) as a long-term product target: proposed, pending Manu's review —
 [MODELING_ON_DEFORMED_SURFACES](../design/MODELING_ON_DEFORMED_SURFACES.md).
+**2026-11-18:** rigid parts follow bones (eyes to their eye bones, teeth to head / jaw; `SceneObject.bone`, format v13),
+every bound object shows the pose, and in a pose the gaze drives the eye bones —
+[AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md) slices 1–2; slice 3 (the "unbound" view, the panel's "follows" rows,
+the reference-PC probe) open.
 
 ---
 

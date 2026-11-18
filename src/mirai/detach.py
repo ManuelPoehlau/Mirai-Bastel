@@ -50,6 +50,7 @@ def detached_object(scene: Scene, src: SceneObject, mesh: Mesh) -> tuple[SceneOb
         mesh, name=unique_object_name(scene, src.name), state=src.state, texture=src.texture, parent=src.parent
     )
     obj.transform, obj.pivot, obj.material, obj.hidden = src.transform, src.pivot, src.material, src.hidden
+    obj.bone = src.bone  # AD-036: a detached part of a rigid part follows the same bone
     scene.remove_object(obj.id)
     return obj, AddObjectCommand(scene, obj)
 

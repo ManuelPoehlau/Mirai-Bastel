@@ -133,6 +133,21 @@ class BonePanel:
         self._button(f"Knochen {cur.name!r} löschen", st.edit_blocker is None, "delete", 0,
                      blocker or "Gewichte gehen an den Parent; Strg+Z holt alles zurück",
                      lambda: app.delete_bone(cur.id))
+        self._links(st, cur)
+
+    def _links(self, st: bm.BonePanelState, cur: bm.BoneDetail) -> None:
+        """AD-036 §4.4 (`PROVISIONAL`): starre Teile (Augen, Zähne) folgen einem Knochen; kein Gewicht, keine Taste."""
+        imgui, app = self.imgui, self.app
+        imgui.text_disabled("Starre Teile (Augen, Zähne): Objekte in Modus 4 wählen")
+        blocker = st.link_blocker
+        self._button(f"Auswahl folgt {cur.name!r}", blocker is None, "link", 0,
+                     blocker or "Die gewählten Objekte folgen diesem Knochen in jeder Pose (in Ruhe bleibt alles, wo es ist); "
+                     "ein Auge nur seinem Augenknochen (Kopf in der Augapfelmitte); Strg+Z nimmt es zurück",
+                     lambda: app.link_selected_to_bone(cur.id))
+        imgui.same_line()
+        self._button("Lösen", blocker is None, "unlink", 0,
+                     blocker or "Die gewählten Objekte folgen keinem Knochen mehr (nur in der Ruhe-Pose)",
+                     app.unlink_selected)
 
     def _name(self, cur: bm.BoneDetail) -> None:
         imgui, app = self.imgui, self.app

@@ -341,6 +341,9 @@ symmetrically (§8.4).
 Only the edit object (and the morph base beside its view) shows the pose (F-16). Another bound object — lower teeth
 skinned 100 % to the jaw would need no parenting — draws its rest shape until the viewport draws evaluated surfaces per
 object. That belongs with rigid parts / objects parented to bones (not in scope); the data model already carries it.
+*(2026-11-18, [AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md) §4.6: lifted for display — while posed every drawn
+bound object shows the pose as an H7-E entry surface, and mode-`4` picking reads it; rigid parts follow a bone through
+a link on the object, `SceneObject.bone`.)*
 
 ### 5.4 Performance: measured, expected, and the acceptance (P-1)
 
@@ -406,6 +409,8 @@ measured and reported ("usable, not fluid" expected); the reference-PC run of th
 - While posed, a bound edit mesh refuses every command that changes its positions or topology — the layer gate's
   position-only, declared, resolved (`C`) and locked classes except Apply transform, and the host method
   `apply_mesh_change` — with a status line (`PROVISIONAL`): `"<operation>: the mesh is posed (<toggle key> = rest pose)"`.
+- *(2026-11-18, AD-036 §4.5)* A **linked** edit object (`SceneObject.bone`, a rigid part) is refused the same way while
+  posed; weights on a linked mesh are refused at any time (a part follows a bone or is weighted, not both).
 - **Allowed while posed:** weight commands (the point of a posed check), morph-layer commands and the editing view (it
   edits offsets at rest on its own unbound copy), rig commands, selection, display, navigation, Undo / Redo, Apply
   transform.
@@ -431,6 +436,8 @@ Object W/E/R in `4`, Clear transform and a mirror partner's follow are refused f
 locked while bound to the rig"`, `PROVISIONAL`): with bones in world space a moved object would sit wrongly on its
 bones from the next pose on — silently wrong later. Apply transform (world unchanged, §3.2) and deleting the object
 (Undo restores) stay. A rig transform that moves rig and objects together is the later remedy (P-6, S6).
+*(2026-11-18, AD-036 §4.5, E3: a **linked** object's placement is free at rest — a tooth is fitted by moving it — and
+refused only while posed: `"<operation>: <name> follows <bone> - the rig is posed (<rest key> = rest pose)"`.)*
 
 ## 8. Interaction in the AD-027 structure
 
@@ -456,7 +463,7 @@ the second user of the one controller dependency AD-027 §7.1 M7 introduced (obj
 | Command | What | History |
 |---|---|---|
 | `BONE_ADD` (component modes) | head = the Working Pivot (F-9; refused without one: "place the pivot (P) in the joint first"), tail = the centroid of the component selection, both to world; parent = the current bone; name `Bone n`; roll 0; creates `Scene.rig` if absent; the new bone becomes current | one entry (`RigCommand`: rig before / after) |
-| `BONE_DELETE` | the current bone; its weights to its parent in every bound mesh (§3.4) | one entry (`CompositeCommand`: the rig + one `MeshDeltaCommand` per mesh) |
+| `BONE_DELETE` | the current bone; its weights to its parent in every bound mesh (§3.4); *(2026-11-18, AD-036 §4.4)* the objects linked to it follow its parent (eyes and a root's objects are unlinked) | one entry (`CompositeCommand`: the rig + one `MeshDeltaCommand` per mesh + the link changes) |
 | `BONE_RENAME` | cycles a name list (`Jaw`, `Head`, `Neck`, …; unique), as the morph rename | one entry |
 | `BONE_NEXT` / `BONE_PREVIOUS` | the current bone | none (view) |
 | `POSE_MODE` | enter / leave pose mode | none |
@@ -624,7 +631,7 @@ panel, no new key. No `src/core` or scene-format change.
   frames. Needs exactly one selected object (mode 4, outliner); an object may be given by id.
 - **Scene** `Gollum_Head_rigging_test`: bones `Auge_Links` / `Auge_Rechts` (ids 5, 6), head = the eyeball's centre, tip on the gaze
   axis, two eyeball radii long (`PROVISIONAL`), roll 0, **parent `Hals`** (the jaw moves, the eyes do not follow it; there is no
-  head bone yet - re-parent in the panel when one exists). The eye objects do not follow the bones: that is the next Architecture Gate ([AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md), PROPOSED 2026-11-18).
+  head bone yet - re-parent in the panel when one exists). The eye objects do not follow the bones: that is the next Architecture Gate ([AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md), PROPOSED 2026-11-18; *ACCEPTED and slices 1–2 built 2026-11-18: an eye links to its eye bone*).
   Tests: `tests/test_bone_axis.py`.
 
 ## 9. Core change (CORE_V1_FREEZE §7)
@@ -755,8 +762,8 @@ asked.
 ## 15. Not in scope
 
 Weight brush; envelopes; automatic weights (heat, geodesic binding); IK, constraints; animation, keys, timeline;
-bone-driven morphs or correctives; objects parented to bones and rigid parts; per-object evaluated display beyond the
-edit object; GPU skinning or a GPU drawing path; editing on the posed surface; bone rest editing beyond delete + add
+bone-driven morphs or correctives; objects parented to bones and rigid parts *(2026-11-18: built as bone links,
+AD-036)*; per-object evaluated display beyond the edit object *(2026-11-18: built for display, AD-036 §4.6)*; GPU skinning or a GPU drawing path; editing on the posed surface; bone rest editing beyond delete + add
 *(2026-11-17: built, [addendum](#addendum-2026-11-17-bone-tool-01-chain-click-pivot-snap-rest-edit-bonepanel))*;
 bone mirroring (L/R) and symmetric weights of off-centre bones; GUI panels *(2026-11-17: one Bone / Skin panel, same
 addendum)*; `config/keymap.json`; removing the Morph

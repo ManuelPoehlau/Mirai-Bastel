@@ -117,6 +117,7 @@ duplicate and mirror copy carry the spec (a mirror copy mirrors nothing in it �
   Object transforms, hide, group, duplicate, delete work as for any object. Changing an anatomy value replaces the
   shell (one Undo step, a command shaped like `ObjectMaterialCommand`, holding the old and new mesh).
 - Morphs and the rig: eyes are rigid and not morphed; parenting an eye to a head bone is AD-028's business, later.
+  *(2026-11-18: built — an eye links to its own eye bone, [AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md) §5.)*
 
 ## 5. Render path
 
@@ -242,7 +243,8 @@ App: `mirai/eye_object.py` (`DEFAULT_EYE`, `shell_mesh`, `cornea_triangles`, `ey
 | §6: an "Eye" section in the Look panel; `step_eye` rows | a separate panel **"Auge"** (no imgui Look panel exists yet); sliders apply on release (one Undo step per change); no `step_eye`, no keys (D-L9) | the Look rows are arrow keys + HUD today |
 | §5.5: the selection tint on the sclera | as drafted: the sclera colour is the eye's object material (AD-024; a new eye gets the lab's sclera colour) and takes the selection tint like any object | |
 
-**Not built (out of scope here):** an eye parented to a head bone (AD-028); an eye as the edit object (refused, Q-E5); a
+**Not built (out of scope here):** an eye parented to a head bone (AD-028; *2026-11-18: built as the eye bone link,
+AD-036 §5*); an eye as the edit object (refused, Q-E5); a
 Reference eye draws as a Worklight object (no preview); the full Lookdev mode.
 
 **Verified (container, TESTED [C], Mesa llvmpipe):** `tests/test_eye_object.py` (23), `tests/test_application_eye.py`
@@ -269,6 +271,11 @@ in the real window, GL state), the eye lab's `test_oracle_production.py` (7: `ey
 Melde dich, wenn etwas stört — keine Abhakliste (Development System §7).
 
 ## 12. Addendum 2026-11-16: eye gaze (view state, `PROVISIONAL`)
+
+*(2026-11-18, [AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md) §5.2: **in a pose** the gaze drives the eye bones of
+linked eyes (their channels replaced while it is on; the user's pose untouched), so lid points weighted to them follow;
+the clamp, the pad and the mouse plane are taken in the head-carried frame; the lid frame is the placement carried by the
+eye bone's parent. **At rest** everything below holds unchanged.)*
 
 **Request (Manu, 2026-11-16):** "ich brauche eine Möglichkeit, die Augen Blickrichtung per Maus steuern zu können. Auch
 die Option, dass die Augen in die Kamera gucken (ich drehe den viewport, aber gollum guckt mich dabei immer an)".
@@ -306,6 +313,9 @@ nothing in this AD changes). It also notes that §7 quotes the lab's cube-map ro
 studio (T-D, about twice the per-pixel cost in the lab); E-4 stays the only source for the real cost.
 
 ## 14. Addendum 2026-11-16: view twins beside a morph target's editing view (`PROVISIONAL`)
+
+*(2026-11-18, AD-036 §5.5: under a pose the twins stay at **rest** — the view shows the target at rest on an unbound copy —
+while the originals at the base follow their bones.)*
 
 **Request (Manu, 2026-11-16):** "Phase 1 go: morph twins for eyes and teeth" (assessment §E / §G phase 1).
 

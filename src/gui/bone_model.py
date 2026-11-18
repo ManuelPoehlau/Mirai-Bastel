@@ -7,7 +7,8 @@ Dokumentzustand (AD-030). Jede Änderung ist ein Undo-Schritt, jede Ablehnung st
 vorab, warum etwas gerade nicht geht (das Panel graut den Knopf aus).
 
 Knochen stehen weiter im Outliner; das Panel zeigt den aktuellen Knochen (Name, Parent, Kopf, Spitze, Roll, Ausblenden,
-Löschen) und die Skinning-Aktionen (Gewichte aus Gruppe mit Breite, Gewicht setzen mit Wert, Gewichtsansicht).
+Löschen), die Verbindung starrer Teile (AD-036: die gewählten Objekte folgen dem aktuellen Knochen / folgen keinem) und
+die Skinning-Aktionen (Gewichte aus Gruppe mit Breite, Gewicht setzen mit Wert, Gewichtsansicht).
 """
 
 from __future__ import annotations
@@ -62,6 +63,7 @@ class BonePanelState:
     chain_axis: str  # Achsenzwang der Spitze: "free" | "x" | "y" | "z" | "object" (Bone-Werkzeug 02)
     axis_object: str | None  # das Objekt, dessen Achse „Objekt-Achse“ und der Knopf „Ausrichten“ nehmen (None = keins)
     align_blocker: str | None  # warum „Ausrichten“ gerade nicht geht (None = es geht)
+    link_blocker: str | None = None  # AD-036: warum „folgt Knochen“ / „Lösen“ gerade nicht gehen (None = sie gehen)
 
     @property
     def has_bones(self) -> bool:
@@ -146,6 +148,7 @@ def state(app) -> BonePanelState:
         chain_axis=app.bone_chain_axis,
         axis_object=app.bone_axis_object_name,
         align_blocker=app.bone_align_blocker,
+        link_blocker=app.bone_link_blocker,
     )
 
 

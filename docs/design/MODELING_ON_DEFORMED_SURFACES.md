@@ -249,7 +249,7 @@ decision about which state is authoritative for placement (§11 R-2).
 | Inverse deformation for position edits (crazyspace / inverse LBS) | **Documented, not implemented** | audit §E "inverse warping"; AD-028 X-7 |
 | Topology changes in the deformed state | **Documented, not implemented** | CHARACTER_SYSTEMS_RESEARCH 6b / EX-D; ROADMAP Rigging status |
 | Pose and morph weight as view state; Undo never touches them (exception since 2026-11-16: the bake of the mix into the base restores its sliders with its own Undo step; the weights are saved with the scene, AD-025 §19) | **Implemented and verified** | AD-025 F-11 / §19, AD-028 §6; `tests/test_jaw_scenario.py`, `tests/test_morph_bake_and_range.py` |
-| Other bound objects (teeth) showing the pose | **Not implemented** | AD-028 §5.3, F-16 |
+| Other bound objects (teeth) showing the pose | **Implemented 2026-11-18** (every drawn bound object while posed; rigid parts by a bone link) | [AD-036](../architecture/AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md) §4.6 |
 | Symmetric topology and weights in an asymmetric pose | **Unknown / requires investigation** | AD-028 §8.4 (on-plane bones only); no test in a pose |
 | Picking cost on a surface that changes every pose step | **Unknown** (unmeasured) | — |
 
@@ -390,7 +390,7 @@ summaries, and other tools were not examined.
 | R-5 | **Contradiction with decided verdicts** | Morph Lab 6a (picking on rest "hilft", 2026-10-17), AD-028 S5 (modeling only at rest, 2026-11-02), AD-013 H7-R2 (display only). A long-term change of any of them is Manu's decision and, for H7-R2 and S5, needs its own AD (AGENTS §5) |
 | R-6 | **Geometry-dependent tools** | Inset/Bevel widths, Extrude direction, Smooth/Relax, Loop Slide and the Knife planner compute from positions. On a posed surface "the same" width or direction means different rest values. Each needs its own stated rule |
 | R-7 | **Today's silent morph case** | A dialled-in mix accepts edits aimed on the rest cage without a hint, the failure AD-028 §7.1 refuses for poses. Worth Manu's attention independently of the long-term target (a hint or refusal would be a small, separate decision) |
-| R-8 | **Only the edit object shows the pose** (F-16) | In workflow B, teeth and tongue as separate objects stay at rest. Modeling the cavity against them is misleading until per-object evaluated display exists |
+| R-8 | **Only the edit object shows the pose** (F-16) — *resolved 2026-11-18 by AD-036 §4.6* | In workflow B, teeth and tongue as separate objects stay at rest. Modeling the cavity against them is misleading until per-object evaluated display exists |
 | R-9 | **SubD on top** | With SubD shown, the visible surface is not the cage. Picking the limit surface maps to cage elements only through SubD provenance (not IDs). Is "the visible surface" the cage-on-pose or the smooth surface? |
 | R-10 | **Symmetry in an asymmetric pose** | Correspondence must come from the rest state; off-centre bones have no mirror yet (AD-028 §15). Untested |
 | R-11 | **Cost** | Visible-surface picking invalidates the pick cache on every pose step; the per-vertex viewport patch is already the bottleneck (AD-025 §17.3, AD-028 §5.4); Loop Insert on gollum_20k costs ≈ 3 s at rest (AD-025 §16.3) |

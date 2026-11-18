@@ -425,7 +425,9 @@ On the Object (`state`), persisted with it, independent of the Mesh.
 - **The rig stays scene-level** (`Scene.rig`): one rig spans several objects (body, eyes, teeth). A skin binding refers to
   `(ObjectId, VertexId)` (§4.5); both are never reused, so a binding is valid or dead, never wrong.
 - **Rigid parts** (eyes, jaw/teeth, A-3) are Objects whose `transform` a future parent (bone or object) drives. Hierarchy
-  is additive (`parent`), not decided here.
+  is additive (`parent`), not decided here. *(2026-11-18, [AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md): the bone
+  case is `SceneObject.bone` — the object is drawn with `S_b ∘ T`, its `transform` stays the rest placement; `parent`
+  stays group membership; object → object parenting stays open.)*
 - **Animation** (a ROADMAP ARCH-01 driver): an object's `transform` and `state` are plain values on the Object, so a later
   `Scene.animation` can key them by `ObjectId` without a new boundary; keying component data follows the ID-space rule
   above.

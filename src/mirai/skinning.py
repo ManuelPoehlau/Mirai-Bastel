@@ -38,8 +38,9 @@ today's. While a later stage (SubD) is wanted it keeps the edit object's surface
 switching SubD's input (a rebuild). Picking, selection, hover and the overlays act on this posed surface (the
 cage, `Application._query_cage`; MODELING_ON_DEFORMED_SURFACES §16, 2026-11-17: weights are set at the mouth corner
 and inside the mouth; until then they stayed on the rest cage, §15 (b)), also with a morph dialled in; position and
-topology edits stay refused in a pose (AD-028 §7.1); the wire follows the surface. Only the edit object and the morph base beside its view show the pose
-(§5.3, F-16).
+topology edits stay refused in a pose (AD-028 §7.1); the wire follows the surface. Since AD-036 §4.6 every drawn bound
+object shows the pose (the others as H7-E entry surfaces), not only the edit object and the morph base beside its view
+(F-16 lifted for display).
 """
 
 from __future__ import annotations
@@ -602,7 +603,8 @@ class SkinSurfaceProvider:
 
     def shown(self) -> dict:
         """ObjectId -> object of what the stage shows now: the edit object while posed (or kept, see
-        `keep_edit_surface`) and the bases beside it while posed - each only with a weights layer."""
+        `keep_edit_surface`), the bases beside it while posed and, AD-036 §4.6, every other drawn object with a
+        weights layer while posed (every object shows the pose) - each only with a weights layer."""
         scene = self._scene_of()
         if scene.rig is None:
             return {}
@@ -615,6 +617,9 @@ class SkinSurfaceProvider:
             for oid in self._beside():
                 obj = scene.objects.get(oid)
                 if obj is not None and oid != edit.id and _has_weights(obj.mesh):
+                    out[oid] = obj
+            for oid, obj in scene.objects.items():
+                if oid not in out and oid != edit.id and _has_weights(obj.mesh) and not scene.is_hidden(oid):
                     out[oid] = obj
         return out
 

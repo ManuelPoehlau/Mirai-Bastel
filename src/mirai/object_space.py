@@ -131,6 +131,16 @@ def world_center_and_radius(obj: SceneObject, center: Vec3, radius: float) -> tu
     return to_world(obj, center), radius * obj.transform.scale
 
 
+class _Placement:
+    """`transform` und `pivot` als feste Werte (was `to_world` liest)."""
+
+    __slots__ = ("transform", "pivot")
+
+    def __init__(self, transform: ObjectTransform, pivot: Vec3) -> None:
+        self.transform = transform
+        self.pivot = pivot
+
+
 class ObjectSpaceCamera:
     """Die Kamera, wie sie im Objektraum von `obj` aussieht (AD-021 M2-1, E-7).
 
@@ -192,10 +202,12 @@ class ObjectSpaceCamera:
         else:
             def project(point):
                 return self.camera.project_to_screen(point, width, height)
-        obj = self.obj
-        if is_identity(obj.transform):
+        transform = self.obj.transform
+        if is_identity(transform):
             return project  # to_world ist dann ein exakter Durchgang
-        return lambda point: project(to_world(obj, point))
+        # Die Platzierung einmal pro Projektion lesen (AD-036: eine gezeichnete Platzierung wird live berechnet).
+        frozen = _Placement(transform, tuple(self.obj.pivot))
+        return lambda point: project(to_world(frozen, point))
 
     def screen_to_ray(self, sx: float, sy: float, width: int, height: int) -> tuple[Vec3, Vec3]:
         origin, direction = self.camera.screen_to_ray(sx, sy, width, height)

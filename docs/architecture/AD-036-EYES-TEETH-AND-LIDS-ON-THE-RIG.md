@@ -1,7 +1,9 @@
 # AD-036 — Eyes, teeth and lids on the rig: a bone link for rigid parts, gaze as a pose source, lids by weights
 
-**Status:** **PROPOSED (2026-11-18)** — Architecture Gate (Type C) after AD-028's bone tool 01/02. Output of the gate: this
-AD, no feature code. Manu decides (§11); a second opinion in the main project follows (§13) before anything is built.
+**Status:** **ACCEPTED (2026-11-18)** — Manu: „Baue AD-036, Scheiben 1–2; §13 zuerst als Checkliste“. Read as the go for
+E4 (Core field, v13) and the recommendations E1–E3 (agent reading — one sentence corrects it); E5 open (the §10
+placeholder). §13 done as a checklist (§13.1); slices 1–2 built (§12). Gate origin: Architecture Gate (Type C) after
+AD-028's bone tool 01/02.
 **Mode (M5):** Architecture Gate. Small throw-away probes only (§8.1; not committed).
 **Baseline:** `main` @ `939df8b` ("scenes: eye bones Auge_Links / Auge_Rechts"). `git log 939df8b..origin/main` is empty
 (fetched 2026-11-18): nothing changed since the handoff. Every code fact below was read there (file:line).
@@ -22,8 +24,8 @@ number. `PROVISIONAL` marks every agent choice the Artist has not verified (name
 ## Kurzfassung für Manu (Deutsch)
 
 **Worum es geht:** Augen, Zähne und später die Lider sollen dem Rig folgen — Kopf drehen, Kiefer öffnen, Augen drehen —,
-ohne dass Undo, Topologie-Änderungen, Speichern/Laden, die Augen-Vorschau oder die Gewichte darunter leiden. Das ist
-eine Vorlage zum Entscheiden; gebaut wird noch nichts.
+ohne dass Undo, Topologie-Änderungen, Speichern/Laden, die Augen-Vorschau oder die Gewichte darunter leiden. Das war
+eine Vorlage zum Entscheiden; **seit 2026-11-18 entschieden und in Scheiben 1–2 gebaut** (§16, Praxistest darunter).
 
 **Empfehlung in einem Satz:** Starre Teile (Augen, Zähne) bekommen eine **Knochen-Verbindung** („dieses Objekt folgt
 Knochen X“), die Lider bleiben Teil des Kopfes und bekommen **Gewichte** auf dem Augenknochen, und **in einer Pose
@@ -554,6 +556,30 @@ contract tests; (2) links: drawn placement, consumers (§4.3), commands and poli
 10. **Nothing foreclosed:** teeth by weights later (§3.4); lid bones, DQS, correctives (§6); a rig transform (AD-028 P-8);
     animation keys (§5.6).
 
+### 13.1 Checklist result (2026-11-18, before the build; Manu: „§13 zuerst als Checkliste“)
+
+Checked against `4aa4ae9` (two scene commits after the baseline, no code change) with a scratch probe (not kept, the §8.1
+setup). ✓ = holds as written; **→** = a refinement the build follows.
+
+| # | Point | Result |
+|---|---|---|
+| 1 | No offset | ✓ `skin_transforms` leaves an unposed bone absent (`skinning.py:142-158`; `{}` for the rest pose and for an identity entry, probe); `edit_bone` replaces the rig only (`skeleton.py:1156-1227`). Linking at rest draws `T` bit-exactly |
+| 2 | Equivalence | ✓ re-run on the current scene: weight 1.0 vs link on the four teeth, worst **5.55e-17** |
+| 3 | Consumer split | ✓ the *view* reads are the ones of §4.3: `_drawn_matrix` / `drawn_matrix` (`objects.py:1349-1373`), `camera_for` → `pick` and `edit_camera` (`:1527-1558`), the edit object's model matrix (`objects.py:1281`, `application.py:1349`), the orbit focus (`application.py:5134-5153`, `:5235`), `frame_eye` (`:1015-1033`), `gaze_frame` (`objects.py:1387`, `application.py:1045/1074/1086`). Everything else (W/E/R, Clear / Apply, mirror, duplicate, detach / attach, the morph view, paste, the weld threshold, `skinning.placement_of`) is *document* and stays on `transform`. **→** the edit camera of a linked edit object reads the drawn placement too (component picking sees what is drawn; its edits are refused while posed) |
+| 4 | Gaze as a pose source | ✓ `S_b` from `L_b = B⁻¹P⁻¹GPB` equals `G∘P` to **1.1e-16**; `L_b` is a pure rotation (translation 5.6e-17) with the head at the centre; with a Listing swing its axis has **−5.6e-17** along the bone (no roll; bone ∥ eye forward, dot 1.0); the clamp against the head-carried forward stops at 50.0°. `SkeletonController.set_pose` (`skeleton.py:720`) is the one door to the skin stage, so `pose` / `last_pose` stay the user's. **→** the gaze-derived channels are also refreshed per frame from `sync_gaze` (`objects.py:1405`), not only on a pose step |
+| 5 | Lid frame | ✓ the eye pass shades in `inverse(rest)·model` (F-7): with rest `P∘T` and model `G∘P∘T` only the eye's own turn shows. Today rest is passed only with a gaze (`objects.py:1307`); **→** passed whenever the lid frame differs from the drawn matrix |
+| 6 | Eye guard | ✓ both eye bones' heads equal their eyes' centres exactly (0.0) in the current scene; the head-at-centre rule stays (tolerance 1e-6 × the eye's scale, `PROVISIONAL`); eyes unlink on a bone delete |
+| 7 | §4.6 | ✓ built, not the fallback: `shown()` is the one switch; entry surfaces, their drawing and the chain's merge exist (`viewport.py:631-693`, `surface_chain.py:83-100`). **→** `pick` (`objects.py:1546-1558`) reads `obj.mesh`: for a posed bound non-edit object it reads its entry surface (a `SurfacePositions` with the `Mesh` queries and a journal, so `PickCache` follows it) |
+| 8 | Format v13 | ✓ as §9.1. **→** a `"bone"` key in a file below 13 makes it invalid (no build writes one; fail-closed instead of dropping it). The counter check runs after the rig is read (`scene_from_dict` reads the rig after the objects). In memory a link without a rig is dead (`Scene.rig = None` only for a new scene, `scene_objects.py:112`) |
+| 9 | Cost | ✓ order confirmed: the probe's link route (an unoptimised composition) 0.14 / 0.17 ms p50 / p95 for six objects — against the head's per-point patch negligible. The reference-PC run (§8.3) is slice 3 |
+| 10 | Nothing foreclosed | ✓ linked xor bound is per object (an unlinked tooth can still be weighted, §4.6 draws it); a lid bone or DQS uses the same effective-pose door as the gaze |
+
+**Scene facts changed since F-18** (Manu's commits `07333f6`, `4aa4ae9`): `Gollum` has 2,278 points, the Skin layer
+2,276 stored values (keys Hals 1,995 / Kiefer 628; 1,553 fully on Hals, 281 fully on Kiefer, 127 with an object share) —
+**2 points unbound; the ears are weighted now** (E5's ear question answered by the scene); four morph targets. The four
+teeth sit in one row at mouth height (y 0.233–0.237, x −0.07 … +0.06): upper / lower cannot be read from the scene, so
+E5's teeth stay the §10 placeholder. Step 0 of §10 counts the unbound points from the file, not 406.
+
 ## 14. Risks and guards
 
 | Risk | Guard |
@@ -574,6 +600,57 @@ weights of off-centre bones; editing a rigid part in the pose (§4.3); object �
 animation; a saved gaze (§5.6 says where); the per-eye divergence while aiming; key bindings (`config/keymap.json`
 untouched); panel layout; AD-028 S1–S8 beyond the amendments of §12.
 
+## 16. As built: slices 1–2 (2026-11-18)
+
+**Slice 1 (Core):** `SceneObject.bone` and format v13 exactly as §9.1 with the §13.1 tightening (a `"bone"` key below 13
+is invalid). CORE_V1_FREEZE §7.1 entry; contract tests `tests/test_bone_link_format.py`.
+
+**Slice 2 (app):** `mirai/bone_links.py` (pure: `follow` = `S ∘ T`, `drawn_transform`, `head_carried` = the lid frame,
+`eye_fits_bone`, `gaze_channel` = `L_b`, `bone_on_plane`); `ObjectController` reads the drawn placement in every view
+consumer of §4.3 (`drawn_transform`, `placed`, `model_matrix`, `camera_for` through a live placement, `pick` on the posed
+surfaces, the lid frame in `sync_views`, the head-carried `gaze_frame`) and derives the shown pose (`shown_pose`);
+`SkeletonController` hands `pose_filter(pose)` to the skin stage (`show_pose`; `pose` / `last_pose` stay the user's),
+links and unlinks (`ObjectLinkCommand`, one Undo step), re-links on a bone delete, and refuses as §4.5;
+`SkinSurfaceProvider.shown` shows every drawn bound object while posed (§4.6); the scene load, Duplicate / Paste and Detach
+carry the link, a mirror copy keeps it only on a plane bone. Bone panel: „Auswahl folgt <Knochen>“ / „Lösen“ (no key).
+
+**Decided in the build (`PROVISIONAL` where marked):**
+- Link / Unlink work on the mode-`4` selection (a group stands for its members; References are left out), at rest only.
+- Mode-`4` picking of the **edit object** reads what is drawn (`query_mesh`: the morph mix or the posed surface) instead
+  of its rest mesh — the same rule as for the other objects (§4.6); without a mix or a pose nothing changes.
+- The bones are drawn and picked in the **shown** pose (a gaze-driven eye bone shows its gaze turn).
+- An eye whose gaze-derived channel is exactly straight ahead gets no channel (the bone at rest, no rounding noise).
+
+**Verified (container, Linux):** `tests/test_bone_link_format.py` (19) and `tests/test_rigid_parts_scenario.py` (4: the
+§10 scenario steps 0–9, 10 for the tooth, 11–13, 15, 17, the twins of §5.5 and the refusals of §4.1 / §4.4); the eight
+mutation checks of §10 each fail a step (run by hand). Not separately covered here: the "unbound" view of step 0
+(slice 3), the head's Loop Insert across the lid in step 10 (the weights rule, AD-028's own tests), step 14's weight click
+(`tests/test_posed_picking.py`), step 16 beyond the twin matrix. **Not measured:** anything on the reference PC.
+
+**Open:** slice 3 (the "unbound" weight view, the panel's "follows" rows, the §8.3 probe); E5 (upper / lower teeth).
+
+## Praxistest Scheiben 1–2 für Manu (Deutsch, ca. 15 Minuten)
+
+`python src/main.py`, Szene `scenes/Gollum_Head_rigging_test.mirai.json` laden, Panel „Bone“ öffnen.
+
+1. Modus `4`, beide Augen wählen, im Panel `Hals` als aktuellen Knochen, „Auswahl folgt 'Hals'“: abgelehnt (ein Auge
+   folgt nur seinem Augenknochen).
+2. Linkes Auge wählen, aktueller Knochen `Auge_Links`, „Auswahl folgt“; ebenso rechts. Zwei Zähne an `Hals`, zwei an
+   `Kiefer` (welche oben / unten sind, sagst du — E5). Nichts bewegt sich dabei.
+3. Pose-Modus (`5`), `Hals` drehen: Kopf, Augen und alle Zähne drehen mit. `Kiefer` weit öffnen: nur die zwei
+   Kiefer-Zähne gehen mit. Pose-Modus aus (`5`, die Pose bleibt), Modus `4`, Klick auf einen sichtbaren Kiefer-Zahn dort,
+   wo er jetzt ist: er wird gewählt.
+4. `Auge_Links` drehen: der Augapfel dreht sich um seine Mitte, der Lidschatten bleibt beim Kopf.
+5. Augen-Panel: Blick „Kamera“ oder „Maus“, in der Pose: die Augen folgen; ein Lid, das du (Gewichte) teils auf den
+   Augenknochen gelegt hast, geht mit. Blick „Ruhe“: deine Augenstellung von Schritt 4 ist wieder da.
+6. `6` (Ruhe): Blick „Kamera“ — nur die Augäpfel drehen, du kannst am Kopf weitermodellieren.
+7. Pose sichtbar, Pose-Modus aus, Modus `4`: einen verbundenen Zahn mit `W` verschieben: abgelehnt mit Hinweis auf `6`.
+   In Ruhe: geht (Zähne nachjustieren).
+8. Strg+Z / Strg+Y über die Verbindungen; Speichern und Laden: die Verbindungen bleiben (Datei v13), die Pose nicht.
+
+Was dich interessiert, nicht als Abhakliste: fühlt sich „folgt Knochen“ im Panel richtig an, und stimmt das Verhalten
+von Blick und Lid in Pose und Ruhe (E2)?
+
 ## Prüfung der Vorlage für Manu (Deutsch)
 
 Keine Praxistests, sondern eine Prüfung dieser Vorlage:
@@ -590,5 +667,6 @@ Keine Praxistests, sondern eine Prüfung dieser Vorlage:
    Zahn verschieben: abgelehnt mit Hinweis auf die Ruhe-Taste → Undo/Redo, Loop am Lid, Kiefer-Gelenk nachrücken,
    Knochen löschen, Speichern/Laden: alles bleibt richtig. Stimmt das mit deiner Vorstellung überein?
 
-**Nächster Schritt:** deine Antworten zu E1–E5, dann die Zweitmeinung im Hauptprojekt (§13), dann der Bau in drei
-Scheiben (§12).
+**Nächster Schritt:** ~~deine Antworten zu E1–E5, dann die Zweitmeinung im Hauptprojekt (§13), dann der Bau in drei
+Scheiben (§12).~~ *(2026-11-18: §13 als Checkliste erledigt (§13.1), Scheiben 1–2 gebaut (§16); offen: E5, Scheibe 3,
+der Praxistest oben und der Messlauf §8.3.)*

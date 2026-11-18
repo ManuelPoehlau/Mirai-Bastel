@@ -35,7 +35,7 @@ from core.scene import IDENTITY_TRANSFORM
 from viewport.eye_pass import EyeDraw
 from viewport.gl_render_store import DEFAULT_BASE_COLOR
 
-from .. import eye_gaze, object_space, sclera_map
+from .. import bone_links, eye_gaze, object_space, sclera_map
 from ..eye_object import (
     DEFAULT_EYE,
     cornea_triangles,
@@ -95,6 +95,7 @@ from ..scene_objects import (
     ObjectTextureCommand,
 )
 from ..viewport.look_controls import clamp_material_values, material_row
+from ..skinning import is_posed, skin_transforms
 from ..viewport.picking import pick_object
 from ..viewport.picking_cache import PickCache
 from .gestures import TRANSFORM_COMMANDS, GestureController, GestureSession, commit_hint, constraint_suffix
@@ -334,6 +335,106 @@ class ObjectController:
         #: Live eye preview (Eye LookDev phase 2, `preview_eye`): id -> (the spec it was made from, the previewed spec,
         #: its shell). Used only while the object's spec is still the one it was made from (an Undo or a commit ends it).
         self.eye_previews: dict[ObjectId, tuple] = {}
+        #: AD-036 §5.2: the eye bones the gaze drives in the shown pose (BoneId -> the eye; {} at rest or without a
+        #: gaze), set by `shown_pose`; and the call that re-derives the shown pose (wired to
+        #: `SkeletonController.show_pose`; without a rig cluster: redraw only)
+        self.gaze_driven: dict = {}
+        self.refresh_pose: Callable[[], None] = self.sync_views
+        self._shown_key: tuple | None = None
+        self._shown_transforms: dict = {}
+        self._drawn_cache: dict = {}  # ObjectId -> (transform, pivot, skin, drawn): the last composition per object
+
+    # -- AD-036: the drawn placement of a linked object -------------------------------------------------------
+
+    def shown_transforms(self) -> dict:
+        """The bones' world skin transforms of the shown pose (the skin stage's), cached per (rig, pose) value."""
+        rig = self.services.scene.rig
+        pose = self.services.skin.provider.pose
+        key = self._shown_key
+        if key is None or key[0] is not rig or key[1] is not pose:
+            self._shown_key = (rig, pose)
+            self._shown_transforms = skin_transforms(rig, pose)
+        return self._shown_transforms
+
+    def drawn_transform(self, obj: SceneObject) -> ObjectTransform:
+        """AD-036 §4.2: the placement `obj` is seen with - `S_b ∘ T` while its bone moves, else its own `transform`
+        (the same object). View consumers read this; document consumers keep `transform` (§4.3)."""
+        if obj.bone is None:
+            return obj.transform
+        rig = self.services.scene.rig
+        bone = bone_links.link_of(rig, obj)
+        skin = None if bone is None else self.shown_transforms().get(bone)
+        if skin is None:
+            return obj.transform
+        hit = self._drawn_cache.get(obj.id)
+        if hit is not None and hit[0] is obj.transform and hit[1] == obj.pivot and hit[2] is skin:
+            return hit[3]
+        drawn = bone_links.follow(obj.transform, obj.pivot, skin)
+        self._drawn_cache[obj.id] = (obj.transform, obj.pivot, skin, drawn)
+        return drawn
+
+    def placed(self, obj: SceneObject):
+        """`obj` as drawn, for `object_space` (`to_world` / `to_object` read `transform` and `pivot`)."""
+        drawn = self.drawn_transform(obj)
+        return obj if drawn is obj.transform else bone_links.Placed(obj, drawn)
+
+    def model_matrix(self, obj: SceneObject) -> list[float] | None:
+        """The object -> world matrix it is drawn with (None = identity), the drawn placement included."""
+        drawn = self.drawn_transform(obj)
+        return None if object_space.is_identity(drawn) else object_space.placement_matrix(drawn, obj.pivot)
+
+    def lid_transform(self, obj: SceneObject) -> ObjectTransform:
+        """AD-036 §5.2: an eye's lid frame - its placement carried by its eye bone's parent (the head), never by its own
+        turn; its placement itself when it follows no bone or the parent is at rest."""
+        if obj.bone is None:
+            return obj.transform
+        return bone_links.head_carried(obj, self.services.scene.rig, self.shown_transforms())
+
+    def head_carried_eyes(self, transforms: dict | None = None) -> list:
+        """The gaze eyes with their head-carried placements (the gaze pad's and the mouse plane's frame, §5.2)."""
+        rig = self.services.scene.rig
+        transforms = self.shown_transforms() if transforms is None else transforms
+        out = []
+        for obj in self.gaze_eyes():
+            carried = bone_links.head_carried(obj, rig, transforms) if obj.bone is not None else obj.transform
+            out.append(obj if carried is obj.transform else bone_links.Placed(obj, carried))
+        return out
+
+    def gaze_frame(self, transforms: dict | None = None):
+        """`eye_gaze.gaze_frame` of the head-carried eyes (None without eyes)."""
+        return eye_gaze.gaze_frame(self.head_carried_eyes(transforms))
+
+    def shown_pose(self, pose: dict) -> dict:
+        """AD-036 §5.2 (E2 "ja"): the pose the skin stage and the links show. At rest, or with gaze `rest`, the user's
+        `pose` as it is; in a pose the channel of every eye bone a drawn eye is linked to comes from the gaze (it
+        replaces the user's channel while the gaze is on; the user's pose itself is never written)."""
+        scene = self.services.scene
+        rig = scene.rig
+        self.gaze_driven = {}
+        if self.services.display.eye_gaze.mode == "rest" or not is_posed(rig, pose):
+            return pose
+        driven = bone_links.gaze_bones(rig, self.gaze_eyes())
+        if not driven:
+            return pose
+        user = skin_transforms(rig, pose)
+        target = self.gaze_target(self.gaze_frame(user))
+        if target is None:
+            return pose
+        shown = dict(pose)
+        for bone, eye in driven.items():
+            parent = rig.bone(bone).parent
+            channel = bone_links.gaze_channel(eye, rig, bone, None if parent is None else user.get(parent), target)
+            if channel.is_identity:
+                shown.pop(bone, None)
+            else:
+                shown[bone] = channel
+        self.gaze_driven = driven
+        return shown
+
+    def gaze_changed(self) -> None:
+        """The gaze's mode, focus or target changed: re-derive the shown pose (in a pose the gaze drives the eye bones)
+        and redraw."""
+        self.refresh_pose()
 
     # -- adding, importing, exporting, deleting (AD-021 M1, Track A1/A2) -----------------------------
 
@@ -744,6 +845,14 @@ class ObjectController:
         obj.transform, obj.pivot = mirror_placement(source, normal, offset)
         obj.material = source.material  # AD-024 Q-M2: the copy keeps the source's material
         obj.texture = source.texture  # AD-026: and its texture (the UVs come with the mesh)
+        # AD-036 §4.4: the copy keeps the link only for a bone on the mirror plane (the AD-028 §8.4 seam rule)
+        link_note = ""
+        if source.bone is not None:
+            rig = scene.rig
+            if rig is not None and rig.has_bone(source.bone) and bone_links.bone_on_plane(rig.bone(source.bone), normal, offset):
+                obj.bone = source.bone
+            else:
+                link_note = " - it follows no bone: its mirror bone is needed (not yet), link it by hand"
         add = AddObjectCommand(scene, obj)
         pair = MirrorPair(source.id, obj.id, normal=normal, offset=offset)
         scene.add_mirror_pair(pair)
@@ -759,7 +868,7 @@ class ObjectController:
         services.refresh_hover()
         services.status(
             f"Mirror copy: {describe_pair(scene, pair)} - paired: moving either moves both mirrored;"
-            " the meshes stay independent"
+            f" the meshes stay independent{link_note}"
         )
         return obj
 
@@ -1239,6 +1348,7 @@ class ObjectController:
             )
             obj.transform, obj.pivot, obj.material, obj.hidden = source.transform, source.pivot, source.material, source.hidden
             obj.eye = source.eye  # AD-033: a copied eye stays an eye
+            obj.bone = source.bone  # AD-036 §4.4: same place, same bone
             copies[source.id] = obj
             steps.append(AddObjectCommand(scene, obj))
         services.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, f"{label} {len(steps)} objects"))
@@ -1278,7 +1388,7 @@ class ObjectController:
         if viewport is None:
             return
         # M2-1: the edit object's placement (mesh uniform + `view·model` for its overlays).
-        viewport.set_model_matrix(object_space.model_matrix(scene.edit_object))
+        viewport.set_model_matrix(self.model_matrix(scene.edit_object))  # AD-036: a linked edit object rides its bone
         twins = self.view_twins(others)
         for key in [key for key in viewport.object_entries if key not in others and key not in twins]:
             viewport.remove_object_entry(key)
@@ -1303,8 +1413,18 @@ class ObjectController:
                 if preview is not None and preview[0] == obj.eye:
                     spec, mesh = preview[1], preview[2]
                 # Phase 3: the look's lid stays with the head (the rest frame, when the gaze turns the eye), and the
-                # irregularity pattern is the object's own (its id).
-                rest = None if gaze is None or spec.look is None else tuple(self._drawn_matrix(obj, None, twin_offset))
+                # irregularity pattern is the object's own (its id). AD-036 §5.2: the lid frame is the placement
+                # carried by the eye bone's parent, passed whenever it differs from the drawn matrix.
+                rest = None
+                if spec.look is not None:
+                    if twin_offset is not None:
+                        rest = None if gaze is None else tuple(self._drawn_matrix(obj, None, twin_offset))
+                    else:
+                        lid = object_space.placement_matrix(self.lid_transform(obj), obj.pivot)
+                        drawn = self._drawn_matrix(obj, gaze)
+                        if drawn is None:
+                            drawn = object_space.placement_matrix(IDENTITY_TRANSFORM, obj.pivot)
+                        rest = None if lid == list(drawn) else tuple(lid)
                 # AD-035: the sclera's map when its file is usable (else the base colour), the tint over it.
                 eye = EyeDraw(spec, obj.texture, tuple(colour), finish, cornea_triangles(), rest_matrix=rest,
                               variation=int(oid), sclera_texture=sclera_map.drawable(spec.sclera_texture),
@@ -1348,7 +1468,7 @@ class ObjectController:
         }
 
     def drawn_matrix(self, obj: SceneObject) -> list[float]:
-        """The matrix `obj` is drawn with now (its placement, an eye turned to the gaze point)."""
+        """The matrix `obj` is drawn with now (its placement, its bone's pose, an eye turned to the gaze point)."""
         matrix = self._drawn_matrix(obj, self.gaze_drawn)
         return matrix if matrix is not None else object_space.placement_matrix(obj.transform, obj.pivot)
 
@@ -1358,9 +1478,12 @@ class ObjectController:
         eye aims from its own place - at the same point as its original in the modes that follow something (`camera`,
         `mouse`), in the same direction for a fixed `target` (the pad sets a direction as seen facing the eyes)."""
         if twin_offset is None:
-            if gaze is None or obj.eye is None:
-                return object_space.model_matrix(obj)
+            # AD-036 §5.2: a linked eye whose bone the gaze drives (in a pose) turns through its bone - the drawn
+            # placement; otherwise the gaze turns the eye from its placement as before (E2: at rest).
+            if gaze is None or obj.eye is None or any(e is obj for e in self.gaze_driven.values()):
+                return self.model_matrix(obj)
             return object_space.placement_matrix(eye_gaze.aimed_transform(obj, gaze), obj.pivot)
+        # AD-036 §5.5: a view twin stays at rest (its view shows the target on an unbound copy at rest)
         transform = obj.transform
         if gaze is not None and obj.eye is not None:
             fixed = self.services.display.eye_gaze.mode == "target"
@@ -1377,14 +1500,16 @@ class ObjectController:
         return [obj for oid, obj in scene.objects.items()
                 if obj.eye is not None and oid != scene.edit_object_id and not scene.is_hidden(oid)]
 
-    def gaze_target(self):
+    def gaze_target(self, frame=None):
         """The world point the eyes look at in the current gaze mode (`mirai.eye_gaze`), None for `rest` or without
-        eyes. `mouse` with the cursor outside the viewport (or the camera dragging) keeps the last point."""
+        eyes. `mouse` with the cursor outside the viewport (or the camera dragging) keeps the last point. `frame`: the
+        eyes' frame (default: the head-carried eyes of the shown pose, AD-036 §5.2)."""
         services = self.services
         gaze = services.display.eye_gaze
         if gaze.mode == "rest":
             return None
-        frame = eye_gaze.gaze_frame(self.gaze_eyes())
+        if frame is None:
+            frame = self.gaze_frame()
         if frame is None:
             return None
         if gaze.mode == "camera":
@@ -1403,9 +1528,13 @@ class ObjectController:
         return target
 
     def sync_gaze(self) -> None:
-        """Per frame (`Application.update_viewport`): redraw the eyes when the gaze point moved (camera, cursor)."""
+        """Per frame (`Application.update_viewport`): redraw the eyes when the gaze point moved (camera, cursor); in a
+        pose the gaze drives the eye bones (AD-036 §5.2), so the shown pose follows it first."""
         if self.services.viewport is not None and self.gaze_target() != self.gaze_drawn:
-            self.sync_views()
+            if self.gaze_driven:
+                self.refresh_pose()
+            else:
+                self.sync_views()
 
     def _shown_texture(self, obj: SceneObject, highlighted: bool) -> str | None:
         """The texture the viewport draws for `obj` (AD-026): its own while textures are shown
@@ -1528,11 +1657,16 @@ class ObjectController:
         """The camera as the object's own space sees it (AD-021 M2-1, E-7): the `OrbitCamera` itself while the
         placement is identity (bit-exact as before), else its stable `ObjectSpaceCamera`."""
         camera = self.services.camera
-        if object_space.is_identity(obj.transform):
+        if object_space.is_identity(self.drawn_transform(obj)):
             return camera
         adapter = self.cameras.get(obj.id)
-        if adapter is None or adapter.camera is not camera:
-            adapter = self.cameras[obj.id] = ObjectSpaceCamera(camera, obj)
+        # AD-036 §4.3: a linked object's camera reads its drawn placement live (its revision follows the pose); an
+        # unlinked one reads the object itself, as before
+        live = obj.bone is not None
+        if (adapter is None or adapter.camera is not camera or isinstance(adapter.obj, bone_links.LivePlacement) != live
+                or getattr(adapter.obj, "obj", adapter.obj) is not obj):
+            target = bone_links.LivePlacement(obj, self.drawn_transform) if live else obj
+            adapter = self.cameras[obj.id] = ObjectSpaceCamera(camera, target)
         return adapter
 
     @property
@@ -1547,16 +1681,27 @@ class ObjectController:
         services = self.services
         scene = services.scene
         candidates = []
+        posed = self.posed_surfaces()
         for oid, obj in scene.objects.items():
             if obj.state is ObjectState.GROUP or scene.is_hidden(oid):
                 continue
             if oid == scene.edit_object_id:
-                cache = services.pick_cache
+                cache, mesh = services.pick_cache, services.query_mesh  # what is drawn: the posed surface, the mix
             else:
-                cache = self.pick_caches.setdefault(oid, PickCache())
-            candidates.append((oid, obj.mesh, cache, self.camera_for(obj), obj.transform.scale))
+                cache, mesh = self.pick_caches.setdefault(oid, PickCache()), posed.get(oid, obj.mesh)
+            candidates.append((oid, mesh, cache, self.camera_for(obj), self.drawn_transform(obj).scale))
         width, height = services.viewport_size
         return pick_object(candidates, x, y, width, height)
+
+    def posed_surfaces(self) -> dict:
+        """AD-036 §4.6: ObjectId -> the posed surface the skin stage draws for a bound object other than the edit object
+        (a `SurfacePositions` with the `Mesh` queries); {} at rest."""
+        provider = self.services.skin.provider
+        surfaces = provider.entry_surfaces
+        if not surfaces or not provider.posed():
+            return {}
+        shown = provider.shown()
+        return {oid: mesh for oid, mesh in surfaces.items() if oid in shown and mesh is not None}
 
     def select_at(self, command: str, x: float, y: float) -> bool:
         """A click in mode `4` (AD-021 M1): changes only the object selection. A plain click selects exactly this
