@@ -2,8 +2,8 @@
 
 **Status:** research and recommendation, English with a German summary. **No production code changed, no
 keybinding changed, no dependency added, no existing research document modified.** First-pass record (AGENTS.md §6:
-later changes go into dated addenda). **Decisions P-1, P-2, P-3 (Go), P-4, P-6: Manu, 2026-11-18** — see the
-[addendum](#addendum-2026-11-18-manus-decisions-p-1-p-4-p-6); the other questions of §11 stay open.
+later changes go into dated addenda). **Decisions P-1 … P-7 (P-3 = Go), P-10: Manu, 2026-11-18** — see the
+[addendum](#addendum-2026-11-18-manus-decisions-p-1--p-7-p-10); the other questions of §11 stay open.
 **State audited:** `bb46e73` on `claude/quirky-wozniak-w6lyuh` (clean working tree; it contains the Brush System
 research `9f44bc3` and AD-036 slice 2 `af444e4`).
 **Question:** can a dedicated 3D Texture Painting workspace ("Paint Room") become a natural part of Mirai without
@@ -523,7 +523,7 @@ channels, a UV editor, brush presets, a GPU paint engine, Ptex, vertex colours.
 - External DCC behaviour ([E]: Ptex support, dilation practice) was not re-checked against current product docs.
 - No test suite was run: no code changed (AGENTS.md §8a).
 
-## Addendum 2026-11-18: Manu's decisions P-1 … P-4, P-6
+## Addendum 2026-11-18: Manu's decisions P-1 … P-7, P-10
 
 **Manu, 2026-11-18 (session chat, verbatim):** „P-1 ja, P-2 ja, P-3 Go, P-4 ja, P-6 ja“.
 
@@ -535,9 +535,16 @@ channels, a UV editor, brush presets, a GPU paint engine, Ptex, vertex colours.
 | P-4 | **The existing texture stays untouched as the base layer; paint lies above it; a flattened PNG is written beside the scene on save / export** | §4.3 as proposed |
 | P-6 | **Inside the Paint Room only, plain LMB drag paints**; radius Shift+wheel, opacity Alt+wheel as proposed (§9.3) | A `paint` binding context; outside the room `SelectDrag` is unchanged. Read as approval of the concept: `config/keymap.json` entries follow only after Manu's "Taste passt" in the Phase 2 practical test (CLAUDE.md, AGENTS.md §7) |
 
-**Still open:** P-5 (resolution), P-7 … P-17. Phase 2 additionally needs P-7 (brush radius world vs. screen) and P-10
-(SubD while painting); P-5 is needed when the first paint stack is created (Phase 1d defaults to 2048² `PROVISIONAL`
-until answered).
+**Manu, 2026-11-18 (session chat, verbatim, second answer):** „P-5 2048, P-7 Welt, P-10 ja“.
+
+| # | Decided | What it means for the plan |
+|---|---|---|
+| P-5 | **Default resolution 2048²** | the default of a new paint stack (1d); 1024² stays a possible option, 4096² is not offered on the reference PC (§8.2) |
+| P-7 | **Brush radius in world units** (% of the bounding radius, the Soft unit and steps) | §6.1 as proposed; the cursor circle shows the world radius at the hit depth |
+| P-10 | **Phase 2 paints on the cage with SubD shown off in the room; painting on the SubD surface comes in Phase 3** | entering the room turns the SubD view off (view state, restored on leaving, P-2); Phase 3 builds the texel map of the derived surface |
+
+**Still open:** P-8, P-9, P-11 … P-17. None blocks Phase 1; Phase 2 can start with the proposals of §11 as
+`PROVISIONAL` defaults (paint allowed while posed, rest-space mirror, Normal blend) and ask them in its practical test.
 
 **Next:** Phase 1 (§10): 1a UV health check, 1b texel–surface map, 1c live texture source, 1d paint data model
 (`SceneObject.paint`, v14, PNG persistence, `PaintStrokeCommand`), 1e reference-PC probes P-A … P-F.
