@@ -192,6 +192,8 @@ _LOCKED_COMMANDS = (commands.SPLIT_EDGE, commands.ARTICULATION_RESTORE)
 #: The Knife session's keys act only inside a session, which is gated where it starts (`C`,
 #: `CContext.KNIFE`); outside one they change nothing.
 _KNIFE_SESSION_COMMANDS = (commands.KNIFE_COMMIT, commands.KNIFE_LIFT, commands.KNIFE_MIRROR_VARIANT)
+#: AD-037 Phase 2: the Paint Room's brush settings (view state; the strokes write pixels, no mesh data).
+_PAINT_SESSION_COMMANDS = (commands.PAINT_OPACITY_UP, commands.PAINT_OPACITY_DOWN)
 
 _MORPH_COMMANDS = (
     commands.MORPH_NEW, commands.MORPH_RENAME, commands.MORPH_DELETE, commands.MORPH_EDIT_TOGGLE,
@@ -211,6 +213,7 @@ COMMAND_CLASSES: Mapping[str, str] = MappingProxyType(
         **{c: NON_MESH for c in _NON_MESH_COMMANDS},
         **{c: POSITION_ONLY for c in _POSITION_ONLY_COMMANDS},
         **{c: NON_MESH for c in _KNIFE_SESSION_COMMANDS},
+        **{c: NON_MESH for c in _PAINT_SESSION_COMMANDS},
         **{c: LOCKED for c in _LOCKED_COMMANDS},
         **{c: MORPH for c in _MORPH_COMMANDS},
         **{c: RIG for c in commands.RIG_COMMANDS},
