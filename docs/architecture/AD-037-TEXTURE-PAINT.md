@@ -58,9 +58,10 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
 | P-10 | Phase 2 paints **on the cage with SubD shown off** in the room; painting on the SubD surface is Phase 3 | Phase 2 room frame |
 | P-13 | Faces without usable UVs (zero area, overlap, unmapped) are shown and skipped with a status line; **Attach is refused** when a painted object and its partner do not share that paint; **a GoZ return that changes a painted object's UVs is refused** until the UV transfer exists | the UV check (§4); the refusals (§8), built now |
 
-Still open: P-5 (resolution; Phase 1 has no default, the caller names the size — 2048² is the audit's proposal; the
-reference PC's P-D and P-A speak for 2048² as the default with 1024² as the fast option), P-8, P-9, P-11, P-12, P-14 …
-P-17.
+**Manu, 2026-11-18 (later):** „P-5 ja“ — **2048² is the default resolution of a new paint stack, 1024² the fast option,
+4096² not offered on the reference PC** (the audit's proposal). Phase 1 creates no stack; Phase 2 uses it.
+
+Still open: P-8, P-9, P-11, P-12, P-14 … P-17. **P-10 is under review** (Manu's question, §8.1).
 
 ## 2. The data model (Core part)
 
@@ -222,6 +223,29 @@ Fixes the same day (container numbers, the same probe):
   (`plan.uvs`). Tests: `tests/test_attach.py`, `tests/test_goz_bridge.py`. The "shown and skipped" part of P-13 is the UV
   check (§4) and, in Phase 2, the dab skipping those faces.
 - Eyes (P-14), UV transfer (Phase 3), several layers in the UI, blend modes (P-12), undo budget (P-11).
+
+### 8.1 What P-10 means once SubD is switched on (measured 2026-11-18, Manu's question)
+
+Paint lives in UV space. SubD refines the UVs **linearly** (`refine_face_uvs`, AD-026 §6) while it smooths and moves the
+positions, so a UV point painted on the cage lands at a somewhat different place, and a round dab at a somewhat different
+shape, on the smooth surface. Measured [C] on the Gollum head (1024² map, the same texels on the cage and on SubD level 2;
+script in the session scratchpad, not committed):
+
+| | cage → SubD 2 | SubD 1 → SubD 2 | SubD 2 → SubD 3 |
+|---|---|---|---|
+| a 3 % dab's size, p50 | 0.996 | 0.998 | 1.000 |
+| out-of-round (longest / shortest radius), p50 / p95 | **1.23 / 1.71** | 1.07 / 1.19 | 1.02 / 1.06 |
+| point shift, p50 / p95 / max (% of the bounding radius) | 0.37 / 1.39 / 4.6 (≈ 2.6 / 10 / 33 texels at 2048², p50 density) | | |
+
+Reading: painting on the cage with SubD off and looking with SubD on gives **no change in size but a visible
+distortion**: a round dab is typically 1.2 : 1 oval, in the worst 5 % 1.7 : 1, and a painted line moves by a few texels,
+up to ~10 at p95 (lid rims, lip lines). Painting on SubD level 1 already removes most of it (1.07). The ZBrush texture
+shows the same distortion on SubD today (the same mapping). Painting **on the SubD surface** needs the texel map of the
+derived mesh: level 2 = 36,008 faces, build 2.6 s at 2048² in the container (≈ 9 s on the reference PC by the ×3.4 seen
+in §7.1), level 1 0.8 s — the per-triangle raster must become faster for that (the batched raster tried in §7.1 costs about
+the same for many small triangles as for few large ones), and hits / cursor must use the drawn surface instead of the cage
+(today picking reads the cage, AD-022). Decision for Manu: keep P-10 (cage, SubD off) for Phase 2, or paint on the shown
+SubD surface in Phase 2.
 
 ## 9. Tests
 
