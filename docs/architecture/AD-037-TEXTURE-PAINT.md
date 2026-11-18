@@ -449,6 +449,11 @@ was the ~7 s first dab and P-F's 6.4-9.4 s (also in Phase 1: §7.1's "cost per f
 `decode_png(..., slow=False)` refuses such a PNG (`SlowPNG`) and `files.read_image` takes the system decoder first
 (`iris_import.read_rgba`: pyglet, WIC on Windows), the own decoder only behind it; the result is cached per session.
 Pinned: a Paeth PNG reads the same pixels by either path (`test_paint_store.py`). Whether WIC is fast there: the next P-G.
+Where the file came from (Manu, 2026-11-18): „die Datei wurde zwischendurch in Gimp bearbeitet“ - GIMP's PNG export
+(libpng, the default settings) chooses a filter per row and keeps the layer's alpha channel; ZBrush had written the
+texture unfiltered RGB. Any texture can come that way, so the fast path for filtered PNGs is a permanent need, not a
+workaround for one file. The session cache keys on the file's modification time and size, so a texture re-exported under
+its name is read again.
 
 P-D: cage 1.65 s PASS, SubD 1 2.02 s (22 ms over the bar), SubD 2 3.51 s. The probe now splits P-D (map split / raster /
 ownership, tables; container: 12 / 222 / 123 / 25 ms on the cage) so the next run names the part to work on; 1024² stays
