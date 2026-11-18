@@ -392,18 +392,21 @@ in the container (memory-bound) - neither kept.
 
 | Room enter (P-D), 2048² | faces | texel map | + tables = surface | RPC estimate ×3–3.4 [H] |
 |---|---:|---:|---:|---|
-| cage | 2,234 | 0.40–0.43 s (Phase 1: 0.32–0.37 s per triangle) | 0.51–0.57 s | ≈ 1.6–1.9 s |
+| cage | 2,234 | 0.40–0.43 s (Phase 1: 0.32–0.37 s per triangle) | 0.51–0.64 s | ≈ 1.6–2.2 s |
 | SubD 1 (what the head shows) | 9,002 | 0.47–0.53 s (per triangle: 0.73–0.80 s) | 0.59–0.69 s | ≈ 1.8–2.3 s |
-| SubD 2 | 36,008 | 0.73–0.84 s (per triangle: 2.3–2.8 s) | 0.92–1.04 s | ≈ 2.8–3.5 s |
+| SubD 2 | 36,008 | 0.73–0.84 s (per triangle: 2.3–2.8 s) | 0.92–1.11 s | ≈ 2.8–3.8 s |
 
 At 1024² every row is 0.15–0.5 s. The batched map is slightly *slower* than Phase 1's per-triangle build on the cage
 (few large triangles) and 1.5-3.4× faster on SubD; **P-D on SubD 1 at 2048² is the row the reference PC decides** (bar
 2 s; the 1024² option is the fallback, P-5).
 
-The dab (P-A CPU rows, real Phase 2 dab incl. the hit and the mirror; 2048², p50): 1 % ≈ 1–2 ms, 3 % ≈ 2–4 ms, 5 % ≈
-4–6 ms, 10 % ≈ 10–15 ms on every surface (the footprint does not depend on the mesh's face count once culled); the
-composite of the touched tiles 0.3–2.6 ms. Frame rows on llvmpipe (6 ms cage, 11 ms SubD 1, 23 ms SubD 2 for a software
-rasterizer) are not comparable to the 9800 GTX (§7.1: 3–5 ms). P-F 0.56 s; P-C +0.4 ms; P-E same image. **Not measured on
+The dab (P-A CPU rows, the real Phase 2 dab incl. the hit and the mirror, ~2× the texels of Phase 1's probe dab; 2048²,
+p50, [`RESULTS_PAINT_PHASE2_CONTAINER_2026-11-18.md`](../../experiments/drag_cost/RESULTS_PAINT_PHASE2_CONTAINER_2026-11-18.md)):
+1 % 1.7–2.4 ms, 3 % 2.6–3.3 ms, 5 % 4.3–5.1 ms, 10 % 11.4–12.6 ms on every surface (the footprint does not depend on the
+face count once culled; two optimizations of this slice: the tiles of a write in one NumPy pass, texel points computed
+once per triangle); the composite of the touched tiles 0.3–2.9 ms. Frame rows on llvmpipe (6 ms cage, 9–11 ms SubD 1,
+22–24 ms SubD 2 for a software rasterizer; they fail the SubD 2 rows here) are not comparable to the 9800 GTX (§7.1:
+3–5 ms). P-F 0.50 s; P-C −0.05 ms; P-E same image. **Not measured on
 the reference PC yet** — `python experiments/drag_cost/probe_paint.py` (now with `--surfaces cage,subd1,subd2`) is the
 run that decides P-A with SubD on (§8 (c)) and P-D on SubD 1.
 
