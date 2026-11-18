@@ -605,3 +605,42 @@ def test_the_eye_lab_browse_button_fills_the_path_field(env, tmp_path):
     browser.pick(image)
     assert layer.eye_lab.image_buf == str(image)
     assert browser.last_dirs.get("image") == tmp_path
+
+
+def test_the_space_menu_shows_the_uv_check_row_only_with_uvs(env):
+    """AD-037 Phase 1a: „UV-Prüfung“ steht im SPACE-Menü, sobald das Edit-Objekt UVs hat (ohne Taste)."""
+    from gui.menus import UV_CHECK_ENTRY
+
+    window, app, layer, files, calls = env
+    menus = layer.menus
+    real = menus.imgui
+    drawn: list = []
+
+    class Recorder:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def menu_item(self, label, shortcut="", selected=False, enabled=True):
+            drawn.append((label, selected))
+            return real.menu_item(label, shortcut, selected, enabled)
+
+    def space_menu() -> list:
+        drawn.clear()
+        window.dispatch_event("on_mouse_motion", 400, 300, 0, 0)
+        window.dispatch_event("on_key_press", key.SPACE, 0)
+        _frame(window, 3)
+        window.dispatch_event("on_key_release", key.SPACE, 0)
+        layer.popup_key()
+        _frame(window, 3)
+        return [label for label, _ in drawn]
+
+    menus.imgui = Recorder()
+    assert UV_CHECK_ENTRY not in space_menu()  # the cube has no UVs
+    mesh = app.scene.mesh
+    for fid in mesh.all_face_ids():
+        mesh.set_face_uvs(fid, [(0.25 * i, 0.5) for i in range(len(mesh.face_vertices(fid)))])
+    assert UV_CHECK_ENTRY in space_menu()
+    assert app.toggle_uv_check()
+    space_menu()
+    assert (UV_CHECK_ENTRY, True) in drawn
+    menus.imgui = real

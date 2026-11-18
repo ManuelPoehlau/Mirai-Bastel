@@ -8,7 +8,8 @@ pyglet noch `examples/` kennt.
             Speichern (Strg+S) | Speichern unter... | Importieren... (Datei-Browser, OBJ) | Exportieren...
     Mesh:   Attach | Attach – Look des Ziels übernehmen (AD-031 P2, O-13) | Detach | (Select Linked: Hinweis) (P3) |
             Weld… (P4) | Bridge (P5; alle ohne Taste)
-    SPACE:  Add + > (Grundkörper, Basehead, Baseman) | Select Linked | Textur an/aus | Szene laden (Shift+Klick: als Referenz)
+    SPACE:  Add + > (Grundkörper, Basehead, Baseman) | Select Linked | Textur an/aus | UV-Prüfung an/aus (AD-037, nur mit
+            UVs) | Szene laden (Shift+Klick: als Referenz)
 
 Attach fragt nach, bevor ungewichtete Punkte in ein gebundenes Mesh kommen (O-5): der Dialog nennt die Anzahl, erst
 „Trotzdem anhängen“ ruft `Application.attach_objects(accept_unweighted=True)`.
@@ -50,6 +51,8 @@ LINKED_HINT = "SPACE-Menü am Teil"
 #: Mesh-Menü (AD-031 P4): der Eintrag öffnet das Weld-Fenster (Titel = Popup-Id).
 WELD_ENTRY = f"{WELD_LABEL}…"
 WELD_TITLE = WELD_LABEL
+#: SPACE-Menü (AD-037 Phase 1a): die UV-Prüfung des Edit-Objekts an/aus (nur mit UVs; noch ohne Taste).
+UV_CHECK_ENTRY = "UV-Prüfung"
 
 
 def weld_preview(plan) -> str:
@@ -336,6 +339,9 @@ class Menus:
             on = app.display.show_texture
             if imgui.menu_item("Textur anzeigen", "", on)[0]:
                 app.toggle_texture_display()
+        if app.scene.mesh.has_face_uvs() or app.uv_check_on:  # AD-037 Phase 1a: read-only, no key yet
+            if imgui.menu_item(UV_CHECK_ENTRY, "", app.uv_check_on)[0]:
+                app.toggle_uv_check()
         imgui.separator()
         imgui.text_disabled("Szene laden (Shift+Klick: als Referenz)")
         for name in sv.scenes():

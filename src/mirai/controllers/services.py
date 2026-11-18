@@ -39,6 +39,12 @@ class AppServices:
         return self._app.camera
 
     @property
+    def paint(self):
+        """The `PaintStore` (AD-037). Reason for the member: Duplicate and mirror copy give the copy the source's current
+        (unsaved) pixels, not its last saved layer images."""
+        return self._app.paint
+
+    @property
     def display(self):
         return self._app.display
 

@@ -92,6 +92,14 @@ abgelehnt): ein `"bone"` in einer Datei unter 13, ein Wert, der keine nicht nega
 Rig und eine ID ab dem `bone_id_counter` des Rigs (ein Knochen, den es nie gab). Eine ID darunter, die das Rig nicht mehr
 hat, lädt als tote Verbindung (das Objekt folgt nichts, AD-036 §4.1).
 
+Version 14 (Bemalung, AD-037 §3, Manu 2026-11-18 P-3 "Go", CORE_V1_FREEZE §7.1) ist additiv: ein bemaltes Objekt trägt
+`"paint": {"width", "height", "layers": [{"name", "image", "opacity", "visible", "blend"}, ...]}` (die Werte von
+`core.scene.PaintStack`; fehlt = keine Bemalung). Nur geschrieben, wenn ein Objekt bemalt ist (sonst 4-13 wie bisher,
+eine Datei ohne Bemalung bleibt Byte für Byte gleich), damit ein älterer Build die Datei ablehnt, statt die Ebenen beim
+Speichern still zu verlieren. Gelesen werden 2-14. Ungültig (die Datei wird abgelehnt): ein `"paint"` in einer Datei unter
+14 und jeder ungültige Stapel. Was ein Ebenen-Bildpfad bedeutet (relativ zur Szene, `<Szene>_textures/`), entscheidet
+`src/mirai` (`mirai.paint.files`).
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -104,7 +112,7 @@ import json
 from .ids import BoneId, ObjectId
 from .mesh import LayerKind, Mesh
 from .rig import Rig
-from .scene import EyeSpec, MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, Scene, SceneObject
+from .scene import EyeSpec, MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, PaintStack, Scene, SceneObject
 
 FORMAT_VERSION = 4
 #: Written instead of FORMAT_VERSION when any mesh has point layers (AD-025 §4.2).
@@ -125,6 +133,8 @@ EYE_IRIS_FORMAT_VERSION = 11
 EYE_SCLERA_FORMAT_VERSION = 12
 #: Written when any object follows a bone (`SceneObject.bone`, AD-036 §9).
 BONE_LINK_FORMAT_VERSION = 13
+#: Written when any object has paint (`SceneObject.paint`, AD-037 §3).
+PAINT_FORMAT_VERSION = 14
 
 
 def scene_to_dict(scene: Scene) -> dict:
@@ -136,7 +146,9 @@ def scene_to_dict(scene: Scene) -> dict:
         obj.state is ObjectState.GROUP or obj.hidden or obj.parent is not None for obj in scene.objects.values()
     ) or (scene.rig is not None and bool(scene.rig.hidden_ids()))
     looks = [obj.eye.look for obj in objects if obj.eye is not None and obj.eye.look is not None]
-    if any(obj.bone is not None for obj in objects):
+    if any(obj.paint is not None for obj in objects):
+        version = PAINT_FORMAT_VERSION
+    elif any(obj.bone is not None for obj in objects):
         version = BONE_LINK_FORMAT_VERSION
     elif any(obj.eye is not None and obj.eye.sclera_texture is not None for obj in objects):
         version = EYE_SCLERA_FORMAT_VERSION
@@ -175,7 +187,7 @@ def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
     if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION, GROUP_FORMAT_VERSION,
                    EYE_FORMAT_VERSION, EYE_LOOK_FORMAT_VERSION, EYE_IRIS_FORMAT_VERSION, EYE_SCLERA_FORMAT_VERSION,
-                   BONE_LINK_FORMAT_VERSION):
+                   BONE_LINK_FORMAT_VERSION, PAINT_FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw, version) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
@@ -238,7 +250,18 @@ def _object_to_dict(obj: SceneObject) -> dict:
         out["eye"] = obj.eye.to_dict()  # version 9 (AD-033), "look" 10, "look.iris" 11, "sclera_texture" 12
     if obj.bone is not None:
         out["bone"] = int(obj.bone)  # version 13 (AD-036)
+    if obj.paint is not None:
+        out["paint"] = obj.paint.to_dict()  # version 14 (AD-037)
     return out
+
+
+def _paint_from(raw: dict, version: int) -> PaintStack | None:
+    value = raw.get("paint")
+    if value is None:
+        return None
+    if version < PAINT_FORMAT_VERSION:
+        raise ValueError(f"Objekt {raw.get('id')!r}: \"paint\" erst ab Version {PAINT_FORMAT_VERSION}, Datei {version}")
+    return PaintStack.from_dict(value)
 
 
 def _bone_from(raw: dict, version: int) -> BoneId | None:
@@ -271,6 +294,7 @@ def _object_from_dict(raw: dict, version: int) -> SceneObject:
         parent=None if raw.get("parent") is None else ObjectId(raw["parent"]),
         eye=None if raw.get("eye") is None else EyeSpec.from_dict(raw["eye"]),
         bone=_bone_from(raw, version),
+        paint=_paint_from(raw, version),
     )
 
 

@@ -49,6 +49,8 @@ NON_MODAL_FIELDS = {
     "_soft", "gizmo_size_name", "tweak_command", "group_mask",
     # protection state per object (Mask, Hide, the active Polygroup) - not mesh data, no History
     "_masks", "_hiddens", "_active_regions",
+    # AD-037: the paint pixels (document data beside `SceneObject.paint`) and the UV check while it shows (view state)
+    "paint", "_uv_check",
     # the status line and the AD-013 H2 host hooks
     "status_message", "status_serial", "command_gate", "_hover_suspended",
 }

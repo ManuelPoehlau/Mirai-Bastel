@@ -845,6 +845,8 @@ class ObjectController:
         obj.transform, obj.pivot = mirror_placement(source, normal, offset)
         obj.material = source.material  # AD-024 Q-M2: the copy keeps the source's material
         obj.texture = source.texture  # AD-026: and its texture (the UVs come with the mesh)
+        obj.paint = source.paint  # AD-037: and its paint, with the current pixels
+        self.services.paint.copy_object(source, obj)
         # AD-036 §4.4: the copy keeps the link only for a bone on the mirror plane (the AD-028 §8.4 seam rule)
         link_note = ""
         if source.bone is not None:
@@ -1349,6 +1351,8 @@ class ObjectController:
             obj.transform, obj.pivot, obj.material, obj.hidden = source.transform, source.pivot, source.material, source.hidden
             obj.eye = source.eye  # AD-033: a copied eye stays an eye
             obj.bone = source.bone  # AD-036 §4.4: same place, same bone
+            obj.paint = source.paint  # AD-037: the same paint, with the current pixels
+            services.paint.copy_object(source, obj)
             copies[source.id] = obj
             steps.append(AddObjectCommand(scene, obj))
         services.history.push(steps[0] if len(steps) == 1 else CompositeCommand(steps, f"{label} {len(steps)} objects"))

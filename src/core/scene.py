@@ -33,6 +33,9 @@ Architekturvertrag:
 - Rig (`Scene.rig: Rig | None`; AD-028 §3.1, CORE_V1_FREEZE §7.1 2026-11-02): der reservierte Platz
   trägt jetzt einen geprüften, unveränderlichen Wert (`core.rig`) - Knochen mit Ruhelage in Welt-
   koordinaten; `None` = kein Rig. Pose, Auswertung und Commands leben in `src/mirai`.
+- Bemalung (`PaintStack`, `PaintLayer`, `SceneObject.paint`; AD-037 §3, CORE_V1_FREEZE §7.1 2026-11-18): reine
+  Daten - Ebenen über der Textur des Objekts, je ein Bildpfad, Deckkraft, Sichtbarkeit, Mischmodus. Pixel, Malen und
+  Undo der Pinselstriche leben in `src/mirai` (`mirai.paint`).
 - Augen (`EyeSpec`, `SceneObject.eye`; AD-033 §4, CORE_V1_FREEZE §7.1 2026-11-15): reine Daten. Seit 2026-11-16
   (Eye LookDev Phase 3, Manu I-5 "Core Change erlaubt") trägt ein Auge optional eine verschachtelte Look-Gruppe
   (`EyeLook`, `EyeSpec.look`; `None` = neutral, wie bisher); Bedeutung und Zeichnung leben in `src/viewport`.
@@ -389,6 +392,90 @@ class EyeSpec:
                    sclera_texture=raw.get("sclera_texture"))
 
 
+#: AD-037 §3: the blend modes a paint layer may name (the file stores the name). Phase 1: Normal only (P-12 open).
+PAINT_BLEND_MODES = ("normal",)
+#: AD-037 §3: the largest paint-stack side in pixels (4096² is already "not on the reference PC", audit P-5).
+PAINT_MAX_SIZE = 8192
+
+
+def _clean_text(value: object, what: str) -> str:
+    if not isinstance(value, str) or not value.strip() or "\0" in value:
+        raise ValueError(f"{what}: expected a non-empty text, got {value!r}")
+    return value
+
+
+@dataclass(frozen=True)
+class PaintLayer:
+    """One paint layer of an object's paint stack (AD-037 §3): its name, the image that holds its RGBA pixels, how it
+    is composited. Data only. `image` is a plain path string like `SceneObject.texture` (its meaning - scene-relative
+    on disk, the pixel layout - is `src/mirai`'s); `None` = a fully transparent layer that has no file yet. `opacity`
+    in [0, 1]; `blend` one of `PAINT_BLEND_MODES`."""
+
+    name: str
+    image: str | None
+    opacity: float = 1.0
+    visible: bool = True
+    blend: str = "normal"
+
+    def __post_init__(self) -> None:
+        _clean_text(self.name, "paint layer name")
+        if self.image is not None:
+            _clean_text(self.image, "paint layer image")
+        if isinstance(self.opacity, bool) or not isinstance(self.opacity, (int, float)):
+            raise ValueError(f"paint layer opacity: expected a number, got {self.opacity!r}")
+        object.__setattr__(self, "opacity", _unit(self.opacity, "paint layer opacity"))
+        if not isinstance(self.visible, bool):
+            raise ValueError(f"paint layer visible: expected true or false, got {self.visible!r}")
+        if self.blend not in PAINT_BLEND_MODES:
+            raise ValueError(f"paint layer blend: one of {PAINT_BLEND_MODES}, got {self.blend!r}")
+
+    def to_dict(self) -> dict:
+        return {"name": self.name, "image": self.image, "opacity": self.opacity, "visible": self.visible,
+                "blend": self.blend}
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "PaintLayer":
+        names = [f.name for f in fields(cls)]
+        if not isinstance(raw, dict) or set(raw) != set(names):
+            raise ValueError(f"paint layer: expected exactly {names}, got {raw!r}")
+        return cls(**raw)
+
+
+@dataclass(frozen=True)
+class PaintStack:
+    """The paint of one object (AD-037 §3, audit 2026-11-18 P-1 / P-3 / P-4): layers painted in UV space, bottom to
+    top, at one resolution (`width` x `height` pixels). The object's own `texture` stays untouched beneath them as the
+    base (P-4); without a texture the base is the object's base colour. Data only: no pixels, no defaults - `None` at
+    the object = no paint. Layer names are unique; at least one layer."""
+
+    width: int
+    height: int
+    layers: tuple[PaintLayer, ...]
+
+    def __post_init__(self) -> None:
+        for name in ("width", "height"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= PAINT_MAX_SIZE:
+                raise ValueError(f"paint {name}: expected an integer in 1..{PAINT_MAX_SIZE}, got {value!r}")
+        layers = tuple(self.layers)
+        if not layers or not all(isinstance(layer, PaintLayer) for layer in layers):
+            raise ValueError(f"paint layers: expected one or more PaintLayer values, got {self.layers!r}")
+        if len({layer.name for layer in layers}) != len(layers):
+            raise ValueError(f"paint layers: names must be unique, got {[layer.name for layer in layers]}")
+        object.__setattr__(self, "layers", layers)
+
+    def to_dict(self) -> dict:
+        return {"width": self.width, "height": self.height, "layers": [layer.to_dict() for layer in self.layers]}
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "PaintStack":
+        if not isinstance(raw, dict) or set(raw) != {"width", "height", "layers"}:
+            raise ValueError(f"paint: expected exactly width, height, layers, got {raw!r}")
+        if not isinstance(raw["layers"], list):
+            raise ValueError(f"paint layers: expected a list, got {raw['layers']!r}")
+        return cls(raw["width"], raw["height"], tuple(PaintLayer.from_dict(layer) for layer in raw["layers"]))
+
+
 @dataclass(frozen=True)
 class MirrorPair:
     """Zwei Objekte, deren Platzierungen über die Weltebene `normal·x = offset` gekoppelt sind
@@ -450,7 +537,7 @@ class SceneObject:
     """
 
     __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material", "texture", "hidden", "parent", "eye",
-                 "bone")
+                 "bone", "paint")
 
     def __init__(
         self,
@@ -467,6 +554,7 @@ class SceneObject:
         parent: ObjectId | None = None,
         eye: EyeSpec | None = None,
         bone: BoneId | None = None,
+        paint: PaintStack | None = None,
     ) -> None:
         self._id = _require_object_id(object_id)
         self.mesh: Mesh = mesh
@@ -495,6 +583,10 @@ class SceneObject:
         # AD-036 §4.1: the bone this object follows as a rigid part (None = none). Data only: whether the rig has the
         # bone (a dead link follows nothing) and what following means live in `src/mirai` (`mirai.bone_links`).
         self.bone: BoneId | None = None if bone is None else _require_link_bone(bone)
+        # AD-037 §3: None = no paint; else the paint layers above `texture` (data only, the pixels live in `src/mirai`).
+        if paint is not None and not isinstance(paint, PaintStack):
+            raise TypeError(f"erwartet ein PaintStack oder None, nicht {paint!r}")
+        self.paint: PaintStack | None = paint
 
     @property
     def id(self) -> ObjectId:

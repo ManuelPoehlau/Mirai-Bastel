@@ -505,6 +505,49 @@ def load_texture(path: str):
     return texture
 
 
+def _upload_live(live) -> None:
+    """Brings a `LiveTexture`'s GL copy up to date (AD-037 Phase 1c): the whole image on its first draw, else the boxes
+    marked since, then the mipmaps by its policy. Requires an active GL context."""
+    import ctypes
+
+    from pyglet import gl
+
+    full, boxes, mips = live.take()
+    if live.gl_name is None:
+        name = gl.GLuint()
+        gl.glGenTextures(1, ctypes.byref(name))
+        live.gl_name = int(name.value)
+        full = True
+        mips = live.mipmaps != "none"
+    gl.glBindTexture(gl.GL_TEXTURE_2D, live.gl_name)
+    gl.glPixelStorei(gl.GL_UNPACK_ALIGNMENT, 4)
+    data = live.rgba.ctypes.data_as(ctypes.POINTER(gl.GLubyte))
+    if full:
+        gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGBA8, live.width, live.height, 0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE,
+                        data)
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER,
+                           gl.GL_LINEAR if live.mipmaps == "none" else gl.GL_LINEAR_MIPMAP_LINEAR)
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT)
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT)
+        live.uploads += 1
+        live.uploaded_bytes += live.rgba.nbytes
+    elif boxes:
+        gl.glPixelStorei(gl.GL_UNPACK_ROW_LENGTH, live.width)
+        for x0, y0, x1, y1 in boxes:
+            gl.glPixelStorei(gl.GL_UNPACK_SKIP_PIXELS, x0)
+            gl.glPixelStorei(gl.GL_UNPACK_SKIP_ROWS, y0)
+            gl.glTexSubImage2D(gl.GL_TEXTURE_2D, 0, x0, y0, x1 - x0, y1 - y0, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, data)
+            live.uploads += 1
+            live.uploaded_bytes += (x1 - x0) * (y1 - y0) * 4
+        gl.glPixelStorei(gl.GL_UNPACK_ROW_LENGTH, 0)
+        gl.glPixelStorei(gl.GL_UNPACK_SKIP_PIXELS, 0)
+        gl.glPixelStorei(gl.GL_UNPACK_SKIP_ROWS, 0)
+    if mips and live.mipmaps != "none":
+        gl.glGenerateMipmap(gl.GL_TEXTURE_2D)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+
+
 class GLRenderStore(ResourceStore):
     """Real pyglet/OpenGL backend: one indexed VertexList + uniform passthrough
     + `draw()`, driven by `RenderMesh`'s declared layout (AD-018 §5) instead
@@ -598,8 +641,9 @@ class GLRenderStore(ResourceStore):
         self._face_buffers[name] = ("GL_RG32F", _TRIANGLE_UVS_UNIT, "u_triangle_uvs")
         self._optional_face_buffers.add(name)
 
-    def set_texture(self, path: str | None) -> None:
-        """The texture to show (AD-026; None = none): pure draw state, loaded at the first draw."""
+    def set_texture(self, path) -> None:
+        """The texture to show (AD-026; None = none): a path (loaded at the first draw) or a `LiveTexture` (AD-037,
+        uploaded at each draw that finds it changed). Pure draw state."""
         self._texture_path = path
 
     def begin_rebuild(self, group: str) -> None:
@@ -789,6 +833,8 @@ class GLRenderStore(ResourceStore):
         names = [n for n in self._optional_face_buffers if self._face_buffers[n][2] == "u_triangle_uvs"]
         if not names or not self._face_cpu.get(names[0]):
             return False
+        if not isinstance(self._texture_path, str):
+            return True  # a LiveTexture always has pixels
         return self.texture(self._texture_path) is not None
 
     def _release_face_data(self) -> None:
@@ -983,9 +1029,16 @@ class GLRenderStore(ResourceStore):
         program["u_has_face_data"] = 1 if has_face_data else 0
         self._set_face_samplers(program, textured, vlist)
         if textured:
-            texture = self.texture(self._texture_path)
+            if isinstance(self._texture_path, str):
+                texture = self.texture(self._texture_path)
+                target, name = texture.target, texture.id
+            else:  # AD-037: a LiveTexture - its changed boxes go up first (once, whoever draws it first)
+                live = self._texture_path
+                if live.gl_name is None or live.pending:
+                    _upload_live(live)
+                target, name = gl.GL_TEXTURE_2D, live.gl_name
             gl.glActiveTexture(gl.GL_TEXTURE0 + _TEXTURE_UNIT)
-            gl.glBindTexture(texture.target, texture.id)
+            gl.glBindTexture(target, name)
             gl.glActiveTexture(gl.GL_TEXTURE0)
             program["u_texture"] = _TEXTURE_UNIT
         ghost = self.alpha < 1.0

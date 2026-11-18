@@ -3,7 +3,8 @@
 **Status:** research and recommendation, English with a German summary. **No production code changed, no
 keybinding changed, no dependency added, no existing research document modified.** First-pass record (AGENTS.md §6:
 later changes go into dated addenda). **Decisions P-1 … P-7 (P-3 = Go), P-10: Manu, 2026-11-18** — see the
-[addendum](#addendum-2026-11-18-manus-decisions-p-1--p-7-p-10); the other questions of §11 stay open.
+[addendum](#addendum-2026-11-18-manus-decisions-p-1--p-7-p-10); the other questions of §11 stay open. **Phase 1
+implemented 2026-11-18:** [AD-037](../architecture/AD-037-TEXTURE-PAINT.md), second addendum below.
 **State audited:** `bb46e73` on `claude/quirky-wozniak-w6lyuh` (clean working tree; it contains the Brush System
 research `9f44bc3` and AD-036 slice 2 `af444e4`).
 **Question:** can a dedicated 3D Texture Painting workspace ("Paint Room") become a natural part of Mirai without
@@ -548,6 +549,25 @@ channels, a UV editor, brush presets, a GPU paint engine, Ptex, vertex colours.
 
 **Next:** Phase 1 (§10): 1a UV health check, 1b texel–surface map, 1c live texture source, 1d paint data model
 (`SceneObject.paint`, v14, PNG persistence, `PaintStrokeCommand`), 1e reference-PC probes P-A … P-F.
+
+## Addendum 2026-11-18 (later): Phase 1 implemented
+
+Phase 1 (§10) is built on `claude/brave-clarke-40728c` and recorded in
+[AD-037](../architecture/AD-037-TEXTURE-PAINT.md) (the decision record from here on; this report stays the research):
+1a the UV check (`mirai.paint.uv_health`, SPACE row „UV-Prüfung“, no key), 1b the texel map (`mirai.paint.texel_map`), 1c
+the live texture (`viewport.live_texture`), 1d `SceneObject.paint` / format v14 / PNG persistence / `PaintStrokeCommand`
+(`mirai.paint.store`, `files`), 1e the probe `experiments/drag_cost/probe_paint.py` (container results in
+`experiments/drag_cost/RESULTS_PAINT_CONTAINER_2026-11-18.md`; the reference-PC run is open). Deviations from this report:
+
+- §2.2 / §5.3: the UV check counts **148** faces that touch an overlap (both sides, strict interior on a 1024² raster)
+  where §2.2 counted 44 by UV centre; the overlap share (3.3 %) and the 44 zero-area faces match.
+- §4.3: the flattened PNG is **not** stored in the Core (derived data); it is written beside the scene on save as
+  `<object>_paint_flat_<hash>.png` and named in the status line. `SceneObject.texture` stays the base (P-4).
+- §4.2 principle 2: the map's rebuild in the container is 0.52–0.61 s at 2048² (the audit's 513 ms), 48 MiB (int32 slot +
+  2 × float32) instead of the probe's 69 MiB.
+- §8.4 item 1: the container's llvmpipe shows mipmaps per frame at about +6 ms per frame; the `LiveTexture` default is
+  "deferred" (regenerate at the stroke's end) until P-B runs on the reference PC.
+- P-5 stays open: Phase 1 has no default resolution (the caller names it).
 
 ## Sources (code and docs)
 

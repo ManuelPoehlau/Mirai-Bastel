@@ -144,6 +144,7 @@ def replace_scene(scene: Scene, loaded: Scene) -> SceneObject:
         obj.hidden = source.hidden
         obj.eye = source.eye  # AD-033
         obj.bone = source.bone  # AD-036 (a BoneId of the file: the rig comes along unchanged)
+        obj.paint = source.paint  # AD-037 (its layer images: the pixels load on first use)
         new_ids[source.id] = obj.id
         if source.id == loaded.edit_object_id:
             edit = obj
