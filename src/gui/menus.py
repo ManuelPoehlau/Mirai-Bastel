@@ -4,7 +4,8 @@ Die Logik bleibt in den Modulen `SceneFiles`, `ObjFiles` und den Application-Met
 `Services` bündelt, was `main.py` zuverlässig hat (Dateien, OBJ, Beispielszenen, Add-Mesh), damit dieses Modul weder
 pyglet noch `examples/` kennt.
 
-    Datei:  Neu | Öffnen > (Szenen) | Speichern (Strg+S) | Speichern unter... | Importieren > (OBJ) | Exportieren...
+    Datei:  Neu | Öffnen... (Datei-Browser, ganzes System) | Zuletzt geöffnete Dateien > (die letzten 10 Szenen/Meshes) |
+            Speichern (Strg+S) | Speichern unter... | Importieren... (Datei-Browser, OBJ) | Exportieren...
     Mesh:   Attach | Attach – Look des Ziels übernehmen (AD-031 P2, O-13) | Detach | (Select Linked: Hinweis) (P3) |
             Weld… (P4) | Bridge (P5; alle ohne Taste)
     SPACE:  Add + > (Grundkörper, Basehead, Baseman) | Select Linked | Textur an/aus | Szene laden (Shift+Klick: als Referenz)
@@ -29,12 +30,16 @@ ist, gehört dem Layer die ganze Maus (`popup_open`): ein Klick daneben schließ
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 from mirai.attach import LABEL as ATTACH_LABEL, OVERRIDE_LABEL, TAKE_LOOK_LABEL
 from mirai.detach import LABEL as DETACH_LABEL, LINKED_LABEL
 from mirai.topology.bridge import LABEL as BRIDGE_LABEL
 from mirai.topology.weld import LABEL as WELD_LABEL
+
+from .file_browser import FileBrowser
+from .file_browser_model import ALL_FILTER, OBJ_FILTER, SCENE_FILTER, LastDirs, RecentFiles
 
 #: Mesh-Menü (AD-031 P2): Anzeigename -> `take_destination_look` (D1-Variante); die Namen stehen in `mirai.attach`, weil
 #: die Statuszeile sie nennt.
@@ -83,6 +88,9 @@ class Services:
     load_scene: Callable[[str], bool]
     add_reference: Callable[[str], bool]
     zbrush: object | None = None  # ZBrushBridge
+    #: Ordner für das Gedächtnis des Datei-Browsers (zuletzt benutzte Ordner, zuletzt geöffnete Dateien); None: nur
+    #: für diese Sitzung (Tests schreiben so nichts in den Benutzerordner)
+    state_dir: Path | None = None
 
 
 class Menus:
@@ -101,6 +109,29 @@ class Menus:
         #: AD-031 P4: der Abstand im Weld-Fenster (Welt) und der Plan dazu (die Vorschau)
         self.weld_threshold = 0.0
         self.weld_plan = None
+        self._recent: RecentFiles | None = None
+        self._browser: FileBrowser | None = None
+
+    def _state_file(self, name: str) -> Path | None:
+        state = self.sv.state_dir
+        return None if state is None else state / name
+
+    @property
+    def recent(self) -> RecentFiles:
+        """Zuletzt geöffnete Dateien (Datei-Menü); erst beim ersten Zugriff gelesen."""
+        if self._recent is None:
+            self._recent = RecentFiles(self._state_file("recent_files.json"))
+        return self._recent
+
+    @property
+    def browser(self) -> FileBrowser:
+        if self._browser is None:
+            self._browser = FileBrowser(
+                self.imgui,
+                LastDirs(self._state_file("browser_dirs.json")),
+                extra_places=(("Szenen", self.sv.files.directory), ("OBJ-Meshes", self.sv.obj_files.directory)),
+            )
+        return self._browser
 
     def close_all(self) -> None:
         self._close = True
@@ -144,6 +175,39 @@ class Menus:
         self.weld_plan = None
         return self.app.weld_vertices(self.weld_threshold)
 
+    def open_scene_browser(self) -> None:
+        """Datei > Öffnen...: der Datei-Browser für Szenen; er beginnt im zuletzt benutzten Ordner, sonst in `scenes/`."""
+        self.browser.request("scene", "Szene öffnen", (SCENE_FILTER, ALL_FILTER), self.open_scene,
+                             self.sv.files.directory)
+
+    def open_import_browser(self) -> None:
+        """Datei > Importieren...: der Datei-Browser für OBJ-Meshes."""
+        self.browser.request("mesh", "Mesh importieren (OBJ)", (OBJ_FILTER, ALL_FILTER), self.import_mesh,
+                             self.sv.obj_files.directory)
+
+    def open_scene(self, path) -> bool:
+        """Eine Szenendatei laden (Browser oder „Zuletzt geöffnet“); nur eine geladene Datei kommt in die Liste."""
+        loaded = self.sv.files.load(path)
+        if loaded:
+            self.recent.add("scene", path)
+        return loaded
+
+    def import_mesh(self, path) -> bool:
+        imported = self.sv.obj_files.import_file(path)
+        if imported:
+            self.recent.add("mesh", path)
+        return imported
+
+    def open_recent(self, kind: str, path) -> bool:
+        return self.open_scene(path) if kind == "scene" else self.import_mesh(path)
+
+    def save_as(self, name: str):
+        """„Speichern unter“ aus dem Namensdialog: die gespeicherte Szene ist gleich wieder erreichbar."""
+        path = self.sv.files.save_as(name)
+        if path is not None:
+            self.recent.add("scene", path)
+        return path
+
     def open_save_as(self) -> None:
         self.name_buf, self._focus, self._request = self.sv.files.suggested_name(), True, "save_as"
 
@@ -172,27 +236,16 @@ class Menus:
             if imgui.begin_menu("Datei"):
                 if imgui.menu_item("Neu", "", False)[0]:
                     sv.files.new()
-                if imgui.begin_menu("Öffnen"):
-                    files = sv.files.files()
-                    for path in files:
-                        if imgui.menu_item(_stem(path), "", False)[0]:
-                            sv.files.load(path)
-                    if not files:
-                        imgui.text_disabled("(keine Szenen)")
-                    imgui.end_menu()
+                if imgui.menu_item("Öffnen...", "", False)[0]:
+                    self.open_scene_browser()
+                self._recent_menu()
                 if imgui.menu_item("Speichern", "Strg+S", False)[0]:
                     self.save()
                 if imgui.menu_item("Speichern unter...", "", False)[0]:
                     self.open_save_as()
                 imgui.separator()
-                if imgui.begin_menu("Importieren"):
-                    files = sv.obj_files.files()
-                    for path in files:
-                        if imgui.menu_item(path.stem, "", False)[0]:
-                            sv.obj_files.import_file(path)
-                    if not files:
-                        imgui.text_disabled("(keine OBJ-Dateien)")
-                    imgui.end_menu()
+                if imgui.menu_item("Importieren...", "", False)[0]:
+                    self.open_import_browser()
                 if imgui.menu_item("Exportieren...", "", False)[0]:
                     self.open_export()
                 imgui.end_menu()
@@ -215,6 +268,23 @@ class Menus:
             imgui.end_main_menu_bar()
         return rect
 
+    def _recent_menu(self) -> None:
+        """Datei > Zuletzt geöffnete Dateien: die letzten 10 Szenen und importierten Meshes, neueste zuerst; der Tooltip
+        nennt den ganzen Pfad (zwei Dateien gleichen Namens aus verschiedenen Ordnern)."""
+        imgui = self.imgui
+        if not imgui.begin_menu("Zuletzt geöffnete Dateien"):
+            return
+        items = self.recent.items()
+        for i, (kind, path) in enumerate(items):
+            tag = "Szene" if kind == "scene" else "Mesh"
+            if imgui.menu_item(f"{_stem(path)}  ({tag})##recent{i}", "", False)[0]:
+                self.open_recent(kind, path)
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(str(path))
+        if not items:
+            imgui.text_disabled("(noch keine)")
+        imgui.end_menu()
+
     # -- Popups (nach allen Fenstern aufrufen) -------------------------------------------------------------------
     def popups(self) -> None:
         imgui = self.imgui
@@ -235,8 +305,10 @@ class Menus:
         self._space()
         self._attach_prompt()
         self._weld_window()
+        if self._browser is not None:
+            self._browser.draw()
         files = self.sv.files
-        self._name_dialog("Speichern unter", files.path_for, files.save_as)
+        self._name_dialog("Speichern unter", files.path_for, self.save_as)
         obj = self.sv.obj_files
         self._name_dialog("OBJ exportieren", obj.path_for, obj.export)
         self.popup_open = imgui.is_popup_open(

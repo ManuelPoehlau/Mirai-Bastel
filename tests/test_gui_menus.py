@@ -522,3 +522,86 @@ def test_the_weld_window_opens_from_the_mesh_menu_and_escape_changes_nothing(env
     assert not layer.popup_open, app.status_message
     assert len(app.history) == history + 1 and app.status_message.startswith("Weld: 4 points into 2")
     assert calls["press"] == 0
+
+
+# -- Datei-Browser (Öffnen..., Importieren..., Zuletzt geöffnete Dateien) -----------------------------------------------
+
+
+def test_open_browser_lists_the_whole_system_and_opens_the_picked_scene(env, tmp_path):
+    window, app, layer, files, calls = env
+    menus = layer.menus
+    other = tmp_path / "irgendwo" / "tief"  # nicht der Ordner `scenes/`: der Browser sucht nicht nur dort
+    other.mkdir(parents=True)
+    scene = other / f"alt{SCENE_SUFFIX}"
+    app.save_scene_file(scene)
+    (other / "notiz.txt").write_text("x")
+    menus.browser.last_dirs.remember("scene", other)
+    menus.open_scene_browser()
+    _frame(window, 3)
+    browser = menus.browser
+    assert browser.is_open and menus.popup_open
+    assert browser.model.directory == other  # beginnt im zuletzt benutzten Ordner
+    assert [e.name for e in browser.model.visible()] == [scene.name]  # Dateityp-Filter: `notiz.txt` fehlt
+    window.dispatch_event("on_mouse_press", 700, 100, mouse.LEFT, 0)  # das Fenster hat die Maus: der Viewport nicht
+    assert calls["press"] == 0
+    window.dispatch_event("on_mouse_release", 700, 100, mouse.LEFT, 0)
+    browser.model.select(browser.model.visible()[0])
+    _frame(window, 3)
+    browser.pick(browser.model.choice())  # wie „Öffnen“
+    _frame(window, 3)
+    assert files.current == scene and not browser.is_open
+    assert menus.recent.items() == [("scene", scene)]
+    assert menus.browser.last_dirs.get("scene") == other
+
+
+def test_escape_closes_the_browser_and_changes_nothing(env, tmp_path):
+    window, app, layer, files, calls = env
+    menus = layer.menus
+    menus.open_scene_browser()
+    _frame(window, 3)
+    assert menus.browser.is_open
+    window.dispatch_event("on_key_press", key.ESCAPE, 0)
+    _frame(window, 3)
+    window.dispatch_event("on_key_release", key.ESCAPE, 0)
+    assert not menus.browser.is_open and not menus.popup_open
+    assert files.current is None and menus.recent.items() == []
+
+
+def test_import_browser_adds_the_obj_and_lists_it_under_recent(env, tmp_path):
+    window, app, layer, files, calls = env
+    menus = layer.menus
+    obj = tmp_path / "meshes" / "wuerfel.obj"
+    obj.parent.mkdir()
+    app.export_obj(obj)
+    before = len(app.scene.objects)
+    menus.browser.last_dirs.remember("mesh", obj.parent)
+    menus.open_import_browser()
+    _frame(window, 3)
+    assert [e.name for e in menus.browser.model.visible()] == ["wuerfel.obj"]
+    menus.browser.pick(obj)
+    _frame(window, 2)
+    assert len(app.scene.objects) == before + 1
+    assert menus.recent.items() == [("mesh", obj)]
+    menus.open_recent("mesh", obj)  # „Zuletzt geöffnete Dateien“: noch einmal, derselbe Eintrag bleibt einmal
+    assert len(app.scene.objects) == before + 2 and menus.recent.items() == [("mesh", obj)]
+
+
+def test_a_failed_open_is_not_listed_as_recent(env, tmp_path):
+    window, app, layer, files, calls = env
+    broken = tmp_path / f"kaputt{SCENE_SUFFIX}"
+    broken.write_text("{nicht json")
+    assert not layer.menus.open_scene(broken)
+    assert layer.menus.recent.items() == []
+
+
+def test_the_eye_lab_browse_button_fills_the_path_field(env, tmp_path):
+    window, app, layer, files, calls = env
+    image = tmp_path / "iris.png"
+    image.write_bytes(b"x")
+    layer.eye_lab.browse_image("Iris-Bild wählen", layer.eye_lab.set_iris_path)
+    _frame(window, 3)
+    browser = layer.menus.browser
+    assert browser.is_open and browser.model.filter.label.startswith("Bilder")
+    browser.pick(image)
+    assert layer.eye_lab.image_buf == str(image)
+    assert browser.last_dirs.get("image") == tmp_path

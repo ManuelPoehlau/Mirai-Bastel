@@ -1,7 +1,8 @@
 """Szenen speichern und laden im Production-Fenster (`PROVISIONAL`, Manu 2026-10-15).
 
-Entscheidung: keine OS-Dateidialoge; Szenendateien liegen im Ordner `scenes/` (Repo-Wurzel,
-in `.gitignore`) und erscheinen in der Menüleiste „Datei“ (`src/gui/menus.py`, AD-030 §12); das alte SPACE-Menü (`src/scene_menu.py`, Fallback ohne imgui) zeigt sie als Zeilen:
+Entscheidung: keine OS-Dateidialoge; Szenendateien werden in `scenes/` (Repo-Wurzel, in `.gitignore`) angelegt. „Datei > Öffnen...“
+wählt sie seit 2026-11-18 im eigenen Datei-Browser (`src/gui/file_browser.py`) aus dem ganzen System; `files()` mit seinen
+10 Einträgen speist nur noch das alte SPACE-Menü (`src/scene_menu.py`, Fallback ohne imgui), das sie als Zeilen zeigt:
 
     Szene speichern (Strg+S)    - die aktuelle Datei überschreiben, sonst eine neue anlegen
     Als neue Szene speichern    - immer eine neue Datei
