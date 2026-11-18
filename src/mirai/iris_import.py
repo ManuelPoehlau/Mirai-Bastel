@@ -92,8 +92,9 @@ class ImportResult:
 # -- PNG files (8-bit RGBA written; read by pyglet, else by `decode_png`) ---------------------------------------------
 
 
-def encode_png(rgba: np.ndarray) -> bytes:
-    """An 8-bit RGBA PNG (top row first), every row with the "Up" filter (vectorized, compresses smooth images)."""
+def encode_png(rgba: np.ndarray, level: int = 6) -> bytes:
+    """An 8-bit RGBA PNG (top row first), every row with the "Up" filter (vectorized, compresses smooth images).
+    `level` is zlib's (the paint files use 1: about a quarter of the time for a 2048² image, AD-037 §5)."""
     rgba = np.ascontiguousarray(rgba, dtype=np.uint8)
     h, w = rgba.shape[:2]
     rows = rgba.reshape(h, w * 4)
@@ -106,7 +107,7 @@ def encode_png(rgba: np.ndarray) -> bytes:
         return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload))
 
     header = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b"")
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, level)) + chunk(b"IEND", b"")
 
 
 def _unfilter(raw: bytes, width: int, height: int, bpp: int) -> np.ndarray:

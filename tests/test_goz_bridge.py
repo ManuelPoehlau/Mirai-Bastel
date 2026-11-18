@@ -1116,3 +1116,19 @@ def test_reset_names_leaves_the_name_of_a_live_object_of_this_scene(env):
     assert bridge.activate(RESET_NAMES_LABEL), app.status_message
     assert "'head_basemesh' gehört einem anderen Objekt dieser Szene" in app.status_message
     assert Path(send(env)).name == "head_basemesh_2"
+
+
+def test_a_uv_change_on_a_painted_object_is_refused(env):
+    """AD-037 P-13 (Manu 2026-11-18, „wie vorgeschlagen“): new UVs from ZBrush would mis-map every painted pixel - not
+    applied until a UV transfer exists; nothing changes."""
+    from core import PaintLayer, PaintStack
+
+    app = env["app"]
+    obj = app.scene.edit_object
+    obj.paint = PaintStack(16, 16, (PaintLayer("Haut", None),))
+    identifier = send(env)
+    uvs_before, history = _uvs(obj.mesh), len(app.history)
+    goz_back(env, identifier, fixture("zb2022_E3_head_uvmaster.GoZ"))
+    assert not env["bridge"].activate(row(env, APPLY_PREFIX))
+    assert "is painted" in app.status_message and "not applied" in app.status_message, app.status_message
+    assert _uvs(obj.mesh) == uvs_before and len(app.history) == history

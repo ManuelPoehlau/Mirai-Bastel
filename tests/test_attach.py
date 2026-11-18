@@ -415,3 +415,31 @@ def test_save_and_load_keep_the_attached_data(tmp_path):
     loaded = app.scene.mesh
     assert {loaded.point_layer_info(lid): dict(loaded.layer_items(lid)) for lid in loaded.point_layer_ids()} == layers
     assert loaded.face_regions == regions
+
+
+# -- AD-037 P-13: painted objects ------------------------------------------------------------------------------------
+
+
+def test_attach_of_a_painted_object_is_refused_unless_both_share_the_same_paint():
+    import numpy as np
+
+    from core import PaintLayer, PaintStack
+
+    app = _app()
+    part = _part(app, "Part")
+    stack = PaintStack(16, 16, (PaintLayer("Haut", None),))
+    part.paint = stack
+    _select(app, part)
+    snapshot = _snapshot(app)
+    for command in (commands.ATTACH, commands.ATTACH_TAKE_LOOK):
+        assert app.dispatch_command(command) is False
+        assert "is painted" in app.status_message and "not attached" in app.status_message, app.status_message
+    assert _snapshot(app) == snapshot
+    dst = app.scene.edit_object
+    dst.paint = stack  # the same stack value ...
+    recorder = app.paint.begin_stroke(part, "Haut")
+    recorder.write_box(0, 0, np.full((2, 2, 4), 200, np.uint8))
+    recorder.commit()
+    assert app.dispatch_command(commands.ATTACH) is False  # ... but the part's pixels differ
+    app.paint.copy_object(part, dst)
+    assert app.dispatch_command(commands.ATTACH), app.status_message  # the same paint: nothing is lost

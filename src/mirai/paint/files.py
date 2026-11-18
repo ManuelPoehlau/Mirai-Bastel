@@ -39,6 +39,11 @@ from ..scene_objects import object_base_color
 from .store import PaintStore
 
 
+#: zlib level of the paint PNGs (reference PC 2026-11-18, P-F 7.4 / 9.4 s): level 1 encodes a textured 2048² image in
+#: about a quarter of level 6's time for ~1.6x the bytes - a save is frequent, the files are local.
+PNG_LEVEL = 1
+
+
 def read_image(path: str) -> np.ndarray:
     """(h, w, 4) uint8 RGBA, top row first: a PNG through the own decoder (pyglet's pure-Python PNG path took 1.8 s for
     the 2048² ZBrush texture in the container, the own one 0.13 s), anything else through `iris_import.read_rgba`."""
@@ -55,7 +60,7 @@ def read_layer(path: str) -> np.ndarray:
 
 
 def encode_layer(rgba: np.ndarray) -> bytes:
-    return encode_png(rgba[::-1])
+    return encode_png(rgba[::-1], PNG_LEVEL)
 
 
 def read_base(obj: SceneObject, width: int, height: int) -> np.ndarray | tuple[float, float, float]:
@@ -149,7 +154,7 @@ def prepare_save(objects, store: PaintStore, scene_path: str | Path) -> PaintSav
         flat_name = texture_files.clean_stem(f"{obj.name}_paint_flat")
         has_flat = directory.is_dir() and any(p.name.startswith(flat_name + "_") for p in directory.iterdir())
         if wrote or not has_flat:
-            data = encode_png(flatten(store, obj)[::-1])
+            data = encode_png(flatten(store, obj)[::-1], PNG_LEVEL)
             plan.flats[int(obj.id)] = str(texture_files.store(data, directory, texture_files.hashed_name(
                 flat_name, data, ".png")))
     return plan

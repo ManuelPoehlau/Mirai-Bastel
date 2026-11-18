@@ -3915,6 +3915,12 @@ class Application:
             check_append(dst, sources)
         except AssemblyRefused as exc:
             return plan(dst, sources, f"{label}: {exc}")
+        for src in sources:  # AD-037 P-13 (Manu 2026-11-18): one paint per object, two images cannot be merged
+            if (src.paint is not None or dst.paint is not None) and not self.paint.same_paint(src, dst):
+                painted = src if src.paint is not None else dst
+                return plan(dst, sources, (
+                    f"{label}: {painted.name!r} is painted and {src.name!r} / {dst.name!r} do not share that paint -"
+                    f" the paint would be lost; not attached"))
         differ = look_differences(dst, sources)
         unweighted = incoming_unweighted(sources)
         needs_override = unweighted > 0 and self._skeleton.bound(dst.mesh)
@@ -4433,6 +4439,10 @@ class Application:
         posed = self._skeleton.posed_text("apply_goz_return")
         if posed is not None:
             self._set_status(f"{label}: {posed.split(': ', 1)[-1]}")
+            return False
+        if obj.paint is not None and plan.uvs:  # AD-037 P-13 (Manu 2026-11-18): until the UV transfer exists
+            self._set_status(f"{label}: ZBrush changed the UVs of {len(plan.uvs)} face(s) and {obj.name!r} is painted -"
+                             f" its paint would no longer fit; not applied (a UV transfer comes later)")
             return False
         positions = dict(plan.positions)
 

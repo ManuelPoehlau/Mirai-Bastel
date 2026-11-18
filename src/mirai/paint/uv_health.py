@@ -181,7 +181,7 @@ def check(mesh: Mesh, resolution: int = DEFAULT_RESOLUTION) -> UVHealth:
         for a, b, c in triangulate_mesh_face(mesh, fid):
             raster = raster_triangle(corner[a], corner[b], corner[c], resolution, resolution)
             if raster is not None:
-                flat, w1, w2 = raster
+                flat, w1, w2, _box = raster
                 parts.append(flat)
                 inner.append(flat[np.minimum(np.minimum(w1, w2), 1.0 - w1 - w2) > _STRICT_EPS])
         if parts:
