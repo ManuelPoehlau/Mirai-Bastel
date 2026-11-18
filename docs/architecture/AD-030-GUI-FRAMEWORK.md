@@ -202,10 +202,20 @@ die App). Tests: `test_gui_input_gate.py`, `test_gui_imgui_window.py::test_secon
 Entscheidung Manu: Dateiverwaltung in eine Leiste oben wie in jeder App; das SPACE-Menü bekommt oben „Add +“; GoZ ein
 eigenes Panel, weil dort später Optionen hineinmüssen (was alles gesendet wird: nur Mesh, auch Morphs, ...).
 
-- **Leiste „Datei“** (`gui/menus.py`): Neu (leere Szene: ein leeres Edit-Objekt, `Application.load_scene("empty")`), Öffnen
-  (Szenen aus `scenes/`), Speichern (Strg+S; bei neuer Szene wie „Speichern unter“), Speichern unter... (Namensfeld,
-  gleichnamig = überschrieben, Hinweis im Dialog), Importieren (OBJ-Liste aus `obj/`), Exportieren... (Namensfeld).
-  Dateinamen: `scene_files.clean_file_name` (Endung fällt weg, Rest außer `A-Za-z0-9_-` wird `_`).
+- **Leiste „Datei“** (`gui/menus.py`): Neu (leere Szene: ein leeres Edit-Objekt, `Application.load_scene("empty")`), Öffnen...
+  (Datei-Browser, s. u.), Zuletzt geöffnete Dateien (die letzten 10 Szenen und importierten Meshes), Speichern (Strg+S;
+  bei neuer Szene wie „Speichern unter“), Speichern unter... (Namensfeld, gleichnamig = überschrieben, Hinweis im Dialog),
+  Importieren... (Datei-Browser, OBJ), Exportieren... (Namensfeld). Dateinamen: `scene_files.clean_file_name` (Endung
+  fällt weg, Rest außer `A-Za-z0-9_-` wird `_`).
+- **Datei-Browser** (2026-11-18, Manu: „Öffnen über eine Art Exploreransicht ein Muss“; `gui/file_browser.py`, Zustand in
+  `gui/file_browser_model.py`, headless getestet): ein modales ImGui-Fenster mit Zurück/Vor/Hoch, Pfadteilen als Knöpfen,
+  Pfadfeld (ein getippter Pfad geht weiter), Suche im Ordner, Orten (Home, Desktop, Dokumente, Downloads, Bilder, `scenes/`,
+  `obj/`) und Laufwerken, sortierbarer Liste (Name natürlich, Datum, Größe) und Dateityp-Filter. Es ersetzt die „letzten 10
+  Dateien eines festen Ordners“ (`MAX_LISTED_FILES` lebt nur noch in `SceneFiles.files()`) und das Tippen von Pfaden:
+  Datei > Öffnen... (Szenen), Datei > Importieren... (OBJ) und „Durchsuchen...“ neben dem Iris- und Lederhaut-Bildfeld im
+  Eye Lab (Bilder). Es beginnt je Zweck (`scene`, `mesh`, `image`) im zuletzt benutzten Ordner; Ordner und
+  „Zuletzt geöffnet“ stehen in `~/.mirai_bastel/` (`Services.state_dir`, Tests schreiben nichts dorthin). Das bleibt ein
+  ImGui-Fenster, kein OS-Dateidialog (Entscheidung 2026-10-15 in `scene_files.py` gilt weiter).
 - **SPACE** öffnet ein ImGui-Popup am Cursor: Add + (Grundkörper, Basehead, Baseman als neue, **bearbeitbare** Objekte über
   `import_obj`; das ist meine Annahme zu „Add“, Referenz gäbe es weiter per Shift+Klick bei den Beispielszenen), Textur
   an/aus, Beispielszenen. Shift+A (Add Mesh) und Shift+M (Mirror) sind unverändert (alte Menüs, keine Taste geändert).

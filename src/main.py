@@ -169,8 +169,8 @@ Scope (binding, see the handoffs):
   Alt+Shift+M clears; masked points are skipped by W/E/R and Smooth / Relax and drawn dark (`GLMaskOverlay` in `GL_TYPES`).
 - Symmetry display (Shift+Ctrl+S, window level): shows / hides the symmetry plane and the seam / problem
   markers (`Application.toggle_symmetry_display`; display only, the definition stays).
-- OBJ import / export (`PROVISIONAL`, `src/obj_files.py`): menu bar "Datei" (AD-030 §12) - "Importieren" lists the
-  files of `obj/` and adds one as a new editable object, "Exportieren..." asks for a name and writes the edit object
+- OBJ import / export (`PROVISIONAL`, `src/obj_files.py`): menu bar "Datei" (AD-030 §12) - "Importieren..." opens the
+  file browser (`gui/file_browser.py`, the whole system) and adds the OBJ as a new editable object, "Exportieren..." asks for a name and writes the edit object
   (world space) to `obj/<name>.obj`. AD-026: UVs come and go with the file, an OBJ's texture (MTL `map_Kd` or a
   same-named image) becomes the object's texture and shows in the viewport; SPACE > "Textur anzeigen" switches all
   textures (the row exists while an object has one).
@@ -936,6 +936,7 @@ def main() -> None:
         load_scene=lambda name: _load_example(name),
         add_reference=lambda name: add_named_reference(app, name),
         zbrush=zbrush,
+        state_dir=Path.home() / ".mirai_bastel",  # Datei-Browser: zuletzt benutzte Ordner und Dateien
     )
     gui = make_gui(window, app, services)
 

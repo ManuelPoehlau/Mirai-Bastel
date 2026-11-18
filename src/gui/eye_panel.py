@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from . import eye_model as em
 from . import iris_import_model as im
+from .file_browser_model import ALL_FILTER, IMAGE_FILTER
 from viewport.eye_pass import REFLECTIONS, REFRACTIONS, TIERS
 
 TIER_HINT = "'schnell' zeichnet ohne Reflexe und Iris des Eye Labs (wie vor Phase 3), 'voll' mit ihnen."
@@ -184,6 +185,9 @@ class EyeLabPanel:
         imgui.set_next_item_width(220.0)
         _, self.image_buf = imgui.input_text("##iris", self.image_buf)
         imgui.same_line()
+        if imgui.small_button("Durchsuchen...##iris"):
+            self.browse_image("Iris-Bild wählen", self.set_iris_path)
+        imgui.same_line()
         if imgui.small_button("Iris-Bild laden"):
             app.set_eye_iris_image(self.image_buf.strip().strip('"') or None)
         if st.eyes[0].texture is not None:
@@ -199,6 +203,24 @@ class EyeLabPanel:
         if imgui.button("Schließen"):
             app.close_eye_lab()
 
+    def browse_image(self, title: str, on_pick) -> None:
+        """„Durchsuchen...“: der Datei-Browser (`gui.file_browser`) für ein Bild; ohne Menüs (kein `Services`) bleibt das
+        Pfadfeld."""
+        menus = getattr(self.layer, "menus", None)
+        if menus is None:
+            self.app.set_status("Datei-Browser: nicht verfügbar, Pfad ins Feld tippen")
+            return
+        menus.browser.request("image", title, (IMAGE_FILTER, ALL_FILTER), on_pick)
+
+    def set_iris_path(self, path) -> None:
+        """Gewähltes Iris-Bild: ins Feld; „Iris-Bild laden“ und „Iris importieren ...“ arbeiten damit weiter."""
+        self.image_buf = str(path)
+
+    def load_sclera_path(self, path) -> None:
+        """Gewähltes Lederhaut-Bild: ins Feld und gleich laden (ein Undo-Schritt, wie „Lederhaut-Bild laden“)."""
+        self.sclera_buf = str(path)
+        em.set_sclera_image(self.app, self.sclera_buf)
+
     def draw_sclera(self, st: em.EyePanelState) -> None:
         """AD-035 M1: "Lederhaut" - the sclera's colour map (status, path field, load / remove; `PROVISIONAL` layout).
         Loading another image replaces the map; each action is one Undo step."""
@@ -210,6 +232,9 @@ class EyeLabPanel:
             imgui.set_tooltip(st.sclera_path)
         imgui.set_next_item_width(220.0)
         _, self.sclera_buf = imgui.input_text("##sclera", self.sclera_buf)
+        imgui.same_line()
+        if imgui.small_button("Durchsuchen...##sclera"):
+            self.browse_image("Lederhaut-Bild wählen", self.load_sclera_path)
         imgui.same_line()
         if imgui.small_button("Lederhaut-Bild laden"):
             em.set_sclera_image(app, self.sclera_buf)
