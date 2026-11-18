@@ -107,14 +107,14 @@ def test_v9_to_v11_files_are_written_and_read_as_before(spec, version):
     assert json.loads(json.dumps(scene_to_dict(loaded))) == data  # the round trip is the same file
 
 
-def test_v12_only_with_a_map_and_the_next_version_is_refused():
+def test_v12_only_with_a_map_and_an_unknown_version_is_refused():
     spec = dataclasses.replace(DEFAULT_EYE, look=DEFAULT_LOOK, sclera_texture="maps/sclera.png")
     data = json.loads(json.dumps(scene_to_dict(_eye_scene(spec))))
     assert data["version"] == EYE_SCLERA_FORMAT_VERSION == 12
     assert [o.eye for o in scene_from_dict(data).objects.values() if o.eye] == [spec]
     removed = json.loads(json.dumps(scene_to_dict(_eye_scene(dataclasses.replace(spec, sclera_texture=None)))))
     assert removed["version"] == EYE_LOOK_FORMAT_VERSION  # without the map: the older format again
-    data["version"] = 13
+    data["version"] = 14  # 13: bone links (AD-036)
     with pytest.raises(ValueError):
         scene_from_dict(data)
     bad = json.loads(json.dumps(scene_to_dict(_eye_scene(spec))))

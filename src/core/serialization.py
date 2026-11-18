@@ -84,6 +84,14 @@ v9-v11-Dateien unverändert). Nur geschrieben, wenn ein Auge ein Lederhaut-Bild 
 älterer Build die Datei ablehnt, statt das Bild beim Speichern still zu verlieren. Gelesen werden 2-12. Was der Pfad
 bedeutet (relativ zur Szene, `<Szene>_textures/`), entscheidet `src/mirai` (`mirai.texture_files`).
 
+Version 13 (Knochen-Verbindung, AD-036 §9, CORE_V1_FREEZE §7.1 2026-11-18) ist additiv: ein Objekt, das als starres
+Teil einem Knochen folgt, trägt `"bone": <BoneId der Datei>` (fehlt = folgt keinem). Nur geschrieben, wenn ein Objekt
+verbunden ist (sonst 4-12 wie bisher, eine Datei ohne Verbindung bleibt Byte für Byte gleich), damit ein älterer Build die
+Datei ablehnt, statt die Verbindungen beim Speichern still zu verlieren. Gelesen werden 2-13. Ungültig (die Datei wird
+abgelehnt): ein `"bone"` in einer Datei unter 13, ein Wert, der keine nicht negative ganze Zahl ist, eine Verbindung ohne
+Rig und eine ID ab dem `bone_id_counter` des Rigs (ein Knochen, den es nie gab). Eine ID darunter, die das Rig nicht mehr
+hat, lädt als tote Verbindung (das Objekt folgt nichts, AD-036 §4.1).
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -93,7 +101,7 @@ from __future__ import annotations
 
 import json
 
-from .ids import ObjectId
+from .ids import BoneId, ObjectId
 from .mesh import LayerKind, Mesh
 from .rig import Rig
 from .scene import EyeSpec, MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, Scene, SceneObject
@@ -115,6 +123,8 @@ EYE_LOOK_FORMAT_VERSION = 10
 EYE_IRIS_FORMAT_VERSION = 11
 #: Written when any eye has a sclera colour map (`EyeSpec.sclera_texture`, AD-035 M1).
 EYE_SCLERA_FORMAT_VERSION = 12
+#: Written when any object follows a bone (`SceneObject.bone`, AD-036 §9).
+BONE_LINK_FORMAT_VERSION = 13
 
 
 def scene_to_dict(scene: Scene) -> dict:
@@ -126,7 +136,9 @@ def scene_to_dict(scene: Scene) -> dict:
         obj.state is ObjectState.GROUP or obj.hidden or obj.parent is not None for obj in scene.objects.values()
     ) or (scene.rig is not None and bool(scene.rig.hidden_ids()))
     looks = [obj.eye.look for obj in objects if obj.eye is not None and obj.eye.look is not None]
-    if any(obj.eye is not None and obj.eye.sclera_texture is not None for obj in objects):
+    if any(obj.bone is not None for obj in objects):
+        version = BONE_LINK_FORMAT_VERSION
+    elif any(obj.eye is not None and obj.eye.sclera_texture is not None for obj in objects):
         version = EYE_SCLERA_FORMAT_VERSION
     elif any(look.iris is not None for look in looks):
         version = EYE_IRIS_FORMAT_VERSION
@@ -162,9 +174,10 @@ def _has_weights(mesh: Mesh) -> bool:
 def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
     if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION, GROUP_FORMAT_VERSION,
-                   EYE_FORMAT_VERSION, EYE_LOOK_FORMAT_VERSION, EYE_IRIS_FORMAT_VERSION, EYE_SCLERA_FORMAT_VERSION):
+                   EYE_FORMAT_VERSION, EYE_LOOK_FORMAT_VERSION, EYE_IRIS_FORMAT_VERSION, EYE_SCLERA_FORMAT_VERSION,
+                   BONE_LINK_FORMAT_VERSION):
         scene = Scene.from_objects(
-            (_object_from_dict(raw) for raw in data["objects"]),
+            (_object_from_dict(raw, version) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
             object_id_counter=int(data["object_id_counter"]),
             mirror_pairs=(
@@ -181,8 +194,24 @@ def scene_from_dict(data: dict) -> Scene:
     scene.morph_targets = data.get("morph_targets")
     raw_rig = data.get("rig")
     scene.rig = None if raw_rig is None else Rig.from_dict(raw_rig)
+    _check_links(scene)
     scene.animation = data.get("animation")
     return scene
+
+
+def _check_links(scene: Scene) -> None:
+    """AD-036 §9.1: a link needs a rig and an id below its counter; an id below it that the rig lacks stays (dead)."""
+    rig = scene.rig
+    for obj in scene.objects.values():
+        if obj.bone is None:
+            continue
+        if rig is None:
+            raise ValueError(f"Objekt {int(obj.id)} folgt Knochen {int(obj.bone)}, die Scene hat kein Rig")
+        if int(obj.bone) >= rig.bone_id_counter:
+            raise ValueError(
+                f"Objekt {int(obj.id)} folgt Knochen {int(obj.bone)}, der nicht unter bone_id_counter"
+                f" {rig.bone_id_counter} liegt"
+            )
 
 
 def _object_to_dict(obj: SceneObject) -> dict:
@@ -207,10 +236,23 @@ def _object_to_dict(obj: SceneObject) -> dict:
         out["parent"] = int(obj.parent)  # version 8
     if obj.eye is not None:
         out["eye"] = obj.eye.to_dict()  # version 9 (AD-033), "look" 10, "look.iris" 11, "sclera_texture" 12
+    if obj.bone is not None:
+        out["bone"] = int(obj.bone)  # version 13 (AD-036)
     return out
 
 
-def _object_from_dict(raw: dict) -> SceneObject:
+def _bone_from(raw: dict, version: int) -> BoneId | None:
+    value = raw.get("bone")
+    if value is None:
+        return None
+    if version < BONE_LINK_FORMAT_VERSION:
+        raise ValueError(f"Objekt {raw.get('id')!r}: \"bone\" erst ab Version {BONE_LINK_FORMAT_VERSION}, Datei {version}")
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"Objekt {raw.get('id')!r}: \"bone\" ist eine nicht negative ganze Zahl, nicht {value!r}")
+    return BoneId(value)
+
+
+def _object_from_dict(raw: dict, version: int) -> SceneObject:
     transform = raw["transform"]
     return SceneObject(
         ObjectId(raw["id"]),
@@ -228,6 +270,7 @@ def _object_from_dict(raw: dict) -> SceneObject:
         hidden=bool(raw.get("hidden", False)),
         parent=None if raw.get("parent") is None else ObjectId(raw["parent"]),
         eye=None if raw.get("eye") is None else EyeSpec.from_dict(raw["eye"]),
+        bone=_bone_from(raw, version),
     )
 
 

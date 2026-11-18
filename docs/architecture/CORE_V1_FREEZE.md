@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-11-17 (AD-035 M1: `EyeSpec.sclera_texture`, format version 12); previously 2026-11-16 (Eye LookDev phase 4: `EyeIris`, `EyeLook.iris`, format version 11); previously 2026-11-16 (Eye LookDev phase 3: `EyeLook`, `EyeSpec.look`, format version 10); previously 2026-11-15 (AD-033 eyes: `EyeSpec`, `SceneObject.eye`, format version 9); previously 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-11-18 (AD-036 slice 1: `SceneObject.bone`, format version 13); previously 2026-11-17 (AD-035 M1: `EyeSpec.sclera_texture`, format version 12); previously 2026-11-16 (Eye LookDev phase 4: `EyeIris`, `EyeLook.iris`, format version 11); previously 2026-11-16 (Eye LookDev phase 3: `EyeLook`, `EyeSpec.look`, format version 10); previously 2026-11-15 (AD-033 eyes: `EyeSpec`, `SceneObject.eye`, format version 9); previously 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -455,6 +455,27 @@ untouched: every existing signature's behaviour on a mesh without UVs (export: o
 vertex record shapes, point layers; (5) tests `tests/test_core_face_uvs.py` (every primitive incl. seams, journal
 exactness, file validation, random sequences against U1 and exact Undo), `tests/mesh_invariants.assert_uv_invariants`,
 `tests/test_obj_uvs.py`, `tests/test_point_layers.py` (the pinned export key list now ends with `"face_uvs"`).
+
+**Decision:** AD-036 slice 1, the bone link of a rigid part, Core part (2026-11-18;
+[AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md) §9, checklist §13.1; Manu: „Baue AD-036, Scheiben 1–2; §13 zuerst als
+Checkliste“ — the build of the slice that is this change, read as the E4 go)
+
+Freeze rule (§7): (1) requirement - rigid parts (eyes, teeth) follow a bone, and the relation is saved with the scene
+and is an Undo step (AD-036 §0, §4.1); (2) not solvable with the public API: a relation saved with the scene must be in
+the Core's model (`core.serialization` cannot import `src/mirai`; the `MirrorPair` / `Rig` precedent); weights cannot
+carry an eye (AD-036 §3.2, F-7), the `"view"` section has no Undo and is view state; `SceneObject.parent` is group
+membership (F-10); (3) documented in AD-036 §9.1 and the §13.1 checklist; (4) smallest extension, **data only**:
+`src/core/scene.py` gains `SceneObject.bone: BoneId | None = None` (a slot and a keyword; a `BoneId` >= 0, else
+`TypeError` / `ValueError`; whether the rig has the bone is not checked in memory - a dead link follows nothing, AD-036
+§4.1). `src/core/serialization.py` writes `"bone"` only when set and **version 13** only when an object has a link (else
+4-12 as before; a scene without a link is the same text); reads 2-13; invalid (the file is refused): a `"bone"` key in a
+file below 13, a value that is not a non-negative int (`bool` refused), a link without a rig, an id at or above the rig's
+`bone_id_counter`; an id below it that the rig lacks loads as a dead link. Not touched: `Rig`, `Bone`, `Mesh`, the
+weights kind, every operation, `HistoryStack`, `MeshDeltaCommand`, every other field and signature. Existing tests
+unchanged except the two assertions that pinned 13 as the first unknown version (`test_rig.py`, `test_eye_sclera.py`:
+now 14). (5) contract tests `tests/test_bone_link_format.py` (the field's types, no-link equivalence on the Gollum
+scene's text, v13 round trip on the JSON text, the version by content, 2-12 read and 14 refused, every invalid case,
+the dead link).
 
 **Decision:** AD-035 M1, the sclera's colour map, Core part (2026-11-17; [AD-035](AD-035-SCLERA-COLOUR-MAP.md) §2,
 [research audit](../research/EYE_LOOKDEV_SCLERA_SURFACE_ASSESSMENT_2026-11-17.md) §6 option O1; Manu: "M1 is approved

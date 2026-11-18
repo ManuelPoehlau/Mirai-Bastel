@@ -47,7 +47,7 @@ from enum import Enum
 from types import MappingProxyType
 
 from .history import HistoryStack
-from .ids import IdAllocator, ObjectId
+from .ids import BoneId, IdAllocator, ObjectId
 from .mesh import Mesh
 from .rig import Rig
 from .selection import Selection
@@ -432,6 +432,15 @@ def _require_object_id(object_id: object) -> ObjectId:
     return object_id
 
 
+def _require_link_bone(bone: object) -> BoneId:
+    # As `_require_object_id`: a link is never derived from another id kind, hence the type; ids are never negative.
+    if not isinstance(bone, BoneId):
+        raise TypeError(f"erwartet eine BoneId oder None, nicht {bone!r}")
+    if int(bone) < 0:
+        raise ValueError(f"BoneId negativ: {int(bone)}")
+    return bone
+
+
 class SceneObject:
     """Scene-Mitglied, das genau ein Mesh besitzt und in der Scene platziert (AD-021 §4.1).
 
@@ -440,7 +449,8 @@ class SceneObject:
     einfache Werte, die künftige Objekt-Commands (M1/M2) ändern.
     """
 
-    __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material", "texture", "hidden", "parent", "eye")
+    __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material", "texture", "hidden", "parent", "eye",
+                 "bone")
 
     def __init__(
         self,
@@ -456,6 +466,7 @@ class SceneObject:
         hidden: bool = False,
         parent: ObjectId | None = None,
         eye: EyeSpec | None = None,
+        bone: BoneId | None = None,
     ) -> None:
         self._id = _require_object_id(object_id)
         self.mesh: Mesh = mesh
@@ -481,6 +492,9 @@ class SceneObject:
         if eye is not None and not isinstance(eye, EyeSpec):
             raise TypeError(f"erwartet ein EyeSpec oder None, nicht {eye!r}")
         self.eye: EyeSpec | None = eye
+        # AD-036 §4.1: the bone this object follows as a rigid part (None = none). Data only: whether the rig has the
+        # bone (a dead link follows nothing) and what following means live in `src/mirai` (`mirai.bone_links`).
+        self.bone: BoneId | None = None if bone is None else _require_link_bone(bone)
 
     @property
     def id(self) -> ObjectId:
