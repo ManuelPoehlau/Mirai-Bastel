@@ -274,3 +274,63 @@ def test_slide_positions_interpolate_towards_either_side():
     xs_b = {p[0] for p in full_b.values()}
     assert {xs_a.pop(), xs_b.pop()} == {-1.0, 1.0}
     assert slide_positions(plan, 5.0) == full_a  # clamped
+
+
+# -- Von-Bis and double-click (Manu 2026-11-18) ----------------------------------------------
+
+def test_shift_l_between_two_selected_edges_selects_the_range(app):
+    mesh = app.scene.mesh
+    col = [_edge(mesh, _vertex(mesh, 0.0, -2.0 + r), _vertex(mesh, 0.0, -1.0 + r)) for r in range(N)]
+    app.selection.set({col[0], col[2]})
+    app.key_press(SHIFT_L)
+    assert app.selection.edges == {col[0], col[1], col[2]}
+
+
+def test_shift_r_between_two_selected_edges_selects_the_range(app):
+    mesh = app.scene.mesh
+    ring = [_edge(mesh, _vertex(mesh, -2.0, -2.0 + r), _vertex(mesh, -1.0, -2.0 + r)) for r in range(N + 1)]  # across the rows
+    app.selection.set({ring[0], ring[2]})
+    app.key_press(SHIFT_R)
+    assert app.selection.edges == {ring[0], ring[1], ring[2]}
+
+
+def _click_edge(app, command, edge, now):
+    app.knife_clock = lambda: now
+    app._pick = lambda x, y: edge
+    return app.select_at(command, 10.0, 10.0)
+
+
+def test_double_click_selects_the_whole_loop(app):
+    mesh = app.scene.mesh
+    col = [_edge(mesh, _vertex(mesh, 0.0, -2.0 + r), _vertex(mesh, 0.0, -1.0 + r)) for r in range(N)]
+    _click_edge(app, cmd.SELECT, col[1], 1.0)
+    assert app.selection.edges == {col[1]}
+    _click_edge(app, cmd.SELECT, col[1], 1.2)
+    assert app.selection.edges == set(col)
+
+
+def test_slow_second_click_is_no_double_click(app):
+    mesh = app.scene.mesh
+    col = [_edge(mesh, _vertex(mesh, 0.0, -2.0 + r), _vertex(mesh, 0.0, -1.0 + r)) for r in range(N)]
+    _click_edge(app, cmd.SELECT, col[1], 1.0)
+    _click_edge(app, cmd.SELECT, col[1], 2.0)
+    assert app.selection.edges == {col[1]}
+
+
+def test_shift_double_click_selects_the_range_from_the_first_edge(app):
+    mesh = app.scene.mesh
+    col = [_edge(mesh, _vertex(mesh, 0.0, -2.0 + r), _vertex(mesh, 0.0, -1.0 + r)) for r in range(N)]
+    _click_edge(app, cmd.SELECT, col[0], 1.0)
+    _click_edge(app, cmd.SELECT_ADD, col[3], 2.0)
+    assert app.selection.edges == {col[0], col[3]}
+    _click_edge(app, cmd.SELECT_ADD, col[3], 2.2)
+    assert app.selection.edges == set(col)
+
+
+def test_shift_double_click_range_along_a_ring(app):
+    mesh = app.scene.mesh
+    ring = [_edge(mesh, _vertex(mesh, -2.0, -2.0 + r), _vertex(mesh, -1.0, -2.0 + r)) for r in range(N + 1)]  # across the rows
+    _click_edge(app, cmd.SELECT, ring[0], 1.0)
+    _click_edge(app, cmd.SELECT_ADD, ring[2], 2.0)
+    _click_edge(app, cmd.SELECT_ADD, ring[2], 2.2)
+    assert app.selection.edges == {ring[0], ring[1], ring[2]}

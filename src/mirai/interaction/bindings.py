@@ -139,6 +139,10 @@ Sticky (wie X/Y/Z bis 2026-10-28), wirken ab der nächsten Geste; Engineering-Ta
 Loop-Werkzeuge (2026-10-15, Tasten aus der Artist Input Truth, `PROVISIONAL`):
 - Shift+L          → Edge Loop zur Auswahl (Edge-Modus; ausgewählte Edges, sonst die gehoverte)
 - Shift+R          → Edge Ring zur Auswahl (wie Shift+L)
+                     Genau zwei gewählte Edges auf einem Loop / Ring: Shift+L / Shift+R wählt nur die Edges dazwischen
+                     (Von-Bis, kürzerer Bogen bei geschlossenem Loop; Manu 2026-11-18, `PROVISIONAL`).
+- Doppelklick auf Edge → ganzer Loop (ersetzt die Auswahl). Edge klicken, Shift+Doppelklick auf eine 2. Edge → Von-Bis
+                     dazwischen (Loop, sonst Ring). Kein Binding: Verhalten in `Application.select_at`.
 - I                → Loop Insert: neuer Loop durch den Ring der ausgewählten/gehoverten Edge
 - G (halten)       → Loop Slide der ausgewählten Edges, Maus bewegen, loslassen = Commit
 Wie `C` ignoriert, solange W/E/R/T/G scharf ist; in der Knife-Session ungebunden.

@@ -113,6 +113,24 @@ def edge_loop(mesh, start_edge, blocked=frozenset()) -> Traversal:
     return Traversal(edges=list(reversed(backward)) + [start_edge] + forward, closed=False)
 
 
+def edges_between(traversal: Traversal, first, second) -> list | None:
+    """Die Kanten von `first` bis `second` (beide eingeschlossen) entlang einer Traversierung, in Laufrichtung;
+    None, wenn eine der beiden nicht darauf liegt. Bei geschlossener Traversierung gilt der kürzere Bogen
+    (gleich lang: der in Laufrichtung von `first` nach `second`)."""
+    edges = traversal.edges
+    if first not in edges or second not in edges:
+        return None
+    i, j = edges.index(first), edges.index(second)
+    if not traversal.closed:
+        lo, hi = sorted((i, j))
+        return edges[lo:hi + 1]
+    n = len(edges)
+    forward = (j - i) % n
+    if forward <= n - forward:
+        return [edges[(i + k) % n] for k in range(forward + 1)]
+    return [edges[(i - k) % n] for k in range(n - forward + 1)]
+
+
 def _ring_step(mesh, edge_id, through_face, blocked=frozenset()):
     boundary_edges = mesh.face_edges(through_face)
     if len(boundary_edges) != 4:

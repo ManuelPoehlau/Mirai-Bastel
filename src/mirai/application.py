@@ -186,7 +186,7 @@ from .topology.delete_dissolve import RemovalRefused, apply_removal, removal_lab
 from .topology import bridge as bridge_api
 from .topology import weld as weld_api
 from .topology.knife_preview import KnifeRenderData
-from .topology.loop_ring import LoopRingError, edge_loop, edge_ring
+from .topology.loop_ring import LoopRingError, edge_loop, edge_ring, edges_between
 from .topology import selection_steps
 from .subdivision import SUBD_COMMANDS, SubdivisionPreview, install_subd_bindings
 from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, install_morph_bindings, morph_target_ids
@@ -220,6 +220,9 @@ from .viewport.picking_cache import PickCache
 ORBIT_RADIANS_PER_PX = 0.005
 DOLLY_IN_FACTOR = 0.9
 DOLLY_OUT_FACTOR = 1.1
+
+#: Two LMB clicks on the same edge within this many seconds are a double-click (loop select / range).
+EDGE_DOUBLE_CLICK_S = 0.4
 
 _SELECT_COMMANDS = (
     commands.SELECT,
@@ -2013,6 +2016,12 @@ class Application:
         mesh = self.scene.mesh
         blocked = self._hidden.resolve(mesh)  # a loop / ring ends at hidden geometry, it does not run through it
         found: set[EdgeId] = set()
+        # Von-Bis (Manu 2026-11-18): exactly two selected edges on one loop / ring select the edges between them.
+        if len(seeds) == 2 and len(self.selection.edges) == 2:
+            first, second = sorted(seeds)
+            between = edges_between(walk(mesh, first, blocked), first, second)
+            if between is not None:
+                return self._select_edges_added(label, between, "range")
         for edge in sorted(seeds):
             if edge in found:
                 continue
@@ -2021,15 +2030,43 @@ class Application:
             except LoopRingError as exc:
                 self._set_status(f"{label}: {exc}")
                 return False
+        return self._select_edges_added(label, found)
+
+    def _select_edges_added(self, label: str, edges, what: str = "") -> bool:
         selection = self.selection
         before = len(selection.edges)
-        selection.add(self._drop_hidden(found))
+        selection.add(self._drop_hidden(set(edges)))
         if self.viewport is not None:
             self.viewport.on_selection_changed()
         self._soft_preview_refresh()
         added = len(selection.edges) - before
-        self._set_status(f"{label}: {len(selection.edges)} edges selected (+{added})")
+        suffix = f" {what}" if what else ""
+        self._set_status(f"{label}{suffix}: {len(selection.edges)} edges selected (+{added})")
         return True
+
+    # -- Double-click loop select (Manu 2026-11-18, `PROVISIONAL`) -----------------------
+    # Double-click an edge: its whole loop replaces the selection. Click an edge, Shift+double-click a second one
+    # on the same loop (else ring): the edges between them are added. Edge mode only; a selection change, no History.
+
+    def _edge_double_click(self, command: str, hit, anchor) -> bool:
+        mesh = self.scene.mesh
+        blocked = self._hidden.resolve(mesh)
+        if command == commands.SELECT_ADD and isinstance(anchor, EdgeId) and anchor != hit and mesh.is_valid_edge(anchor):
+            for label, walk in (("Edge Loop", edge_loop), ("Edge Ring", edge_ring)):
+                between = edges_between(walk(mesh, hit, blocked), anchor, hit)
+                if between is not None:
+                    return self._select_edges_added(label, between, "range")
+            self._set_status("Edge range: the two edges share no loop or ring")
+            return False
+        loop = self._drop_hidden(set(edge_loop(mesh, hit, blocked).edges))
+        if command == commands.SELECT:
+            self.selection.set(loop)
+            if self.viewport is not None:
+                self.viewport.on_selection_changed()
+            self._soft_preview_refresh()
+            self._set_status(f"Edge Loop: {len(loop)} edges selected")
+            return True
+        return self._select_edges_added("Edge Loop", loop)
 
     # -- Selection steps (WP Toolbox Gaps A1, Manu 2026-10-23) ---------------------------
     #
@@ -5307,6 +5344,9 @@ class Application:
             return True
         return False
 
+    _edge_click_last: tuple[float, EdgeId] | None = None  # (time, edge) of the latest edge click
+    _edge_click_prev: EdgeId | None = None  # the edge clicked before it: the "from" of a Shift+double-click range
+
     def select_at(self, command: str, x: float, y: float) -> bool:
         """Klick-Selektion, Modifier-Variante AP-03 (WP-06 B2, A7/E13), im
         aktiven Modus (Vertex/Edge/Face, B5b E43).
@@ -5330,6 +5370,21 @@ class Application:
         hit = self._pick(x, y)
         if hit is not None:
             self.focus_on_elements((hit,))  # also when the selection does not change (a selected element)
+        if (
+            isinstance(hit, EdgeId)
+            and selection.mode is SelectionMode.EDGE
+            and command in (commands.SELECT, commands.SELECT_ADD)
+        ):
+            now = self.knife_clock()
+            last = self._edge_click_last
+            if last is not None and last[1] == hit and now - last[0] <= EDGE_DOUBLE_CLICK_S:
+                self._edge_click_last = None  # a third click starts over
+                self._edge_double_click(command, hit, self._edge_click_prev)
+                self.viewport.on_selection_changed()
+                return selection_state(selection) != before
+            if last is not None and last[1] != hit:
+                self._edge_click_prev = last[1]
+            self._edge_click_last = (now, hit)
         if hit is None:
             if command == commands.SELECT:
                 selection.clear()

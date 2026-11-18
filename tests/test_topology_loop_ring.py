@@ -143,3 +143,13 @@ def test_ring_invalid_edge_raises():
 
 
 import pytest  # noqa: E402  (nach den Tests — pytest wird nur für raises gebraucht)
+
+
+def test_edges_between_takes_the_shorter_arc_on_a_closed_traversal():
+    from mirai.topology.loop_ring import Traversal, edges_between
+
+    ring = Traversal(edges=list("abcdefgh"), closed=True)
+    assert edges_between(ring, "b", "d") == ["b", "c", "d"]
+    assert edges_between(ring, "h", "b") == ["h", "a", "b"]  # wraps instead of the long way round
+    assert edges_between(ring, "b", "z") is None
+    assert edges_between(Traversal(edges=list("abcd"), closed=False), "d", "b") == ["b", "c", "d"]
