@@ -5,7 +5,7 @@ Core change and scene format v14 included. **IMPLEMENTED Phase 1 (2026-11-18, co
 **Reference-PC probes P-A … P-F: RUN (Manu, 2026-11-18)** — P-A, P-B, P-C, P-E pass; P-D (2.06 s at 2048²) and P-F
 (7.4 / 9.4 s) failed and were worked on the same day (§7.1), the re-run is open (its output has not reached the repo yet).
 **Decisions P-7, P-10, P-13: Manu, 2026-11-18** (§1); the P-13 refusals are built (§8). **IMPLEMENTED Phase 2, the Paint
-Room (2026-11-18, container: TESTED; reference PC: open)** as built in §10: SPACE menu row, no key, no keymap entry.
+Room (2026-11-18, container: TESTED; reference PC: P-A … P-G pass on the shown surfaces, §10.8e)** as built in §10: SPACE menu row, no key, no keymap entry.
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).
@@ -467,6 +467,15 @@ P-D now passes on the cage (1.72 s) and SubD 1 (1.92 s); SubD 2 3.11 s. The spli
 (1,230 against 222 ms; everything else 3-4×) - its chunks of 1 << 20 candidates (~80 MiB of arrays) far exceed the
 Q9550's 6 MiB L2. **Fix:** chunks of 1 << 16 (container: raster 275 → 162 ms on the cage, 269 → 180 ms on SubD 1, the same
 texels and weights). Both need the next reference-PC run.
+
+### 10.8e The fourth reference-PC run (Manu, 2026-11-18): every bar of the shown surfaces met
+
+Manu: „öffnet sich jetzt wesentlich schneller, der Raum, auch der erste Strich“. Measured there: P-G 0.99 s (the WIC decode
+of the Paeth-filtered texture; was 6.5 s), **P-F 1.76 s PASS** (was 7.8 s), **P-D cage 1.40 s, SubD 1 1.47 s PASS** (raster
+0.79 / 0.72 s, was 1.23 s), SubD 2 2.50 s (not shown on the head: the 25,000-face cap), P-A passes everywhere at 3 % and
+5 % (total p95 9–11 / 15–17 ms). With the GL rows of the first run (frame 4–6 ms on the cage and SubD 1) every Phase 2 bar
+on the surfaces the app shows is met on the reference PC. Open: the 10 % dab (31–32 ms p50, above a frame), SubD 2's room
+enter - neither blocks.
 
 ### 10.8 Not in Phase 2
 

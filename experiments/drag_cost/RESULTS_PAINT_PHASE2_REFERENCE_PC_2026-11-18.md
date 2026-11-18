@@ -248,3 +248,43 @@ P-F save of a 4-layer stack (base image cache cleared: a cold read, as at the fi
 App (Manu's console, excerpt): `Paint Room: 'Gollum' malt auf dem Käfig, 2048² (Karte 1.55 s, Basisbild gelesen 4.55 s,
 Bild 0.21 s)`; after closing and opening again `(Karte 1.57 s, Basisbild gelesen 0.00 s, Bild 0.00 s)`; strokes, Pick,
 the front ortho view, Symmetry X and mirrored strokes ran (the P-A rows above in full in Manu's message).
+
+## Fourth run (Manu, 2026-11-18, `--no-gl`, src/ tree `c682e7b5c5`: after §10.8d)
+
+Manu: „öffnet sich jetzt wesentlich schneller, der Raum, auch der erste Strich“.
+
+**Reading** (AD-037 §10.8e): P-G 0.99 s (WIC decode; was 6.5 s), **P-F 1.76 s PASS** (was 7.8 s; read base 0.25 s with
+the cache cleared, the base decoded once by P-G), **P-D cage 1.40 s, SubD 1 1.47 s PASS** (raster 793 / 720 ms, was 1,230),
+SubD 2 2.50 s (not shown on the head). P-A (CPU rows) passes on every surface at 3 % and 5 %.
+
+```
+Paint probe (AD-037 Phase 1e / 2) - commit 79a0ef5ed7, working tree MODIFIED, src/ tree c682e7b5c5
+python 3.12.10, numpy 2.2.6, size 2048^2, 40 dabs per stroke
+fixture: Gollum, 2234 faces, texture Gollum_cbf9c7702d.png, mirrored dab on
+
+P-G base image (the ZBrush texture the room reads; reference PC 2026-11-18: 6.35 s in P-F)
+  Gollum_cbf9c7702d.png: 470,628 bytes, 2048 x 2048, 8 bit, colour type 6, interlace 0, row filters none 0 sub 344 up 706 avg 0 paeth 998
+  file read 1 ms, decode 987 ms (system (998 Average / Paeth rows)), total 989 ms
+  second read (cached) 0.3 ms
+  plain re-read of the file 0.6 ms
+
+P-D room enter: paint surface build (texel map + tables), ms        bar <= 2000 ms
+  cage    2,234 faces    1400 ms  (2,787,212 texels, 48 MiB)  PASS
+         map split 37, map raster 793, map ownership 461, tables 74
+  subd1   9,002 faces    1467 ms  (2,787,155 texels, 48 MiB)  PASS
+         map split 193, map raster 720, map ownership 379, tables 142
+  subd2  36,008 faces    2496 ms  (2,787,155 texels, 48 MiB)  FAIL
+         map split 722, map raster 890, map ownership 460, tables 391
+
+P-A (CPU rows), total p95 at 3 % / 5 %: cage 9.12 / 15.53, SubD 1 9.99 / 15.42, SubD 2 10.61 / 16.54 ms - PASS
+(dab p50 at 3 %: 5.73 / 6.33 / 6.77 ms; at 10 %: 31.8 / 32.3 / 32.4 ms)
+
+P-F save of a 4-layer stack (base image cache cleared: a cold read, as at the first save of a session)
+  first save 1757 ms (4 layers + 1 flat, 0.7 MiB)  bar <= 2000 ms: PASS
+    PNG encode (all files)            854 ms in 5 calls (max 180)
+      of it: layers                   675 ms in 4 calls (max 177)
+    write file                         13 ms in 5 calls (max 4)
+    read base                         252 ms in 1 call (max 252)
+    flatten (base + composite)        856 ms in 1 call (max 856)
+  second save 1 ms (0 layers, 0 flat)  nothing written: PASS
+```
