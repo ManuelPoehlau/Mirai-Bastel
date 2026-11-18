@@ -657,3 +657,32 @@ def test_a_view_twin_stays_at_rest_while_its_original_follows():
     expected[12] += 1.0
     assert twin == expected
     assert _close(_entry_matrix(app, UPPER[0]), _follow_matrix(app, UPPER[0], "Hals"))
+
+
+def test_pose_mode_keeps_posing_with_linked_parts_selected_in_mode_4():
+    """Regression (Manu 2026-11-18: "Im Pose Modus kann ich nur eine einzige Bewegung machen, danach ist es scheinbar
+    eingefroren"): after Link the parts stay selected in mode 4; in pose mode W/E/R pose the current bone, so the object
+    placement policy (a linked part is locked while posed) must not refuse the second gesture. The same for a selected
+    bound head."""
+    from tests.rig_support import POSE_MODE, E, hold
+
+    d = _scene_driver()
+    app = d.app
+    _mode4(d, LOWER)
+    assert app.link_selected_to_bone(_bone(app, "Kiefer")) is True
+    app.select_bone(_bone(app, "Hals"))
+    d.motion(WIDTH * 0.6, HEIGHT * 0.5)
+    d.tap(POSE_MODE)
+    assert app.pose_mode
+    for selected in (LOWER, ("Gollum",)):
+        app.selection.objects = {_obj(app, n).id for n in selected}
+        for _ in range(3):
+            before = app._skeleton.pose.get(_bone(app, "Hals"))
+            hold(d, E, ((12, 0), (12, 0)))
+            assert app.status_message.startswith("Pose: 'Hals' rotated"), app.status_message
+            assert app._skeleton.pose.get(_bone(app, "Hals")) != before
+    # out of pose mode the placement stays locked for a linked part while posed (§4.5)
+    d.tap(POSE_MODE)
+    app.selection.objects = {_obj(app, LOWER[0]).id}
+    refusal = app.can_run(commands.ROTATE, RunContext("key", TEST_KEY))
+    assert refusal is not None and "follows 'Kiefer' - the rig is posed" in refusal.text

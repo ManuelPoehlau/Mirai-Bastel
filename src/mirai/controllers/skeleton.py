@@ -1651,6 +1651,8 @@ class SkeletonController:
         services = self.services
         if label is None or not ctx.operands or services.selection.mode is not SelectionMode.OBJECT:
             return None
+        if self.pose_mode and command in POSE_MODE_ALLOWS:
+            return None  # W/E/R pose the current bone there, not the selected objects (as `posed_refusal`)
         if self.rig is None:
             return None
         scene = services.scene
