@@ -36,7 +36,8 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
   beschleunigt, das Speichern im Container fast halbiert; die 7–9 s auf deinem PC passen aber eher zu den
   Dateischreibvorgängen (z. B. Virenscanner) als zur Rechenzeit – die Sonde zeigt jetzt die Teile einzeln (§7.1). Bitte
   noch einmal laufen lassen.
-- **Deine Entscheidungen P-7 (Welt-Radius), P-10, P-13** sind eingetragen; die P-13-Sperren sind gebaut: Attach eines
+- **Deine Entscheidungen P-5 (2048² Standard), P-7 (Welt-Radius), P-10 (Malen auf der gezeigten Fläche, mit SubD
+  auf der SubD-Fläche, schon in Phase 2) und P-13** sind eingetragen; die P-13-Sperren sind gebaut: Attach eines
   bemalten Objekts ohne dieselbe Bemalung und eine ZBrush-Rückgabe mit neuen UVs auf einem bemalten Objekt werden mit
   Statuszeile abgelehnt.
 
@@ -55,13 +56,15 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
 | # | Decision | Where it shows |
 |---|---|---|
 | P-7 | The brush radius is a **world** radius (% of the bounding radius, like Soft and Brush O-3) | Phase 2 dab |
-| P-10 | Phase 2 paints **on the cage with SubD shown off** in the room; painting on the SubD surface is Phase 3 | Phase 2 room frame |
+| P-10 | ~~Phase 2 paints on the cage with SubD shown off; SubD surface painting in Phase 3~~ — **revised by Manu the same day (§8.1): Phase 2 paints on the surface that is shown — the SubD surface when SubD is on, the cage when it is off** | Phase 2: texel map, hits and cursor on the drawn surface |
 | P-13 | Faces without usable UVs (zero area, overlap, unmapped) are shown and skipped with a status line; **Attach is refused** when a painted object and its partner do not share that paint; **a GoZ return that changes a painted object's UVs is refused** until the UV transfer exists | the UV check (§4); the refusals (§8), built now |
 
 **Manu, 2026-11-18 (later):** „P-5 ja“ — **2048² is the default resolution of a new paint stack, 1024² the fast option,
 4096² not offered on the reference PC** (the audit's proposal). Phase 1 creates no stack; Phase 2 uses it.
 
-Still open: P-8, P-9, P-11, P-12, P-14 … P-17. **P-10 is under review** (Manu's question, §8.1).
+**Manu, 2026-11-18 (later, verbatim):** „P-10 Option 1, SubD-Malen in Phase 2“ (after the measurement in §8.1).
+
+Still open: P-8, P-9, P-11, P-12, P-14 … P-17.
 
 ## 2. The data model (Core part)
 
@@ -213,9 +216,16 @@ Fixes the same day (container numbers, the same probe):
 
 ## 8. Not in Phase 1 (next)
 
-- **Phase 2** (P-2, P-6, P-7, P-10 decided): the room frame (enter / leave, view state saved and restored), the
+- **Phase 2** (P-2, P-5, P-6, P-7, P-10 decided): the room frame (enter / leave, view state saved and restored), the
   layer-A stroke session, the paint dab (radius, opacity, flow, hardness, curve; stroke buffer; seam padding; mirrored dab),
-  cursor circle, Paint / Erase / Pick, the live texture wired to `take_changed`, status-line refusals (no UVs, eye, SubD).
+  cursor circle, Paint / Erase / Pick, the live texture wired to `take_changed`, status-line refusals (no UVs, eye).
+  **Painting on the shown SubD surface (P-10 revised, §8.1)**, which adds: (a) the texel map of the derived mesh (its
+  faces and refined UVs; patched when the derived topology changes, re-read for positions only) with a build that meets
+  the P-D bar on the reference PC at SubD level 2 (≤ 2 s; today 2.6 s in the container ≈ 9 s there) - a faster raster
+  for many small triangles, or the derived map computed from the cage map (with linear UVs every SubD sub-face lies inside
+  its cage face's UV polygon); (b) the hit, the dab centre and the cursor circle on the drawn SubD surface, not on the cage
+  (AD-022 picks a never-drawn cage); (c) acceptance rows: a dab painted with SubD on stays round on SubD (out-of-round
+  near 1.0 as SubD 2 → 3 in §8.1), P-A with SubD 2 on.
 - **P-13 refusals, built 2026-11-18:** `Application.attach_plan` refuses (status line, nothing changed, also with "take
   the destination's look") when the destination or a source is painted and they do not share that paint —
   `PaintStore.same_paint`: equal stacks and, where pixels are in memory, equal pixels (a detached part painted on its own
@@ -244,8 +254,7 @@ shows the same distortion on SubD today (the same mapping). Painting **on the Su
 derived mesh: level 2 = 36,008 faces, build 2.6 s at 2048² in the container (≈ 9 s on the reference PC by the ×3.4 seen
 in §7.1), level 1 0.8 s — the per-triangle raster must become faster for that (the batched raster tried in §7.1 costs about
 the same for many small triangles as for few large ones), and hits / cursor must use the drawn surface instead of the cage
-(today picking reads the cage, AD-022). Decision for Manu: keep P-10 (cage, SubD off) for Phase 2, or paint on the shown
-SubD surface in Phase 2.
+(today picking reads the cage, AD-022). **Decided:** paint on the shown SubD surface in Phase 2 (Manu, „P-10 Option 1“).
 
 ## 9. Tests
 
