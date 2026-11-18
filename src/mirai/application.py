@@ -156,6 +156,7 @@ from .controllers.gestures import (
 )
 from .controllers.knife import KnifeController
 from .controllers.morph import MorphController
+from .controllers.paint_room import RESOLUTIONS as PAINT_RESOLUTIONS, PaintRoomController
 from .controllers.objects import OBJECT_MODE_ROUTES, PLACEMENT_COMMANDS, ObjectController, selection_state
 from .controllers.pointer_tools import PointerToolsController
 from .controllers.skeleton import SHARE_VIEW_MODE, ShareCache, SkeletonController
@@ -195,6 +196,7 @@ from .surface_chain import SurfaceChain
 from .surface_positions import SurfacePositions
 from .paint import files as paint_files
 from .paint import uv_health as uv_health_api
+from .paint.display import PaintDisplay
 from .paint.store import PaintStore
 from .paint.uv_check_display import UVCheckState, uv_check_tints
 from .viewport import DisplayMode, DisplayState, OrbitCamera
@@ -497,6 +499,8 @@ class Application:
         self._soft: SoftSettings = SoftSettings()
         # AD-037: the pixels of every painted object (`SceneObject.paint` is the document value); cleared on a reset.
         self.paint = PaintStore(loader=paint_files.read_layer)
+        # AD-037 §8 Phase 2: what each painted object shows (its composite as a live texture, updated per frame).
+        self.paint_display = PaintDisplay(self.paint)
         # AD-037 Phase 1a: the UV check while it shows (`UVCheckState`: mesh, its watch, `UVHealth`); None = off. View
         # state only.
         self._uv_check: UVCheckState | None = None
@@ -589,6 +593,8 @@ class Application:
 
         # The Knife session (AD-017, `controllers.knife` since AD-027 M3): its settings live in the controller.
         self._knife = KnifeController(self._services)
+        # The Paint Room (AD-037 §8 Phase 2): its session, the shown paint surface, the brush and the strokes.
+        self._paint_room = PaintRoomController(self._services)
         # WP-KNIFE-01 UX2b: any Shift key held, as the window reports it
         # (`set_shift_held`). Only the Knife's hover reads it (the midpoint before
         # the click); a click keeps deciding by its press modifiers (A2, AD-019).
@@ -720,7 +726,10 @@ class Application:
         `mirai.subdivision.gl_lines.GLSubdLineOverlay`). Die SubD-Vorschau (`self.subdivision`) hängt
         sich an jeden neuen Viewport; ohne Senke rechnet sie headless dieselben Segmente."""
         self._morph.drop_view()  # the reset replaces every object, the view included
+        if self._paint_room.session is not None:  # AD-037: the room ends with its object
+            self.close_paint_room()
         self.paint.clear()  # AD-037: every object is new
+        self.paint_display.clear()
         if geometry_type in ("cube", "obj", "empty"):
             reset_scene(self.scene, *self._build_mesh(geometry_type, obj_path))
             self.scene_path = None
@@ -1030,6 +1039,126 @@ class Application:
         self._objects.sync_views()  # AD-035 S-4: the selection tint is back on a selected eye
         self._set_status("Eye Lab closed")
         return True
+
+    # -- the Paint Room (AD-037 §8 Phase 2, P-2: a configuration of the same window) -----------------------------
+
+    @property
+    def paint_room_open(self) -> bool:
+        return self._paint_room.session is not None
+
+    def paint_room_refusal(self) -> str | None:
+        """Why the Paint Room cannot open on the edit object now (None = it can): an eye (P-14), no UVs, another
+        interaction, a morph target's editing view, or a deformed surface (posed / a morph mix: P-8 is open)."""
+        obj = self.scene.edit_object
+        session = self.interaction.session
+        if session is not None and session.owner != "paint":
+            return f"Paint Room: not while the {session.owner or session.label} interaction runs"
+        if obj.eye is not None:
+            return f"Paint Room: {obj.name!r} is an eye - eyes keep their own maps (P-14)"
+        if not obj.mesh.has_face_uvs():
+            return f"Paint Room: {obj.name!r} has no UVs - nothing can be painted (UVs come from ZBrush, UV Master)"
+        if self.morph_view_open:
+            return "Paint Room: not in a morph target's editing view"
+        if self._query_cage() is not None:
+            return ("Paint Room: the object is shown posed or with a morph mix - painting a deformed surface is not"
+                    " decided yet (P-8); show the rest shape first")
+        return None
+
+    def open_paint_room(self) -> bool:
+        """Open the Paint Room on the edit object (SPACE menu row; no key until Manu's "Taste passt"): the view state
+        (display mode, wire overlay, texture display, region colours) is saved and set for painting - shaded, textured,
+        no wire, no region colours -, the brush session starts and the shown surface's texel map is built (P-10: the
+        SubD surface when SubD shows). View state only: no Undo step, nothing saved; the first stroke makes the paint
+        (one Undo step). Refused with a status line (`paint_room_refusal`). True = open."""
+        if self._paint_room.session is not None:
+            return True
+        refusal = self.paint_room_refusal()
+        if refusal is not None:
+            self._set_status(refusal)
+            return False
+        if self.eye_lab_open:
+            self.close_eye_lab()
+        display = self.display
+        saved = {
+            "mode": display.mode, "wire": display.wireframe_overlay, "texture": display.show_texture,
+            "regions": display.region_tint,
+        }
+        display.set_mode(DisplayMode.SHADED)
+        display.set_wireframe_overlay(False)
+        display.show_texture = True
+        display.region_tint = False
+        self._apply_display()
+        self._objects.sync_views()
+        self._set_hovered(None)
+        obj = self.scene.edit_object
+        self._paint_room.start(obj, saved)
+        self._set_status(self.paint_room_status())
+        return True
+
+    def close_paint_room(self, status: str = "Paint Room closed") -> bool:
+        """Close the Paint Room: a running stroke is cancelled, the view state as it was when the room opened. The paint
+        stays (it is the document's). True = it was open."""
+        if self._paint_room.session is None:
+            return False
+        state = self._paint_room.stop()
+        display = self.display
+        display.set_mode(state["mode"])
+        display.set_wireframe_overlay(state["wire"])
+        display.show_texture = state["texture"]
+        display.region_tint = state["regions"]
+        self._apply_display()
+        self._objects.sync_views()
+        self._set_status(status)
+        self._refresh_hover()
+        return True
+
+    def paint_room_status(self) -> str:
+        """The room's status line: the object, the surface it paints on, the map's build time, faces without texels."""
+        room = self._paint_room
+        surface = room.surface()
+        if surface is None:
+            return "Paint Room closed"
+        text = f"Paint Room: {room.obj.name!r} {room.surface_text()}"
+        if room.last_build is not None:
+            text += f" (Karte {room.last_build[1]:.2f} s)"
+        if surface.unpaintable:
+            faces = "Flächen" if surface.kind == "cage" else "SubD-Flächen"
+            text += f"; {surface.unpaintable} {faces} ohne malbare UV-Fläche (UV-Prüfung: SPACE)"
+        return text + " - LMB ziehen malt, Shift+Rad Radius, Alt+Rad Deckkraft"
+
+    @property
+    def paint_brush(self):
+        """The Paint Room's brush (`mirai.paint.brush.BrushSettings`; view state, not saved)."""
+        return self._paint_room.brush
+
+    def set_paint_brush(self, **changes) -> bool:
+        """Change the brush (any `BrushSettings` field; clamped). True = changed."""
+        return self._paint_room.set_brush(**changes)
+
+    @property
+    def paint_resolution(self) -> int:
+        """The size of the edit object's paint (its stack's), or of the stack the first stroke will make (P-5)."""
+        return self._paint_room.size()[0] if self._paint_room.obj is not None else self._paint_room.resolution
+
+    @property
+    def paint_resolutions(self) -> tuple[int, ...]:
+        return PAINT_RESOLUTIONS
+
+    def set_paint_resolution(self, size: int) -> bool:
+        """The size of the stack the first stroke makes (2048² default, 1024² fast; refused once the stack exists)."""
+        changed = self._paint_room.set_resolution(size)
+        if changed and self.paint_room_open:
+            self._set_status(self.paint_room_status())
+        return changed
+
+    @property
+    def paint_stroking(self) -> bool:
+        return self._paint_room.stroking
+
+    @property
+    def paint_surface_text(self) -> str:
+        """Which surface the room paints on and at which size ("malt auf der SubD-Fläche (Stufe 1), 2048²")."""
+        return self._paint_room.surface_text()
 
     def frame_eye(self, eye: SceneObject | None = None, frontal: bool = False) -> bool:
         """Frame one eye (the first selected one by default) close up; `frontal` also turns the camera to look into
@@ -1513,6 +1642,8 @@ class Application:
         Selection und History werden nicht gespeichert (Format, V1_SPEC §12); der Ansichts-Zustand (Display,
         Licht, Kamera, ... `mirai.view_state`) reist unter `"view"` mit."""
         owner = self.interaction_owner
+        if owner == "paint" and not self._paint_room.stroking:
+            owner = None  # AD-037: the Paint Room saves between strokes (its view state is not the document)
         if owner is not None:
             self._set_status(f"Save scene: not while the {owner} interaction runs")
             return False
@@ -1524,6 +1655,10 @@ class Application:
         paint = paint_files.prepare_save(document.objects.values(), self.paint, path)  # AD-037: layer PNGs first
         data = scene_to_dict(document)
         data[view_state.VIEW_KEY] = view_state.capture(self)
+        room = self._paint_room.saved_view
+        if room is not None:  # AD-037: the file keeps the view the room restores, not the room's own
+            data[view_state.VIEW_KEY]["display"].update(mode=room["mode"].name, wireframe_overlay=room["wire"],
+                                                         region_tint=room["regions"], show_texture=room["texture"])
         for raw in data["objects"]:
             texture = raw.get("texture")
             if texture is not None:
@@ -2693,6 +2828,8 @@ class Application:
         mesh change, no History, no Undo step. Refused visibly while an interaction owns the keys
         (W/E/R/T/G, a drag selection, the Knife): a running gesture keeps the view it began with."""
         owner = self.interaction_owner
+        if owner == "paint" and not self._paint_room.stroking:
+            owner = None  # AD-037 P-10: the Paint Room paints on whatever is shown, SubD on or off
         if owner is not None or self._pointer_tools.drag_select is not None:
             self._set_status(f"SubD: ignoriert — {owner or 'Auswahl'} läuft")
             return False
@@ -3731,6 +3868,9 @@ class Application:
         """Esc = nur Abbrechen (B1 A3: kein Quit, E22). Laufender Transform →
         exakter Vorzustand ohne History; nur scharf → entschärfen; idle →
         nichts. Eine Box/Paint-Geste wird verworfen (Auswahl wie vor der Geste)."""
+        room = self._paint_room.session
+        if room is not None:
+            return room.cancel()  # AD-037: Esc in the Paint Room undoes the running stroke only
         drag = self._pointer_tools.drag_select  # (a drag selection and a held pivot never coexist)
         if drag is not None:
             return drag.cancel()
@@ -4921,6 +5061,10 @@ class Application:
         Live radius (AD-020, `PROVISIONAL`): während einer begonnenen Soft-Geste (Move/Rotate/Scale,
         auch per Gizmo/Tweak) ist das Zoom-Rad die Radius-Stufe dieser Geste und zoomt nicht."""
         command = self.bindings.command_for(input)
+        if self.interaction.owner == "paint":
+            grabbed = self.interaction.grab(Wheel(input, command))  # AD-037: radius / opacity wheel of the room
+            if grabbed is not PASS:
+                return grabbed
         if command == commands.ZOOM and self._gestures.soft_live():
             command = commands.SOFT_RADIUS_UP if input.value == "UP" else commands.SOFT_RADIUS_DOWN
         if command in _SOFT_COMMANDS:
@@ -5870,7 +6014,10 @@ class Application:
         """
         if self.viewport is not None:
             self.flush_hover()
+            if self._paint_room.session is not None and self._paint_room.obj is not self.scene.edit_object:
+                self.close_paint_room("Paint Room closed: the edit object changed")
             self._objects.sync_highlight()
+            self.paint_display.update()  # AD-037: the changed tiles of every painted object to its live texture
             self._objects.sync_gaze()
             self._push_region_tints()
             # skin first: the morph stage keeps its surface while a later stage (skin, SubD) reads it
@@ -5882,6 +6029,8 @@ class Application:
         """Sauberes Herunterfahren: aktives Tool deaktivieren (kein stale State);
         eine laufende Knife-Session wird verworfen (wie Esc)."""
         self._knife.shutdown()
+        if self._paint_room.session is not None:
+            self.close_paint_room()
         chain = self._skeleton.chain
         if chain is not None:
             chain.end(quiet=True)

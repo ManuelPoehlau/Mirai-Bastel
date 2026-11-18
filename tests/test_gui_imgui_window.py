@@ -502,3 +502,59 @@ def test_eye_panel_draws_an_eye_and_leaves_gl_state_as_found():
     finally:
         layer.close()
         window.close()
+
+
+def test_paint_room_panel_and_a_stroke_through_the_window_upload_the_live_texture():
+    """AD-037 §8 Phase 2: the Paint Room in the real window - the panel draws, a plain LMB drag in the viewport paints
+    (one Undo step), the live texture is uploaded box by box, and frames leave the GL state as found."""
+    try:
+        window, app, layer = run.build(argv=["cube"])
+    except Exception as exc:
+        pytest.skip(f"kein GL/Display: {exc}")
+
+    def _tick(app, window, n):  # the window's clock tick (`main._tick`) before each frame
+        for _ in range(n):
+            app.update_viewport(0.0)
+            run.render_frame(window)
+
+    try:
+        mesh = app.scene.mesh
+        for i, fid in enumerate(mesh.all_face_ids()):
+            mesh.set_face_uvs(fid, [(i / 6 + du / 6, dv) for du, dv in ((0, 0), (1, 0), (1, 1), (0, 1))])
+        app.viewport.on_topology_changed()  # the UVs reach the GL buffers
+        app.set_paint_resolution(1024)
+        assert app.open_paint_room() is True
+        _tick(app, window, 3)
+        rects = layer.panel_rects
+        assert rects  # the room's panel
+        before = snapshot_gl_state()
+        _tick(app, window, 1)
+        assert snapshot_gl_state() == before
+        # a stroke in the middle of the viewport, away from every panel
+        x0, y0 = window.width * 0.55, window.height * 0.5
+        window.dispatch_event("on_mouse_motion", x0, y0, 0, 0)
+        _tick(app, window, 1)
+        window.dispatch_event("on_mouse_press", x0, y0, mouse.LEFT, 0)
+        for i in range(1, 8):
+            window.dispatch_event("on_mouse_drag", x0 + 4 * i, y0, 4, 0, mouse.LEFT, 0)
+            _tick(app, window, 1)
+        window.dispatch_event("on_mouse_release", x0 + 28, y0, mouse.LEFT, 0)
+        _tick(app, window, 2)
+        obj = app.scene.edit_object
+        assert obj.paint is not None and len(app.history) == 1, app.status_message
+        texture = app.paint_display.texture(obj)
+        assert texture.gl_name is not None and texture.uploads >= 1
+        uploads = texture.uploads
+        window.dispatch_event("on_mouse_press", x0, y0 + 10, mouse.LEFT, 0)
+        window.dispatch_event("on_mouse_release", x0, y0 + 10, mouse.LEFT, 0)
+        _tick(app, window, 2)
+        assert texture.uploads > uploads and len(app.history) == 2  # a dab: its boxes only
+        before = snapshot_gl_state()
+        _tick(app, window, 1)
+        assert snapshot_gl_state() == before
+        assert app.close_paint_room() is True
+        _tick(app, window, 2)
+        assert app.viewport.render_mesh.material.texture is texture  # the paint stays shown outside the room
+    finally:
+        layer.close()
+        window.close()

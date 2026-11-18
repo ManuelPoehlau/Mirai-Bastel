@@ -218,6 +218,57 @@ def test_patch_equals_rebuild_after_random_topology_and_uv_sequences(seed):
         assert_same_map(texel_map, TexelMap(mesh, 48, 48))
 
 
+def _per_face_build(texel_map: TexelMap) -> TexelMap:
+    """The same map built one face at a time by the patch path (`_add_face`, smallest key wins)."""
+    out = TexelMap(Mesh(), texel_map.width, texel_map.height)
+    out.mesh, out.positions = texel_map.mesh, texel_map.positions
+    faces = out.mesh.all_face_ids()
+    out._grow(2 * len(faces) + 16)
+    for fid in faces:
+        out._add_face(fid)
+    return out
+
+
+def _subd_mesh(mesh: Mesh, level: int) -> Mesh:
+    from mirai.scene_factory import mesh_from_positions_and_faces
+    from mirai.subdivision.catmull_clark import SubdSurface, refine_face_uvs
+
+    surface = SubdSurface(mesh)
+    derived = surface.level(level)
+    control = [tuple(mesh.vertex_position(v)) for v in surface.topology.vertex_ids]
+    uvs = refine_face_uvs([mesh.face_uvs(f) for f in surface.topology.face_ids], surface.topology.face_sizes, level)
+    return mesh_from_positions_and_faces(derived.apply_full(control), derived.faces, uvs)
+
+
+@pytest.mark.parametrize("which", ["cage", "subd1"])
+def test_the_batched_build_equals_the_per_face_build_on_the_gollum_head(which):
+    """AD-037 §8 Phase 2: the batched `rebuild` (array split of triangles / convex quads, batched raster, one ownership
+    pass) gives exactly the per-triangle map - texels, weights, boxes and the per-face triangulations."""
+    mesh = _head() if which == "cage" else _subd_mesh(_head(), 1)
+    batched = TexelMap(mesh, 512, 512)
+    reference = _per_face_build(batched)
+    assert_same_map(batched, reference)
+    assert batched._face_tris == reference._face_tris
+
+    def boxes(m):
+        return {(int(m.tri_face[s]), int(m.tri_index[s])): tuple(m._tri_box[s]) for s in range(m._cap)
+                if m.tri_face[s] >= 0}
+
+    assert boxes(batched) == boxes(reference)
+
+
+def test_the_batched_build_handles_large_triangles_concave_faces_and_unmapped_faces():
+    mesh = grid(3, uv_scale=1.0)
+    faces = mesh.all_face_ids()
+    mesh.set_face_uvs(faces[0], None)
+    mesh.connect_vertices(faces[4], mesh.face_vertices(faces[4])[0], mesh.face_vertices(faces[4])[2])
+    v = mesh.face_vertices(faces[8])[2]
+    p = mesh.vertex_position(v)
+    mesh.set_vertex_position(v, (p[0] - 0.8, p[1] - 0.8, p[2]))  # a concave quad
+    batched = TexelMap(mesh, 300, 300)  # boxes of ~100 texels: the per-triangle path inside the batched build
+    assert_same_map(batched, _per_face_build(batched))
+
+
 def test_a_large_change_rebuilds():
     mesh = grid(10)
     texel_map = TexelMap(mesh, 32, 32)

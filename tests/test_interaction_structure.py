@@ -34,6 +34,7 @@ NON_MODAL_FIELDS = {
     "scene", "selection", "history", "_selection_undo_stack", "_selection_redo_stack", "_last_undo_redo_mesh_step",
     # construction and wiring: the slot, the services, the controllers, the command table, mode policies (stage 7)
     "interaction", "_services", "_gestures", "_objects", "_symmetry", "_morph", "_knife", "_pointer_tools", "_skeleton",
+    "_paint_room",
     "_handlers", "_mode_policies", "tool_manager", "bindings", "keymap_load",
     # view state: camera, display, the viewport and its sinks and caches, picking
     "camera", "display", "viewport", "viewport_width", "viewport_height", "_look_row_index", "_pick_cache",
@@ -49,8 +50,9 @@ NON_MODAL_FIELDS = {
     "_soft", "gizmo_size_name", "tweak_command", "group_mask",
     # protection state per object (Mask, Hide, the active Polygroup) - not mesh data, no History
     "_masks", "_hiddens", "_active_regions",
-    # AD-037: the paint pixels (document data beside `SceneObject.paint`) and the UV check while it shows (view state)
-    "paint", "_uv_check",
+    # AD-037: the paint pixels (document data beside `SceneObject.paint`), what painted objects show (derived) and the UV
+    # check while it shows (view state)
+    "paint", "paint_display", "_uv_check",
     # the status line and the AD-013 H2 host hooks
     "status_message", "status_serial", "command_gate", "_hover_suspended",
 }
@@ -66,6 +68,8 @@ NOT_IN_TABLE = {
     commands.ORBIT: "navigation", commands.PAN: "navigation", commands.ZOOM: "navigation",
     # resolved by the Knife session in its own context (AD-017)
     commands.KNIFE_COMMIT: "knife", commands.KNIFE_LIFT: "knife", commands.KNIFE_MIRROR_VARIANT: "knife",
+    # resolved by the Paint Room's session in its own context (AD-037 §8 Phase 2)
+    commands.PAINT_OPACITY_UP: "paint", commands.PAINT_OPACITY_DOWN: "paint",
     # bound or declared, no `Application` handler (a key press returns False, as before)
     commands.CLEAR_SELECTION: "none", commands.SPLIT_EDGE: "none", commands.ARTICULATION_RESTORE: "none",
 }

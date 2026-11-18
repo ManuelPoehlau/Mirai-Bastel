@@ -80,6 +80,11 @@ ZOOM = "Zoom"
 # (V-1, fixed modifier grammar, `bindings.FIXED_MODIFIER_RULES`), not a command.
 TOGGLE_ORTHO = "ToggleOrtho"
 
+# --- Paint Room (AD-037 §8 Phase 2, `PROVISIONAL`): the brush opacity one step up / down (the `paint` context's wheel;
+# the radius is the Soft radius wheel, read by the room's session).
+PAINT_OPACITY_UP = "PaintOpacityUp"
+PAINT_OPACITY_DOWN = "PaintOpacityDown"
+
 # --- Display Modes / Viewport-Anzeige (Viewport-only) ---------------------
 CYCLE_DISPLAY_MODE = "CycleDisplayMode"
 TOGGLE_WIREFRAME_OVERLAY = "ToggleWireframeOverlay"

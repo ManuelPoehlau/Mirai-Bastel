@@ -9,7 +9,8 @@ pyglet noch `examples/` kennt.
     Mesh:   Attach | Attach – Look des Ziels übernehmen (AD-031 P2, O-13) | Detach | (Select Linked: Hinweis) (P3) |
             Weld… (P4) | Bridge (P5; alle ohne Taste)
     SPACE:  Add + > (Grundkörper, Basehead, Baseman) | Select Linked | Textur an/aus | UV-Prüfung an/aus (AD-037, nur mit
-            UVs) | Szene laden (Shift+Klick: als Referenz)
+            UVs) | Paint Room öffnen / schließen (AD-037 Phase 2, nur mit UVs, kein Auge) | Szene laden (Shift+Klick: als
+            Referenz)
 
 Attach fragt nach, bevor ungewichtete Punkte in ein gebundenes Mesh kommen (O-5): der Dialog nennt die Anzahl, erst
 „Trotzdem anhängen“ ruft `Application.attach_objects(accept_unweighted=True)`.
@@ -39,6 +40,7 @@ from mirai.detach import LABEL as DETACH_LABEL, LINKED_LABEL
 from mirai.topology.bridge import LABEL as BRIDGE_LABEL
 from mirai.topology.weld import LABEL as WELD_LABEL
 
+from . import paint_model
 from .file_browser import FileBrowser
 from .file_browser_model import ALL_FILTER, OBJ_FILTER, SCENE_FILTER, LastDirs, RecentFiles
 
@@ -342,6 +344,9 @@ class Menus:
         if app.scene.mesh.has_face_uvs() or app.uv_check_on:  # AD-037 Phase 1a: read-only, no key yet
             if imgui.menu_item(UV_CHECK_ENTRY, "", app.uv_check_on)[0]:
                 app.toggle_uv_check()
+        room = paint_model.menu_label(app)  # AD-037 Phase 2: the Paint Room (no key until Manu's "Taste passt")
+        if room is not None and imgui.menu_item(room, "", app.paint_room_open)[0]:
+            paint_model.toggle(app)
         imgui.separator()
         imgui.text_disabled("Szene laden (Shift+Klick: als Referenz)")
         for name in sv.scenes():

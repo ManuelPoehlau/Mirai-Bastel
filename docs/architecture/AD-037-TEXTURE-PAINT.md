@@ -1,11 +1,11 @@
-# AD-037 — Texture paint: storage, data model and foundations (Paint Room Phase 1)
+# AD-037 — Texture paint: storage, data model, foundations (Phase 1) and the Paint Room (Phase 2)
 
 **Status:** **DECIDED (Manu, 2026-11-18)**: „P-1 ja, P-2 ja, P-3 Go, P-4 ja, P-6 ja“ (the audit's addendum), the additive
 Core change and scene format v14 included. **IMPLEMENTED Phase 1 (2026-11-18, container: TESTED)** as built in §2–§6.
 **Reference-PC probes P-A … P-F: RUN (Manu, 2026-11-18)** — P-A, P-B, P-C, P-E pass; P-D (2.06 s at 2048²) and P-F
-(7.4 / 9.4 s) failed and were worked on the same day (§7.1), the re-run is open. **Decisions P-7, P-10, P-13: Manu,
-2026-11-18** (§1); the P-13 refusals are built (§8). **No Paint Room yet** (Phase 2): nothing in the app paints, no key,
-no keymap entry.
+(7.4 / 9.4 s) failed and were worked on the same day (§7.1), the re-run is open (its output has not reached the repo yet).
+**Decisions P-7, P-10, P-13: Manu, 2026-11-18** (§1); the P-13 refusals are built (§8). **IMPLEMENTED Phase 2, the Paint
+Room (2026-11-18, container: TESTED; reference PC: open)** as built in §10: SPACE menu row, no key, no keymap entry.
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).
@@ -40,6 +40,24 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
   auf der SubD-Fläche, schon in Phase 2) und P-13** sind eingetragen; die P-13-Sperren sind gebaut: Attach eines
   bemalten Objekts ohne dieselbe Bemalung und eine ZBrush-Rückgabe mit neuen UVs auf einem bemalten Objekt werden mit
   Statuszeile abgelehnt.
+
+**Phase 2 – der Paint Room (gebaut 2026-11-18, §10):**
+
+- **Öffnen:** SPACE → „Paint Room öffnen“ (nur mit UVs, kein Auge; keine Taste). Der Raum stellt Shaded + Textur ein,
+  schaltet Drahtgitter und Gruppenfarben aus und stellt beim Schließen alles zurück; die Kamera bleibt, wo sie ist.
+  Abgelehnt bei Augen (P-14), ohne UVs, im Bearbeitungsfenster eines Morph-Ziels und **in einer Pose / mit eingeblendetem
+  Morph** (P-8 ist offen).
+- **Malen:** LMB ziehen malt (P-6, vorläufig, keine Keymap-Zeile), Alt+LMB dreht weiter die Ansicht, Shift+Rad Radius,
+  Alt+Rad Deckkraft, das Rad zoomt, Esc nimmt den laufenden Strich exakt zurück. Panel „Paint Room“: Malen / Radieren /
+  Pipette, Farbe, Radius (Prozent des Objektradius, P-7), Deckkraft, Fluss, Härte, Kurve (die Soft-Kurven), Spiegeln an der
+  Symmetrie-Ebene, Auflösung 2048² / 1024² bis zum ersten Strich (P-5).
+- **Gezeigte Fläche (P-10):** mit SubD an malt der Raum auf der SubD-Fläche – Treffer, Pinsel und Kreis liegen dort, ein
+  Tupfer ist dort rund (gemessen: Unrundheit 1,04 statt 1,20 vom Käfig aus). Achtung: die SubD-Vorschau zeigt auf dem
+  Gollum-Kopf **Stufe 1** (Stufe 2 hätte 36.008 Flächen, die Vorschau begrenzt auf 25.000) – gemalt wird also auf Stufe 1.
+- **Ein Strich = ein Undo-Schritt**; der erste Strich legt die Bemalung an (Undo davon lässt das Objekt unbemalt).
+  Speichern im Raum geht (Ebene + zusammengerechnetes PNG). Die Bemalung bleibt auch außerhalb des Raums sichtbar.
+- **Messung im Container:** Raum öffnen 0,5 s (Käfig) / 0,6 s (SubD 1) / 0,9 s (SubD 2) bei 2048²; ein 3-%-Tupfer mit
+  Spiegelung rund 2–3 ms CPU. Dein PC entscheidet (Sonde `probe_paint.py`, jetzt mit dem echten Tupfer und SubD-Zeilen).
 
 ## 1. Decisions (Manu, 2026-11-18)
 
@@ -216,7 +234,7 @@ Fixes the same day (container numbers, the same probe):
 
 ## 8. Not in Phase 1 (next)
 
-- **Phase 2** (P-2, P-5, P-6, P-7, P-10 decided): the room frame (enter / leave, view state saved and restored), the
+- **Phase 2 — built 2026-11-18, §10.** The plan as it stood (P-2, P-5, P-6, P-7, P-10 decided): the room frame (enter / leave, view state saved and restored), the
   layer-A stroke session, the paint dab (radius, opacity, flow, hardness, curve; stroke buffer; seam padding; mirrored dab),
   cursor circle, Paint / Erase / Pick, the live texture wired to `take_changed`, status-line refusals (no UVs, eye).
   **Painting on the shown SubD surface (P-10 revised, §8.1)**, which adds: (a) the texel map of the derived mesh (its
@@ -264,11 +282,138 @@ sequences, ownership), `test_paint_uv_health.py` (each problem kind, islands / s
 `test_paint_store.py` (strokes, Undo / Redo, Esc, composite, copies, save / load round trip, Undo past a save, missing and
 wrong-size images), `test_application_uv_check.py`, `test_live_texture.py`, `test_gl_texture.py` (live texture: shows,
 box-only upload per policy, same as the file path, path draw unchanged), `test_gui_menus.py` (the SPACE row),
-`experiments/drag_cost/tests/test_probe_paint.py`.
+`experiments/drag_cost/tests/test_probe_paint.py`. Phase 2 (§10): `test_paint_brush.py` (curves = the Soft curves, falloff,
+blend / erase, opacity vs flow, the mirror's shared texels, Esc exact; the hit against brute force on the head, the
+footprint against brute force, facing, a dab across a UV seam, seam padding, **the SubD roundness row**),
+`test_paint_room.py` (enter / leave restores, refusals, one Undo step with the new stack, Esc, the room's input, Pick, the
+mirrored dab, the live texture re-composites only changed tiles, SubD on paints on the SubD surface, saving in the room,
+the edit object changing, the panel model / SPACE row), `test_paint_texel_map.py` (+3: batched build == per-face build on
+the head's cage and SubD 1, large / concave / unmapped faces), `test_gui_imgui_window.py` (+1: the room in the real
+window - panel, a stroke through window events, box uploads of the live texture, GL state as found),
+`test_interaction_structure.py` (the new fields and commands registered).
 
 Full default run in the container (2026-11-18, `xvfb-run -a python -m pytest`): 7,707 passed, 8 skipped, 1 failed —
 `tests/test_scene_menu_local_tmp.py::test_probe_menu_wiring`, which fails the same way on the base commit `25154ac`
 (not caused by this change).
+
+## 10. Phase 2 — the Paint Room (built 2026-11-18)
+
+Built on `claude/admiring-curie-5z3s6a` @ `c970d57`. Everything here is `PROVISIONAL` (agent-set) unless a decision of §1
+names it; no key and no `config/keymap.json` entry (CLAUDE.md, P-6).
+
+### 10.1 The room frame (P-2) — `Application.open_paint_room` / `close_paint_room`, `controllers.paint_room`
+
+- **Entry:** the SPACE menu row „Paint Room öffnen“ / „… schließen“ (`gui.paint_model.menu_label`: shown with UVs and not on
+  an eye), the panel's close box and „Schließen“. **Refused** with a status line (`paint_room_refusal`): an eye (P-14), no
+  UVs, another interaction running, a morph target's editing view, and a **deformed surface** - the edit object shown
+  posed or with a morph mix above 0 %: P-8 is open, so the room does not decide it (show the rest shape first).
+- **View state** saved on entry and restored on leaving (`PaintRoomController.saved_view`): display mode → Shaded, wire
+  overlay off, textures on, region colours off; the camera, SubD, the light and the UV check stay as they are. A save in the
+  room writes the restored values into the scene's `"view"`, not the room's. Nothing is document state: no Undo step.
+- **The session:** one exclusive session in the slot (`PaintRoomSession`, `interaction_owner` "paint", like the Knife).
+  Its `allows`: Cancel, Undo / Redo, Ortho, display / Look rows, the SubD keys (P-10: the room paints on what is shown;
+  `_subd_command` lets them through between strokes), Shift+S (`SymmetryController.cycle` accepts the owner "paint") and
+  the Soft radius wheel; everything else is refused silently (W/E/R, modes, topology, Add object ...). While a stroke runs
+  also Undo / Redo, Shift+S and the SubD keys are refused. Ctrl+S / SPACE are window commands and work between strokes
+  (`save_scene_file` lets the owner "paint" through when no stroke runs).
+- **Ends** with its object: a scene reset closes it, and a changed edit object (an Undo that carries it) closes it at the
+  next frame with a status line.
+
+### 10.2 Input (P-6 concept; code defaults only)
+
+Plain LMB press / drag / release paints (the session takes the press itself: no binding, so nothing for the keymap yet);
+Alt+LMB orbit / Alt+Shift+LMB pan go to the pointer resolver as before; Shift+wheel steps the brush radius (the Soft
+radius binding, read by the session); **Alt+wheel** steps the opacity (`commands.PAINT_OPACITY_UP` / `DOWN`, the new
+`paint` binding context, free in `config/keymap.json` and every context); the plain wheel zooms; Esc cancels the running
+stroke exactly (no History step; the rest of that press paints nothing). The panel (`gui.paint_panel`, left like the Eye
+Lab): Malen / Radieren / Pipette, colour (`color_edit3`), radius (steps `brush.RADIUS_STEPS_PERCENT`, 0.5 … 15 %, start
+3 %), opacity, flow, hardness, curve (the Soft curves: smooth, sphere, root, sharp, linear), mirror (shown when the mesh has
+a symmetry plane), the resolution of a new stack (2048² / 1024², P-5) until the first stroke.
+
+### 10.3 The shown surface (P-10 revised) — `mirai.paint.surface.PaintSurface`
+
+- **Which:** the SubD preview's derived mesh while SubD shows (`SubdivisionPreview.active`; its faces and linearly refined
+  UVs), else the edit mesh; built on first use per (mesh, size) and kept while the room is open, so switching SubD in the
+  room builds each surface once. **Measured fact:** the preview caps the derived mesh at `MAX_DERIVED_FACES` = 25,000
+  (`PROVISIONAL`, SubD README), so on the Gollum head (level 2 = 36,008 faces) it shows **level 1** (9,002 faces) and the
+  room paints on level 1; level 2 is measured for the record (§10.7).
+- **Hit:** the nearest ray hit (Möller-Trumbore, `_EPS` of `picking._ray_triangle_intersection`) on the drawn triangles -
+  every face's triangulation, those without texels included (they occlude), hidden faces left out - culled by boxes over
+  runs of 64 triangles (`_Clusters`). The ray is the edit camera's (`edit_camera.screen_to_ray`, object space): the hit,
+  the footprint and the cursor circle lie on the drawn surface, not on the cage AD-022 picks (§8 (b)).
+- **Footprint** (audit principle 3): the mapped texels whose surface point lies within the world radius, on triangles
+  whose normal is within 90° of the hit's (`FACING_MIN` = 0: the other side of a lid or a lip is not painted through). A
+  texel's surface point is computed once per triangle at its first dab (float32, reset when positions change), so a dab
+  gathers instead of interpolating. A dab crosses UV seams (texels of both islands by their 3D position).
+- **Mirror** (audit §5.2): with Mirror on and a symmetry plane on the mesh, a second footprint at the hit reflected across
+  the plane (object space; the derived mesh shares it); a texel in both counts once with the larger coverage. The cursor
+  shows the mirror's circle dimmed. P-9 (mirror in a pose) does not arise: the room refuses poses (§10.1).
+- **Faces without usable UVs** (P-13 "shown and skipped"): they hold no texel, the dab skips them, the status line counts
+  them on entry (the Gollum cage: 45; SubD 1: 204 derived faces) and a press on one says so.
+
+### 10.4 The stroke and the dab — `mirai.paint.brush`, `PaintRoomController.begin / step / end`
+
+- Dabs are spaced `SPACING` = 0.25 of the brush radius on screen; at most `MAX_DABS_PER_EVENT` = 24 per drag event, the
+  last sample always (audit §8.1). The falloff: full inside the hardness plateau, then the chosen Soft curve to 0 at the
+  radius.
+- **Stroke buffer** (principle 4): per texel `S ← S + (1 − S) · flow · falloff`; the layer shows the stroke's start pixels
+  with the colour at `opacity · S` (Normal, straight alpha, 8 bit) - opacity caps one stroke and does not build up inside
+  it, flow does. Erase lowers alpha the same way. Phase 2 paints the top layer of the stack.
+- **Release:** the seams of the touched tiles are padded (principle 5, `seam_pad`: unmapped texels up to `pad_width` = 4 at
+  2048² / 2 at 1024² take the nearest island texel, 8-neighbour dilation, fixed order), then **one History step**. The
+  first stroke on an unpainted object also makes the stack (`PaintStackCommand`, one `CompositeCommand` with the stroke):
+  Undo leaves the object unpainted (the scene saves as before, v13 or lower), Redo brings the same pixels. A stroke that
+  touched nothing makes no stack.
+- **Pick:** the composite's colour (base + layers: the albedo, not the lit frame) at the hit's own nearest texel (the UV
+  square of a point on an island border can belong to another island); then the previous tool again.
+
+### 10.5 What painted objects show — `mirai.paint.display.PaintDisplay`
+
+Per painted object the composite (base + visible layers, P-4) as a `LiveTexture`, shown by `ObjectsController._shown_texture`
+in place of the texture path - in the room and in the Modeller. `Application.update_viewport` re-composites the tiles
+`PaintStore.take_changed` reports, once per frame; the live texture uploads only those boxes, its mipmaps at the stroke's end
+("deferred", P-B). A changed stack value, texture or material re-composites the whole image; an object without paint is
+drawn exactly as before (P-E). The highlight signature carries `obj.paint`, so a stack that comes or goes (first stroke,
+Undo) reaches the viewport at the next frame.
+
+### 10.6 The texel map build, batched (§8 (a))
+
+`TexelMap.rebuild` no longer loops per triangle: triangles and convex quads are split in arrays (`_convex_quads`: the
+same Newell normal, axes and corner test as `triangulate_face`, the same float operations in the same order), every
+triangle is rasterized row by row (`_raster_scan`: the inside span of each row solved, widened by one texel, then tested
+with `raster_triangle`'s expressions), and every texel goes to its smallest key in one `np.minimum.at` pass over slots
+handed out in key order. `raster_triangle` now steps from its box start by integers (`(x0 - ax) + arange`), so both paths
+compute bit-identical values; **pinned:** batched == per-face build on the head's cage and SubD 1 (texels, weights,
+boxes, triangulations), and the 12 random patch == rebuild sequences of Phase 1 still pass. A batched raster over boxes
+(Phase 1's attempt, and a first Phase 2 version) computed 1.8-4× the inside texels; a thread pool over batches was slower
+in the container (memory-bound) - neither kept.
+
+### 10.7 Measurements [C] (container: Xeon 2.1 GHz, Python 3.13, NumPy 2.2.6, llvmpipe; best of 3 / the probe)
+
+| Room enter (P-D), 2048² | faces | texel map | + tables = surface | RPC estimate ×3–3.4 [H] |
+|---|---:|---:|---:|---|
+| cage | 2,234 | 0.40–0.43 s (Phase 1: 0.32–0.37 s per triangle) | 0.51–0.57 s | ≈ 1.6–1.9 s |
+| SubD 1 (what the head shows) | 9,002 | 0.47–0.53 s (per triangle: 0.73–0.80 s) | 0.59–0.69 s | ≈ 1.8–2.3 s |
+| SubD 2 | 36,008 | 0.73–0.84 s (per triangle: 2.3–2.8 s) | 0.92–1.04 s | ≈ 2.8–3.5 s |
+
+At 1024² every row is 0.15–0.5 s. The batched map is slightly *slower* than Phase 1's per-triangle build on the cage
+(few large triangles) and 1.5-3.4× faster on SubD; **P-D on SubD 1 at 2048² is the row the reference PC decides** (bar
+2 s; the 1024² option is the fallback, P-5).
+
+The dab (P-A CPU rows, real Phase 2 dab incl. the hit and the mirror; 2048², p50): 1 % ≈ 1–2 ms, 3 % ≈ 2–4 ms, 5 % ≈
+4–6 ms, 10 % ≈ 10–15 ms on every surface (the footprint does not depend on the mesh's face count once culled); the
+composite of the touched tiles 0.3–2.6 ms. Frame rows on llvmpipe (6 ms cage, 11 ms SubD 1, 23 ms SubD 2 for a software
+rasterizer) are not comparable to the 9800 GTX (§7.1: 3–5 ms). P-F 0.56 s; P-C +0.4 ms; P-E same image. **Not measured on
+the reference PC yet** — `python experiments/drag_cost/probe_paint.py` (now with `--surfaces cage,subd1,subd2`) is the
+run that decides P-A with SubD on (§8 (c)) and P-D on SubD 1.
+
+### 10.8 Not in Phase 2
+
+Several layers in the UI (only the top layer is painted; the stack format has several), blend modes (P-12), the undo
+budget (P-11: before-tiles only, compressed, unlimited), painting a posed / morphed surface (P-8, refused), eyes (P-14,
+refused), UV transfer (Phase 3; a GoZ UV change stays refused, P-13), smudge / blur / clone, lazy mouse, pressure (P-15:
+none), symmetry in a pose (P-9), a depth window for thin gaps beyond the facing test, a key for the room or the tools
+(after Manu's "Taste passt").
 
 ## Praxistest für Manu (Deutsch, ca. 5 Minuten, optional)
 
@@ -281,3 +426,29 @@ Phase 1 hat nur einen sichtbaren Teil, die UV-Prüfung:
    (Farben `PROVISIONAL`)? Noch einmal SPACE → „UV-Prüfung“ schaltet sie aus, die Gruppenfarben kommen zurück.
 
 Kein Undo-Schritt, die Szene bleibt unverändert. Eine Taste dafür nur nach Deinem „Taste passt“.
+
+## Praxistest Paint Room (Phase 2) für Manu (Deutsch, ca. 20 Minuten)
+
+Meine Annahmen aus Deinen Entscheidungen (bitte in einem Satz korrigieren, wenn eine nicht stimmt): Malen = LMB ziehen nur
+im Raum (P-6), Radius in Prozent des Objekts (P-7), 2048² als Start (P-5), Malen auf der gezeigten Fläche, mit SubD auf
+der SubD-Fläche (P-10), Gesicht in Ruhe (P-8 offen: in einer Pose lehnt der Raum ab).
+
+1. `Gollum_Head_rigging_test` öffnen, den Kopf zum Edit-Objekt machen, SPACE → **„Paint Room öffnen“**. Die Statuszeile
+   nennt die Fläche („malt auf dem Käfig, 2048²“), die Zeit für die Karte und die Flächen ohne malbare UV-Fläche. Ist die
+   Wartezeit beim Öffnen in Ordnung?
+2. Links das Panel „Paint Room“: Farbe wählen, auf Wange und Nase malen (LMB ziehen). Fühlt sich der Strich flüssig an,
+   folgt der Kreis dem Cursor? Ist der Radius-Startwert (3 %) sinnvoll?
+3. **Shift+Rad** (Radius), **Alt+Rad** (Deckkraft), Deckkraft 50 % und zweimal über dieselbe Stelle in *einem* Strich:
+   bleibt es 50 %? Dann Fluss 30 %: baut es sich im Strich auf? Härte und Kurve ausprobieren.
+4. Lippen und Lider: malt der Pinsel durch auf die Innenseite? (Er soll nur die Seite treffen, die Du siehst.)
+5. Mit Spiegeln (Symmetrie-Ebene an, Shift+S geht auch im Raum): erscheint der zweite, gedimmte Kreis auf der anderen
+   Gesichtshälfte und malt er dort mit? Der Kopf ist leicht asymmetrisch – trifft der Spiegel trotzdem die Haut?
+6. Über eine UV-Naht malen (z. B. Mitte Stirn / hinter dem Ohr): Bruch oder Kante sichtbar?
+7. **Esc** mitten im Strich: alles wie vorher? **Strg+Z**: ein Strich weg; der erste Strich weg = keine Bemalung mehr.
+8. **SubD an** (V) und dort malen: ist der Tupfer auf der glatten Fläche rund? Danach SubD aus: auf dem Käfig ist er
+   etwas oval (erwartet, §8.1).
+9. **Pipette** im Panel, auf eine bemalte Stelle klicken: wird die Farbe übernommen, bist Du danach wieder bei „Malen“?
+10. Strg+S im Raum, Raum schließen: Drahtgitter / Anzeige wie vorher? Die Bemalung bleibt sichtbar; Szene neu laden: ist
+    sie wieder da? Im Ordner `<Szene>_textures/` liegt die Ebene und das `…_paint_flat_….png`.
+
+Tasten, die Dir passen, bitte mit „Taste passt“ (für die Keymap); Panel-Aufbau und Werte sind vorläufig.

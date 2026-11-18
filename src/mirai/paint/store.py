@@ -278,7 +278,9 @@ class StrokeRecorder:
         texels = np.asarray(texels, dtype=np.int64)
         rgba = self.store.pixels(self.obj, self.name)
         width = rgba.shape[1]
-        tiles = {(int(tx), int(ty)) for tx, ty in zip(texels % width // TILE, texels // width // TILE)}
+        across = -(-width // TILE)
+        keys = np.unique(texels // width // TILE * across + texels % width // TILE)  # one pass, not one per texel
+        tiles = {(int(k % across), int(k // across)) for k in keys}
         self._capture(tiles)
         rgba.reshape(-1, 4)[texels] = values
         self.store._touched(self.obj, self.name, tiles)

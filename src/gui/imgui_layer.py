@@ -105,6 +105,7 @@ class ImguiLayer:
         self.bone = None  # Bone tool 01 (2026-11-17): das Bone- und Skin-Panel (Knopf „Bone“, Standard zu)
         self.bone_open = False
         self.eye_lab = None  # Eye LookDev Phase 2 (I-1): das Eye-Lab-Fenster, offen solange `app.eye_lab_open`
+        self.paint = None  # AD-037 Phase 2: das Paint-Room-Panel, offen solange `app.paint_room_open`
         self.popup_open = False  # ein Menü/Dialog des Layers ist offen: ihm gehört die ganze Maus (letzter Frame)
 
         self._blocked = blocked or (lambda: False)
@@ -149,6 +150,9 @@ class ImguiLayer:
 
         self.eye = EyePanel(imgui, self.app, self)
         self.eye_lab = EyeLabPanel(imgui, self.app, self)
+        from .paint_panel import PaintPanel
+
+        self.paint = PaintPanel(imgui, self.app, self)
         from .bone_panel import BonePanel
 
         self.bone = BonePanel(imgui, self.app, self)
@@ -451,6 +455,17 @@ class ImguiLayer:
             rects.append((pos.x, pos.y, size.x, size.y))
             if keep is False:
                 self.app.close_eye_lab()
+        if self.paint is not None and self.app.paint_room_open:
+            # links oben (wie das Eye Lab): die Mitte gehört dem Kopf, der bemalt wird
+            imgui.set_next_window_pos(imgui.ImVec2(8.0, self.PANEL_POS[1]), imgui.Cond_.first_use_ever)
+            _, keep = imgui.begin("Paint Room", True, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
+                                  | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
+            self.paint.draw()
+            pos, size = imgui.get_window_pos(), imgui.get_window_size()
+            imgui.end()
+            rects.append((pos.x, pos.y, size.x, size.y))
+            if keep is False:
+                self.app.close_paint_room()
         self.panel_rects = rects
         if self.menus is not None:
             self.menus.popups()

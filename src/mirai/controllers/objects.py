@@ -1544,7 +1544,11 @@ class ObjectController:
         """The texture the viewport draws for `obj` (AD-026): its own while textures are shown
         (`DisplayState.show_texture`); a highlighted object (mode `4` selection) shows its selection tint instead,
         so the selection stays visible on a textured object (`PROVISIONAL`)."""
-        if obj.texture is None or highlighted or not self.services.display.show_texture:
+        if highlighted or not self.services.display.show_texture:
+            return None
+        if obj.paint is not None:  # AD-037 §8 Phase 2: a painted object shows its composite (base + layers), live
+            return self.services.paint_display.texture(obj)
+        if obj.texture is None:
             return None
         return obj.texture
 
@@ -1577,7 +1581,7 @@ class ObjectController:
             self.services.display.eye_lab is not None,  # AD-035 S-4: no selection tint on eyes in the Eye Lab
             scene.edit_object_id,
             tuple(
-                (oid, obj.state, obj.material, obj.texture, obj.hidden, obj.parent, obj.eye, id(obj.mesh))
+                (oid, obj.state, obj.material, obj.texture, obj.hidden, obj.parent, obj.eye, id(obj.mesh), obj.paint)
                 for oid, obj in scene.objects.items()
             ),
         )

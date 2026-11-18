@@ -217,7 +217,7 @@ class SymmetryController:
         soft bands too (the symmetric field under a definition, AD-SYM-04 D-5) - the same
         notification Undo of it gets."""
         services = self.services
-        if services.interaction_owner is not None:
+        if services.interaction_owner not in (None, "paint"):  # AD-037: the Paint Room's mirrored dab reads it per dab
             return False
         mesh = services.scene.mesh
         axis = next_axis(current_axis(mesh))

@@ -69,13 +69,15 @@ MORPH_CONTEXT = "morph"
 #: this context, so such a key is no app command (and no host's `CommandGate` sees it); the window
 #: asks `command_for(input, WINDOW_CONTEXT)` before forwarding a key.
 WINDOW_CONTEXT = "window"
+#: AD-037 §8 Phase 2 (2026-11-18): resolved by the Paint Room's session only (the opacity wheel); nothing else reads it.
+PAINT_CONTEXT = "paint"
 
 KEYMAP_SCHEMA_VERSION = 1
 
 _VALID_KINDS = ("key", "mouse", "drag", "wheel")
 _VALID_MODIFIERS = ("ctrl", "shift", "alt")
 _VALID_CONTEXTS = (
-    GLOBAL_CONTEXT, TOPOLOGY_CONTEXT, KNIFE_CONTEXT, SUBD_CONTEXT, MORPH_CONTEXT, WINDOW_CONTEXT
+    GLOBAL_CONTEXT, TOPOLOGY_CONTEXT, KNIFE_CONTEXT, SUBD_CONTEXT, MORPH_CONTEXT, WINDOW_CONTEXT, PAINT_CONTEXT
 )
 
 

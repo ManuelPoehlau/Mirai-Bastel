@@ -45,6 +45,19 @@ class AppServices:
         return self._app.paint
 
     @property
+    def paint_display(self):
+        """The `PaintDisplay` (AD-037 §8 Phase 2). Reason for the member: the object controller draws a painted object's
+        composite (its live texture) in place of the texture path, and the Paint Room asks it for a picked colour and
+        ends a stroke's mipmaps there."""
+        return self._app.paint_display
+
+    @property
+    def subdivision(self):
+        """The SubD preview (`SubdivisionPreview`). Reason for the member (AD-037 P-10, Manu 2026-11-18): the Paint Room
+        paints on the surface that is shown - the preview's derived mesh while SubD shows; read only."""
+        return self._app.subdivision
+
+    @property
     def display(self):
         return self._app.display
 

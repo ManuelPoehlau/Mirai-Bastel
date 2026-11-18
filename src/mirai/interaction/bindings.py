@@ -181,7 +181,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import commands as cmd
-from .input import KNIFE_CONTEXT, BindingSet, Input, KeymapConfigError, WINDOW_CONTEXT
+from .input import KNIFE_CONTEXT, PAINT_CONTEXT, BindingSet, Input, KeymapConfigError, WINDOW_CONTEXT
 
 #: Manus Keymap (AD-013 Addendum 2026-10-28): im Repo, relativ zur Repo-Wurzel (gleich auf Windows und Linux).
 KEYMAP_PATH = Path(__file__).resolve().parents[3] / "config" / "keymap.json"
@@ -464,6 +464,12 @@ def build_default_bindings() -> BindingSet:
     # notch is one step); Shift+O = curve, Ctrl+O = metric - both "muss ich testen".
     # Engineering keys for the S2 test, not Artist Input Truth (I8): keymap.json can
     # rebind them. The binding carries the direction, the command does not.
+    # --- Paint Room (AD-037 §8 Phase 2, P-6 "ja": radius Shift+wheel, opacity Alt+wheel; `PROVISIONAL` until Manu's
+    # "Taste passt"). Alt+wheel was free in config/keymap.json and in every context; only the room's session resolves
+    # the `paint` context (plain LMB drag paints there - the session takes the press itself, no binding).
+    bs.set_default(_wheel("UP", "alt"), cmd.PAINT_OPACITY_UP, context=PAINT_CONTEXT)
+    bs.set_default(_wheel("DOWN", "alt"), cmd.PAINT_OPACITY_DOWN, context=PAINT_CONTEXT)
+
     bs.set_default(_key("o"), cmd.SOFT_TOGGLE)
     bs.set_default(_wheel("UP", "shift"), cmd.SOFT_RADIUS_UP)
     bs.set_default(_wheel("DOWN", "shift"), cmd.SOFT_RADIUS_DOWN)
