@@ -302,6 +302,11 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "delete_bone": RIG,
         "weights_from_group_value": RIG,
         "set_weight_value": RIG,
+        # AD-036: links of rigid parts change `SceneObject.bone` only (an `ObjectLinkCommand`, no mesh change); the
+        # blocker reads only
+        "link_selected_to_bone": "non-mesh",
+        "unlink_selected": "non-mesh",
+        "bone_link_blocker": "non-mesh",
         # AD-025 Phase 3: the target lifecycle (one layer-only Undo step each) and the editing view
         "create_morph_target": MORPH,
         "rename_morph_target": MORPH,
