@@ -174,6 +174,10 @@ wrong-size images), `test_application_uv_check.py`, `test_live_texture.py`, `tes
 box-only upload per policy, same as the file path, path draw unchanged), `test_gui_menus.py` (the SPACE row),
 `experiments/drag_cost/tests/test_probe_paint.py`.
 
+Full default run in the container (2026-11-18, `xvfb-run -a python -m pytest`): 7,707 passed, 8 skipped, 1 failed —
+`tests/test_scene_menu_local_tmp.py::test_probe_menu_wiring`, which fails the same way on the base commit `25154ac`
+(not caused by this change).
+
 ## Praxistest für Manu (Deutsch, ca. 5 Minuten, optional)
 
 Phase 1 hat nur einen sichtbaren Teil, die UV-Prüfung:

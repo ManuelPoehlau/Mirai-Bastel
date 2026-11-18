@@ -3,8 +3,8 @@
 **Probe:** `experiments/drag_cost/probe_paint.py` (AD-037 §7, audit 2026-11-18 §8.5). **Machine:** cloud container, Intel
 Xeon 2.1 GHz, 4 cores, Python 3.13.18, NumPy 2.2.6 (the pinned version), **llvmpipe** (software GL, LLVM 20.1.2) under
 Xvfb — the GL rows are *not* a GPU measurement and say nothing about the 9800 GTX; the CPU rows follow the ×3 rule of
-REFERENCE_HARDWARE §4 for an estimate. **Code:** the probe line's `src/` tree `529b6a14a9` is the committed AD-037 Phase 1
-`src/` (`git rev-parse <commit>:src`).
+REFERENCE_HARDWARE §4 for an estimate. **Code:** the probe ran on the uncommitted Phase 1 tree (`src/` tree `529b6a14a9`); the commit differs from it only by
+a type annotation of `Application._uv_check` (committed `src/` tree `5b4e77b95e`).
 
 Reading [C]: every bar passes in the container. On the reference PC the ×3 estimate puts the 3 % dab + composite at about
 12 ms p95 before the frame, and the 10 % dab at ~65 ms (too slow: cap the dab rate there, audit §8.1). Mipmaps per frame
