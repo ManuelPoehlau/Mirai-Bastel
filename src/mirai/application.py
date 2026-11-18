@@ -1163,8 +1163,11 @@ class Application:
         return self._skeleton.rename_bone(name, bone=bone_id)
 
     def select_bone(self, bone_id) -> bool:
-        """Outliner click on a bone: it becomes the current bone."""
-        return self._skeleton.select(bone_id)
+        """Outliner / Bone panel click on a bone: it becomes the current bone (the weight view follows it)."""
+        changed = self._skeleton.select(bone_id)
+        if changed:
+            self._weight_view_follow()
+        return changed
 
     def set_bones_hidden(self, bone_ids, hidden: bool) -> bool:
         """Outliner eye on bones (view state: no Undo step, not saved). See `SkeletonController.set_hidden`."""

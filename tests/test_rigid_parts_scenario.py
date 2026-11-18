@@ -686,3 +686,17 @@ def test_pose_mode_keeps_posing_with_linked_parts_selected_in_mode_4():
     app.selection.objects = {_obj(app, LOWER[0]).id}
     refusal = app.can_run(commands.ROTATE, RunContext("key", TEST_KEY))
     assert refusal is not None and "follows 'Kiefer' - the rig is posed" in refusal.text
+
+
+def test_the_weight_view_follows_a_bone_chosen_in_the_outliner_or_panel():
+    """Regression (Manu 2026-11-18): with the weight view on, choosing another bone (Outliner / Bone panel,
+    `select_bone`) shows that bone's share at once, without switching the view off and on."""
+    d = _scene_driver()
+    app = d.app
+    d.tap(key("1"))
+    app.select_bone(_bone(app, "Hals"))
+    assert app._weight_view_toggle() is True and app.weight_view
+    before = app.weight_share_computes
+    assert app.select_bone(_bone(app, "Kiefer")) is True
+    assert app.weight_view_text == "Kiefer"
+    assert app.weight_share_computes > before
