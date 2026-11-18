@@ -115,3 +115,60 @@ P-F save of a 4-layer stack
   first save 309 ms (4 layers + 1 flat, 0.1 MiB)  bar <= 2000 ms: PASS
   second save 1 ms (0 layers, 0 flat)  nothing written: PASS
 ```
+
+## After the reference-PC fixes (2026-11-18, later; AD-037 §7.1), 2048²
+
+The probe line's `src/` tree is the uncommitted fix; the commit that follows holds it.
+
+```
+Paint probe (AD-037 Phase 1e) - commit 94b01b8786, working tree MODIFIED, src/ tree a2214da3e7
+python 3.13.18, numpy 2.2.6, size 2048^2, 40 dabs per stroke
+fixture: Gollum, 2234 faces, texture Gollum_cbf9c7702d.png
+
+P-D texel map build: 399 ms (2,787,212 texels mapped, 48 MiB)  bar <= 2000 ms: PASS
+GL: llvmpipe (LLVM 20.1.2, 256 bits) / (4, 5)
+
+P-A dab + composite + frame per dab, 2048^2, ms        p50      p95      max
+  radius  1.0 % (~208 texels)
+    dab            1.06     1.57     3.49
+    composite      0.25     0.45     0.51
+    frame          6.14     7.69    12.66
+    total          7.74     9.78    13.95
+  radius  3.0 % (~1,940 texels)
+    dab            2.21     3.10     3.21
+    composite      0.51     0.75     1.17
+    frame          6.41     9.03    13.71
+    total          9.34    12.30    16.80  bar p95 <= 16.7: PASS
+  radius  5.0 % (~5,597 texels)
+    dab            5.11     6.62     7.06
+    composite      0.87     1.21     1.25
+    frame          6.92     8.87    13.23
+    total         13.22    15.98    18.83  bar p95 <= 33.0: PASS
+  radius 10.0 % (~20,505 texels)
+    dab           15.89    19.37    24.04
+    composite      1.80     2.90     4.44
+    frame          7.12    10.21    14.94
+    total         24.99    34.40    38.78
+
+P-B mip policy, 3 % stroke, frame ms             p50      p95      max
+  frame         12.27    13.94    18.31   stroke-end frame 5.78
+  deferred       6.33     7.71     8.60   stroke-end frame 11.57
+  none           5.36     7.31     9.15   stroke-end frame 6.24
+
+P-C orbit frame, ms                              p50      p95      max
+  file texture      5.23     7.15     8.51
+  live texture      4.97     7.01     8.34
+  live - file p50 -0.26 ms  bar <= +1 ms: PASS
+
+P-E Modeller frame (file texture) before / after a live texture existed
+  same image: PASS;  p50 before 4.96 ms, after 4.74 ms
+
+P-F save of a 4-layer stack
+  first save 582 ms (4 layers + 1 flat, 0.7 MiB)  bar <= 2000 ms: PASS
+    PNG encode (all files)            285 ms in 5 calls (max 70)
+      of it: layers                   215 ms in 4 calls (max 57)
+    write file                          2 ms in 5 calls (max 1)
+    read base                          49 ms in 1 call (max 49)
+    flatten (base + composite)        269 ms in 1 call (max 269)
+  second save 0 ms (0 layers, 0 flat)  nothing written: PASS
+```

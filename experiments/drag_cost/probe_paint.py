@@ -22,7 +22,9 @@ The fixture: the head of `scenes/Gollum_Head_rigging_test.mirai.json` (2,234 fac
 - **P-E** a Modeller frame (the file texture) before and after a live texture existed elsewhere: same image (bytes
   compared), same time.
 - **P-F** save of a 4-layer stack (`mirai.paint.files.prepare_save`: four PNGs + the flattened image into a temporary
-  folder) and the second save without changes. Bar: <= 2 s; the second writes nothing.
+  folder) and the second save without changes. Bar: <= 2 s; the second writes nothing. Since the reference-PC run of
+  2026-11-18 (7.4 / 9.4 s) the first save is split into reading the base, flattening, encoding and writing the files
+  (`texture_files.store`, which includes the file system and any virus scanner on the new file).
 
 Plain ASCII output; prints the commit and working-tree state (`_paths.source_state`).
 """
@@ -314,11 +316,35 @@ def main(argv=None) -> int:
         rgba[y0:y0 + size // 4, :, :3] = rng.integers(0, 255, 3)
         rgba[y0:y0 + size // 4, :, 3] = 180
         four.set_pixels(head, spec.name, rgba)
+    parts: dict[str, list[float]] = {}
+
+    def timed(module, name, label):
+        original = getattr(module, name)
+
+        def wrapper(*a, **k):
+            t = time.perf_counter()
+            try:
+                return original(*a, **k)
+            finally:
+                parts.setdefault(label, []).append((time.perf_counter() - t) * 1e3)
+
+        setattr(module, name, wrapper)
+        return original
+
+    from mirai import texture_files
+
+    originals = [(files, "read_base", timed(files, "read_base", "read base")),
+                 (files, "flatten", timed(files, "flatten", "flatten (base + composite)")),
+                 (files, "encode_layer", timed(files, "encode_layer", "  of it: layers")),
+                 (files, "encode_png", timed(files, "encode_png", "PNG encode (all files)")),
+                 (texture_files, "store", timed(texture_files, "store", "write file"))]
     with tempfile.TemporaryDirectory() as tmp:
         scene_path = Path(tmp) / "probe.mirai.json"
         t = time.perf_counter()
         plan = files.prepare_save([head], four, scene_path)
         first = time.perf_counter() - t
+        for module, name, original in originals:
+            setattr(module, name, original)
         plan.apply(four)
         t = time.perf_counter()
         again = files.prepare_save([head], four, scene_path)
@@ -326,6 +352,9 @@ def main(argv=None) -> int:
         written = sum(p.stat().st_size for p in (scene_path.parent / "probe_textures").iterdir())
         print(f"  first save {first * 1e3:.0f} ms ({plan.written} layers + {len(plan.flats)} flat, {written / 2**20:.1f}"
               f" MiB)  bar <= 2000 ms: {'PASS' if first <= 2.0 else 'FAIL'}")
+        for label, values in parts.items():
+            print(f"    {label:28s} {sum(values):8.0f} ms in {len(values)} call{'s' if len(values) != 1 else ''}"
+                  f" (max {max(values):.0f})")
         print(f"  second save {second * 1e3:.0f} ms ({again.written} layers, {len(again.flats)} flat)"
               f"  nothing written: {'PASS' if again.written == 0 and not again.flats else 'FAIL'}")
     return 0

@@ -2,8 +2,10 @@
 
 **Status:** **DECIDED (Manu, 2026-11-18)**: „P-1 ja, P-2 ja, P-3 Go, P-4 ja, P-6 ja“ (the audit's addendum), the additive
 Core change and scene format v14 included. **IMPLEMENTED Phase 1 (2026-11-18, container: TESTED)** as built in §2–§6.
-**Reference-PC probes P-A … P-F: NOT YET RUN** (§7; the command is ready, container numbers there). **No Paint Room yet**
-(Phase 2): nothing in the app paints, no key, no keymap entry.
+**Reference-PC probes P-A … P-F: RUN (Manu, 2026-11-18)** — P-A, P-B, P-C, P-E pass; P-D (2.06 s at 2048²) and P-F
+(7.4 / 9.4 s) failed and were worked on the same day (§7.1), the re-run is open. **Decisions P-7, P-10, P-13: Manu,
+2026-11-18** (§1); the P-13 refusals are built (§8). **No Paint Room yet** (Phase 2): nothing in the app paints, no key,
+no keymap entry.
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).
@@ -29,7 +31,14 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
   zurück; Speichern schreibt geänderte Ebenen als PNG nach `<Szene>_textures/` und ein **zusammengerechnetes PNG**
   (`<Objekt>_paint_flat_….png`) für OBJ/ZBrush.
 - **Live-Textur** im Viewport: lädt nur geänderte Kacheln hoch; ohne sie ist die Zeichnung bitgleich die bisherige.
-- **Messung auf deinem PC:** `python experiments/drag_cost/probe_paint.py` (P-A … P-F, §7).
+- **Messung auf deinem PC (2026-11-18):** Malen, Hochladen und Anzeigen sind schnell genug (P-A, P-B, P-C, P-E bestanden).
+  Zu langsam waren der Kartenaufbau bei 2048² (2,06 s) und das Speichern (7–9 s). Den Kartenaufbau habe ich um ~35 %
+  beschleunigt, das Speichern im Container fast halbiert; die 7–9 s auf deinem PC passen aber eher zu den
+  Dateischreibvorgängen (z. B. Virenscanner) als zur Rechenzeit – die Sonde zeigt jetzt die Teile einzeln (§7.1). Bitte
+  noch einmal laufen lassen.
+- **Deine Entscheidungen P-7 (Welt-Radius), P-10, P-13** sind eingetragen; die P-13-Sperren sind gebaut: Attach eines
+  bemalten Objekts ohne dieselbe Bemalung und eine ZBrush-Rückgabe mit neuen UVs auf einem bemalten Objekt werden mit
+  Statuszeile abgelehnt.
 
 ## 1. Decisions (Manu, 2026-11-18)
 
@@ -41,8 +50,17 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
 | P-4 | The existing texture stays untouched as the base; paint lies above it; a flattened PNG is written beside the scene | §2.2, §5 |
 | P-6 | Inside the Paint Room plain LMB drag paints (concept); keymap entries only after "Taste passt" | Phase 2; no binding here |
 
-Still open: P-5 (resolution; Phase 1 has no default, the caller names the size — 2048² is the audit's proposal),
-P-7 … P-17. Phase 2 needs P-7 and P-10 (and P-13 before a GoZ return may replace a painted object's UVs, §8).
+**Manu, 2026-11-18 (session chat, verbatim):** „P-7 Welt, P-10 wie vorgeschlagen, P-13 wie vorgeschlagen“.
+
+| # | Decision | Where it shows |
+|---|---|---|
+| P-7 | The brush radius is a **world** radius (% of the bounding radius, like Soft and Brush O-3) | Phase 2 dab |
+| P-10 | Phase 2 paints **on the cage with SubD shown off** in the room; painting on the SubD surface is Phase 3 | Phase 2 room frame |
+| P-13 | Faces without usable UVs (zero area, overlap, unmapped) are shown and skipped with a status line; **Attach is refused** when a painted object and its partner do not share that paint; **a GoZ return that changes a painted object's UVs is refused** until the UV transfer exists | the UV check (§4); the refusals (§8), built now |
+
+Still open: P-5 (resolution; Phase 1 has no default, the caller names the size — 2048² is the audit's proposal; the
+reference PC's P-D and P-A speak for 2048² as the default with 1024² as the fast option), P-8, P-9, P-11, P-12, P-14 …
+P-17.
 
 ## 2. The data model (Core part)
 
@@ -92,7 +110,8 @@ weights (int32 slot + 2 × float32: 48 MiB at 2048²). Rules:
   position change never rebuilds. **Patching** from a journal change: faces whose boundary or UVs changed, that came or
   went, or whose triangulation a moved vertex changed (only n-gons can); texels a removed triangle owned are refilled from
   every triangle whose texel box touches them. More than 25 % of the faces (and more than 64) rebuilds.
-- **Measured [C]** on the Gollum head: build 0.52–0.61 s at 2048², 0.34–0.43 s at 1024²; 2,787,212 mapped texels at 2048²
+- **Measured [C]** on the Gollum head: build 0.32–0.37 s at 2048² since §7.1 (0.52–0.61 s before; reference PC 2.06 s
+  before), 0.21–0.27 s at 1024²; 2,787,212 mapped texels at 2048²
   (66.5 %, the audit's number).
 
 The map is built by whoever needs it (the Paint Room in Phase 2) and lives only there: nothing builds it in the Modeller.
@@ -155,13 +174,53 @@ llvmpipe, "deferred" pays ~5 ms once at the stroke's end (P-B: default "deferred
 Run-to-run spread in the container is about ±20 % on the frame rows.
 **The reference PC decides** (×3 rule of REFERENCE_HARDWARE §4 for the CPU rows; the GPU rows are not comparable).
 
+### 7.1 Reference PC (Manu, 2026-11-18) and the fixes
+
+Run on the committed Phase 1 (`src/` tree `5b4e77b95e`), Core 2 Quad Q9550, GeForce 9800 GTX (GL 3.3), Python 3.12.10,
+NumPy 2.2.6 — verbatim in [`RESULTS_PAINT_REFERENCE_PC_2026-11-18.md`](../../experiments/drag_cost/RESULTS_PAINT_REFERENCE_PC_2026-11-18.md).
+
+| Probe | 2048² | 1024² | Verdict |
+|---|---|---|---|
+| P-D room enter | 2,061 ms | 1,418 ms | **FAIL** at 2048² (bar 2 s) → fixed below |
+| P-A total p95, 1 / 3 / 5 / 10 % | 7.2 / 12.0 / 21.6 / 72.5 ms | 6.2 / 7.7 / 10.2 / 20.1 ms | **PASS** (3 % ≤ 16.7, 5 % ≤ 33); 10 % at 2048² too slow (dab 50 ms p50, one 374 ms outlier) |
+| P-B mip policy, 3 % frame p50 | frame 4.7 · deferred 4.0 · none 4.1 ms | 4.2 · 3.9 · 3.8 ms | "deferred" stays the default (stroke-end frame 3.6 ms) |
+| P-C orbit, live − file p50 | −0.21 ms | +0.20 ms | **PASS** |
+| P-E Modeller frame | same image | same image | **PASS** |
+| P-F 4-layer save | 9,370 ms | 7,388 ms | **FAIL** (bar 2 s) → worked on below; the second save writes nothing (PASS) |
+
+Reading: the GPU side is not the limit (a frame with the live texture 3–5 ms, uploads per box are cheap on the 9800 GTX);
+the CPU rows run 3.0–3.4× the container, as REFERENCE_HARDWARE §4 predicts — **except P-F**, which is 9–24× the container
+and almost the same at 1024² and 2048² (half the pixels, 79 % of the time). That pattern does not fit encoding or
+compositing; it fits a cost per written file (the file system or a virus scanner checking each new PNG) — **not
+verified**: the probe now splits P-F into reading the base, flattening, PNG encoding and the file writes
+(`texture_files.store`), so the next run names the part.
+
+Fixes the same day (container numbers, the same probe):
+
+- **P-D:** `raster_triangle` computes the weights as outer differences of a row and a column vector with scalar bounds
+  (fewer NumPy calls per triangle), returns its texel box, and the rebuild writes only empty texels (faces come in key
+  order, so no key comparison). 2048²: 0.55 → **0.32–0.37 s** (−35 %; by the ×3.4 seen here ≈ 1.2 s on the reference
+  PC, within the 2 s bar). A fully vectorized raster over all triangles was tried and was *slower* (1.13 s: it computes
+  every candidate texel of the boxes, ~2× the mapped texels) — not kept.
+- **P-F:** the paint PNGs use zlib level 1 (`files.PNG_LEVEL`; a textured 2048² image 49 ms instead of 181 ms, ~1.6× the
+  bytes) and the composite works only where a layer has alpha (its row / column span). 4-layer save at 2048²: 1.03 →
+  **0.57 s** in the container. If the split shows the writes as the cost on the reference PC, the remedy is outside the
+  code (a scanner exclusion for the project folder) or fewer files per save (e.g. the flattened image only on export) —
+  a decision then, not now.
+- The 10 % dab at 2048² (P-A) is the probe's stand-in dab; the Phase 2 dab must cap its rate or restrict its candidate
+  search (audit §8.1) — a Phase 2 acceptance row.
+
 ## 8. Not in Phase 1 (next)
 
-- **Phase 2** (needs P-7, P-10; P-2 / P-6 decided): the room frame (enter / leave, view state saved and restored), the
+- **Phase 2** (P-2, P-6, P-7, P-10 decided): the room frame (enter / leave, view state saved and restored), the
   layer-A stroke session, the paint dab (radius, opacity, flow, hardness, curve; stroke buffer; seam padding; mirrored dab),
   cursor circle, Paint / Erase / Pick, the live texture wired to `take_changed`, status-line refusals (no UVs, eye, SubD).
-- **Safety rules still open (P-13):** a GoZ return that replaces a painted object's UVs and an Attach of a painted
-  source. No user can create paint before Phase 2, so Phase 1 adds no refusal; Phase 2 must add them with the room.
+- **P-13 refusals, built 2026-11-18:** `Application.attach_plan` refuses (status line, nothing changed, also with "take
+  the destination's look") when the destination or a source is painted and they do not share that paint —
+  `PaintStore.same_paint`: equal stacks and, where pixels are in memory, equal pixels (a detached part painted on its own
+  has the same stack and other pixels); `apply_goz_return` refuses an in-place return that changes a painted object's UVs
+  (`plan.uvs`). Tests: `tests/test_attach.py`, `tests/test_goz_bridge.py`. The "shown and skipped" part of P-13 is the UV
+  check (§4) and, in Phase 2, the dab skipping those faces.
 - Eyes (P-14), UV transfer (Phase 3), several layers in the UI, blend modes (P-12), undo budget (P-11).
 
 ## 9. Tests

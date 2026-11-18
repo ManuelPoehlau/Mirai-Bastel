@@ -28,6 +28,7 @@ Memory at 2048²: 4 bytes of triangle slot and 8 bytes of weights per texel (48 
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 
 import numpy as np
@@ -50,7 +51,10 @@ _EMPTY = -1
 
 def raster_triangle(a, b, c, width: int, height: int):
     """The texels whose centres lie in the UV triangle `a b c` (each a (u, v) pair), edges included: `(flat indices,
-    w1, w2)` with float64 weights of corners `b` and `c` (w0 = 1 - w1 - w2), or None when the triangle has no texel."""
+    w1, w2, box)` with float64 weights of corners `b` and `c` (w0 = 1 - w1 - w2) and the texel box (x0, y0, x1, y1,
+    inclusive), or None when the triangle has no texel.
+    Written for few NumPy calls per triangle (the reference PC's P-D, 2026-11-18): the weights are outer differences of
+    a row and a column vector."""
     ax, ay = a[0] * width - 0.5, a[1] * height - 0.5
     bx, by = b[0] * width - 0.5, b[1] * height - 0.5
     cx, cy = c[0] * width - 0.5, c[1] * height - 0.5
@@ -58,25 +62,23 @@ def raster_triangle(a, b, c, width: int, height: int):
     det = e1x * e2y - e2x * e1y
     if abs(det) < _MIN_AREA2:
         return None
-    x0 = max(int(np.ceil(min(ax, bx, cx) - _INSIDE_EPS)), 0)
-    x1 = min(int(np.floor(max(ax, bx, cx) + _INSIDE_EPS)), width - 1)
-    y0 = max(int(np.ceil(min(ay, by, cy) - _INSIDE_EPS)), 0)
-    y1 = min(int(np.floor(max(ay, by, cy) + _INSIDE_EPS)), height - 1)
+    x0 = max(math.ceil(min(ax, bx, cx) - _INSIDE_EPS), 0)
+    x1 = min(math.floor(max(ax, bx, cx) + _INSIDE_EPS), width - 1)
+    y0 = max(math.ceil(min(ay, by, cy) - _INSIDE_EPS), 0)
+    y1 = min(math.floor(max(ay, by, cy) + _INSIDE_EPS), height - 1)
     if x0 > x1 or y0 > y1:
         return None
-    xs = np.arange(x0, x1 + 1, dtype=np.float64)
-    ys = np.arange(y0, y1 + 1, dtype=np.float64)
-    px = xs[None, :] - ax
-    py = ys[:, None] - ay
-    w1 = (px * e2y - e2x * py) / det
-    w2 = (e1x * py - px * e1y) / det
-    w0 = 1.0 - w1 - w2
-    inside = (w0 >= -_INSIDE_EPS) & (w1 >= -_INSIDE_EPS) & (w2 >= -_INSIDE_EPS)
-    if not inside.any():
-        return None
+    px = np.arange(x0 - ax, x1 - ax + 0.5, dtype=np.float64)  # x - ax for x = x0 .. x1 (exact steps of 1)
+    py = np.arange(y0 - ay, y1 - ay + 0.5, dtype=np.float64)[:, None]
+    inv = 1.0 / det
+    w1 = px * (e2y * inv) - py * (e2x * inv)
+    w2 = py * (e1x * inv) - px * (e1y * inv)
+    inside = (w1 >= -_INSIDE_EPS) & (w2 >= -_INSIDE_EPS) & (w1 + w2 <= 1.0 + _INSIDE_EPS)
     rows, cols = np.nonzero(inside)
-    flat = (rows + y0).astype(np.int64) * width + (cols + x0)
-    return flat, w1[rows, cols], w2[rows, cols]
+    if rows.size == 0:
+        return None
+    box = (x0 + int(cols.min()), y0 + int(rows[0]), x0 + int(cols.max()), y0 + int(rows[-1]))  # rows ascend
+    return (rows + y0) * width + (cols + x0), w1[rows, cols], w2[rows, cols], box
 
 
 class TexelMap:
@@ -107,8 +109,8 @@ class TexelMap:
         self._face_tris: dict[FaceId, tuple] = {}
         faces = self.mesh.all_face_ids()
         self._grow(2 * len(faces) + 16)
-        for fid in faces:
-            self._add_face(fid)
+        for fid in faces:  # ascending ids = ascending keys: a texel already held keeps its smaller key
+            self._add_face(fid, building=True)
 
     def _grow(self, need: int) -> None:
         if need <= self._cap:
@@ -134,8 +136,9 @@ class TexelMap:
         positions = self.positions
         return tuple(triangulate_face(boundary, {v: positions.vertex_position(v) for v in boundary}))
 
-    def _add_face(self, fid: FaceId) -> list[int]:
-        """Rasterizes `fid`'s triangles (smaller key wins) and records them; returns the new slots."""
+    def _add_face(self, fid: FaceId, building: bool = False) -> list[int]:
+        """Rasterizes `fid`'s triangles (smaller key wins) and records them; returns the new slots. `building`: the
+        map is filled in ascending key order, so a held texel is never taken over (no key comparison)."""
         mesh = self.mesh
         uvs = mesh.face_uvs(fid)
         tris = self._triangles(fid)
@@ -155,16 +158,23 @@ class TexelMap:
             self.tri_face[s] = int(fid)
             self.tri_index[s] = k
             self._tri_key[s] = int(fid) * _KEY_STRIDE + k
-            xs, ys = raster[0] % self.width, raster[0] // self.width
-            self._tri_box[s] = (int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max()))
-            self._write(s, raster)
+            self._tri_box[s] = raster[3]
+            if building:
+                flat = raster[0]
+                free = self.slot[flat] < 0
+                idx = flat[free]
+                self.slot[idx] = s
+                self.bary[idx, 0] = raster[1][free]
+                self.bary[idx, 1] = raster[2][free]
+            else:
+                self._write(s, raster)
             slots.append(s)
         if slots:
             self._face_slots[fid] = slots
         return slots
 
     def _write(self, s: int, raster) -> None:
-        flat, w1, w2 = raster
+        flat, w1, w2, _box = raster
         current = self.slot[flat]
         held = current >= 0
         current_key = np.where(held, self._tri_key[np.where(held, current, 0)], np.iinfo(np.int64).max)

@@ -168,6 +168,19 @@ class PaintStore:
             entry.layers[name] = _Layer(layer.rgba.copy(), layer.source, layer.dirty)
         entry.changed.update(tiles_of(0, 0, *entry.size))
 
+    def same_paint(self, a: SceneObject, b: SceneObject) -> bool:
+        """True when `a` and `b` show the same paint: equal stacks and, where either has pixels in memory, equal pixels
+        (a part detached and painted on its own has the same stack value and other pixels). Both without paint: True."""
+        if a.paint != b.paint:
+            return False
+        if a.paint is None:
+            return True
+        for spec in a.paint.layers:
+            if self.loaded(a, spec.name) or self.loaded(b, spec.name):
+                if not np.array_equal(self.pixels(a, spec.name), self.pixels(b, spec.name)):
+                    return False
+        return True
+
     def take_changed(self, obj: SceneObject) -> set[tuple[int, int]]:
         """The tiles whose composite changed since the last call (for the live texture)."""
         entry = self._objects.get(id(obj))
@@ -204,8 +217,16 @@ class PaintStore:
             if not spec.visible or spec.opacity <= 0.0:
                 continue
             rgba = self.pixels(obj, spec.name)[y0:y1, x0:x1]
-            alpha = rgba[..., 3:4].astype(np.float32) * (spec.opacity / 255.0)
-            out += (rgba[..., :3].astype(np.float32) - out) * alpha
+            covered = rgba[..., 3]
+            rows = np.flatnonzero(covered.any(axis=1))
+            if rows.size == 0:
+                continue  # nothing painted here
+            cols = np.flatnonzero(covered[rows[0]:rows[-1] + 1].any(axis=0))
+            r0, r1, c0, c1 = rows[0], rows[-1] + 1, cols[0], cols[-1] + 1  # only where the layer has alpha
+            part = rgba[r0:r1, c0:c1]
+            target = out[r0:r1, c0:c1]
+            alpha = part[..., 3:4].astype(np.float32) * (spec.opacity / 255.0)
+            target += (part[..., :3].astype(np.float32) - target) * alpha
         result = np.empty((y1 - y0, x1 - x0, 4), dtype=np.uint8)
         result[..., :3] = np.clip(np.rint(out), 0, 255).astype(np.uint8)
         result[..., 3] = 255
