@@ -1546,8 +1546,9 @@ class ObjectController:
         so the selection stays visible on a textured object (`PROVISIONAL`)."""
         if highlighted or not self.services.display.show_texture:
             return None
-        if obj.paint is not None:  # AD-037 §8 Phase 2: a painted object shows its composite (base + layers), live
-            return self.services.paint_display.texture(obj)
+        paint = self.services.paint_display
+        if paint.shows(obj):  # AD-037 §8 Phase 2: painted, or the Paint Room's object: its composite (base + layers), live
+            return paint.texture(obj)
         if obj.texture is None:
             return None
         return obj.texture

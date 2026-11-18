@@ -371,8 +371,8 @@ a symmetry plane), the resolution of a new stack (2048² / 1024², P-5) until th
 
 Per painted object the composite (base + visible layers, P-4) as a `LiveTexture`, shown by `ObjectsController._shown_texture`
 in place of the texture path - in the room and in the Modeller. `Application.update_viewport` re-composites the tiles
-`PaintStore.take_changed` reports, once per frame; the live texture uploads only those boxes, its mipmaps at the stroke's end
-("deferred", P-B). A changed stack value, texture or material re-composites the whole image; an object without paint is
+`PaintStore.take_changed` reports, once per frame; the live texture uploads only those boxes and regenerates its mipmaps
+with each upload ("frame", since Manu's first test, §10.9; P-B had chosen "deferred"). A changed stack value, texture or material re-composites the whole image; an object without paint is
 drawn exactly as before (P-E). The highlight signature carries `obj.paint`, so a stack that comes or goes (first stroke,
 Undo) reaches the viewport at the next frame.
 
@@ -409,6 +409,20 @@ once per triangle); the composite of the touched tiles 0.3–2.9 ms. Frame rows 
 3–5 ms). P-F 0.50 s; P-C −0.05 ms; P-E same image. **Not measured on
 the reference PC yet** — `python experiments/drag_cost/probe_paint.py` (now with `--surfaces cage,subd1,subd2`) is the
 run that decides P-A with SubD on (§8 (c)) and P-D on SubD 1.
+
+### 10.8a Manu's first observations (2026-11-18, reference PC) and the fixes
+
+Manu, verbatim: „Erster Tupfer dauert ca 7 Sekunden bis er erscheint bei 2048. Im Panel lässt sich nichts bedienen. Alt+
+Scroll funktioniert nicht (zoomt nur). Live(Preview?) malen bevor man die Maustaste wieder loslässt, wird, je steiler der
+Winkel ist, weniger sichtbar, erst nachdem loslassen sieht man dann die volle Opazität. Malraum lässt sich nicht
+schließen, wahrscheinlich weil die Panel Bedienung nicht funktioniert.“
+
+| Observation | Cause [V] | Fix |
+|---|---|---|
+| Panel not usable, room cannot be closed | `ImguiLayer._gesture_running` gave the mouse to the app while any interaction owner other than the bone chain ran - the room's session is one, so its panel *and* the SPACE menu got no mouse | `PANEL_USABLE_OWNERS` includes "paint"; a running stroke (`app.paint_stroking`) still keeps the mouse |
+| Alt+wheel only zooms | pyglet's scroll event has no modifiers; `main.wheel_input` added Shift and Ctrl only | `wheel_input(..., alt_held)`; outside the room an unbound Alt+wheel is read without Alt (zoom, as before) |
+| Paint fades with a steep view until the release | the live texture's mip policy "deferred": minified levels stayed the old image during the stroke | `display.MIPMAPS` = "frame" (P-B on the reference PC: 4.7 against 4.0 ms per frame at 3 %) |
+| First dab ~7 s at 2048² | not reproduced: in the container the first stroke costs 0.16 s CPU and 0.31 s for its frame (Gollum, real window); its only file access is reading the ZBrush texture as the base - the pattern of P-F's 7-9 s (a cost per file access, §7.1, unverified) | the base is read and the composite shown **when the room opens** (`PaintDisplay.prepare`); the first stroke makes no whole-image composite (pinned). The status line on entry names the base read and the composite time, so the reference PC shows where the time goes |
 
 ### 10.8 Not in Phase 2
 

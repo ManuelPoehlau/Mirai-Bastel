@@ -527,6 +527,8 @@ def test_paint_room_panel_and_a_stroke_through_the_window_upload_the_live_textur
         _tick(app, window, 3)
         rects = layer.panel_rects
         assert rects  # the room's panel
+        px, py = _center(rects[-1])
+        assert layer._over_panel(px, window.height - py)  # Manu 2026-11-18: the panel takes the mouse in the room
         before = snapshot_gl_state()
         _tick(app, window, 1)
         assert snapshot_gl_state() == before

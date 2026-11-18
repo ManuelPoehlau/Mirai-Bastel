@@ -1092,6 +1092,9 @@ class Application:
         self._set_hovered(None)
         obj = self.scene.edit_object
         self._paint_room.start(obj, saved)
+        # the composite is read and shown now, not at the first dab (Manu 2026-11-18: "Erster Tupfer ... 7 Sekunden")
+        self.paint_display.prepare(obj, *self._paint_room.size())
+        self._objects.sync_views()
         self._set_status(self.paint_room_status())
         return True
 
@@ -1100,7 +1103,9 @@ class Application:
         stays (it is the document's). True = it was open."""
         if self._paint_room.session is None:
             return False
+        obj = self._paint_room.obj
         state = self._paint_room.stop()
+        self.paint_display.unprepare(obj)
         display = self.display
         display.set_mode(state["mode"])
         display.set_wireframe_overlay(state["wire"])
@@ -1120,7 +1125,11 @@ class Application:
             return "Paint Room closed"
         text = f"Paint Room: {room.obj.name!r} {room.surface_text()}"
         if room.last_build is not None:
-            text += f" (Karte {room.last_build[1]:.2f} s)"
+            text += f" (Karte {room.last_build[1]:.2f} s"
+            prepared = self.paint_display.last_prepare
+            if prepared is not None:
+                text += f", Basisbild gelesen {prepared[0]:.2f} s, Bild {prepared[1]:.2f} s"
+            text += ")"
         if surface.unpaintable:
             faces = "Flächen" if surface.kind == "cage" else "SubD-Flächen"
             text += f"; {surface.unpaintable} {faces} ohne malbare UV-Fläche (UV-Prüfung: SPACE)"
@@ -1148,6 +1157,8 @@ class Application:
         """The size of the stack the first stroke makes (2048² default, 1024² fast; refused once the stack exists)."""
         changed = self._paint_room.set_resolution(size)
         if changed and self.paint_room_open:
+            self.paint_display.prepare(self._paint_room.obj, size, size)
+            self._objects.sync_views()
             self._set_status(self.paint_room_status())
         return changed
 
@@ -5065,6 +5076,11 @@ class Application:
             grabbed = self.interaction.grab(Wheel(input, command))  # AD-037: radius / opacity wheel of the room
             if grabbed is not PASS:
                 return grabbed
+        if command is None and "alt" in input.modifiers:
+            # the window reports Alt on the wheel since AD-037 Phase 2 (the room's opacity); everywhere else an unbound
+            # Alt+wheel stays what it always was - the wheel without Alt (zoom)
+            input = Input(input.kind, input.value, input.modifiers - {"alt"})
+            command = self.bindings.command_for(input)
         if command == commands.ZOOM and self._gestures.soft_live():
             command = commands.SOFT_RADIUS_UP if input.value == "UP" else commands.SOFT_RADIUS_DOWN
         if command in _SOFT_COMMANDS:

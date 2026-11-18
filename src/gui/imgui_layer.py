@@ -30,7 +30,9 @@ def modifiers_from_pyglet(bits: int) -> frozenset[str]:
 #: Sessions under which the panels stay usable (Manu 2026-11-17, Bone tool 01): the bone chain takes viewport clicks only,
 #: no held key and no cursor-wrap, and its panel ("end chain", snap) has to be clickable while it runs. Every other
 #: interaction keeps the precedence of AD-030 §2.
-PANEL_USABLE_OWNERS = frozenset({"bonechain"})
+#: AD-037 Phase 2 (Manu 2026-11-18: „Im Panel lässt sich nichts bedienen“): the Paint Room is a room, not a gesture - its
+#: panel and the SPACE menu work between strokes; a running stroke keeps the mouse (`_gesture_running`).
+PANEL_USABLE_OWNERS = frozenset({"bonechain", "paint"})
 
 GL_STATE_NAMES = (
     "depth_test", "blend", "cull_face", "scissor_test", "blend_src", "blend_dst", "program", "vao", "array_buffer",
@@ -218,7 +220,7 @@ class ImguiLayer:
         sonst stockt Move/Rotate/Scale und der Cursor-Wrap, sobald der Zeiger über das Panel läuft."""
         app = self.app
         owner = app.interaction_owner
-        return (owner is not None and owner not in PANEL_USABLE_OWNERS) or app.pointer.active
+        return (owner is not None and owner not in PANEL_USABLE_OWNERS) or app.pointer.active or app.paint_stroking
 
     def _over_panel(self, x: float, y: float) -> bool:
         if self._gesture_running() or self._blocked():

@@ -7,7 +7,12 @@ uint8 array and a `viewport.live_texture.LiveTexture` over it, which the viewpor
 (`take_changed`) and marks them on the live texture, which uploads only those boxes; a changed stack value (a layer's
 opacity or visibility, a stack added by Undo / Redo) or another base re-composites the whole image.
 
-An object without paint shows its texture path exactly as before (P-E: nothing is allocated until an object is painted).
+An object without paint shows its texture path exactly as before (P-E: nothing is allocated until an object is painted),
+except the Paint Room's object while the room is open (`prepare`): its composite (= the base) is read and shown when the
+room opens, so the first dab only re-composites its tiles (Manu 2026-11-18: "Erster Tupfer dauert ca 7 Sekunden").
+
+**Mipmaps** per frame (`MIPMAPS` "frame"; Manu 2026-11-18: with "deferred" the stroke showed less the steeper the surface
+was seen - the minified levels were the old image until the release). Only frames that uploaded a box regenerate them.
 Data flows store -> composite -> GPU only.
 """
 
@@ -22,6 +27,21 @@ from viewport.live_texture import LiveTexture
 
 from . import files
 from .store import PaintStore, tile_box
+
+#: The live texture's mip policy (`viewport.live_texture.MIP_POLICIES`; see the module docstring). P-B on the reference PC:
+#: "frame" 4.7 ms against "deferred" 4.0 ms per frame at 3 % (2048²).
+MIPMAPS = "frame"
+
+
+def base_composite(base, width: int, height: int) -> np.ndarray:
+    """`PaintStore.composite` of a stack without paint: the base as uint8 RGBA, alpha 255 (the same arithmetic)."""
+    out = np.empty((height, width, 4), dtype=np.uint8)
+    if isinstance(base, np.ndarray):
+        out[..., :3] = np.clip(np.rint(base[..., :3].astype(np.float32)), 0, 255).astype(np.uint8)
+    else:
+        out[..., :3] = np.clip(np.rint(np.asarray(base, dtype=np.float32)[:3] * 255.0), 0, 255).astype(np.uint8)
+    out[..., 3] = 255
+    return out
 
 
 @dataclass
@@ -38,22 +58,73 @@ class PaintDisplay:
         self.store = store
         self._read_base = read_base
         self._entries: dict[int, _Entry] = {}
+        #: objects shown through their composite although they have no paint yet (the Paint Room's object)
+        self._prepared: dict[int, SceneObject] = {}
         #: whole-image composites made (tests, the probe)
         self.full_composites = 0
+        #: seconds the last `prepare` took to read the base image and to make the composite (the room's status line)
+        self.last_prepare: tuple[float, float] | None = None
+
+    def prepare(self, obj: SceneObject, width: int, height: int) -> None:
+        """Show `obj` through a composite of `width` x `height` from now on, painted or not (the Paint Room opens)."""
+        import time
+
+        self._prepared[id(obj)] = obj
+        entry = self._entries.get(id(obj))
+        if entry is not None and entry.obj is obj and entry.composite.shape[:2] == (height, width):
+            self.last_prepare = (0.0, 0.0)
+            return
+        started = time.perf_counter()
+        base = self._read_base(obj, width, height)
+        read = time.perf_counter() - started
+        composite = base_composite(base, width, height) if obj.paint is None else \
+            np.ascontiguousarray(self.store.composite(obj, base))
+        if obj.paint is not None:
+            self.store.take_changed(obj)
+        if entry is not None:
+            _release(entry.live)
+        self._entries[id(obj)] = _Entry(obj, self._key(obj), base, composite, LiveTexture(composite, mipmaps=MIPMAPS))
+        self.full_composites += 1
+        self.last_prepare = (read, time.perf_counter() - started - read)
+
+    def unprepare(self, obj: SceneObject) -> None:
+        """The room closed: an object without paint shows its texture path again."""
+        self._prepared.pop(id(obj), None)
+        entry = self._entries.get(id(obj))
+        if entry is not None and entry.obj is obj and obj.paint is None:
+            _release(entry.live)
+            del self._entries[id(obj)]
+
+    def shows(self, obj: SceneObject) -> bool:
+        """True when `obj` is drawn through its composite (it is painted, or the Paint Room is open on it)."""
+        return obj.paint is not None or self._prepared.get(id(obj)) is obj
 
     @staticmethod
     def _key(obj: SceneObject) -> tuple:
         return (obj.paint, obj.texture, obj.material)
 
     def texture(self, obj: SceneObject) -> LiveTexture | None:
-        """The live texture `obj` shows (None without paint)."""
-        if obj.paint is None:
+        """The live texture `obj` shows (None when it shows none: no paint and not prepared)."""
+        if not self.shows(obj):
             return None
         entry = self._entries.get(id(obj))
         key = self._key(obj)
         if entry is not None and entry.obj is obj and entry.key == key:
             return entry.live
+        if obj.paint is None:  # prepared, the paint went (an Undo of the first stroke): the base again
+            if entry is None or entry.obj is not obj:
+                return None
+            entry.composite[...] = base_composite(entry.base, entry.composite.shape[1], entry.composite.shape[0])
+            entry.key = key
+            entry.live.mark_all()
+            return entry.live
         stack = obj.paint
+        if (entry is not None and entry.obj is obj and entry.key[0] is None and entry.key[1:] == key[1:]
+                and entry.composite.shape[:2] == (stack.height, stack.width)):
+            # the stack came (the first stroke, its Redo): the composite is the base, and every pixel written since is in
+            # a tile the store reports as changed - `update` composites those
+            entry.key = key
+            return entry.live
         base = entry.base if (entry is not None and entry.obj is obj and entry.key[1:] == key[1:]
                               and entry.composite.shape[:2] == (stack.height, stack.width)) else None
         if base is None:
@@ -68,7 +139,7 @@ class PaintDisplay:
             return entry.live
         if entry is not None:
             _release(entry.live)  # another size: a new texture (the viewport takes it with the next view sync)
-        live = LiveTexture(composite)
+        live = LiveTexture(composite, mipmaps=MIPMAPS)
         self._entries[id(obj)] = _Entry(obj, key, base, composite, live)
         return live
 

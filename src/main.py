@@ -397,7 +397,7 @@ def alt_keys_after(held: frozenset[int], symbol: int, pressed: bool) -> frozense
 
 
 def wheel_input(
-    scroll_x: float, scroll_y: float, shift_held: bool, ctrl_held: bool = False
+    scroll_x: float, scroll_y: float, shift_held: bool, ctrl_held: bool = False, alt_held: bool = False
 ) -> Input | None:
     """The wheel event as an `Input` (WP-SOFT-01 S2a, AD-020 E5; S2d E6). pyglet's scroll
     event carries no modifiers, so the window passes whether a Shift / Ctrl key is held
@@ -407,7 +407,7 @@ def wheel_input(
     Shift+wheel as a horizontal scroll (`scroll_y == 0`, `scroll_x != 0`): with a modifier
     held that axis is read instead (the sign is not confirmed yet - Artist test)."""
     modifiers = frozenset(
-        name for name, held in (("shift", shift_held), ("ctrl", ctrl_held)) if held
+        name for name, held in (("shift", shift_held), ("ctrl", ctrl_held), ("alt", alt_held)) if held
     )
     if modifiers and scroll_y == 0:
         scroll_y = scroll_x
@@ -704,7 +704,7 @@ def install_handlers(
     def on_mouse_scroll(x: int, y: int, scroll_x: float, scroll_y: float):
         if open_menu() is not None:
             return pyglet.event.EVENT_HANDLED
-        inp = wheel_input(scroll_x, scroll_y, bool(shift_keys), bool(ctrl_keys))
+        inp = wheel_input(scroll_x, scroll_y, bool(shift_keys), bool(ctrl_keys), bool(alt_keys))
         if inp is not None:
             app.pointer_scroll(inp)
 

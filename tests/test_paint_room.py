@@ -280,3 +280,77 @@ def test_the_panel_model_and_the_space_row():
     assert st.resolution == 1024 and st.resolution_fixed
     assert app.set_paint_resolution(2048) is False and app.paint_resolution == 1024  # set by the first stroke
     assert pm.toggle(app) is True and not app.paint_room_open
+
+
+# -- Manu's first observations (2026-11-18) ---------------------------------------------------------------------------
+
+
+def test_the_composite_is_ready_when_the_room_opens_and_the_first_dab_only_adds_tiles(app):
+    """„Erster Tupfer dauert ca 7 Sekunden“: the base is read when the room opens; the first stroke makes no whole-image
+    composite, and the shown pixels equal the composite exactly."""
+    obj = app.scene.edit_object
+    app.open_paint_room()
+    assert "Basisbild gelesen" in app.status_message
+    app.update_viewport(0.0)
+    texture = app.viewport.render_mesh.material.texture
+    assert isinstance(texture, LiveTexture) and obj.paint is None  # shown through the composite before any paint
+    full = app.paint_display.full_composites
+    _stroke(app)
+    app.update_viewport(0.0)
+    assert app.paint_display.full_composites == full
+    assert app.viewport.render_mesh.material.texture is texture
+    expected = app.paint.composite(obj, app.paint_display._entries[id(obj)].base)
+    assert np.array_equal(texture.rgba, expected)
+    app.dispatch_command(commands.UNDO)  # the first stroke and the paint go: the base again
+    app.update_viewport(0.0)
+    from mirai.paint.display import base_composite
+
+    base = app.paint_display._entries[id(obj)].base
+    assert obj.paint is None and np.array_equal(texture.rgba, base_composite(base, 1024, 1024))
+    app.dispatch_command(commands.REDO)
+    app.update_viewport(0.0)
+    assert np.array_equal(texture.rgba, app.paint.composite(obj, base))
+    app.close_paint_room()
+    app.dispatch_command(commands.UNDO)  # unpainted again, room closed: the texture path as before (P-E)
+    app.update_viewport(0.0)
+    assert not isinstance(app.viewport.render_mesh.material.texture if app.viewport.render_mesh.material else None,
+                          LiveTexture)
+
+
+def test_the_live_texture_regenerates_its_mipmaps_with_every_upload(app):
+    """„je steiler der Winkel ist, weniger sichtbar“: the minified levels follow the stroke (policy "frame")."""
+    app.open_paint_room()
+    app.update_viewport(0.0)
+    texture = app.viewport.render_mesh.material.texture
+    assert texture.mipmaps == "frame"
+    texture.take()
+    _stroke(app, release=False)
+    app.update_viewport(0.0)
+    full, boxes, mips = texture.take()
+    assert boxes and mips  # mid-stroke: the boxes and the mip chain
+
+
+def test_alt_wheel_steps_the_opacity_in_the_room_and_zooms_outside():
+    import main as main_module
+
+    assert main_module.wheel_input(0, 1, False, False, True) == Input("wheel", "UP", frozenset({"alt"}))
+    app = _app()
+    distance = app.camera.distance
+    assert app.pointer_scroll(Input("wheel", "UP", frozenset({"alt"}))) is True and app.camera.distance < distance
+    app.open_paint_room()
+    distance = app.camera.distance
+    assert app.pointer_scroll(Input("wheel", "DOWN", frozenset({"alt"}))) is True
+    assert app.paint_brush.opacity == pytest.approx(0.9) and app.camera.distance == distance
+
+
+def test_the_panels_take_the_mouse_in_the_room_but_not_during_a_stroke(app):
+    from gui.imgui_layer import ImguiLayer
+
+    layer = ImguiLayer.__new__(ImguiLayer)
+    layer.app = app
+    app.open_paint_room()
+    assert not layer._gesture_running()  # the panel and the SPACE menu work between strokes
+    _stroke(app, release=False)
+    assert layer._gesture_running()
+    app.pointer_release("LEFT", *_centre(app))
+    assert not layer._gesture_running()
