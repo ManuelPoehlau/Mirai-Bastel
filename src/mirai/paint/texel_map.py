@@ -90,8 +90,10 @@ def raster_triangle(a, b, c, width: int, height: int):
     return (rows + y0) * width + (cols + x0), w1[rows, cols], w2[rows, cols], box
 
 
-#: Candidate texels per raster step (`_raster_scan`'s memory bound: about 80 bytes each).
-_SCAN_CANDIDATES = 1 << 20
+#: Candidate texels per raster step (about 80 bytes each): small enough that a step's arrays stay in the CPU cache - the
+#: reference PC rastered 5.5x slower than the container with 1 << 20 (2026-11-18, P-D split); in the container 1 << 16
+#: is 35-40 % faster than 1 << 20 and the same as 1 << 15 / 1 << 17.
+_SCAN_CANDIDATES = 1 << 16
 
 
 def _convex_quads(p: np.ndarray) -> np.ndarray:

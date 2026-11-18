@@ -203,3 +203,48 @@ P-F save of a 4-layer stack (base image cache cleared: a cold read, as at the fi
     flatten (base + composite)       7189 ms in 1 call (max 7189)
   second save 1 ms (0 layers, 0 flat)  nothing written: PASS
 ```
+
+## Third run (Manu, 2026-11-18, `--no-gl`, src/ tree `80e706b678`: after §10.8c) and the app
+
+**Reading** (AD-037 §10.8d): the system decoder took 5.09 s as well - not the decode: pyglet's `get_data("RGBA")` reorders
+the decoder's BGRA bytes with a regular expression (container: decode 0.49 s, that conversion 1.1 s for the repo's RGB
+file). Fixed: the pixels are taken in the decoder's format and reordered with NumPy (`iris_import._rgba_of`, container
+1.1 s → 0.02 s). P-D: cage 1.72 s PASS, SubD 1 1.92 s PASS, SubD 2 3.11 s; the split shows the raster at 5.5× the
+container (1,230 against 222 ms) - the raster's working set did not fit the Core 2's cache: chunks of 1 << 16 candidates
+instead of 1 << 20 (container: raster 275 → 162 ms). In the app: „Basisbild gelesen 4.55 s“ at the first opening, 0.00 s at
+the second (the session cache).
+
+```
+Paint probe (AD-037 Phase 1e / 2) - commit 0e204a2a59, working tree MODIFIED, src/ tree 80e706b678
+python 3.12.10, numpy 2.2.6, size 2048^2, 40 dabs per stroke
+fixture: Gollum, 2234 faces, texture Gollum_cbf9c7702d.png, mirrored dab on
+
+P-G base image (the ZBrush texture the room reads; reference PC 2026-11-18: 6.35 s in P-F)
+  Gollum_cbf9c7702d.png: 470,628 bytes, 2048 x 2048, 8 bit, colour type 6, interlace 0, row filters none 0 sub 344 up 706 avg 0 paeth 998
+  file read 1 ms, decode 5090 ms (system (998 Average / Paeth rows)), total 5092 ms
+  second read (cached) 0.3 ms
+  plain re-read of the file 0.9 ms
+
+P-D room enter: paint surface build (texel map + tables), ms        bar <= 2000 ms
+  cage    2,234 faces    1719 ms  (2,787,212 texels, 48 MiB)  PASS
+         map split 31, map raster 1230, map ownership 360, tables 65
+  subd1   9,002 faces    1919 ms  (2,787,155 texels, 48 MiB)  PASS
+         map split 197, map raster 1230, map ownership 336, tables 125
+  subd2  36,008 faces    3109 ms  (2,787,155 texels, 48 MiB)  FAIL
+         map split 687, map raster 1596, map ownership 418, tables 376
+
+P-A (CPU rows): 3 % total p95 8.7 / 9.8 / 10.0 ms, 5 % 14.6 / 14.9 / 16.5 ms (cage / SubD 1 / SubD 2) - PASS
+
+P-F save of a 4-layer stack (base image cache cleared: a cold read, as at the first save of a session)
+  first save 6096 ms (4 layers + 1 flat, 0.7 MiB)  bar <= 2000 ms: FAIL
+    PNG encode (all files)            831 ms in 5 calls (max 174)
+      of it: layers                   658 ms in 4 calls (max 174)
+    write file                         12 ms in 5 calls (max 4)
+    read base                        4623 ms in 1 call (max 4623)
+    flatten (base + composite)       5221 ms in 1 call (max 5221)
+  second save 1 ms (0 layers, 0 flat)  nothing written: PASS
+```
+
+App (Manu's console, excerpt): `Paint Room: 'Gollum' malt auf dem Käfig, 2048² (Karte 1.55 s, Basisbild gelesen 4.55 s,
+Bild 0.21 s)`; after closing and opening again `(Karte 1.57 s, Basisbild gelesen 0.00 s, Bild 0.00 s)`; strokes, Pick,
+the front ortho view, Symmetry X and mirrored strokes ran (the P-A rows above in full in Manu's message).

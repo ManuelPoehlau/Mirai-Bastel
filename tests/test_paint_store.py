@@ -324,3 +324,30 @@ def test_a_paeth_png_is_read_right_and_never_through_the_slow_path_first(tmp_pat
     out = files.read_image(str(path))
     assert np.array_equal(out, rgba) and files.last_read["decoder"].startswith("system")
     assert files.read_image(str(path)) is out and not out.flags.writeable
+
+
+def test_system_decoded_pixels_are_taken_in_their_own_format_and_reordered():
+    """AD-037 §10.8d: pyglet's `get_data("RGBA")` reorders bytes with a regular expression (~5 s for the reference PC's
+    2048² BGRA texture); `iris_import._rgba_of` takes the decoder's format and pitch as they are. Pinned for BGRA / RGB /
+    BGR / L and both row directions; an image without alpha is opaque (pyglet's own conversion copies R into alpha)."""
+    pytest.importorskip("pyglet")
+    try:
+        from pyglet import image
+    except Exception as exc:  # no display
+        pytest.skip(f"pyglet.image: {exc}")
+    from mirai.iris_import import _rgba_of
+
+    rng = np.random.default_rng(2)
+    w, h = 7, 4
+    rgba = rng.integers(0, 255, (h, w, 4), dtype=np.uint8)  # top row first
+    for fmt in ("RGBA", "BGRA", "RGB", "BGR", "L"):
+        index = ["RGBA".index(c) if c != "L" else 0 for c in fmt]
+        pixels = rgba[..., index]
+        for pitch in (w * len(fmt), -w * len(fmt)):
+            rows = pixels[::-1] if pitch > 0 else pixels  # positive pitch: bottom row first
+            out = _rgba_of(image.ImageData(w, h, fmt, rows.tobytes(), pitch=pitch))
+            if fmt == "L":
+                assert np.array_equal(out[..., :3], np.repeat(rgba[..., :1], 3, axis=2)), (fmt, pitch)
+            else:
+                assert np.array_equal(out[..., :3], rgba[..., :3]), (fmt, pitch)
+            assert np.array_equal(out[..., 3], rgba[..., 3] if "A" in fmt else np.full((h, w), 255)), (fmt, pitch)

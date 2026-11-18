@@ -196,6 +196,30 @@ def decode_png(data: bytes, slow: bool = True) -> np.ndarray:
     return out
 
 
+def _rgba_of(data) -> np.ndarray:
+    """A pyglet `ImageData` as (h, w, 4) uint8 RGBA, top row first. The pixels are taken in the decoder's own format and
+    reordered here: pyglet's own conversion (`get_data("RGBA")`) runs a regular expression over the bytes - 1.1 s for a
+    2048² RGB image in the container, the ~5 s of the reference PC's BGRA (WIC) texture (AD-037 §10.8d)."""
+    fmt, pitch = data.format, data.pitch
+    width, height = data.width, data.height
+    channels = len(fmt)
+    if channels not in (1, 2, 3, 4) or any(c not in "RGBAL" for c in fmt):
+        raw = data.get_data("RGBA", width * 4)
+        return np.frombuffer(raw, dtype=np.uint8).reshape(height, width, 4)[::-1].copy()
+    raw = np.frombuffer(data.get_data(fmt, pitch), dtype=np.uint8)
+    rows = raw.reshape(height, abs(pitch))[:, :width * channels].reshape(height, width, channels)
+    if pitch > 0:
+        rows = rows[::-1]  # pyglet: a positive pitch is bottom-up
+    out = np.empty((height, width, 4), dtype=np.uint8)
+    out[..., 3] = 255
+    for i, name in enumerate(fmt):
+        if name == "L":
+            out[..., :3] = rows[..., i:i + 1]
+        else:
+            out[..., "RGBA".index(name)] = rows[..., i]
+    return out
+
+
 def read_rgba(path: str | Path) -> np.ndarray:
     """(h, w, 4) uint8 RGBA, top row first. pyglet's decoders first (what the viewport shows, also JPEG and the rest
     the system can read); without a display, or when pyglet refuses, `decode_png`. `ValueError` / `OSError`."""
@@ -204,8 +228,7 @@ def read_rgba(path: str | Path) -> np.ndarray:
         from pyglet import image
 
         data = image.load(str(path)).get_image_data()
-        raw = data.get_data("RGBA", data.width * 4)
-        return np.frombuffer(raw, dtype=np.uint8).reshape(data.height, data.width, 4)[::-1].copy()  # pyglet: bottom-up
+        return _rgba_of(data)
     except Exception:  # no display, no decoder: pyglet raises its own types
         pass
     return decode_png(path.read_bytes())

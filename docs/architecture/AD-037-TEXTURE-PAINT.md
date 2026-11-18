@@ -454,6 +454,20 @@ P-D: cage 1.65 s PASS, SubD 1 2.02 s (22 ms over the bar), SubD 2 3.51 s. The pr
 ownership, tables; container: 12 / 222 / 123 / 25 ms on the cage) so the next run names the part to work on; 1024² stays
 the fast option (P-5). P-A's CPU rows pass on every surface at 3 % and 5 %.
 
+### 10.8d The third reference-PC run (Manu, 2026-11-18): the conversion, and the raster's cache
+
+The system decoder (pyglet, WIC) took 5.09 s too [V]: not the decode - pyglet's `ImageData.get_data("RGBA")` reorders
+the decoder's bytes (WIC: BGRA) with a regular expression (container: 0.49 s decode, 1.1 s for that conversion of an RGB
+2048² image). **Fix:** `iris_import._rgba_of` takes the pixels in the decoder's own format and pitch and reorders them with
+NumPy (0.02 s in the container; pinned for RGBA / BGRA / RGB / BGR / L and both row directions; an image without alpha is
+now opaque - pyglet's conversion copied R into alpha, which also made `has_alpha` true for an RGB iris photo read that way).
+In the app the session cache worked as intended: „Basisbild gelesen 4.55 s“ at the first opening, 0.00 s at the second.
+
+P-D now passes on the cage (1.72 s) and SubD 1 (1.92 s); SubD 2 3.11 s. The split: the raster ran at 5.5× the container
+(1,230 against 222 ms; everything else 3-4×) - its chunks of 1 << 20 candidates (~80 MiB of arrays) far exceed the
+Q9550's 6 MiB L2. **Fix:** chunks of 1 << 16 (container: raster 275 → 162 ms on the cage, 269 → 180 ms on SubD 1, the same
+texels and weights). Both need the next reference-PC run.
+
 ### 10.8 Not in Phase 2
 
 Several layers in the UI (only the top layer is painted; the stack format has several), blend modes (P-12), the undo
