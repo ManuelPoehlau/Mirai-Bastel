@@ -641,8 +641,10 @@ mutation checks of §10 each fail a step (run by hand). Not separately covered h
    Kiefer-Zähne gehen mit. Pose-Modus aus (`5`, die Pose bleibt), Modus `4`, Klick auf einen sichtbaren Kiefer-Zahn dort,
    wo er jetzt ist: er wird gewählt.
 4. `Auge_Links` drehen: der Augapfel dreht sich um seine Mitte, der Lidschatten bleibt beim Kopf.
-5. Augen-Panel: Blick „Kamera“ oder „Maus“, in der Pose: die Augen folgen; ein Lid, das du (Gewichte) teils auf den
-   Augenknochen gelegt hast, geht mit. Blick „Ruhe“: deine Augenstellung von Schritt 4 ist wieder da.
+5. Augen-Panel: Blick „Kamera“ oder „Maus“, in der Pose: die Augen folgen. Die Lider gehen **nur mit, wenn ihre Punkte
+   Gewicht auf dem Augenknochen haben** — in der Testszene noch nicht. Dafür in Ruhe: Symmetrie aus (`Shift+S`, ein
+   Augenknochen liegt nicht auf der Mitte), Modus `1`, Oberlid-Punkte wählen, aktueller Knochen `Auge_Links`, im Panel
+   „Auf Auswahl“ mit Wert etwa 0,3–0,5. Blick „Ruhe“: deine Augenstellung von Schritt 4 ist wieder da.
 6. `6` (Ruhe): Blick „Kamera“ — nur die Augäpfel drehen, du kannst am Kopf weitermodellieren.
 7. Pose sichtbar, Pose-Modus aus, Modus `4`: einen verbundenen Zahn mit `W` verschieben: abgelehnt mit Hinweis auf `6`.
    In Ruhe: geht (Zähne nachjustieren).
