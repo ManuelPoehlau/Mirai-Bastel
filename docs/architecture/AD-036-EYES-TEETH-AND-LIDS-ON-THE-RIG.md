@@ -1,7 +1,8 @@
 # AD-036 — Eyes, teeth and lids on the rig: a bone link for rigid parts, gaze as a pose source, lids by weights
 
-**Status:** **PROPOSED (2026-11-18)** — Architecture Gate (Type C) after AD-028's bone tool 01/02. Output of the gate: this
-AD, no feature code. Manu decides (§11); a second opinion in the main project follows (§13) before anything is built.
+**Status:** **PROPOSED (2026-11-18); Artist decisions taken (Manu, 2026-11-18: "E1 ja, E2 ja, E3 ja, E4 go")** — E1–E4
+as recommended, the Core go given (E4); E5 open (§16). **Next: the second opinion in the main project (§13), then the
+build** — no code before it. Architecture Gate (Type C) after AD-028's bone tool 01/02; output of the gate: this AD.
 **Mode (M5):** Architecture Gate. Small throw-away probes only (§8.1; not committed).
 **Baseline:** `main` @ `939df8b` ("scenes: eye bones Auge_Links / Auge_Rechts"). `git log 939df8b..origin/main` is empty
 (fetched 2026-11-18): nothing changed since the handoff. Every code fact below was read there (file:line).
@@ -65,7 +66,8 @@ Zähnen. Den Messlauf beschreibt §8.3.
 **Datenformat:** ein neues Feld pro Objekt („folgt Knochen …“), Dateiformat 13 — eine Core-Änderung, die dein Go
 braucht. Ältere Builds lehnen solche Dateien ab, statt die Verbindungen beim Speichern still zu verlieren.
 
-**Deine Entscheidungen** (je eine Zeile; „ja“ = Empfehlung):
+**Deine Entscheidungen** (je eine Zeile; „ja“ = Empfehlung) — **beantwortet am 2026-11-18: „E1 ja, E2 ja, E3 ja, E4
+go“; E5 offen** (§16):
 
 - **E1 Zähne** per Knochen-Verbindung (wie die Augen), nicht per Gewichte. — *ja / Gewichte*
 - **E2 Blick und Lider beim Modellieren:** Der Blick bewegt die Lider nur in einer Pose. In Ruhe drehen sich nur die
@@ -509,13 +511,13 @@ dead links instead of re-linking; the gaze clamp against the document forward un
 
 Only what is his — Intent, Product Truth, Priority, Promotion (DEVCHAT-001 C2). German wording in the Kurzfassung.
 
-| # | Question | Recommendation | Why it is his |
-|---|---|---|---|
-| **E1** | Teeth: link or weights 1.0? | link | his stated inclination; workflow (duplicate, mirror, nudge) |
-| **E2** | Does the gaze move the lids also while modelling at rest? | only in a pose | product truth: modelling while the eyes follow the camera |
-| **E3** | Linked parts movable at rest? | yes; refused while posed | a different rule from S6 (bound placement locked), his to accept |
-| **E4** | Go for the Core field and format v13 | go | CORE_V1_FREEZE §7 step 6 |
-| **E5** | Test scene facts: which teeth are upper / lower; the ears to `Hals`; a separate head bone or not | — | his model and rig |
+| # | Question | Recommendation | Why it is his | Answer (Manu, 2026-11-18) |
+|---|---|---|---|---|
+| **E1** | Teeth: link or weights 1.0? | link | his stated inclination; workflow (duplicate, mirror, nudge) | **ja** — link |
+| **E2** | Does the gaze move the lids also while modelling at rest? | only in a pose | product truth: modelling while the eyes follow the camera | **ja** — only in a pose |
+| **E3** | Linked parts movable at rest? | yes; refused while posed | a different rule from S6 (bound placement locked), his to accept | **ja** |
+| **E4** | Go for the Core field and format v13 | go | CORE_V1_FREEZE §7 step 6 | **go** |
+| **E5** | Test scene facts: which teeth are upper / lower; the ears to `Hals`; a separate head bone or not | — | his model and rig | open (needed before slice 2's scenario test, §16) |
 
 Technical defaults stated, not asked: no stored offset (§4.2); eye guard and eye unlink on bone delete (§5.1, §4.4);
 mirror copy rule (§4.4); linked xor bound (§4.1); the gaze clamp in the head frame (§5.2); twins at rest (§5.5); the
@@ -574,6 +576,21 @@ weights of off-centre bones; editing a rigid part in the pose (§4.3); object �
 animation; a saved gaze (§5.6 says where); the per-eye divergence while aiming; key bindings (`config/keymap.json`
 untouched); panel layout; AD-028 S1–S8 beyond the amendments of §12.
 
+## 16. Decision record
+
+**Manu, 2026-11-18 (chat):** "E1 ja, E2 ja, E3 ja, E4 go".
+
+| # | Decided | What follows |
+|---|---|---|
+| E1 | Teeth follow their bone through the link, not through weights | Option A is not built for teeth; weights on a rigid part stay possible later (§3.4), e.g. with gums |
+| E2 | The gaze drives the eye bones only in a pose; at rest it turns the eyeballs only | §5.2's table as written; the "always" alternative of §5.3 is not built |
+| E3 | Linked parts stay movable at rest; refused while posed | §4.5 as written; the S6 lock is not extended to linked objects |
+| E4 | Go for `SceneObject.bone` and scene format v13 (CORE_V1_FREEZE §7 step 6) | given for the shape of §9.1; if the second opinion changes that shape (the field, its home, the version rules), the change comes back to Manu before the Core slice. The CORE_V1_FREEZE §7.1 entry and its revision line are written with the implementing commit (the AD-028 precedent), not now |
+| E5 | open | the scenario of §10 keeps its placeholder (`tooth`, `tooth01` upper; `Zahn_1`, `Zahn_2` lower; the ears unbound, so step 3 asserts that they stay at rest); Manu's answer replaces it before slice 2's scenario test. Not needed for the second opinion or slice 1 |
+
+Unchanged by the answers: every technical default listed under §11; the build outline of §12; the second-opinion points
+of §13.
+
 ## Prüfung der Vorlage für Manu (Deutsch)
 
 Keine Praxistests, sondern eine Prüfung dieser Vorlage:
@@ -590,5 +607,6 @@ Keine Praxistests, sondern eine Prüfung dieser Vorlage:
    Zahn verschieben: abgelehnt mit Hinweis auf die Ruhe-Taste → Undo/Redo, Loop am Lid, Kiefer-Gelenk nachrücken,
    Knochen löschen, Speichern/Laden: alles bleibt richtig. Stimmt das mit deiner Vorstellung überein?
 
-**Nächster Schritt:** deine Antworten zu E1–E5, dann die Zweitmeinung im Hauptprojekt (§13), dann der Bau in drei
-Scheiben (§12).
+**Nächster Schritt:** E1–E4 sind entschieden (2026-11-18). Jetzt die Zweitmeinung im Hauptprojekt (§13), dann der Bau
+in drei Scheiben (§12). E5 (welche Zähne oben/unten, Ohren, Kopfknochen) brauche ich erst für das Testszenario in
+Scheibe 2.
