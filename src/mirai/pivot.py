@@ -120,6 +120,29 @@ def place_pivot(
 POINT_SNAP_PX: float = 12.0
 
 
+#: Bone tool 02 (2026-11-18, `PROVISIONAL`): `sin^2` of the angle between the view ray and an axis below which the point of the
+#: axis under the cursor is not offered: 0.0025 = about 2.9 degrees. Nearer to the view direction the nearest point runs off
+#: to a distance of many camera distances (a perspective ray is almost never exactly parallel) and the length cannot be
+#: controlled any more - the click is refused instead and the status line says to turn the view.
+AXIS_PARALLEL_LIMIT: float = 0.0025
+
+
+def point_on_axis(ray_origin: Vec3, ray_direction: Vec3, axis_point: Vec3, axis_direction: Vec3):
+    """The point of the line `axis_point + t * axis_direction` nearest to the view ray, as `(point, t)`; None when the ray
+    runs (nearly) along the axis (`1 - cos^2` of the angle below `AXIS_PARALLEL_LIMIT`: the nearest point is undefined or far off). Both
+    directions need not be unit length. `t` is in units of the unit axis direction, so it is the signed length from
+    `axis_point`; it may be negative (behind the point) - the length is free."""
+    d = v.normalize(axis_direction)
+    r = v.normalize(ray_direction)
+    w = v.sub(axis_point, ray_origin)
+    b = v.dot(d, r)
+    denom = 1.0 - b * b
+    if denom < AXIS_PARALLEL_LIMIT:
+        return None
+    t = (b * v.dot(r, w) - v.dot(d, w)) / denom
+    return v.add(axis_point, v.scale(d, t)), t
+
+
 def snap_candidates(scene, avoid: Vec3 | None = None) -> list:
     """`((kind, id, name), world point)` in priority order - bone tails, bone heads, object pivots: the places a click may
     snap to (`nearest_screen_point`). Hidden bones and hidden objects are not offered; `avoid` (a point) is not either

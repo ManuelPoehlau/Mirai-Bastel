@@ -1200,6 +1200,41 @@ class Application:
     def bone_chain_snap(self, on: bool) -> None:
         self._skeleton.chain_snap = bool(on)
 
+    @property
+    def bone_chain_axis(self) -> str:
+        """The chain tool's constraint for the tip (Bone tool 02, `PROVISIONAL`): "free", "x" / "y" / "z" (the world axis
+        through the head) or "object" (the axis of the selected object - or of the object the head sits on - through its
+        pivot, along its local +Z: an eye's gaze axis). View state, not saved; the panel's switch, no key."""
+        return self._skeleton.chain_axis
+
+    @bone_chain_axis.setter
+    def bone_chain_axis(self, mode: str) -> None:
+        self._skeleton.set_chain_axis(mode)
+
+    @property
+    def bone_axis_object_name(self) -> str | None:
+        """The object the "object axis" would use now (the selected one, else the one whose pivot the chain's head sits
+        on), None = none; pure, for the panel."""
+        chain = self._skeleton.chain
+        obj = self._skeleton.axis_object(None if chain is None else chain.anchor)
+        return None if obj is None else obj.name
+
+    @property
+    def bone_align_blocker(self) -> str | None:
+        """Why the current bone cannot be aligned to the selected object's axis now (None = it can); pure, for the panel."""
+        return self._skeleton.align_blocker()
+
+    def align_bone_to_object_axis(self, bone_id=None, object_id=None) -> bool:
+        """Aligns a bone (default: the current one) with the axis of an object (default: the one selected): direction =
+        the object's local +Z (an eye's gaze axis), head, length and roll stay; one Undo step; at rest only. See
+        `SkeletonController.align_bone_to_axis`."""
+        obj = None
+        if object_id is not None:
+            obj = self.scene.objects.get(object_id)
+            if obj is None:
+                return False
+        return self._skeleton.align_bone_to_axis(bone_id, obj)
+
     def edit_bone(self, bone_id, **fields) -> bool:
         """Edit a bone at rest: `name`, `parent` (a BoneId or None), `head` / `tail` (world positions), `roll`
         (radians); one Undo step; refused while posed. Weights stay (keyed by BoneId). See `SkeletonController.edit_bone`."""

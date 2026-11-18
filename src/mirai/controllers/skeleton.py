@@ -37,7 +37,7 @@ from core.operations import MeshDeltaCommand, record_mesh_change
 from core.operations.transform import SEAM_TOLERANCE
 from core.rig import Rig, rest_frame
 
-from .. import object_space, transform_space
+from .. import eye_gaze, object_space, transform_space
 from ..interaction import commands
 from ..interaction.dial import DialAngle
 from ..interaction.session import Refusal, RunContext
@@ -59,7 +59,7 @@ from ..subdivision import SUBD_COMMANDS
 from ..subdivision.preview import key_label
 from ..symmetry import vertex_correspondence
 from ..viewport import gizmo as _gizmo
-from .bone_chain import BoneChainSession
+from .bone_chain import AXIS_MODES, BoneChainSession
 from .gestures import (
     TRANSFORM_COMMANDS,
     GestureController,
@@ -647,6 +647,8 @@ class SkeletonController:
         self.pose_mode = False
         #: the chain tool snaps to object pivots and bone ends (view state, not saved; the panel's checkbox)
         self.chain_snap = True
+        #: the chain tool's constraint for the tip (`bone_chain.AXIS_MODES`; view state, not saved; the panel's switch)
+        self.chain_axis = "free"
         self._bound: dict = {}  # id(mesh) -> [mesh, watch, bound]
         #: the three stage-7 policies, in order (AD-028 §8.2)
         self.policies = (self.pose_mode_refusal, self.posed_refusal, self.placement_refusal)
@@ -1035,6 +1037,72 @@ class SkeletonController:
         if self.posed():
             return f"the rig is posed - {self.key_text(commands.POSE_TOGGLE_REST)} = rest pose first (a bone's rest frame is edited at rest)"
         return None
+
+    def axis_object(self, head=None):
+        """The object whose axis the "object axis" constraint and the align button use (Bone tool 02): the one selected
+        object, else - with `head` - the object whose pivot sits on `head`; None = none. Hidden objects count (they are
+        still the one selected / the pivot the head was snapped to)."""
+        services = self.services
+        objects = services.scene.objects
+        picked = [objects[o] for o in services.selection.objects if o in objects]
+        if len(picked) == 1:
+            return picked[0]
+        if head is not None:
+            for obj in objects.values():
+                if math.dist(object_space.pivot_world(obj), head) <= 1e-9:
+                    return obj
+        return None
+
+    def set_chain_axis(self, mode: str) -> None:
+        if mode not in AXIS_MODES:
+            raise ValueError(f"chain axis: one of {AXIS_MODES}, got {mode!r}")
+        self.chain_axis = mode
+
+    def align_blocker(self, bone: Optional[BoneId] = None) -> Optional[str]:
+        """Why a bone cannot be aligned to an object's axis now (pure; the panel greys its button): `edit_blocker`, no
+        bone, or not exactly one selected object."""
+        reason = self.edit_blocker()
+        if reason is not None:
+            return reason
+        rig = self.rig
+        if bone is None:
+            bone = self.current_bone
+        if rig is None or bone is None or not rig.has_bone(bone):
+            return "no bone"
+        if self.axis_object() is None:
+            return "select exactly one object (mode 4, outliner)"
+        return None
+
+    def align_bone_to_axis(self, bone: Optional[BoneId] = None, obj=None) -> bool:
+        """Aligns a bone (default: the current one) with the axis of an object (default: the one selected; `obj` a
+        `SceneObject`): its direction becomes the object's local +Z in world (`eye_gaze.rest_forward`, an eye's gaze axis),
+        its **head and length stay**, its roll too; the tail moves. One Undo step through `edit_bone`, at rest only (the
+        refusals of `edit_bone`). Children keep their own rest frames (a rest edit, AD-028 addendum 2026-11-17)."""
+        services = self.services
+        label = "Align bone"
+        rig = self.rig
+        if bone is None:
+            bone = self.current_bone
+        if rig is None or bone is None or not rig.has_bone(bone):
+            services.status(f"{label}: no bone")
+            return False
+        if obj is None:
+            obj = self.axis_object()
+            if obj is None:
+                services.status(f"{label}: select exactly one object first (mode 4, outliner click)")
+                return False
+        b = rig.bone(bone)
+        direction = eye_gaze.rest_forward(obj)
+        tail = tuple(b.head[i] + direction[i] * b.length for i in range(3))
+        if math.dist(tail, b.tail) <= 1e-12 * max(1.0, b.length):  # (rounding of head + d * length is no change)
+            services.status(f"{label}: {b.name!r} already lies on the axis of {obj.name!r}")
+            return False
+        if not self.edit_bone(bone, tail=tail):
+            return False
+        services.status(
+            f"Bone {b.name!r} aligned to the axis of {obj.name!r} (head and length kept; Ctrl+Z takes it back)"
+        )
+        return True
 
     def begin_chain(self, root: bool = False) -> bool:
         """Starts the chain tool (`bone_chain`; the panel's button, no key). The first bone's parent is the current

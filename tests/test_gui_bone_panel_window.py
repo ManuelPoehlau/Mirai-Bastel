@@ -20,6 +20,7 @@ try:
 except Exception as exc:  # kein Display
     pytest.skip(f"kein GL/Display: {exc}", allow_module_level=True)
 
+from core import Rig  # noqa: E402
 from pyglet.window import key, mouse  # noqa: E402
 
 from tests.test_gui_imgui_window import _center, _click, _frame, run  # noqa: E402
@@ -128,3 +129,32 @@ def test_the_chain_refusal_is_the_buttons_tooltip_and_the_button_does_nothing_wh
     assert app.start_bone_chain()
     assert app.bone_chain_blocker and "bonechain" in app.bone_chain_blocker
     app.end_bone_chain()
+
+
+def test_the_tip_switch_and_the_align_button_work_through_the_panel(env):
+    """Bone tool 02: the radio row sets the chain's constraint, and "Ausrichten" turns the current bone onto the selected
+    object's +Z axis (head and length stay); greyed out without exactly one selected object."""
+    window, app, layer = env
+    _frame(window, 2)
+    assert app.bone_chain_axis == "free"
+    _click(window, _center(layer.item_rects[("bone_axis", "x")]))
+    assert app.bone_chain_axis == "x"
+    _click(window, _center(layer.item_rects[("bone_axis", "object")]))
+    assert app.bone_chain_axis == "object"
+    _click(window, _center(layer.item_rects[("bone_axis", "free")]))
+    assert app.bone_chain_axis == "free"
+    # a bone along +X; the cube's axis is +Z (no rotation)
+    rig, bone_id = (app.scene.rig or Rig()).with_new_bone("Test", (0.0, 0.0, 0.0), (0.5, 0.0, 0.0))
+    app.scene.rig = rig
+    _frame(window, 3)
+    assert app.bone_align_blocker == "select exactly one object (mode 4, outliner)"
+    depth = len(app.history)
+    _click(window, _center(layer.item_rects[("bone_align", 0)]))  # greyed out: nothing happens
+    assert app.scene.rig.bone(bone_id).tail == (0.5, 0.0, 0.0) and len(app.history) == depth
+    app.selection.objects = {next(iter(app.scene.objects))}
+    _frame(window, 3)
+    assert app.bone_align_blocker is None
+    _click(window, _center(layer.item_rects[("bone_align", 0)]))
+    bone = app.scene.rig.bone(bone_id)
+    assert bone.head == (0.0, 0.0, 0.0) and bone.tail == pytest.approx((0.0, 0.0, 0.5), abs=1e-12)
+    assert len(app.history) == depth + 1

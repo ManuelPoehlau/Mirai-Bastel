@@ -17,6 +17,14 @@ from . import bone_model as bm
 _CURRENT = (1.0, 0.8, 0.43, 1.0)  # wie das Edit-Objekt im Outliner
 _PLAIN = (0.88, 0.9, 0.94, 1.0)
 _FIELD_WIDTH = 78.0
+AXIS_HINTS = {
+    "free": "Die Spitze folgt dem Cursor (Einrasten und Mesh wie bisher)",
+    "x": "Spitze auf der X-Achse durch den Kopf; die Länge bestimmt der Cursor",
+    "y": "Spitze auf der Y-Achse durch den Kopf; die Länge bestimmt der Cursor",
+    "z": "Spitze auf der Z-Achse durch den Kopf; die Länge bestimmt der Cursor",
+    "object": "Spitze auf der Achse des gewählten Objekts durch seinen Pivot (lokale +Z; bei Augen die Blickachse); "
+              "ohne Auswahl das Objekt, an dessen Pivot der Kopf sitzt. Die Länge bestimmt der Cursor",
+}
 _AXES = ("x", "y", "z")
 
 
@@ -56,6 +64,17 @@ class BonePanel:
                 imgui.same_line()
                 self._button("Neue Wurzel", blocker is None, "chain_root", 0, blocker or "Kette ohne Parent starten",
                              lambda: app.start_bone_chain(True))
+        imgui.text("Spitze:")
+        for value, label in bm.AXIS_CHOICES:
+            imgui.same_line()
+            if imgui.radio_button(label + "##axis", st.chain_axis == value):
+                bm.set_chain_axis(app, value)
+            self.layer._remember("bone_axis", value)
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(AXIS_HINTS[value])
+        if st.chain_axis == "object":
+            imgui.text_disabled(f"Objekt-Achse von: {st.axis_object!r}" if st.axis_object else
+                                "Objekt-Achse: ein Objekt wählen (Modus 4, Outliner) oder am Pivot beginnen")
         changed, on = imgui.checkbox("Einrasten an Objekt-Pivot und Knochenenden", st.chain_snap)
         self.layer._remember("bone_snap", 0)
         if changed:
@@ -101,6 +120,11 @@ class BonePanel:
         imgui.text_disabled(f"Länge {cur.length:.4f}")
         self._roll(cur)
         imgui.end_disabled()
+        target = f" an {st.axis_object!r}" if st.axis_object else ""
+        self._button(f"Ausrichten{target}", st.align_blocker is None, "align", 0,
+                     st.align_blocker or "Richtung des Knochens = lokale +Z des gewählten Objekts (bei Augen die Blickachse); "
+                     "Kopf, Länge und Roll bleiben (ein Undo-Schritt, nur in der Ruhe-Pose)",
+                     lambda: bm.align_to_object_axis(app, cur.id))
         changed, hidden = imgui.checkbox("Ausgeblendet", cur.hidden)
         self.layer._remember("bone_hidden", 0)
         if changed:

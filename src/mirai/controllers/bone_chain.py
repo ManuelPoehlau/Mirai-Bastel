@@ -24,6 +24,12 @@ sets a tail and starts the next bone, whose parent is the previous one. The sess
   a spine. After an Undo / Redo the pending head follows the history (`resync`): the bone taken back leaves its head
   as the pending point, a Redo continues from the bone's tail. A pending head with no bone yet is no history entry, so
   Undo drops it first (`drop_head`) instead of taking back an earlier step.
+- **Axis constraint for the tip (Bone tool 02, 2026-11-18, `PROVISIONAL`; a switch in the panel, no key):** with a head set,
+  `chain_axis` ("free" | "x" | "y" | "z" | "object") puts the tip on a line - the world X / Y / Z axis through the head, or
+  the **object axis**: the line through an object's pivot along its local +Z (`eye_gaze.rest_forward`: an eye's gaze axis).
+  The tip is the point of the line nearest to the view ray, so the length stays free (it may be negative). The constraint
+  beats every snap (it would leave the line); the head is not constrained. The object is the single selected object, else the
+  object whose pivot the head sits on. A line along the view ray has no nearest point: the click is refused and says so.
 - **Refused to start:** while an interaction runs, while the rig is posed (a bone is placed at rest while the
   display shows the pose; the click would aim on the pose: AD-028 §7.1), in a morph target's editing view, without a viewport.
 """
@@ -51,7 +57,10 @@ from ..interaction.session import (
     Release,
     RunContext,
 )
-from ..pivot import PIVOT_PLANE_SNAP_PX, nearest_screen_point, place_pivot, snap_candidates, snap_to_plane
+from ..eye_gaze import rest_forward
+from ..pivot import (
+    PIVOT_PLANE_SNAP_PX, nearest_screen_point, place_pivot, point_on_axis, snap_candidates, snap_to_plane,
+)
 from ..viewport import gizmo as _gizmo
 
 #: What the chain lets through from outside (it owns the pointer, not the camera): Cancel (ends it), Undo / Redo (the
@@ -81,8 +90,16 @@ COLOR_MARK_PLANE = (1.0, 0.45, 0.85, 1.0)
 PENDING_LINE_WIDTH = 2.5
 MARK_RATIO = 0.18  # a marker's arm, in gizmo sizes
 
+#: Bone tool 02: the tip's constraint modes (`SkeletonController.chain_axis`, the panel's switch) and their words.
+AXIS_MODES = ("free", "x", "y", "z", "object")
+AXIS_WORLD = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
+COLOR_MARK_AXIS = (1.0, 0.6, 0.2, 1.0)
+COLOR_AXIS_LINE = (1.0, 0.6, 0.2, 0.55)
+AXIS_LINE_HALF_LENGTH = 6.0  # the guide line's half length, in gizmo sizes
+
 #: What a point was taken from: its colour and its words for the status line.
 KIND_COLORS = {
+    "axis": COLOR_MARK_AXIS,
     "point": COLOR_MARK,
     "plane": COLOR_MARK_PLANE,
     "pivot": COLOR_MARK_PIVOT,
@@ -130,6 +147,7 @@ class BoneChainSession:
         self.gesture = False
         self.moved = 0.0
         self.gesture_shift = False
+        self.reason: Optional[str] = None  # why `point_at` found no point (the last time it was asked)
         self._noted: Optional[str] = None  # the snap note the status line shows now
 
     # -- the slot protocol ---------------------------------------------------------------------------
@@ -183,10 +201,36 @@ class BoneChainSession:
 
     # -- where a click lands -------------------------------------------------------------------------
 
+    def axis_line(self):
+        """The line the tip is constrained to, `(point, unit direction, words)`; None = free, no head yet, or no object for
+        the object axis (`reason` says which)."""
+        mode = self.skeleton.chain_axis
+        if mode == "free" or self.anchor is None:
+            return None
+        if mode in AXIS_WORLD:
+            return self.anchor, AXIS_WORLD[mode], f"{mode.upper()} axis through the head"
+        obj = self.skeleton.axis_object(self.anchor)
+        if obj is None:
+            self.reason = "object axis: select one object (mode 4) or start the bone on its pivot"
+            return None
+        return object_space.pivot_world(obj), rest_forward(obj), f"axis of {obj.name!r}"
+
     def point_at(self, x: float, y: float, mesh_snap: bool = False) -> Optional[ChainPoint]:
-        """The point a click at (x, y) would place (module docstring); None = nothing under the cursor."""
+        """The point a click at (x, y) would place (module docstring); None = nothing under the cursor (`reason` may say why)."""
         services = self.services
         width, height = (int(v) for v in services.viewport_size)
+        self.reason = None
+        if self.skeleton.chain_axis != "free" and self.anchor is not None:
+            line = self.axis_line()
+            if line is None:
+                return None
+            origin, direction, words = line
+            ray_origin, ray_direction = services.camera.screen_to_ray(x, y, width, height)
+            hit = point_on_axis(ray_origin, ray_direction, origin, direction)
+            if hit is None:
+                self.reason = f"the {words} points at the camera - turn the view"
+                return None
+            return ChainPoint(hit[0], "axis", note=f"on the {words}")
         if self.skeleton.chain_snap:
             hit = nearest_screen_point(
                 services.camera, snap_candidates(services.scene, self.anchor), x, y, width, height
@@ -225,7 +269,7 @@ class BoneChainSession:
         skeleton = self.skeleton
         target = self.point_at(x, y, mesh_snap=shift)
         if target is None:
-            services.status("Bone chain: no point under the cursor")
+            services.status(f"Bone chain: {self.reason or 'no point under the cursor'}")
             services.refresh_hover()
             return False
         if self.anchor is None:
@@ -312,7 +356,9 @@ class BoneChainSession:
             parent = self.parent
             under = f"child of {self.skeleton.bone_name(parent)!r}" if parent is not None else "no parent"
             return f"Bone chain: click the head ({under}; Shift = vertex / edge, Esc = end)"
-        return "Bone chain: click the next tail (Esc = end)"
+        mode = self.skeleton.chain_axis
+        axis = "" if mode == "free" else f" on the {'object' if mode == 'object' else mode.upper()} axis"
+        return f"Bone chain: click the next tail{axis} (Esc = end)"
 
     def clear_preview(self) -> bool:
         return self._set_preview(None)
@@ -333,6 +379,13 @@ class BoneChainSession:
         anchor = self.anchor
         if anchor is not None:
             items += _cross(camera, anchor, scale, COLOR_PENDING)
+            line = self.axis_line()
+            if line is not None:  # the line the tip is held on, both ways from its point
+                origin, direction, _ = line
+                half = _gizmo.gizmo_size(camera, origin, scale) * AXIS_LINE_HALF_LENGTH
+                a = tuple(origin[i] - direction[i] * half for i in range(3))
+                b = tuple(origin[i] + direction[i] * half for i in range(3))
+                items.append(_gizmo.DrawItem((*a, *b), COLOR_AXIS_LINE, "lines", PENDING_LINE_WIDTH))
         point = self.preview
         if point is None:
             return items

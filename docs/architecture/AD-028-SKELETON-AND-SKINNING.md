@@ -610,6 +610,23 @@ texts, colours, layout and the snap radius are `PROVISIONAL`. Code: `controllers
   jaw scenario with the bone made by the tool incl. the Gollum head chain), `test_gui_bone_panel_model.py`,
   `test_gui_bone_panel_window.py` (the real window, own process).
 
+**Addendum 2026-11-18 (Bone tool 02, `PROVISIONAL`): aligning a bone exactly.** Manu: a bone must be alignable exactly - the tip on an
+object's gaze axis with the length free, a button that aligns an existing bone, and an X / Y / Z constraint, as switches in the
+panel, no new key. No `src/core` or scene-format change.
+- **Tip constraint** (`chain_axis` = free | X | Y | Z | object; the panel's "Spitze" row; view state, not saved): with a head set
+  the tip is the point of a line nearest to the view ray - the world X / Y / Z axis through the head, or the **object axis**: the
+  line through an object's pivot along its local +Z (`eye_gaze.rest_forward`; for an eye the gaze axis, which in the Gollum
+  scenes points about 3.8 degrees outward). The cursor sets the length (it may be negative). The constraint beats every snap
+  and does not constrain the head. Object = the one selected object, else the object whose pivot the head was snapped to. A
+  view within about 3 degrees of the line is refused (`pivot.AXIS_PARALLEL_LIMIT`: the nearest point runs off). The line is drawn.
+- **Align button** (`Application.align_bone_to_object_axis`, only at rest, one Undo step through `edit_bone`): the current bone's
+  direction becomes the selected object's local +Z; **head, length and roll stay**, the tail moves; children keep their own rest
+  frames. Needs exactly one selected object (mode 4, outliner); an object may be given by id.
+- **Scene** `Gollum_Head_rigging_test`: bones `Auge_Links` / `Auge_Rechts` (ids 5, 6), head = the eyeball's centre, tip on the gaze
+  axis, two eyeball radii long (`PROVISIONAL`), roll 0, **parent `Hals`** (the jaw moves, the eyes do not follow it; there is no
+  head bone yet - re-parent in the panel when one exists). The eye objects do not follow the bones: that is the next Architecture Gate.
+  Tests: `tests/test_bone_axis.py`.
+
 ## 9. Core change (CORE_V1_FREEZE §7)
 
 1. **Requirement:** the jaw scenario (Manu 2026-10-29): bones and weights that survive topology edits, Undo, Knife
@@ -1019,7 +1036,14 @@ Leiste oben links (neben „Morph“ und „Auge“); `Esc` beendet die Kette. A
 5. **Das Panel.** Namen ändern (Enter; ein belegter Name wird abgelehnt), Parent umhängen (die Liste enthält den Knochen selbst
    und seine Kinder nicht), Zahlen für Kopf / Spitze / Roll eingeben, „Gewicht setzen“ mit Wert auf eine Punktauswahl (`1`),
    „Gewichtsansicht“ an / aus, „Ausgeblendet“, „Löschen“ (die Gewichte gehen an den Parent).
-6. **Undo/Redo und Speichern/Laden** mit der Kette: jeder Knochen ein Schritt; `Strg+S`, neu laden: Knochen (auch der
+6. **Exakt ausrichten (Bone-Werkzeug 02).** Im Panel die Zeile „Spitze“: *frei / X / Y / Z / Objekt-Achse*. Bei X / Y / Z liegt die
+   Spitze auf der Weltachse durch den Kopf (eine orange Führungslinie), die Länge bestimmt der Cursor. Bei *Objekt-Achse* liegt
+   sie auf der Achse des gewählten Objekts durch dessen Pivot (lokale +Z; bei Augen die Blickachse, etwa 3,8° nach außen): ein
+   Auge im Outliner wählen (Modus 4) oder den Kopf auf den Augen-Pivot setzen. Der Knopf **„Ausrichten an 'Auge_Links'“**
+   richtet den aktuellen Knochen auf diese Achse aus (Kopf, Länge, Roll bleiben; `Strg+Z`; nur in der Ruhe-Pose).
+7. **Szene `Gollum_Head_rigging_test`:** sie hat jetzt die Knochen „Auge_Links“ und „Auge_Rechts“ (Kopf = Augapfelmitte, Spitze auf
+   der Blickachse, Parent „Hals“). Bitte im Panel nachsehen und sagen, ob Länge (zwei Augapfelradien) und Parent so passen.
+8. **Undo/Redo und Speichern/Laden** mit der Kette: jeder Knochen ein Schritt; `Strg+S`, neu laden: Knochen (auch der
    ausgeblendete „Neck“ in `Gollum_Head_01*`), Namen, Parent und Zahlen sind unverändert.
 
 Nicht geprüft und offen für deinen PC: das Aussehen und die Bedienung im echten Fenster (Fenster-Test nur unter xvfb), die

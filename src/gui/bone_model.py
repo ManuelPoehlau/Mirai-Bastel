@@ -59,6 +59,9 @@ class BonePanelState:
     soft_on: bool
     weight_view: bool
     falloff_percent: float  # Startbreite: die Soft-Radius-Stufe (wie die Taste)
+    chain_axis: str  # Achsenzwang der Spitze: "free" | "x" | "y" | "z" | "object" (Bone-Werkzeug 02)
+    axis_object: str | None  # das Objekt, dessen Achse „Objekt-Achse“ und der Knopf „Ausrichten“ nehmen (None = keins)
+    align_blocker: str | None  # warum „Ausrichten“ gerade nicht geht (None = es geht)
 
     @property
     def has_bones(self) -> bool:
@@ -140,6 +143,9 @@ def state(app) -> BonePanelState:
         soft_on=soft.enabled,
         weight_view=app.weight_view,
         falloff_percent=float(RADIUS_STEPS_PERCENT[soft.radius_step]),
+        chain_axis=app.bone_chain_axis,
+        axis_object=app.bone_axis_object_name,
+        align_blocker=app.bone_align_blocker,
     )
 
 
@@ -183,6 +189,18 @@ def set_roll_degrees(app, bone, current_degrees: float, degrees: float) -> bool:
 
 def set_parent(app, bone, parent) -> bool:
     return app.edit_bone(bone, parent=parent)
+
+
+#: Die Schalterstellungen für die Spitze: (Wert, Beschriftung); „Objekt-Achse“ = Blickachse bei Augen (Bone-Werkzeug 02).
+AXIS_CHOICES = (("free", "frei"), ("x", "X"), ("y", "Y"), ("z", "Z"), ("object", "Objekt-Achse"))
+
+
+def set_chain_axis(app, mode: str) -> None:
+    app.bone_chain_axis = mode
+
+
+def align_to_object_axis(app, bone) -> bool:
+    return app.align_bone_to_object_axis(bone)
 
 
 def toggle_weight_view(app) -> bool:

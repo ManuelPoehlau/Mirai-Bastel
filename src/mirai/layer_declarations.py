@@ -294,6 +294,8 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         # delete and the two weight values rewrite weights themselves, as their keys do (RIG, like BONE_DELETE)
         "bone_chain_blocker": "non-mesh",
         "bone_edit_blocker": "non-mesh",
+        "bone_align_blocker": "non-mesh",
+        "align_bone_to_object_axis": "non-mesh",
         "start_bone_chain": "non-mesh",
         "end_bone_chain": "non-mesh",
         "edit_bone": "non-mesh",
