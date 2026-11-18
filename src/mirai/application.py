@@ -193,6 +193,10 @@ from .morph_targets import MORPH_COMMANDS, MorphDisplay, TranslatingHistory, ins
 from .skinning import SkinDisplay, skin_layer
 from .surface_chain import SurfaceChain
 from .surface_positions import SurfacePositions
+from .paint import files as paint_files
+from .paint import uv_health as uv_health_api
+from .paint.store import PaintStore
+from .paint.uv_check_display import UVCheckState, uv_check_tints
 from .viewport import DisplayMode, DisplayState, OrbitCamera
 from .viewport.camera import nearest_standard_view
 from .viewport.box_select import (
@@ -491,6 +495,11 @@ class Application:
         # The radius is held in world units (computed on switch-on, on a step change and
         # on scene load) so that the tool and the later preview read one value.
         self._soft: SoftSettings = SoftSettings()
+        # AD-037: the pixels of every painted object (`SceneObject.paint` is the document value); cleared on a reset.
+        self.paint = PaintStore(loader=paint_files.read_layer)
+        # AD-037 Phase 1a: the UV check while it shows (`UVCheckState`: mesh, its watch, `UVHealth`); None = off. View
+        # state only.
+        self._uv_check: UVCheckState | None = None
         # Mask Geometry (`mirai.mask`): protection state, not mesh data - no History, cleared on scene load.
         self._masks: dict[ObjectId, VertexMask] = {}
         self._mask_overlay = None
@@ -711,6 +720,7 @@ class Application:
         `mirai.subdivision.gl_lines.GLSubdLineOverlay`). Die SubD-Vorschau (`self.subdivision`) hängt
         sich an jeden neuen Viewport; ohne Senke rechnet sie headless dieselben Segmente."""
         self._morph.drop_view()  # the reset replaces every object, the view included
+        self.paint.clear()  # AD-037: every object is new
         if geometry_type in ("cube", "obj", "empty"):
             reset_scene(self.scene, *self._build_mesh(geometry_type, obj_path))
             self.scene_path = None
@@ -726,6 +736,8 @@ class Application:
                 if obj.eye is not None and obj.eye.sclera_texture is not None:  # AD-035: the sclera's map likewise
                     obj.eye = dataclasses.replace(
                         obj.eye, sclera_texture=texture_files.resolve(obj.eye.sclera_texture, scene_path.parent))
+                if obj.paint is not None:  # AD-037: the paint layers' images likewise
+                    obj.paint = paint_files.resolve_stack(obj.paint, scene_path.parent)
             replace_scene(self.scene, loaded)
             self.scene_path = scene_path
             # View state (`mirai.view_state`) rides in the file beside the core envelope; `load_scene` applies it.
@@ -1509,6 +1521,7 @@ class Application:
         path.parent.mkdir(parents=True, exist_ok=True)
         # OSError: nothing written, nothing changed
         copies, sclera_copies, missing = self._copy_eye_images(document, path)
+        paint = paint_files.prepare_save(document.objects.values(), self.paint, path)  # AD-037: layer PNGs first
         data = scene_to_dict(document)
         data[view_state.VIEW_KEY] = view_state.capture(self)
         for raw in data["objects"]:
@@ -1519,6 +1532,8 @@ class Application:
             if eye is not None and eye.get("sclera_texture") is not None:  # AD-035: the sclera's map likewise
                 eye["sclera_texture"] = texture_files.to_file(sclera_copies.get(raw["id"], eye["sclera_texture"]),
                                                               path.parent)
+            if raw.get("paint") is not None:
+                raw["paint"] = paint.file_stack(raw["id"], path.parent)
         text = json.dumps(data, indent=2)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")
@@ -1530,6 +1545,7 @@ class Application:
                 obj.texture = copies[int(obj.id)]
             if int(obj.id) in sclera_copies:
                 obj.eye = dataclasses.replace(obj.eye, sclera_texture=sclera_copies[int(obj.id)])
+        paint.apply(self.paint)
         if copies or sclera_copies:
             self._objects.sync_views()  # the entries draw from the copy from now on
         self.scene_path = path
@@ -1541,6 +1557,9 @@ class Application:
             notes.append(f"sclera image copied to {folder}/")
         if missing:
             notes.append(f"image not found, path kept: {', '.join(sorted(missing))}")
+        if paint.written or paint.flats:
+            notes.append(f"paint: {paint.written} layer image{'s' if paint.written != 1 else ''} written"
+                         + (f", flattened {', '.join(Path(p).name for p in paint.flats.values())}" if paint.flats else ""))
         self._set_status(f"Saved scene: {path}" + (f" ({'; '.join(notes)})" if notes else ""))
         return True
 
@@ -2692,7 +2711,7 @@ class Application:
             show_edges=self.display.show_edges,
             flat=self.display.mode is DisplayMode.FLAT_SHADED,
         )
-        self.viewport.set_region_tint(self.display.region_tint)
+        self.viewport.set_region_tint(self.display.region_tint or self._uv_check is not None)  # AD-037: the UV check
         self.viewport.set_light(self.display.light_rig)
         self.viewport.set_eye_display(
             preview=self.display.eye_preview,
@@ -3180,10 +3199,50 @@ class Application:
             return
         mesh = self.scene.mesh
         seen = self._tints_seen
+        if self._uv_check is not None:  # AD-037: while the UV check shows, its faces take the region colours' place
+            health = self._current_uv_check().health
+            if seen is not None and seen[0] is mesh and seen[1] is health and seen[2] is self.viewport:
+                return
+            self._tints_seen = (mesh, health, self.viewport)
+            self.viewport.set_face_tints(uv_check_tints(health))
+            return
         if seen is not None and seen[0] is mesh and seen[1] is mesh.face_regions and seen[2] is self.viewport:
             return
         self._tints_seen = (mesh, mesh.face_regions, self.viewport)
         self.viewport.set_face_tints(face_regions_api.region_tints(mesh))
+
+    # -- UV check (AD-037 Phase 1a) ---------------------------------------------------------------------------------
+
+    @property
+    def uv_check_on(self) -> bool:
+        return self._uv_check is not None
+
+    def toggle_uv_check(self) -> bool:
+        """The UV check of the edit object on / off (SPACE menu row; no key until Manu's "Taste passt"): read-only,
+        no Undo step. On: the status line names faces without UVs, without UV area, overlapping or outside 0-1, the
+        UV islands and the texel-density spread (`mirai.paint.uv_health`), and those faces are coloured in the
+        viewport in place of the region colours (red: no UVs / no UV area, orange: overlapping, violet: outside 0-1).
+        It follows topology and UV edits and the edit-object switch while on. Returns the new state."""
+        if self._uv_check is not None:
+            self._uv_check = None
+            self._apply_display()
+            self._set_status("UV check: off")
+            return False
+        self._uv_check = UVCheckState.of(self.scene.mesh)
+        self._apply_display()
+        self._set_status(self._uv_check.health.status_line())
+        return True
+
+    def uv_health(self):
+        """The edit object's current `UVHealth` (computed now when the check is off)."""
+        return self._current_uv_check().health if self._uv_check is not None else uv_health_api.check(self.scene.mesh)
+
+    def _current_uv_check(self) -> "UVCheckState":
+        state = self._uv_check
+        if state.mesh is not self.scene.mesh or state.stale():
+            state = UVCheckState.of(self.scene.mesh)
+            self._uv_check = state
+        return state
 
     @property
     def active_region_faces(self) -> int:
@@ -3989,6 +4048,7 @@ class Application:
         if axis is not None:
             extracted.mesh.symmetry_definition = derived_symmetry(extracted.mesh, axis)  # None unless VALID
         obj, companion = detach_api.detached_object(scene, src, extracted.mesh)
+        self.paint.copy_object(src, obj)  # AD-037: the part keeps the source's current pixels
         coordinator = (
             symmetry_declarations.REMOVAL_COORDINATORS[commands.DELETE] if src.mesh.symmetry_definition is not None
             else None

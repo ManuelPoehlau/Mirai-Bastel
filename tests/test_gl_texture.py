@@ -178,3 +178,72 @@ def test_a_texture_re_exported_under_the_same_name_shows_at_the_next_draw(gl_win
     os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 10**9))  # a later save, even within one clock tick
     assert _greenish(_pixel(_draw(gl_window, rm, camera), LEFT, LOW))
     rm.store.release()
+
+
+# -- AD-037 Phase 1c: a live texture ---------------------------------------------------------------------------------
+
+
+def _live(colour, size=8, mipmaps="deferred"):
+    import numpy as np
+
+    from viewport.live_texture import LiveTexture
+
+    rgba = np.zeros((size, size, 4), np.uint8)
+    rgba[..., :3] = colour
+    rgba[..., 3] = 255
+    return LiveTexture(rgba, mipmaps=mipmaps)
+
+
+@pytest.mark.parametrize("mipmaps", ["frame", "deferred", "none"])
+def test_a_live_texture_shows_and_a_marked_box_is_uploaded_alone(gl_window, mipmaps):
+    live = _live(RED, mipmaps=mipmaps)
+    rm, camera = _build(gl_window, _plane(uvs=True), live)
+    pixels = _draw(gl_window, rm, camera)
+    assert _reddish(_pixel(pixels, LEFT, LOW)) and _reddish(_pixel(pixels, RIGHT, HIGH))
+    assert live.uploads == 1 and live.uploaded_bytes == 8 * 8 * 4
+    live.rgba[0:4, 4:8, :3] = GREEN  # rows 0-3 = v < 0.5 (the lower half), columns 4-7 = the right half
+    live.mark(4, 0, 8, 4)
+    live.finish()
+    pixels = _draw(gl_window, rm, camera)
+    assert _greenish(_pixel(pixels, RIGHT, LOW)) and _reddish(_pixel(pixels, RIGHT, HIGH))
+    assert _reddish(_pixel(pixels, LEFT, LOW))
+    assert live.uploads == 2 and live.uploaded_bytes == 8 * 8 * 4 + 4 * 4 * 4
+    again = _draw(gl_window, rm, camera)
+    assert live.uploads == 2 and again == pixels  # nothing marked: no upload, the same picture
+    live.release()
+    assert live.gl_name is None
+    rm.store.release()
+
+
+def test_a_live_texture_draws_like_the_same_image_from_a_file(gl_window, tmp_path):
+    """The live path and the file path give the same picture for the same pixels (no mipmap difference at this size:
+    both are magnified)."""
+    import numpy as np
+
+    from mirai.paint.files import encode_layer
+
+    live = _live(RED)
+    live.rgba[:, 4:, :3] = GREEN
+    path = tmp_path / "same.png"
+    path.write_bytes(encode_layer(live.rgba))
+    file_rm, camera = _build(gl_window, _plane(uvs=True), str(path))
+    live_rm, _ = _build(gl_window, _plane(uvs=True), live)
+    from_file = np.frombuffer(_draw(gl_window, file_rm, camera), np.uint8).astype(int)
+    from_live = np.frombuffer(_draw(gl_window, live_rm, camera), np.uint8).astype(int)
+    assert np.abs(from_file - from_live).max() <= 1
+    live.release()
+    file_rm.store.release()
+    live_rm.store.release()
+
+
+def test_a_draw_without_a_live_texture_is_unchanged(gl_window, texture):
+    """P-E: the path texture and the untextured draw are bit-identical with and without a live texture elsewhere."""
+    rm, camera = _build(gl_window, _plane(uvs=True), texture)
+    before = _draw(gl_window, rm, camera)
+    live = _live(GREEN)
+    other, _ = _build(gl_window, _plane(uvs=True), live)
+    _draw(gl_window, other, camera)
+    assert _draw(gl_window, rm, camera) == before
+    live.release()
+    other.store.release()
+    rm.store.release()

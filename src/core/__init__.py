@@ -15,8 +15,8 @@ from .rig import Bone, Rig, rest_frame
 from .selection import Selection, SelectionMode
 from .history import HistoryStack, Command
 from .operation import Operation, OperationContext
-from .scene import (EyeIris, EyeLook, EyeSpec, MirrorPair, ObjectMaterial, Scene, SceneObject, ObjectState,
-                    ObjectTransform)
+from .scene import (EyeIris, EyeLook, EyeSpec, MirrorPair, ObjectMaterial, PaintLayer, PaintStack, Scene, SceneObject,
+                    ObjectState, ObjectTransform)
 from .serialization import scene_to_dict, scene_from_dict, scene_to_json, scene_from_json
 from .operations.move import MoveOperation
 from .operations.transform import RotateOperation, ScaleOperation, VertexTransformCommand
@@ -53,6 +53,8 @@ __all__ = [
     "EyeSpec",
     "EyeIris",
     "EyeLook",
+    "PaintLayer",
+    "PaintStack",
     "scene_to_dict",
     "scene_from_dict",
     "scene_to_json",

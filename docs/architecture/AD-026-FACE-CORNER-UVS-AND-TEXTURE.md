@@ -176,6 +176,15 @@ docstring now states what a relative path means).
 - Tests: `tests/test_scene_textures.py` (absolute, relative, missing, spaces, another working directory, foreign
   Windows paths, Save As, failed copy and failed write, Undo, the repository's test scene from anywhere).
 
+### Addendum 2026-11-18: paint layers above the texture, live textures (AD-037 Phase 1)
+
+[AD-037](AD-037-TEXTURE-PAINT.md) keeps this AD's rules: one texture per object, still a path, still the image the draw
+shows - and, as the **base** of an object's paint (`SceneObject.paint`), never written by painting. A material's texture
+may now also be a `viewport.live_texture.LiveTexture` (CPU pixels the host writes, uploaded in boxes); a path texture,
+its cache and the untextured draw are unchanged (`tests/test_gl_texture.py`). Painting reads the corner UVs through a
+derived texel map (`mirai.paint.texel_map`) and a read-only UV check names faces §3's rules leave unpaintable (Extrude /
+Inset walls with no UV area, Bridge faces without UVs, overlaps).
+
 ## 8. Verification and measurements
 
 - Tests (all container): `tests/test_core_face_uvs.py` (20: every primitive incl. seams, journal exactness, file,

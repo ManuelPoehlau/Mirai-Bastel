@@ -115,14 +115,14 @@ def test_the_gollum_scene_with_links_is_v13_and_keeps_everything_else():
 # -- older versions --------------------------------------------------------------------------------------------------
 
 
-def test_versions_2_to_12_read_without_links_and_14_is_refused():
+def test_versions_2_to_12_read_without_links_and_15_is_refused():
     plain = scene_to_dict(Scene())
     for version in range(2, 14):
         data = json.loads(json.dumps(plain))
         data["version"] = version
         assert all(obj.bone is None for obj in scene_from_dict(data).objects.values())
     data = json.loads(json.dumps(plain))
-    data["version"] = 14  # the first unknown
+    data["version"] = 15  # the first unknown (14: paint, AD-037)
     with pytest.raises(ValueError):
         scene_from_dict(data)
 
