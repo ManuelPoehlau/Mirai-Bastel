@@ -329,6 +329,10 @@ a colour of the surface point stays at that point - median ≤ 2/255, p95 ≤ 8/
 refusal test), `test_gui_imgui_window.py` (the layer list draws in the real window), `test_paint_format.py` (the blend
 values).
 
+Full default run after Phase 3 (2026-11-19, container, `xvfb-run -a python -m pytest`): 7,780 passed, 8 skipped, and
+`test_scene_menu_local_tmp.py::test_probe_menu_wiring` failing as on the base commit `cb11ebe` (checked there; not caused
+by this change).
+
 Full default run in the container (2026-11-18, `xvfb-run -a python -m pytest`): 7,707 passed, 8 skipped, 1 failed —
 `tests/test_scene_menu_local_tmp.py::test_probe_menu_wiring`, which fails the same way on the base commit `25154ac`
 (not caused by this change).
