@@ -645,7 +645,11 @@ padding gets one window per run of tiles in a tile row (`_row_boxes`); the old c
 faces and a sorted lookup instead of a Python step per triangle; the plan's and the read's pieces run in a thread pool
 (`THREADS` = 4; NumPy releases the GIL; the Q9550 has 4 cores). Same pixels (≤ 1/255 rounding). Container, plan + both
 layers of `Gollum_Head_05`'s object: 0.52 → 0.34 s (re-unwrap-like layout), 0.72 → 0.44 s (fully transposed layout).
-The reference PC decides. Pinned:
+The reference PC decided (Manu, 2026-11-19): the app „(4.2 s: map 2.0, layers 2.2)“ (7.3 → 6.0 → 5.6 → 4.2 s); the probe:
+plan 0.82 / 0.95 s, layer 1 0.59 / 0.99 s (read 0.51 / 0.53 s, seam pad 0.25 / 0.29 s), layer 2 0.09 s. **Kept as it is**
+(Manu, verbatim): „Etwas besser geworden … Wir lassen das erstmal so. Der PC ist auch einfach uralt, da muss man ein paar
+Sekunden Wartezeit in Kauf nehmen. Wichtiger ist, dass es funktioniert“. What is left, should it matter later: the texel
+map of the new layout (≈ 0.5 s there) and the seam padding of a large layer (≈ 0.25-0.3 s, still a window per tile row). Pinned:
 `test_goz_bridge.py::test_a_uv_change_moves_the_objects_own_texture_too` (a colour of the surface point stays at that
 point, median ≤ 2/255; the old file unchanged; Undo / Redo switch the texture) and
 `::test_a_uv_change_projects_the_shown_texture_and_not_the_one_zbrush_sends`.
