@@ -607,7 +607,18 @@ object's (GIMP-edited) texture, so that rule showed ZBrush's old-layout image. N
 shows is always projected onto them** and a texture ZBrush sends with the UV change is not taken (status line: "ZBrush's
 texture not taken (laid out for the old UVs)"). An object without a texture still takes ZBrush's. Not covered: a texture
 made in ZBrush for the new UVs (e.g. from Polypaint after the unwrap) - it would have to be returned without a UV change,
-or a choice added; open until Manu needs it. Pinned:
+or a choice added; open until Manu needs it.
+
+**The new UVs did not reach the viewport (Manu, 2026-11-19, the third try, verbatim: „das Problem scheint zu sein, dass
+die neuen UV´s nicht in Mirai ankommen“; status line „no point moved, UVs changed (UVs: 2492 faces changed) - 2 paint
+layers moved to the new UVs (7.3 s) - applied“).** Cause [V], older than Phase 3 (WP_GOZ_P3 P3a): `_mesh_transaction`
+called a delta without vertices, edges or faces "layer-only" (AD-025: nothing drawn changed) - it did not look at
+`face_uvs` - so a UV-only return told the viewport "these points moved: none" and the drawn UVs stayed the old ones
+until the next topology change; its Undo / Redo were recorded as a non-mesh step, too. The paint had moved to the new
+UVs and was drawn on the old ones: it looked as if the UVs had not arrived. Fixed: a delta with `face_uvs` is not
+layer-only, and a return that changes UVs or groups reports a topology change (`moved_of` → None). Pinned:
+`test_goz_bridge.py::test_a_uv_only_return_reaches_the_viewport` (apply and Undo re-read the faces). The 7.3 s on the
+reference PC (two layers, no texture) are the transfer; the container measures ≈ 2 s for the same work (§11.4). Pinned:
 `test_goz_bridge.py::test_a_uv_change_moves_the_objects_own_texture_too` (a colour of the surface point stays at that
 point, median ≤ 2/255; the old file unchanged; Undo / Redo switch the texture) and
 `::test_a_uv_change_projects_the_shown_texture_and_not_the_one_zbrush_sends`.

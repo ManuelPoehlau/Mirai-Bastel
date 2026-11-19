@@ -4704,8 +4704,12 @@ class Application:
             companions.append(paint_step)
         companion = (None if not companions else companions[0] if len(companions) == 1
                      else CompositeCommand(companions, description))
-        # A return can move most of the mesh: no localized worked area, the orbit focus stays (P9).
-        changed = self._mesh_transaction(description, mutate, moved_of=lambda moved: moved,
+        # A return can move most of the mesh: no localized worked area, the orbit focus stays (P9). New UVs or groups are
+        # not moves: the viewport must re-read the faces (Manu 2026-11-19: „dass die neuen UV´s nicht in Mirai ankommen“ -
+        # with no point moved the viewport was told "nothing moved" and kept drawing the old UVs).
+        faces_changed = bool(plan.uvs) or plan.regions_changed
+        changed = self._mesh_transaction(description, mutate,
+                                         moved_of=lambda moved: None if faces_changed else moved,
                                          companion=companion, focus=False).changed
         moved_paint = ""
         if changed and (paint_step is not None or moved_texture is not None):
@@ -4771,9 +4775,9 @@ class Application:
             on_applied(result)
         # AD-025 §4.2: a change of point layers only moves nothing the viewport draws (the rest
         # shape): no topology rebuild now, and none on its Undo / Redo (a non-mesh mirror entry).
-        layer_only = not (delta.vertices or delta.edges or delta.faces) and (
+        layer_only = not (delta.vertices or delta.edges or delta.faces or delta.face_uvs) and (
             delta.symmetry is None and delta.regions is None
-        )
+        )  # face-corner UVs are drawn data: a UV-only change is not layer-only (Manu 2026-11-19, GoZ UV Master)
         self._record_selection_history(selection_before, mesh_step=not layer_only, focus=focus)
         moved = set() if layer_only else moved_of(result) if moved_of is not None else None
         if moved is None:

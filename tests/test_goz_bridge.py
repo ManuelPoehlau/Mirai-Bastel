@@ -1241,3 +1241,23 @@ def test_a_uv_change_projects_the_shown_texture_and_not_the_one_zbrush_sends(env
     assert Path(obj.texture).name.startswith("Gollum_uv_")
     app._undo_redo(commands.UNDO)
     assert obj.texture == str(original)
+
+
+def test_a_uv_only_return_reaches_the_viewport(env):
+    """Manu 2026-11-19: „das Problem scheint zu sein, dass die neuen UV´s nicht in Mirai ankommen“ - a return with
+    "no point moved, UVs changed" told the viewport "these points moved: none", so the drawn UVs stayed the old ones
+    until the next topology change. The return must reach the viewport as a UV (topology) change."""
+    app = env["app"]
+    app.update_viewport(0.0)
+    render_mesh = app.viewport.render_mesh
+    before = render_mesh.stats.get("topology_updates")
+    identifier = send(env)
+    goz_back(env, identifier, fixture("zb2022_E3_head_uvmaster.GoZ"))
+    assert env["bridge"].activate(row(env, APPLY_PREFIX)), app.status_message
+    assert "no point moved, UVs changed" in app.status_message, app.status_message
+    app.update_viewport(0.0)
+    assert app.viewport.render_mesh.stats.get("topology_updates") > before  # the faces (their UVs) were re-read
+    app._undo_redo(commands.UNDO)  # the Undo of a UV-only step reaches the viewport as well
+    count = app.viewport.render_mesh.stats.get("topology_updates")
+    app.update_viewport(0.0)
+    assert app.viewport.render_mesh.stats.get("topology_updates") > count
