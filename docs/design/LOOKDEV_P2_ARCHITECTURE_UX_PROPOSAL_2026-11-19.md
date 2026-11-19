@@ -211,6 +211,8 @@ The rule makes this an explicit contract for LookDev and for every later room. A
 | Paint strokes | no: the Paint Room's job | §2.5 |
 | Eye placement, `EyeSpec` values via the compact panel "Auge" | yes, existing paths | one eye system (§7) |
 
+The Modelling Room remains the primary space for everyday modelling; LookDev is intended for deliberate look checks and focused corrections where more realistic shading, lighting and (once available) cast shadows add clear artistic value, while its modelling tools remain available without making it a second primary modelling workspace.
+
 ### 2.5 Relation to the other rooms and workflows
 
 - **Paint Room ↔ LookDev:** mutually exclusive configurations of the same window.
