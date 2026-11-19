@@ -729,8 +729,13 @@ GL files each in their own process under xvfb (CLAUDE.md "Testing"):
 | `python -m pytest tests/test_lookdev_shaders.py tests/test_lookdev_optics.py tests/test_lookdev_session.py tests/test_lookdev_room.py tests/test_room_rule.py tests/test_gui_lookdev_model.py tests/test_render_mesh_face_data.py -q` | E5b, E6, E9, E10, E11, E12b, session, panel logic: all passed |
 | `xvfb-run -a python -m pytest tests/test_main_wiring.py -q` | **1 skipped** (this container has no EGL; the same before LD-1) — not a pass |
 
-The final tree runs (`tests/`, `experiments/morph_lab/tests`, `experiments/drag_cost/tests`) are reported in the
-session summary.
+Final tree runs:
+
+| Command | Result |
+|---|---|
+| `xvfb-run -a python -m pytest tests -q` | 7,826 passed, 8 skipped, 1 failed: `test_scene_menu_local_tmp.py::test_probe_menu_wiring` - **pre-existing**, fails identically on `647d1ac` (before LD-1). `tests/test_interaction_structure.py` (AD-027 E5 (i)) got `_lookdev` in its non-modal field list beside `_paint_room` (the room is a controller, not a session) |
+| `xvfb-run -a python -m pytest experiments/morph_lab/tests -q` | 49 passed |
+| `xvfb-run -a python -m pytest experiments/drag_cost/tests -q` | 97 passed |
 
 ### 17.4 Measurements
 
