@@ -2,7 +2,8 @@
 
 **Status:** **ACCEPTED (Manu, 2026-11-19)**: „AD-038 freigegeben, Fragen 2–4 wie vorgeschlagen, Frage 3 würde ich
 Neutral wählen“ (§15). **LD-0 run on the reference PC (Manu, 2026-11-19)**: LD-D10 met with a wide margin (§16.1).
-LD-1 is unblocked; nothing in `src/` is built yet. Drafted 2026-11-19 as PROPOSED (Architecture Gate). The number
+**LD-1 built 2026-11-19** (branch `claude/sweet-hamilton-pzimll`, implementation note §17); next: Manu's M1 practical
+test (§13.3, checklist §17.5). Drafted 2026-11-19 as PROPOSED (Architecture Gate). The number
 AD-038 stays; new class, file and panel names remain `PROVISIONAL` until built.
 **Basis:** [LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md)
 (decisions LD-D1 … LD-D14, Manu 2026-11-19, its §0) and its
@@ -661,3 +662,121 @@ What it decides:
 | (b) | whether the request can be set on room entry without a status line |
 | compile, cold | whether entry pre-compiles (§15 Q4) |
 | (c), (d) | P3 only: GPU prefilter vs a machine cache, shadow maps on the 9800 GTX |
+
+---
+
+## 17. Implementation note — LD-1 built (2026-11-19)
+
+Branch `claude/sweet-hamilton-pzimll`, on `main` @ `647d1ac` (`src/` unchanged since `89f61fc`: every file:line of §1
+checked against the code before building; no deviation found). **Stop point 3 (§13) is next: Manu's M1 practical test.**
+
+### 17.1 What is built, slice by slice
+
+| # | Commit | What |
+|---|---|---|
+| 0 | `d27184d` | `PINNED_WORKLIGHT_SOURCES_SHA256` over all 1,030 Worklight eye sources, taken before `eye_shaders.py` changed; value `714a683b…` as §5.4 (C6) |
+| 1 | `cd21e61` | §4: `RenderMesh.set_uvs_requested` (+ `uvs_requested`); `Viewport._uv_requests` per key (`EDIT_KEY`, entry keys) handed over at the material hand-over points (new entry, `set_edit_mesh`, the edit object's surface in `_sync_surface`, `_follow_entry`); `GLRenderStore.bind_triangle_uvs` / `unbind_triangle_uvs`, `texture_binding` |
+| 2 | `0a1021a` | §5.2 / §6: `lookdev_shaders.py` (`LD_BRDF_SRC`, `LD_COMMON_SRC`, `SKIN_BODY`, `skin_sources`, background), `lookdev_optics.py` (NumPy twins, `Studio`, `EYE_STUDIO`, SH9, `LookdevState`, `frame_uniforms`) |
+| 3 | `0dac17b` | §3 / §8: `Viewport.shading` + `set_shading`, `LookdevPass` + `LookDraw` (`lookdev_pass.py`), `set_edit_look`, `set_object_entry(look=)`, the background; `"worklight"` renders today's code (one comparison) |
+| 4 | `6708eb5` | §5: the eye's LOOKDEV variant (B1–B8 in the body only), `EyePass.program_key` (9 values), `draw(…, lighting=)`, `variant()`; `prepare_lookdev` helpers in the viewport; E4 pin of the 1,024 LOOKDEV sources |
+| 5 | `47406fa` | §2 / §3.3 / §9: `LookdevRoom`, `open_lookdev` / `close_lookdev` / `lookdev_refusal`, room order, Eye Lab refused inside, close on `init_scene`, the restored display on save, LookDraws and no tint in `sync_views`, `AppServices.lookdev`, compile behind the status line; presets as data |
+| 6 | `0718967` | §6 / §7 / §15: studio, light and material setters (session only, no Undo), four studios (Portrait default), six materials (Neutral fallback), luminance Reinhard default with Clamp |
+| 7 | `fafb59f` | §7: `gui/lookdev_model.py` + `gui/lookdev_panel.py`, the `LookDev` window block in `imgui_layer.py`, the SPACE row „LookDev öffnen / schließen“ (`menus.py`); no key, no keymap entry |
+| 8 | `2a4f894` | E7, E8, E13, E14; `probe_lookdev_room.py`; the frame dict cached by (studio, camera basis with „Licht folgt Kamera“) |
+
+Not touched (§10): `src/core/`, `core/serialization.py`, `mirai/view_state.py`, `src/main.py`, `config/keymap.json`,
+`scenes/`, `experiments/lookdev_eye_lab/`, the Eye Lab window, `light_rig`, `DisplayState`'s Worklight fields,
+`GLRenderStore.draw()` and the Worklight programs. No Core field, no format change, nothing saved.
+
+### 17.2 Where the build differs from the AD text, and why (no architecture decision taken beyond the AD)
+
+| # | AD | Built | Why |
+|---|---|---|---|
+| I-1 | §5.1 "the cache key grows from 8 to 9 values" (position open) | `lookdev` is value 8 of 9 (index 7), **before** `sclera`, which stays last | the unchangeable eye tests (§11) and `test_gui_imgui_window.py` read `key[-1]` as the sclera flag; appending would have broken 16 of them |
+| I-2 | §5.2 `LD_BRDF_SRC` = "copies" of seven functions | cut programmatically from `EYE_LIB_SRC` (`function_src` / `constant_src`); plus `direct_specular` and the constants `PI`, `MIN_DIRECT_ROUGHNESS`, `TD_SIGMA_SCALE`, `TD_SIGMA_POWER` | `ld_specular` and `ld_studio` need them; a cut cannot drift, and E5b still asserts every definition is a substring of `EYE_LIB_SRC` |
+| I-3 | §5.3 B6 "GGX `direct_specular` from the LookDev key / fill" | `ld_specular`: `direct_specular` summed over key, fill **and rim**, each light's size widening α — the skin's function | one BRDF for skin and eye; E7 (grey card) is then exact (container: 142/142/142 on both) |
+| I-4 | §5.3 B2 "key through the table and fill unchanged" | the same, plus the rim (Lambert) as in `lit` | `iris_lit` falls back to `lit` without a key table; both now see the same three lights |
+| I-5 | (not stated) | LOOKDEV without LOOK declares `u_sclera_roughness` (a block in the body's uniforms); fed from `EyeSpec.look.sclera_roughness`, else 0.08 (`DEFAULT_LOOK`) | B6 needs a roughness in every LOOKDEV variant; the uniform existed only under `LOOK` |
+| I-6 | (not stated) | the eye's LOOKDEV diffuse is Lambert: `u_key_wrap` / `u_fill_wrap` = 0 in the frame dict, `lit` uses `ld_diffuse(n, 0)` | Neutral has wrap 0; E7 compares like with like. The sclera's own softness is a later eye value, not an organic preset (§7) |
+| I-7 | §4.2 "the logic of `_flush_face_data` for one name" | its loop body factored into `_flush_face_buffer(name, fmt, unit)`, called by `_flush_face_data` and `bind_triangle_uvs` | one upload path; the same GL calls in the same order; `draw()` unchanged; §11 texture / shading / face-data gates green |
+| I-8 | §4.1 the rule change only | `_sync_material` with **no** material bound also syncs the UV resource | the edit mesh at the default colour has no material; with no request this is today's early return (`_uv_wanted()` False) |
+| I-9 | §4.1 key `"edit"` | `EDIT_KEY = ("viewport", "edit")` | entry keys are the host's opaque keys; a tuple cannot clash with a string or an ObjectId |
+| I-10 | §9 "before the first LookDev frame, behind the status line" | `open_lookdev` sets the status and `preparing = 2`; the first tick shows one Worklight frame with the status line, the second compiles (`Viewport.prepare_lookdev`) and switches; a viewport without GL switches at once | the status line must be on screen during the stall; the click is handled inside a frame |
+| I-11 | §7 material "(selection)" | targets = the selected objects in mode `4` (group leaves), else the edit object; eyes, References, groups left out; a selection of eyes only refuses ("Auge") | an eye keeps `EyeSpec` and its panel (§7); applying silently to the edit object would surprise |
+| I-12 | §12 E6 "≤ 1 % irradiance" | the 4,096-direction projection against a dense integral ≤ 1 % (E6); SH9's own band limit against the exact irradiance reported separately: Neutral 1.4 %, Portrait 3.1 %, Soft 2.0 %, Dramatic ≈ 7 % of the environment's largest irradiance (a near-black dome), test bound 8 % | no SH9 meets 1 % against a studio with softboxes; the band limit is a property of SH9 (§6), not of the projection |
+| I-13 | (data in slice 6) | `lookdev_presets.py` / `lookdev_material.py` committed with slice 5 | the room needs Portrait and Neutral to open; slice 6 added the setters and their tests |
+| I-14 | §7 "a held slider previews, release commits" | preview = commit | M1 has no Undo for these values; a slider of rotation / intensity / exposure changes only uniforms (no SH9 projection) |
+| I-15 | (new) | the frame dict is cached in `Viewport.lookdev_frame` | `frame_uniforms` costs ≈ 160 µs of NumPy; resolved again only on a studio change (or a camera move with „Licht folgt Kamera“) |
+
+Observed while testing R-1, **not** caused by a room: `Gollum_Head_05` loads with SubD level 2 and the first
+`update_viewport` caps it to 1 (the SubD cap, `preview.py:75`); a morph mix becomes a cage only in that tick. The R-1
+test therefore ticks once after building the state, as the app does between two clicks.
+
+### 17.3 Tests (container, 2026-11-19)
+
+GL files each in their own process under xvfb (CLAUDE.md "Testing"):
+
+| Command | Result |
+|---|---|
+| `xvfb-run -a python -m pytest tests/test_gl_eye_pass.py -q` | 126 passed (incl. both pins, `PINNED_SOURCES_SHA256` untouched) |
+| `xvfb-run -a python -m pytest experiments/lookdev_eye_lab/tests -q` | 206 passed (the frozen oracle) |
+| `xvfb-run -a python -m pytest tests/test_gl_texture.py tests/test_gl_face_data_layout.py tests/test_gl_shading.py -q` | 45 passed (E1) |
+| `xvfb-run -a python -m pytest tests/test_gl_gpu_picking.py tests/test_gl_morph_picking.py -q` | 53 passed (E15) |
+| `xvfb-run -a python -m pytest tests/test_gui_imgui_window.py -q` | 18 passed |
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_pass.py -q` | 11 passed (§4 accesses, §3 pass + background, E7, E8, E13, E14) |
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_parity.py -q` | 7 passed (E5) |
+| `xvfb-run -a python -m pytest tests/test_gui_lookdev_window.py -q` | 1 passed (the room in the real window) |
+| `python -m pytest tests/test_lookdev_shaders.py tests/test_lookdev_optics.py tests/test_lookdev_session.py tests/test_lookdev_room.py tests/test_room_rule.py tests/test_gui_lookdev_model.py tests/test_render_mesh_face_data.py -q` | E5b, E6, E9, E10, E11, E12b, session, panel logic: all passed |
+| `xvfb-run -a python -m pytest tests/test_main_wiring.py -q` | **1 skipped** (this container has no EGL; the same before LD-1) — not a pass |
+
+The final tree runs (`tests/`, `experiments/morph_lab/tests`, `experiments/drag_cost/tests`) are reported in the
+session summary.
+
+### 17.4 Measurements
+
+Container (llvmpipe, a function check only):
+[`RESULTS_LOOKDEV_ROOM_CONTAINER_2026-11-19.md`](../../experiments/drag_cost/RESULTS_LOOKDEV_ROOM_CONTAINER_2026-11-19.md)
+— the room opens, 2 programs compile behind the status line (≈ 20 ms on Mesa), nothing compiles in later frames, the
+UV request costs nothing on this scene (its paint composite already shows in the Worklight), the Worklight frame after
+closing is the one before, no GL error.
+
+**Reference PC** (Manu; NVIDIA „Maximale Leistung bevorzugen“; repository root, `.venv312`), in this order:
+
+```
+python experiments\drag_cost\probe_lookdev_room.py | Tee-Object -FilePath lookdev_room_ld1.txt
+python experiments\drag_cost\probe_lookdev.py --no-extras | Tee-Object -FilePath lookdev_ld0_after_ld1.txt
+python experiments\drag_cost\probe_d3_acceptance.py | Tee-Object -FilePath d3_after_ld1.txt
+```
+
+The first gives the room's rows (`modelling` / `lookdev` / `modelling after`, the entry with the cold compile); the
+second and third are E16: their `worklight` / `app render` rows and the D3 p95 within noise of the last reference-PC
+runs ([LD-0](../../experiments/drag_cost/RESULTS_LOOKDEV_REFERENCE_PC_2026-11-19.md) and the D3 acceptance record).
+
+### 17.5 Checklist for the M1 practical test (`scenes/Gollum_Head_05.mirai.json`)
+
+1. SPACE → „LookDev öffnen“: the status line „LookDev: Shader werden vorbereitet …“ shows for a moment, then the room
+   (no visible stall afterwards); SPACE → „LookDev schließen“ brings the display back (mode, wire, regions, eye tier).
+2. Studio: the four presets (Neutral Inspection · Portrait · Soft Studio · Dramatic), Drehung, Helligkeit,
+   Belichtung, Hintergrund (Solid / Verlauf, colour exactly as picked); „Mehr“: Tonkurve Neutral vs Clamp, „Licht
+   folgt Kamera“.
+3. Licht: Key / Fill / Rim on/off, Stärke, Richtung, Wärme, Weichheit — the highlights on skin and cornea move together.
+4. Material on the head: Creature Skin · Wet Skin · Organisch · Neutral; Textur/Bemalung vs Farbe; Rauheit, Glanz,
+   Weichheit, Durchscheinen. The panel says „nicht gespeichert“; a reload forgets it.
+5. **Zähne** (C10/D9): show the teeth in the outliner, select them, preset „Zähne“ / „Mundinneres“.
+6. Augen: tier „full“ in the room; sclera and skin side by side under the same key (one linear pipeline); cornea
+   reflections now show the studio fixed to the world (they no longer turn with the camera).
+7. Morph and pose in the room: a morph slider, a pose (jaw), gaze, SubD on/off — the room shows them as they are.
+8. Paint Room ↔ LookDev: from the room into the Paint Room at rest (LookDev closes) and back; in a pose the Paint Room
+   refuses (P-8) and LookDev stays open; the Eye Lab inside the room is refused („Eye Lab: erst LookDev schließen“).
+   R-1: nothing of pose, morph, gaze or SubD changes on any of these switches.
+9. Selection: selected objects are not tinted in the room; a selected painted head keeps its paint.
+10. LD-D15: References / Ghosts keep the Worklight draw in the room — keep, or give them LookDev too?
+11. Save inside the room: the file keeps the display from before the room; nothing of LookDev is in it.
+
+### 17.6 Open for Manu
+
+- LD-D15 (References / Ghosts in the room), LD-D8, LD-D16 — as before (§15.5).
+- The preset values (studios, materials) are `PROVISIONAL`: which to retune after the practical test.
+- I-3 / I-4 / I-6 (rim on the eye, Lambert sclera in LookDev) — keep, or give the sclera its own softness later?
+- A filmic tone candidate after the Reinhard / Clamp comparison (no architecture change, §15 Q2).
+- LD-2 (`SceneObject.look`, format v15, `view.lookdev`) only after the M1 verdict.
