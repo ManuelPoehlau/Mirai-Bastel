@@ -11,7 +11,7 @@ This directory contains the durable project knowledge that should survive indivi
 | [Architecture](architecture/README.md) | Current system boundaries, accepted architectural direction and V1 decisions |
 | [Design](design/README.md) | Interaction and workflow principles, including the current Production GUI inventory |
 | [Rendering Vision](design/RENDERING_VISION.md) | Proposed Artist-first character Lookdev direction: eyes, light, reflections, skin, shadows, realtime and final rendering |
-| [LookDev Room P2 proposal](design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md) | PROPOSAL (2026-11-19): LookDev Room for the whole character (room, materials, eye pass LookDev variant, linear colour, studio lighting, stages M1/LD-1 … P5, decisions LD-D1 … LD-D16); [technical appendix](design/LOOKDEV_P2_TECHNICAL_APPENDIX_2026-11-19.md) |
+| [LookDev Room P2 proposal](design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md) | PROPOSAL (2026-11-19): LookDev Room for the whole character (room, materials, eye pass LookDev variant, linear colour, studio lighting, stages M1/LD-1 … P5, decisions LD-D1 … LD-D16; **LD-D1 … LD-D14 decided 2026-11-19**); [technical appendix](design/LOOKDEV_P2_TECHNICAL_APPENDIX_2026-11-19.md) |
 | [Rendering Research](research/RENDERING_TECHNOLOGY_RESEARCH.md) | Technical landscape, Wētā / SH research, current Mirai baseline, external renderers, open-source references and open questions |
 | [GUI Bestandsaufnahme](design/GUI_Bestandsaufnahme.md) | Current, dated GUI state assessment for Modelling, Morph and Rig (2026-11-03; hypotheses are not decisions) |
 | [Future Ideas](future_ideas/README.md) | Ideas and requirements deliberately deferred from implementation |

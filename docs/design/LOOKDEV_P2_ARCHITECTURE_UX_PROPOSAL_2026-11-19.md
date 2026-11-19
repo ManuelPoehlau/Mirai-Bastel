@@ -1,8 +1,8 @@
 # LookDev Room P2: Architecture and UX Proposal
 
-**Status:** PROPOSAL. This is design and research only. It records no decision, changes no production code, Core,
-scene format, render behaviour or GUI, and authorises no key binding. Every item marked **[O]** needs Manu's decision
-before implementation.
+**Status:** PROPOSAL; **decisions LD-D1 … LD-D14 by Manu, 2026-11-19** (§0). Still design and research only: no
+production code, Core, scene format, render behaviour or GUI is changed, and no key binding is authorised. LD-D8,
+LD-D15 and LD-D16 stay open (§0). Items still marked **[O]** in the body are those open ones or are settled by §0.
 **Date:** 2026-11-19.
 **State inspected:** `origin/main` @ `a3bfcc0` ("AD-037 §11.3: the reference PC's 4.2 s …"), working branch
 `claude/busy-brown-svigg5` at the same commit, clean tree. Changes of 2026-11-18/19 on `main` were read (AD-036 slices
@@ -48,6 +48,54 @@ Names of new classes, files, panels and presets are `PROVISIONAL`.
 
 ---
 
+## 0. Decisions (Manu, 2026-11-19, chat; entered by the agent)
+
+Manu approved LD-D1 … LD-D14 as proposed in §16, with two refinements (verbatim):
+
+| # | Decision | Manu |
+|---|---|---|
+| LD-D1 | LookDev as a room in the same window | Ja |
+| LD-D2 | Modelling tools available in the room | Ja, eingeschränkt im Sinne der Nutzung (refinement below) |
+| LD-D3 | No yellow selection tint in the room | Ja |
+| LD-D4 | Camera kept, framing buttons | Ja |
+| LD-D5 | Studio light oriented to the world | Ja |
+| LD-D6 | One organic material system, eyes separate | Ja |
+| LD-D7 | Linear colour pipeline in LookDev | Ja |
+| LD-D9 | Background colour as picked | Ja |
+| LD-D10 | Performance target of at least 30 FPS | Ja, als Ziel und Messkriterium (refinement below) |
+| LD-D11 | SH9 + analytic studio reflections | Ja |
+| LD-D12 | Persistence only after the M1 practical test | Ja |
+| LD-D13 | R-1 as the basic rule for all rooms | Ja |
+| LD-D14 | Eye Lab locked while LookDev is open, for now | Ja |
+
+**LD-D2 – Modellieren:** „Der Modelling Room bleibt der primäre Arbeitsraum für alltägliche Modellierarbeit. Im LookDev
+bleiben Modellierwerkzeuge verfügbar, werden aber gezielt für gestalterische Korrekturen und Beurteilungen eingesetzt.“
+
+**LD-D10 – Performance:** „Die 30 FPS gelten als Ziel für den gerahmten Gollum-Kopf bei 1024 × 768 und stillstehenden
+beziehungsweise langsamen Posen auf deinem Referenzrechner. Die tatsächliche Leistung muss gemessen werden. Der normale
+Modelling Room darf durch LookDev keine Performanceeinbußen bekommen.“
+
+**Deliberately left open:**
+
+| # | Decided when |
+|---|---|
+| LD-D8 (region materials) | before P3 |
+| LD-D15 (References and Ghosts) | in the M1 practical test |
+| LD-D16 (painting directly under LookDev light) | later, after pose painting |
+
+**What follows:**
+- The architecture AD for LD-0 / LD-1 (AD-038, `PROVISIONAL` number) can now be written.
+- The stop points stay:
+  - the AD before any `src/` change;
+  - Manu's go for the LD-2 Core field (`SceneObject.look`, v15) after the M1 verdict;
+  - keys only after a practical test (D-L9).
+- LD-D2 reads in the design as: the room does not hide or refuse tools. It is not designed or optimised as a modelling
+  room, and no modelling-specific UI is added to it.
+- LD-D10 reads in the design as: the 30 FPS figure is the LD-0 / LD-1 measurement criterion, and "no loss in the
+  Modelling Room" is a gate (E1, E16, §12.4).
+
+---
+
 ## Kurzfassung für Manu (Deutsch)
 
 - **Was der LookDev-Raum ist:** eine umschaltbare Konfiguration desselben Fensters, wie der Paint Room. Das ist keine
@@ -80,7 +128,8 @@ Names of new classes, files, panels and presets are `PROVISIONAL`.
     Code geprüft und steht in §10 als Einschränkung.
 - **Was später kommt:** Qualitäts-Automatik (LD-3), Cubemap-Umgebung, Schatten, Rauheits- und Normal-Maps, Durchscheinen
   (P3), aufwendigere Haut (P4), ein eigener Final-Render (P5).
-- **Deine Entscheidungen:** §16, LD-D1 … LD-D16.
+- **Entschieden 2026-11-19:** LD-D1 … LD-D14 (mit deinen Präzisierungen zu LD-D2 und LD-D10, §0). Offen: LD-D8 (vor
+  P3), LD-D15 (im M1-Praxistest), LD-D16 (nach dem Pose-Painting).
 
 ---
 
@@ -207,7 +256,7 @@ The rule makes this an explicit contract for LookDev and for every later room. A
 | Selection (modes 1–4), hover, GPU picking | yes, unchanged | picking draws its own ID pass from the cage `RenderMesh` (`gpu_picker.py`); LookDev changes nothing there [V] |
 | Morph sliders, morph-target editing view and its twins | yes | LookDev draws whatever `Viewport.render()` draws (`viewport.py:995`) [V] |
 | Pose mode, bone panel, gaze | yes | same |
-| Modelling tools (W/E/R, topology, Knife, Soft …) | **recommended yes** **[O] LD-D2** | LookDev writes the same depth as the Worklight (§9.4), so overlays and tools behave the same. Forbidding them would push the artist out of the room for every small fix |
+| Modelling tools (W/E/R, topology, Knife, Soft …) | **yes — decided LD-D2 (§0):** available for targeted design corrections and evaluation; the Modelling Room stays the primary room for everyday modelling | LookDev writes the same depth as the Worklight (§10.2), so overlays and tools behave the same. Forbidding them would push the artist out of the room for every small fix |
 | Paint strokes | no: the Paint Room's job | §2.5 |
 | Eye placement, `EyeSpec` values via the compact panel "Auge" | yes, existing paths | one eye system (§7) |
 
@@ -790,8 +839,11 @@ The Gollum head at SubD 1 (≈ 9k faces) is about a tenth of that geometry.
   - add texture, GGX × 3 lights, SH9 and the analytic studio specular;
   - the analytic studio costs about 2× a cube lookup per pixel in the lab.
 - **Eyes in the LookDev variant:** the existing costs, plus a few ALU operations for decode and SH9.
-- **Proposed target for still or slow poses:** ≥ 30 fps on the reference PC at 1024×768 with the framed head. Live
-  deformation is judged qualitatively, as D-L8 left open for the eye. **[O] LD-D10.**
+- **Target, decided LD-D10 (§0):** ≥ 30 fps on the reference PC at 1024×768 with the framed Gollum head, for still or
+  slow poses. It is the target **and** the measurement criterion; the real performance is measured (LD-0, LD-1). Live
+  deformation is judged qualitatively, as D-L8 left open for the eye.
+- **Gate, decided LD-D10:** LookDev causes no performance loss in the normal Modelling Room (§12.4; E1, E16 in the
+  appendix).
 - **Levers if over budget** (render-only): drop the studio specular on skin, use the "fast" eye tier, render the
   analytic studio cheaper for rough skin (fewer rectangles).
 
@@ -969,31 +1021,34 @@ and working morph and pose evaluation.
 
 ## 16. Decisions for Manu
 
+**Status 2026-11-19:** LD-D1 … LD-D14 decided as proposed (wording and refinements in §0). LD-D8, LD-D15 and
+LD-D16 stay open.
+
 Needed **before LD-1**:
 
-| # | Question | Proposal |
+| # | Question | Proposal → decision |
 |---|---|---|
-| **LD-D1** | LookDev as a room in the same window (SPACE menu row, no key), non-exclusive, read-only on geometry? | yes |
-| **LD-D2** | Modelling tools usable inside the room? | yes |
-| **LD-D3** | Selection in the room without the yellow material tint (overlays and the outliner show it)? | yes |
-| **LD-D4** | Camera: kept on entry and exit, Front / ¾ / Profile framing buttons? | yes |
-| **LD-D5** | Studio lights fixed to the character / world by default, "follows camera" as an option? | yes |
-| **LD-D6** | One organic shading model + presets (Creature Skin, Wet Skin, Zähne, Mundinneres, Organisch, Neutral); eyes stay the eye system? | yes |
-| **LD-D7** | Colour: scene-linear in LookDev only, textures and paint decoded as sRGB (P-16 for LookDev), one neutral tone curve, Worklight unchanged? | yes |
-| **LD-D9** | Background colour shown exactly as picked (not exposed or tone-mapped)? | yes |
-| **LD-D10** | Budget: ≥ 30 fps on the reference PC at 1024×768 for still or slow poses with the framed head; deformation judged qualitatively? | yes |
-| **LD-D11** | Environment: SH9 diffuse + the parametric analytic studio for visible reflections in M1; the cube in P3? | yes |
-| **LD-D12** | M1 material and room settings session-only; one persistence slice in LD-2 (Core v15 + `view.lookdev`)? | yes |
-| **LD-D13** | The R-1 rule as the contract for every room? | yes |
-| **LD-D14** | Eye Lab window while LookDev is open: refused (default), or allowed and lit by LookDev (a later change to the Eye Lab window)? | refused for now |
+| **LD-D1** | LookDev as a room in the same window (SPACE menu row, no key), non-exclusive, read-only on geometry? | yes → **Ja** (2026-11-19) |
+| **LD-D2** | Modelling tools usable inside the room? | yes → **Ja, eingeschränkt im Sinne der Nutzung** (2026-11-19, §0) |
+| **LD-D3** | Selection in the room without the yellow material tint (overlays and the outliner show it)? | yes → **Ja** (2026-11-19) |
+| **LD-D4** | Camera: kept on entry and exit, Front / ¾ / Profile framing buttons? | yes → **Ja** (2026-11-19) |
+| **LD-D5** | Studio lights fixed to the character / world by default, "follows camera" as an option? | yes → **Ja** (2026-11-19) |
+| **LD-D6** | One organic shading model + presets (Creature Skin, Wet Skin, Zähne, Mundinneres, Organisch, Neutral); eyes stay the eye system? | yes → **Ja** (2026-11-19) |
+| **LD-D7** | Colour: scene-linear in LookDev only, textures and paint decoded as sRGB (P-16 for LookDev), one neutral tone curve, Worklight unchanged? | yes → **Ja** (2026-11-19) |
+| **LD-D9** | Background colour shown exactly as picked (not exposed or tone-mapped)? | yes → **Ja** (2026-11-19) |
+| **LD-D10** | Budget: ≥ 30 fps on the reference PC at 1024×768 for still or slow poses with the framed head; deformation judged qualitatively? | yes → **Ja, als Ziel und Messkriterium** (2026-11-19, §0) |
+| **LD-D11** | Environment: SH9 diffuse + the parametric analytic studio for visible reflections in M1; the cube in P3? | yes → **Ja** (2026-11-19) |
+| **LD-D12** | M1 material and room settings session-only; one persistence slice in LD-2 (Core v15 + `view.lookdev`)? | yes → **Ja** (2026-11-19) |
+| **LD-D13** | The R-1 rule as the contract for every room? | yes → **Ja** (2026-11-19) |
+| **LD-D14** | Eye Lab window while LookDev is open: refused (default), or allowed and lit by LookDev (a later change to the Eye Lab window)? | refused for now → **Ja** (2026-11-19) |
 
 Needed **later**:
 
-| # | Question | When |
+| # | Question | When (Manu, 2026-11-19: deliberately open) |
 |---|---|---|
-| **LD-D8** | Region materials (mouth interior): face regions with a per-face index, or a separate mouth object? | before P3 |
-| **LD-D15** | References / Ghosts in the room: Worklight ghost on top (default) or hidden? | in the M1 practical test |
-| **LD-D16** | Later "paint inside LookDev light" as a combined configuration, after P-8? | with the posed-painting AD |
+| **LD-D8** | Region materials (mouth interior): face regions with a per-face index, or a separate mouth object? | open — before P3 |
+| **LD-D15** | References / Ghosts in the room: Worklight ghost on top (default) or hidden? | open — in the M1 practical test |
+| **LD-D16** | Later "paint inside LookDev light" as a combined configuration, after P-8? | open — later, after pose painting |
 | **(LD-2 go)** | The Core field `SceneObject.look` and scene format v15 | after the M1 verdict |
 | **(keys)** | Any key for the room, only after a practical test | D-L9 |
 
@@ -1004,7 +1059,7 @@ Not decided here and unchanged:
 
 ---
 
-**Next step:** the architecture AD for LD-0 / LD-1 (AD-038, `PROVISIONAL` number), written once Manu has answered
-LD-D1 … LD-D14. It belongs in a **fresh session**: this one carries a long audit context, and the AD plus LD-0 probe
+**Next step:** the architecture AD for LD-0 / LD-1 (AD-038, `PROVISIONAL` number), unblocked by Manu's decisions
+LD-D1 … LD-D14 (2026-11-19, §0). It belongs in a **fresh session**: this one carries a long audit context, and the AD plus LD-0 probe
 are a self-contained slice. Suggested model: **Claude Opus 5.5, reasoning effort high** (Core-adjacent architecture
 with shader-source discipline); the LD-0 probe itself could run at medium effort.
