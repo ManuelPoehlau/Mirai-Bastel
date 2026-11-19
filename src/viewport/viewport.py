@@ -250,6 +250,7 @@ class Viewport:
         self._lookdev_pass = None
         self._edit_look: LookDraw | None = None
         self._entry_looks: dict = {}
+        self._lookdev_frame_cache = None  # (studio state, camera basis with "Licht folgt Kamera"), its frame dict
         # Optional (None = headless/TraceStore: es entsteht kein GL-Objekt).
         self.point_overlay = (
             point_overlay_type() if point_overlay_type is not None else None
@@ -485,10 +486,17 @@ class Viewport:
         return len(passes.programs) + len(self.eye_pass.programs) - before
 
     def lookdev_frame(self) -> dict:
-        """The LookDev frame dict for the bound camera (`lookdev_optics.frame_uniforms`, once per frame)."""
+        """The LookDev frame dict for the bound camera (`lookdev_optics.frame_uniforms`), resolved again only when the
+        studio changes (or the camera, with "Licht folgt Kamera")."""
         from .lookdev_optics import frame_uniforms
 
-        return frame_uniforms(self.lookdev_state, self.render_mesh.camera)
+        state, camera = self.lookdev_state, self.render_mesh.camera
+        basis = getattr(camera, "basis", None)
+        key = (state, tuple(basis()) if state.follow_camera and basis is not None else None)
+        cached = self._lookdev_frame_cache
+        if cached is None or cached[0] != key:
+            cached = self._lookdev_frame_cache = (key, frame_uniforms(state, camera))
+        return cached[1]
 
     def set_eye_display(self, **changes) -> EyeDisplay:
         """AD-033 §6: the eye view state (`preview`, `reflection`, `refraction`, `tier`) - not saved, no Undo."""

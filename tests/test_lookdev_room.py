@@ -220,3 +220,17 @@ def test_shaders_are_prepared_behind_the_status_line(app, monkeypatch):
     assert compiled == [1]  # once
     app.close_lookdev()
     assert app.viewport.shading == "worklight"
+
+
+def test_the_frame_dict_is_resolved_again_only_on_a_studio_change(app):
+    app.open_lookdev()
+    vp = app.viewport
+    frame = vp.lookdev_frame()
+    assert vp.lookdev_frame() is frame  # the same studio: no new dict
+    app.camera.set_view(0.3, 0.2)
+    assert vp.lookdev_frame() is frame  # fixed to the world: the camera does not matter
+    app.set_lookdev_studio(follow_camera=True)
+    followed = vp.lookdev_frame()
+    assert followed is not frame and vp.lookdev_frame() is followed
+    app.camera.set_view(0.9, 0.1)
+    assert vp.lookdev_frame() is not followed  # "Licht folgt Kamera": a camera move resolves it again

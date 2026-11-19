@@ -248,3 +248,156 @@ def test_the_albedo_map_reaches_the_lookdev_pass(gl_window, tmp_path):
     viewport.set_object_entry("plane", viewport.object_entries["plane"].mesh, (0.5, 0.5, 0.5), look=None)
     assert not viewport.object_entries["plane"].uvs_requested
     _release(viewport)
+
+
+# -- E7: the grey card - skin and sclera in one linear pipeline ------------------------------------------------------
+
+def test_grey_card_skin_matches_a_sclera_of_the_same_albedo_and_roughness(gl_window):
+    """AD-038 §5.5 (E7): a Neutral grey card (albedo 0.5) on the skin pass and a sclera of the same albedo, roughness
+    and F0, lit by the same key at normal incidence (no environment), match within 2/255."""
+    import dataclasses
+    import math
+
+    from mirai.eye_object import DEFAULT_EYE, DEFAULT_LOOK, cornea_triangles, shell_mesh
+    from viewport import eye_optics as eo
+    from viewport.eye_pass import EyeDraw
+    from viewport.material import DEFAULT_FINISH
+
+    roughness = 0.5
+    state = _ld_state(background_gradient=False, background=((0.0, 0.0, 0.0),) * 2,
+                      key=lo.StudioLight(True, 1.5, 0.0, 0.0, 6500.0, 0.0))
+    card = _plane_viewport(gl_window)
+    card.set_object_entry("plane", card.object_entries["plane"].mesh, (0.5, 0.5, 0.5),
+                          look=LookDraw((0.5, 0.5, 0.5), roughness=roughness, specular=eo.CORNEA_F0 / 0.08))
+    card.set_shading("lookdev", state)
+    skin = _frame(gl_window, card)[SIZE // 2, SIZE // 2]
+    # the eye turned so it looks down +X: the camera on +Z sees its sclera face-on at the centre
+    spec = dataclasses.replace(DEFAULT_EYE, limbus_level=0,
+                               look=dataclasses.replace(DEFAULT_LOOK, sclera_roughness=roughness))
+    c, s = math.cos(math.radians(90.0)), math.sin(math.radians(90.0))
+    model = [0.8 * c, 0.0, -0.8 * s, 0.0, 0.0, 0.8, 0.0, 0.0, 0.8 * s, 0.0, 0.8 * c, 0.0, 0.0, 0.0, 0.0, 1.0]
+    eye_vp = Viewport(Mesh(), store_type=GLRenderStore)
+    eye_vp.bind_camera(OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.2, yaw=0.0, pitch=0.0))
+    eye_vp.on_camera_changed(aspect=1.0)
+    grey = (0.5, 0.5, 0.5)
+    eye_vp.set_object_entry("eye", shell_mesh(spec), grey, model_matrix=model, finish=DEFAULT_FINISH,
+                            eye=EyeDraw(spec, None, grey, DEFAULT_FINISH, cornea_triangles()))
+    eye_vp.set_shading("lookdev", state)
+    sclera = _frame(gl_window, eye_vp)[SIZE // 2, SIZE // 2]
+    assert any(k[7] and not k[5] for k in eye_vp.eye_pass.programs)  # the LOOKDEV variant, no look terms
+    assert np.abs(skin - sclera).max() <= 2, (skin, sclera)
+    lin = float(lo.srgb_decode(0.5))
+    assert skin.min() > 0.5 * 255 * lin  # lit, not black
+    _release(card)
+    _release(eye_vp)
+    eye_vp.eye_pass.release()
+
+
+# -- E8: the depth contract - the wire over the LookDev pass is the wire over the Worklight --------------------------
+
+def test_the_wire_lies_on_the_lookdev_pass_as_on_the_worklight(gl_window):
+    from viewport.gl_line_overlay import GLLineOverlay
+
+    def masks(shading):
+        gl_window.switch_to()
+        viewport = Viewport(Mesh(), store_type=GLRenderStore, line_overlay_type=GLLineOverlay)
+        camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.2, yaw=0.4, pitch=0.3)
+        viewport.bind_camera(camera)
+        viewport.on_camera_changed(aspect=1.0)
+        viewport.set_edit_mesh(_plane(True))
+        viewport.set_edit_look(LookDraw((0.5, 0.5, 0.5)))
+        if shading == "lookdev":
+            viewport.set_shading("lookdev", _ld_state(background_gradient=False,
+                                                      background=((0.0, 0.0, 0.0),) * 2))
+        viewport.set_display(show_faces=True, show_edges=False, flat=False)
+        plain = _frame(gl_window, viewport)
+        viewport.set_display(show_faces=True, show_edges=True, flat=False)
+        wired = _frame(gl_window, viewport)
+        if viewport._lookdev_pass is not None:
+            assert viewport.lookdev_pass.draws > 0
+            viewport.lookdev_pass.release()
+        viewport.render_mesh.store.release()
+        return np.any(plain != wired, axis=-1)
+
+    worklight, lookdev = masks("worklight"), masks("lookdev")
+    assert worklight.sum() > 200  # the wire is drawn
+    assert np.array_equal(worklight, lookdev)  # the same line pixels: same transform, same depth, same offset
+
+
+# -- E13: a selected painted head keeps its albedo in the room --------------------------------------------------------
+
+def test_a_selected_painted_object_keeps_its_paint_in_lookdev(gl_window):
+    import main as production
+
+    from mirai.application import Application
+    from mirai.interaction import commands
+    from mirai.paint.brush import RADIUS_STEPS_PERCENT
+    from tests.test_paint_room import _stroke
+
+    gl_window.switch_to()
+    app = Application()
+    app.init_scene("cube", **production.GL_TYPES)
+    app.set_viewport_size(SIZE, SIZE)
+    mesh = app.scene.mesh
+    for i, fid in enumerate(mesh.all_face_ids()):
+        mesh.set_face_uvs(fid, [(i / 6 + du / 6, dv) for du, dv in ((0, 0), (1, 0), (1, 1), (0, 1))])
+    app.viewport.on_topology_changed()
+    app.frame_scene()
+    app.set_paint_resolution(1024)
+    assert app.open_paint_room(), app.status_message
+    app.set_paint_brush(colour=(0.9, 0.05, 0.05), radius_step=len(RADIUS_STEPS_PERCENT) - 1, opacity=1.0, flow=1.0)
+    app.set_viewport_size(800, 600)  # `_stroke` aims in an 800x600 viewport
+    for _ in range(3):
+        _stroke(app, steps=10, dx=4.0)
+    app.close_paint_room()
+    app.set_viewport_size(SIZE, SIZE)
+    app.dispatch_command(commands.SET_OBJECT_MODE)
+    assert app.select_objects([app.scene.edit_object_id])
+    app.update_viewport(0.0)
+    worklight = _frame(gl_window, app.viewport)
+    centre = worklight[SIZE // 2, SIZE // 2]
+    assert not (centre[0] > centre[1] + 80)  # the Worklight shows the selection tint, not the paint
+    assert app.open_lookdev()
+    for _ in range(3):
+        app.update_viewport(0.0)
+    assert app.viewport.shading == "lookdev"
+    look = app.viewport._edit_look
+    assert look is not None and look.albedo is app.paint_display.texture(app.scene.edit_object)
+    pixels = _frame(gl_window, app.viewport)
+    red = (pixels[..., 0] > pixels[..., 1] + 60) & (pixels[..., 0] > pixels[..., 2] + 60)
+    assert red.sum() > 100, red.sum()  # the composite drawn by the LookDev pass
+    app.close_lookdev()
+    app.viewport.lookdev_pass.release()
+    app.shutdown()
+
+
+# -- E14: both passes and the background leave the GL state as found -------------------------------------------------
+
+def test_both_passes_and_the_background_leave_the_gl_state_as_found(gl_window, tmp_path):
+    from pyglet import gl
+
+    from mirai.eye_object import DEFAULT_EYE, cornea_triangles, shell_mesh
+    from tests.test_obj_uvs import write_png
+    from viewport.eye_pass import EyeDraw
+    from viewport.material import DEFAULT_FINISH
+
+    write_png(tmp_path / "t.png", 4, 4, GREEN)
+    viewport = _plane_viewport(gl_window)
+    viewport.set_object_entry("plane", viewport.object_entries["plane"].mesh, (0.5, 0.5, 0.5),
+                              look=LookDraw((0.5, 0.5, 0.5), albedo=str(tmp_path / "t.png")))
+    grey = (0.6, 0.6, 0.6)
+    eye_model = [0.4, 0, 0, 0, 0, 0.4, 0, 0, 0, 0, 0.4, 0, 0.5, 0.3, 0.6, 1.0]
+    viewport.set_object_entry("eye", shell_mesh(DEFAULT_EYE), grey, model_matrix=eye_model, finish=DEFAULT_FINISH,
+                              eye=EyeDraw(DEFAULT_EYE, None, grey, DEFAULT_FINISH, cornea_triangles()))
+    viewport.set_eye_display(tier="full")
+    viewport.set_shading("lookdev", _ld_state(studio=lo.EYE_STUDIO, env_intensity=0.5))
+    _frame(gl_window, viewport)
+    gl.glUseProgram(0)
+    before = snapshot_gl_state()
+    _frame(gl_window, viewport)
+    assert snapshot_gl_state() == before and gl.glGetError() == gl.GL_NO_ERROR
+    for unit, target in ((3, gl.GL_TEXTURE_BUFFER), (4, gl.GL_TEXTURE_2D)):
+        assert _bound(unit, target) == 0, unit
+    assert viewport.lookdev_pass.draws >= 2 and any(k[7] for k in viewport.eye_pass.programs)
+    _release(viewport)
+    viewport.eye_pass.release()
