@@ -52,6 +52,13 @@ class AppServices:
         return self._app.paint_display
 
     @property
+    def lookdev(self):
+        """The LookDev room (`controllers.lookdev_room.LookdevRoom`, AD-038). Reason for the member: while it is open the
+        object controller resolves each object's `LookDraw` from the room's session material table and drops the
+        selection tint (LD-D3); read only."""
+        return self._app.lookdev
+
+    @property
     def subdivision(self):
         """The SubD preview (`SubdivisionPreview`). Reason for the member (AD-037 P-10, Manu 2026-11-18): the Paint Room
         paints on the surface that is shown - the preview's derived mesh while SubD shows; read only."""

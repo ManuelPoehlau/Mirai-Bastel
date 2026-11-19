@@ -1399,7 +1399,12 @@ class ObjectController:
         highlighted = self.highlighted()
         # AD-035 S-4 (Manu 2026-11-17): while the Eye Lab is open an eye is drawn in its own colour, never tinted as
         # selected (its colour, base or map, is what is being judged); other objects keep the tint.
+        # AD-038 §2.1 (LD-D3): in the LookDev room no object is tinted; each Normal non-eye object gets its LookDraw.
         eye_lab = display.eye_lab is not None
+        lookdev = services.lookdev
+        lookdev_open = lookdev.open
+        if lookdev_open:
+            lookdev.prune()
         self.gaze_drawn = gaze = self.gaze_target()
         shift = services.morph_view_shift
         offset = None if shift is None else shift[1]
@@ -1407,7 +1412,7 @@ class ObjectController:
         entries += [(key, key[1], obj, offset) for key, obj in twins.items()]
         for key, oid, obj, twin_offset in entries:
             reference = obj.state is ObjectState.REFERENCE
-            tinted = oid in highlighted and not (eye_lab and obj.eye is not None)
+            tinted = oid in highlighted and not (lookdev_open or (eye_lab and obj.eye is not None))
             colour = selected_color(obj, DEFAULT_BASE_COLOR) if tinted else object_base_color(obj)
             finish = object_finish(obj, display.surface_finish)
             # AD-033: a Normal eye is drawn by the eye pass (its iris image goes there, not to the Worklight store).
@@ -1445,13 +1450,17 @@ class ObjectController:
                 finish=finish,
                 texture=None if eye is not None else self._shown_texture(obj, oid in highlighted),
                 eye=eye,
+                look=lookdev.look_draw(obj) if lookdev_open and obj.eye is None and not reference else None,
             )
         edit = scene.edit_object
+        edit_tinted = edit.id in highlighted and not lookdev_open
         viewport.set_edit_base_color(
-            selected_color(edit, DEFAULT_BASE_COLOR) if edit.id in highlighted else object_base_color(edit),
+            selected_color(edit, DEFAULT_BASE_COLOR) if edit_tinted else object_base_color(edit),
             object_finish(edit, display.surface_finish),
             self._shown_texture(edit, edit.id in highlighted),
         )
+        viewport.set_edit_look(lookdev.look_draw(edit) if lookdev_open and edit.state is not ObjectState.REFERENCE
+                               else None)
         self.highlight_key = self._highlight_signature()
 
     def view_twins(self, others: dict) -> dict:

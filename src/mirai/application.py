@@ -156,6 +156,7 @@ from .controllers.gestures import (
     hovered_of_mode,
 )
 from .controllers.knife import KnifeController
+from .controllers.lookdev_room import LookdevRoom
 from .controllers.morph import MorphController
 from .controllers.paint_room import RESOLUTIONS as PAINT_RESOLUTIONS, PaintRoomController
 from .controllers.objects import OBJECT_MODE_ROUTES, PLACEMENT_COMMANDS, ObjectController, selection_state
@@ -598,6 +599,8 @@ class Application:
         self._knife = KnifeController(self._services)
         # The Paint Room (AD-037 §8 Phase 2): its session, the shown paint surface, the brush and the strokes.
         self._paint_room = PaintRoomController(self._services)
+        # The LookDev room (AD-038 §2): view configuration + session studio and materials; no interaction session.
+        self._lookdev = LookdevRoom(self._services)
         # WP-KNIFE-01 UX2b: any Shift key held, as the window reports it
         # (`set_shift_held`). Only the Knife's hover reads it (the midpoint before
         # the click); a click keeps deciding by its press modifiers (A2, AD-019).
@@ -731,6 +734,9 @@ class Application:
         self._morph.drop_view()  # the reset replaces every object, the view included
         if self._paint_room.session is not None:  # AD-037: the room ends with its object
             self.close_paint_room()
+        if self._lookdev.open:  # AD-038 §2.1: the room closes before the scene is replaced
+            self.close_lookdev()
+        self._lookdev.clear()  # its session materials belong to the objects that go
         self.paint.clear()  # AD-037: every object is new
         self.paint_display.clear()
         if geometry_type in ("cube", "obj", "empty"):
@@ -1010,7 +1016,10 @@ class Application:
     def open_eye_lab(self) -> bool:
         """Open the Eye Lab: remember the camera, the isolation and the tier, raise the tier to "full" and frame the
         first selected eye frontally. View state only (no Undo, not saved). Refused without a selected eye; True =
-        opened (opening it again only frames again)."""
+        opened (opening it again only frames again). AD-038 §2.1 (LD-14): refused while the LookDev room is open."""
+        if self._lookdev.open:
+            self._set_status("Eye Lab: erst LookDev schließen")
+            return False
         eyes = self._objects.eye_targets("Eye Lab")
         if eyes is None:
             return False
@@ -1077,8 +1086,10 @@ class Application:
             return True
         refusal = self.paint_room_refusal()
         if refusal is not None:
-            self._set_status(refusal)
+            self._set_status(refusal)  # AD-038 §2.1: an open LookDev room stays open (R-1)
             return False
+        if self._lookdev.open:
+            self.close_lookdev(status=None)  # its display values come back first; the Paint Room saves those
         if self.eye_lab_open:
             self.close_eye_lab()
         display = self.display
@@ -1142,6 +1153,116 @@ class Application:
     def paint_brush(self):
         """The Paint Room's brush (`mirai.paint.brush.BrushSettings`; view state, not saved)."""
         return self._paint_room.brush
+
+    # -- the LookDev room (AD-038 §2: a configuration of the same window, no interaction session) -----------------
+
+    #: The LookDev frames shown before the room's programs compile, so the status line is on screen during the stall.
+    LOOKDEV_PREPARE_FRAMES = 2
+
+    @property
+    def lookdev_open(self) -> bool:
+        return self._lookdev.open
+
+    @property
+    def lookdev(self) -> LookdevRoom:
+        """The room's session state (studio, materials) - read by the panel; changed through the setters below."""
+        return self._lookdev
+
+    def lookdev_refusal(self) -> str | None:
+        """Why the room cannot open now (None = it can): an exclusive interaction (Knife, Bone chain, ...), a paint
+        stroke, a held gesture. Nothing else blocks it: LookDev shows any state (pose, morph, SubD) as it is (R-1)."""
+        session = self.interaction.session
+        if session is not None and session.owner != "paint":
+            return f"LookDev: not while the {session.owner or session.label} interaction runs"
+        if self._paint_room.stroking:
+            return "LookDev: not during a paint stroke"
+        if self._gesture is not None:
+            return "LookDev: not while a gesture is held"
+        return None
+
+    def open_lookdev(self) -> bool:
+        """Open the LookDev room (SPACE menu row; no key, D-L9): an open Eye Lab closes (LD-D14), an open Paint Room
+        closes between strokes (its display values come back first); `mode` Shaded, no wire, no region colours, the
+        eye tier "full" - saved for the exit. Camera, textures, light rig and selection are not touched (LD-D4), nor
+        pose, morph, gaze or SubD (R-1). View state only: no Undo, nothing saved. The programs the room draws compile
+        before the first LookDev frame, behind a status line (§9). Refused with a status line; True = open."""
+        if self._lookdev.open:
+            return True
+        refusal = self.lookdev_refusal()
+        if refusal is not None:
+            self._set_status(refusal)
+            return False
+        if self.eye_lab_open:
+            self.close_eye_lab()
+        if self._paint_room.session is not None:
+            self.close_paint_room(status="Paint Room closed")
+        display = self.display
+        saved = {"mode": display.mode, "wire": display.wireframe_overlay, "regions": display.region_tint,
+                 "tier": display.eye_tier}
+        display.set_mode(DisplayMode.SHADED)
+        display.set_wireframe_overlay(False)
+        display.region_tint = False
+        display.eye_tier = "full"
+        self._lookdev.start(saved)
+        self._apply_display()
+        self._objects.sync_views()  # the LookDraws, no selection tint (LD-D3)
+        self._set_hovered(None)
+        viewport = self.viewport
+        if viewport is not None and viewport.lookdev_prepare_needed():
+            self._lookdev.preparing = self.LOOKDEV_PREPARE_FRAMES
+            self._set_status("LookDev: Shader werden vorbereitet …")
+        else:
+            self._apply_lookdev()
+            self._set_status(self.lookdev_status())
+        return True
+
+    def _prepare_lookdev_step(self) -> None:
+        """Per tick while preparing: wait the frames that show the status line, then compile and switch."""
+        import time
+
+        room = self._lookdev
+        room.preparing -= 1
+        if room.preparing > 0:
+            return
+        start = time.perf_counter()
+        count = self.viewport.prepare_lookdev() if self.viewport is not None else 0
+        seconds = time.perf_counter() - start
+        self._apply_lookdev()
+        self._set_status(f"{self.lookdev_status()} ({count} Shader in {seconds:.1f} s vorbereitet)")
+
+    def close_lookdev(self, status: str | None = "LookDev closed") -> bool:
+        """Close the room: the display values as they were when it opened, the Worklight again. The session studio and
+        materials stay for the next opening. True = it was open."""
+        if not self._lookdev.open:
+            return False
+        saved = self._lookdev.stop()
+        display = self.display
+        display.set_mode(saved["mode"])
+        display.set_wireframe_overlay(saved["wire"])
+        display.region_tint = saved["regions"]
+        display.eye_tier = saved["tier"]
+        self._apply_lookdev()
+        self._apply_display()
+        self._objects.sync_views()  # every LookDraw cleared: the entries are exactly today's
+        if status is not None:
+            self._set_status(status)
+        self._refresh_hover()
+        return True
+
+    def _apply_lookdev(self) -> None:
+        """The viewport's shading from the room: "lookdev" with the session studio while open and prepared."""
+        viewport = self.viewport
+        if viewport is None:
+            return
+        room = self._lookdev
+        if room.open and not room.preparing:
+            viewport.set_shading("lookdev", room.studio)
+        elif viewport.shading != "worklight":
+            viewport.set_shading("worklight")
+
+    def lookdev_status(self) -> str:
+        studio = self._lookdev.studio
+        return f"LookDev: Studio {studio.preset!r} - Material und Studio nicht gespeichert (M1)"
 
     def set_paint_brush(self, **changes) -> bool:
         """Change the brush (any `BrushSettings` field; clamped). True = changed."""
@@ -1730,6 +1851,10 @@ class Application:
         paint = paint_files.prepare_save(document.objects.values(), self.paint, path)  # AD-037: layer PNGs first
         data = scene_to_dict(document)
         data[view_state.VIEW_KEY] = view_state.capture(self)
+        lookdev = self._lookdev.saved_view
+        if lookdev is not None:  # AD-038 §2.1: the view the room restores (the eye tier is not part of the view)
+            data[view_state.VIEW_KEY]["display"].update(mode=lookdev["mode"].name, wireframe_overlay=lookdev["wire"],
+                                                         region_tint=lookdev["regions"])
         room = self._paint_room.saved_view
         if room is not None:  # AD-037: the file keeps the view the room restores, not the room's own
             data[view_state.VIEW_KEY]["display"].update(mode=room["mode"].name, wireframe_overlay=room["wire"],
@@ -6151,6 +6276,8 @@ class Application:
             self.flush_hover()
             if self._paint_room.session is not None and self._paint_room.obj is not self.scene.edit_object:
                 self.close_paint_room("Paint Room closed: the edit object changed")
+            if self._lookdev.preparing:
+                self._prepare_lookdev_step()
             self._objects.sync_highlight()
             self.paint_display.update()  # AD-037: the changed tiles of every painted object to its live texture
             self._objects.sync_gaze()
@@ -6166,6 +6293,8 @@ class Application:
         self._knife.shutdown()
         if self._paint_room.session is not None:
             self.close_paint_room()
+        if self._lookdev.open:
+            self.close_lookdev()
         chain = self._skeleton.chain
         if chain is not None:
             chain.end(quiet=True)
