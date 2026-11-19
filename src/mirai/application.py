@@ -4662,13 +4662,17 @@ class Application:
         paint_step = None
         texture, texture_changed, moved_texture = plan.texture, plan.texture_changed, None
         started = time.perf_counter()
-        if plan.uvs and (obj.paint is not None or (obj.texture is not None and not plan.texture_changed)):
+        ignored_texture = False
+        if plan.uvs and (obj.paint is not None or obj.texture is not None):
             # AD-037 Phase 3 (P-13 lifted): the paint follows the new UVs - one Undo step with the return; so does the
-            # object's own texture when the return brings no new one (Manu 2026-11-19: „Die Textur wirkt allerdings
-            # verschoben“ - UV Master does not re-lay a texture map; the old file stays, a new PNG is shown)
+            # texture the object shows (Manu 2026-11-19: „Die Textur wirkt allerdings verschoben“ / „Ist es nicht so
+            # gedacht, dass die alte Textur auf die neuen UV´s projeziert wird?“). UV Master does not re-lay a texture
+            # map, so a texture ZBrush sends with new UVs is its old one in the old layout: not taken. The old file
+            # stays; a new PNG is shown.
             try:
                 plans = {}
-                if obj.texture is not None and not plan.texture_changed:
+                if obj.texture is not None:
+                    ignored_texture = plan.texture_changed
                     moved_texture, base_plan = paint_uv_transfer.transfer_texture(obj.texture, obj.mesh, plan.uvs,
                                                                                   positions)
                     plans[(base_plan.width, base_plan.height)] = base_plan
@@ -4711,7 +4715,8 @@ class Application:
             if paint_step is not None:
                 layers = len(obj.paint.layers)
                 parts.append(f"{layers} paint layer{'s' if layers != 1 else ''}")
-            moved_paint = f" - {' and '.join(parts)} moved to the new UVs ({transfer_seconds:.1f} s)"
+            moved_paint = f" - {' and '.join(parts)} moved to the new UVs ({transfer_seconds:.1f} s)" + (
+                " - ZBrush's texture not taken (laid out for the old UVs)" if ignored_texture else "")
         self._set_status(plan.summary() + moved_paint
                          + (" - applied (Ctrl+Z undoes it)" if changed else " - nothing to apply"))
         return changed

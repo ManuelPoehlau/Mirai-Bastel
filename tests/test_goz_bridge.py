@@ -1212,3 +1212,32 @@ def test_a_uv_change_moves_the_objects_own_texture_too(env):
     assert obj.texture == str(original)
     app._undo_redo(commands.REDO)
     assert obj.texture == str(moved)
+
+
+def test_a_uv_change_projects_the_shown_texture_and_not_the_one_zbrush_sends(env):
+    """Manu 2026-11-19: „ja, komplett verschoben. Ist es nicht so gedacht, dass die alte Textur auf die neuen UV´s
+    projeziert wird?“ - ZBrush sends its own texture map with every return, still laid out for the old UVs (UV Master
+    does not re-lay it). With new UVs the texture the object shows is projected onto them; ZBrush's is not taken."""
+    from tests.test_goz_format import _tiff
+
+    app = env["app"]
+    obj = app.scene.edit_object
+    env["scene_file"]["path"] = env["tmp"] / "kopf.mirai.json"
+    folder = env["tmp"] / "kopf_textures"
+    folder.mkdir()
+    from mirai.iris_import import encode_png
+    import numpy as np
+
+    original = folder / "Gollum_0123456789.png"
+    original.write_bytes(encode_png(np.full((64, 64, 4), 200, np.uint8), 1))
+    obj.texture = str(original)
+    identifier = send(env)
+    zbrush_file = Path(identifier + "_TXTR.tif")
+    zbrush_file.write_bytes(_tiff(2, 2, [b"\x10\x20\x30" * 2, b"\x40\x50\x60" * 2]))
+    goz_back(env, identifier, _with_texture(fixture("zb2022_E3_head_uvmaster.GoZ"), zbrush_file))
+    assert env["bridge"].activate(row(env, APPLY_PREFIX)), app.status_message
+    assert "texture moved to the new UVs" in app.status_message, app.status_message
+    assert "ZBrush's texture not taken" in app.status_message
+    assert Path(obj.texture).name.startswith("Gollum_uv_")
+    app._undo_redo(commands.UNDO)
+    assert obj.texture == str(original)

@@ -599,10 +599,18 @@ unpainted textured object showed the same since WP_GOZ_P3). Now a return that ch
 re-samples the object's texture onto the new UVs as well (`uv_transfer.transfer_texture`: the same plan, plain bilinear
 for the opaque image, texels the new layout does not map keep their old pixels, seam-padded), writes it as a new PNG
 beside the old one (`<stem>_uv_<hash>.png`; the old file is never written - P-4 holds for the file) and shows it - an
-`ObjectTextureCommand` in the same Undo step. A texture the return brings (a new `_TXTR` image, e.g. made from Polypaint
-after the unwrap) is taken as it is (`PROVISIONAL`). The status line names what moved and the seconds it took. Pinned:
+`ObjectTextureCommand` in the same Undo step. The status line names what moved and the seconds it took.
+**Revised the same day** (Manu, after the next try: „ja, komplett verschoben. Ist es nicht so gedacht, dass die alte
+Textur auf die neuen UV´s projeziert wird?“): the first rule took a texture the return brings as it is - but ZBrush sends
+its own texture map with every return (the tool keeps it), still in the old layout, under another name than the
+object's (GIMP-edited) texture, so that rule showed ZBrush's old-layout image. Now, with new UVs, **the texture the object
+shows is always projected onto them** and a texture ZBrush sends with the UV change is not taken (status line: "ZBrush's
+texture not taken (laid out for the old UVs)"). An object without a texture still takes ZBrush's. Not covered: a texture
+made in ZBrush for the new UVs (e.g. from Polypaint after the unwrap) - it would have to be returned without a UV change,
+or a choice added; open until Manu needs it. Pinned:
 `test_goz_bridge.py::test_a_uv_change_moves_the_objects_own_texture_too` (a colour of the surface point stays at that
-point, median ≤ 2/255; the old file unchanged; Undo / Redo switch the texture).
+point, median ≤ 2/255; the old file unchanged; Undo / Redo switch the texture) and
+`::test_a_uv_change_projects_the_shown_texture_and_not_the_one_zbrush_sends`.
 
 ### 11.4 Measurements [C] (container, Gollum head at 2048², paint in 30 % / 15 % of the image; best of 2)
 
