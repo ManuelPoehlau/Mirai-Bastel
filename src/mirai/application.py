@@ -1260,6 +1260,143 @@ class Application:
         elif viewport.shading != "worklight":
             viewport.set_shading("worklight")
 
+    # The session studio and materials (AD-038 §6, §7): view / session state - no Undo, never saved (LD-D12).
+
+    def _set_lookdev_studio_state(self, state) -> None:
+        self._lookdev.studio = state
+        self._apply_lookdev()
+
+    def set_lookdev_studio_preset(self, name: str) -> bool:
+        """Pick a studio preset (`mirai.lookdev_presets`): lights, environment, exposure, background. True = changed."""
+        from . import lookdev_presets
+
+        try:
+            state = lookdev_presets.preset(name)
+        except ValueError as exc:
+            self._set_status(str(exc))
+            return False
+        if state == self._lookdev.studio:
+            return False
+        self._set_lookdev_studio_state(state)
+        self._set_status(f"LookDev: Studio {name!r}")
+        return True
+
+    #: (low, high) of the studio's numeric values; a value outside is refused with a status line
+    LOOKDEV_STUDIO_RANGES = {"rotation": (-360.0, 360.0), "env_intensity": (0.0, 8.0), "exposure": (-6.0, 6.0)}
+    LOOKDEV_LIGHT_RANGES = {"intensity": (0.0, 10.0), "azimuth": (-360.0, 360.0), "elevation": (-90.0, 90.0),
+                            "kelvin": (2500.0, 10000.0), "size": (0.0, 1.0)}
+
+    def set_lookdev_studio(self, **changes) -> bool:
+        """Change the session studio: `rotation` (degrees about the vertical; lights and environment together),
+        `env_intensity`, `exposure` (EV), `tone_curve` ("reinhard" / "clamp"), `follow_camera` ("Licht folgt Kamera"),
+        `background` ((bottom rgb, top rgb), display values as picked), `background_gradient`. Rotation, intensity and
+        exposure are uniforms: SH9 is never re-projected for them. True = changed."""
+        import dataclasses
+
+        state = self._lookdev.studio
+        for name, value in changes.items():
+            bounds = self.LOOKDEV_STUDIO_RANGES.get(name)
+            if bounds is not None and not (bounds[0] <= float(value) <= bounds[1]):
+                self._set_status(f"LookDev: {name} needs {bounds[0]:g} .. {bounds[1]:g}")
+                return False
+        if "background" in changes:
+            bottom, top = changes["background"]
+            changes["background"] = (tuple(float(c) for c in bottom), tuple(float(c) for c in top))
+            if not all(0.0 <= c <= 1.0 for colour in changes["background"] for c in colour):
+                self._set_status("LookDev: background colours need 0 .. 1")
+                return False
+        try:
+            wanted = dataclasses.replace(state, **changes)
+        except (TypeError, ValueError) as exc:
+            self._set_status(f"LookDev: {exc}")
+            return False
+        if wanted == state:
+            return False
+        self._set_lookdev_studio_state(wanted)
+        return True
+
+    def set_lookdev_light(self, which: str, **changes) -> bool:
+        """Change the key, fill or rim of the session studio: `on`, `intensity`, `azimuth`, `elevation`, `kelvin`,
+        `size` (the highlight's softness). Directions are in the studio's frame (fixed to the world, LD-D5). True =
+        changed."""
+        import dataclasses
+
+        from viewport.lookdev_optics import LIGHT_NAMES
+
+        if which not in LIGHT_NAMES:
+            self._set_status(f"LookDev: light {which!r} is not one of {', '.join(LIGHT_NAMES)}")
+            return False
+        for name, value in changes.items():
+            bounds = self.LOOKDEV_LIGHT_RANGES.get(name)
+            if bounds is not None and not (bounds[0] <= float(value) <= bounds[1]):
+                self._set_status(f"LookDev: {which} {name} needs {bounds[0]:g} .. {bounds[1]:g}")
+                return False
+        state = self._lookdev.studio
+        try:
+            light = dataclasses.replace(getattr(state, which), **changes)
+        except TypeError as exc:
+            self._set_status(f"LookDev: {exc}")
+            return False
+        if light == getattr(state, which):
+            return False
+        self._set_lookdev_studio_state(dataclasses.replace(state, **{which: light}))
+        return True
+
+    def lookdev_material_targets(self) -> list:
+        """The objects a material change applies to: the selected objects in mode `4` (eyes and References left out -
+        an eye keeps its own panel), else the edit object."""
+        from core import ObjectState
+
+        scene = self.scene
+        chosen = [scene.objects[oid] for oid in sorted(self._objects.highlighted(), key=int) if oid in scene.objects]
+        if not chosen:
+            chosen = [scene.edit_object]
+        return [obj for obj in chosen
+                if obj.eye is None and obj.state is not ObjectState.REFERENCE and obj.state is not ObjectState.GROUP]
+
+    def set_lookdev_material(self, name: str) -> bool:
+        """Give the material targets the preset `name` (`mirai.lookdev_material`; session only, no Undo). True =
+        changed."""
+        from . import lookdev_material
+
+        try:
+            material = lookdev_material.preset(name)
+        except ValueError as exc:
+            self._set_status(str(exc))
+            return False
+        targets = self.lookdev_material_targets()
+        if not targets:
+            self._set_status("LookDev material: no object (eyes keep the panel Auge)")
+            return False
+        table = self._lookdev.materials
+        changed = [obj for obj in targets if table.get(obj.id) != material]
+        for obj in changed:
+            table[obj.id] = material
+        if changed:
+            self._objects.sync_views()
+            self._set_status(f"LookDev material {name!r}: {', '.join(repr(o.name) for o in targets)} (nicht gespeichert)")
+        return bool(changed)
+
+    def set_lookdev_material_values(self, **changes) -> bool:
+        """Change values of the targets' current material (`base_color`, `albedo_source`, `roughness`, `specular`,
+        `wrap`, `backscatter`, `backscatter_color`); the preset name stays, marked "angepasst". True = changed."""
+        targets = self.lookdev_material_targets()
+        if not targets:
+            self._set_status("LookDev material: no object (eyes keep the panel Auge)")
+            return False
+        room = self._lookdev
+        try:
+            updated = {obj.id: room.material(obj).with_(**changes) for obj in targets}
+        except (TypeError, ValueError) as exc:
+            self._set_status(f"LookDev material: {exc}")
+            return False
+        changed = [oid for oid, m in updated.items() if room.materials.get(oid) != m]
+        for oid in changed:
+            room.materials[oid] = updated[oid]
+        if changed:
+            self._objects.sync_views()
+        return bool(changed)
+
     def lookdev_status(self) -> str:
         studio = self._lookdev.studio
         return f"LookDev: Studio {studio.preset!r} - Material und Studio nicht gespeichert (M1)"
