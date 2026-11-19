@@ -127,3 +127,124 @@ def test_texture_binding_of_a_path_and_a_live_texture(gl_window, tmp_path):
     assert live.uploads == 2
     assert _bound(4, gl.GL_TEXTURE_2D) == 0 and gl.glGetError() == gl.GL_NO_ERROR  # the caller binds the unit
     live.release()
+
+
+# -- §3: Viewport.shading, the LookDev pass, the background ---------------------------------------------------------
+
+from core import Mesh  # noqa: E402
+from viewport import lookdev_optics as lo  # noqa: E402
+from viewport.lookdev_pass import LookDraw  # noqa: E402
+from viewport.viewport import Viewport  # noqa: E402
+
+BG_BOTTOM, BG_TOP = (0.10, 0.20, 0.30), (0.50, 0.40, 0.30)
+#: A plain studio: no environment, one key from the camera (+Z), Lambert - the grey card's light.
+FLAT = lo.Studio((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
+
+
+def _ld_state(**kw):
+    values = dict(preset="test", studio=FLAT, key=lo.StudioLight(True, 1.0, 0.0, 0.0, 6500.0, 0.0),
+                  fill=lo.StudioLight(False), rim=lo.StudioLight(False), env_intensity=0.0,
+                  background=(BG_BOTTOM, BG_TOP), background_gradient=True)
+    values.update(kw)
+    return lo.LookdevState(**values)
+
+
+def _plane_viewport(gl_window, uvs=True, texture=None):
+    gl_window.switch_to()
+    viewport = Viewport(Mesh(), store_type=GLRenderStore)
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.2, yaw=0.0, pitch=0.0)
+    viewport.bind_camera(camera)
+    viewport.on_camera_changed(aspect=1.0)
+    viewport.set_object_entry("plane", _plane(uvs), (0.5, 0.5, 0.5), texture=texture)
+    return viewport
+
+
+def _frame(gl_window, viewport, clear=(0.0, 0.0, 0.0)) -> np.ndarray:
+    from pyglet import gl
+
+    gl_window.switch_to()
+    gl.glViewport(0, 0, SIZE, SIZE)
+    gl.glClearColor(*clear, 1.0)
+    gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+    viewport.sync()
+    viewport.render()
+    gl.glFinish()
+    buf = (gl.GLubyte * (SIZE * SIZE * 3))()
+    gl.glPixelStorei(gl.GL_PACK_ALIGNMENT, 1)
+    gl.glReadPixels(0, 0, SIZE, SIZE, gl.GL_RGB, gl.GL_UNSIGNED_BYTE, buf)
+    assert gl.glGetError() == gl.GL_NO_ERROR
+    return np.frombuffer(bytes(buf), dtype=np.uint8).reshape(SIZE, SIZE, 3).astype(int)  # row 0 = bottom
+
+
+def _release(viewport) -> None:
+    for entry in list(viewport.object_entries):
+        viewport.remove_object_entry(entry)
+    if viewport._lookdev_pass is not None:
+        viewport._lookdev_pass.release()
+
+
+def test_worklight_shading_is_todays_draw_and_creates_nothing(gl_window):
+    plain = _plane_viewport(gl_window)
+    reference = _frame(gl_window, plain)
+    looked = _plane_viewport(gl_window)
+    looked.set_object_entry("plane", looked.object_entries["plane"].mesh, (0.5, 0.5, 0.5),
+                            look=LookDraw((0.5, 0.5, 0.5)))
+    assert np.array_equal(_frame(gl_window, looked), reference)  # a LookDraw alone changes nothing in the Worklight
+    assert looked._lookdev_pass is None and plain._lookdev_pass is None
+    _release(plain)
+    _release(looked)
+
+
+def test_lookdev_draws_the_background_as_picked_and_the_mesh_through_the_pass(gl_window):
+    viewport = _plane_viewport(gl_window)
+    viewport.set_object_entry("plane", viewport.object_entries["plane"].mesh, (0.5, 0.5, 0.5),
+                              look=LookDraw((0.5, 0.5, 0.5), roughness=1.0, specular=0.0))
+    viewport.set_shading("lookdev", _ld_state())
+    from pyglet import gl
+
+    gl.glUseProgram(0)  # a Worklight draw before leaves its program bound; the passes stop theirs (as EyePass)
+    before = snapshot_gl_state()
+    pixels = _frame(gl_window, viewport, clear=(1.0, 0.0, 1.0))
+    assert viewport.lookdev_pass.draws == 1
+    # the background, as picked: no exposure, tone curve or encode (bottom row ~ bottom, top row ~ top)
+    for row, colour in ((0, BG_BOTTOM), (SIZE - 1, BG_TOP)):
+        expected = np.array(BG_BOTTOM) + (np.array(BG_TOP) - np.array(BG_BOTTOM)) * (row + 0.5) / SIZE
+        assert np.abs(pixels[row, 0] - expected * 255).max() <= 1.5, (row, pixels[row, 0])
+    # the plane faces the key at normal incidence: Lambert 1 x decode(0.5) -> Reinhard on luminance -> encode
+    centre = pixels[SIZE // 2, SIZE // 2]
+    lin = float(lo.srgb_decode(0.5))
+    expected = float(lo.lookdev_output(np.array([lin, lin, lin]))[0]) * 255
+    assert np.abs(centre - expected).max() <= 2, (centre, expected)
+    assert snapshot_gl_state() == before
+    viewport.set_shading("worklight")
+    assert viewport.lookdev_state is None
+    _release(viewport)
+
+
+def test_an_entry_without_a_look_keeps_the_worklight_draw_in_the_room(gl_window):
+    worklight = _plane_viewport(gl_window)
+    reference = _frame(gl_window, worklight)
+    viewport = _plane_viewport(gl_window)
+    viewport.set_shading("lookdev", _ld_state(background_gradient=False, background=((0.0, 0.0, 0.0),) * 2))
+    pixels = _frame(gl_window, viewport)
+    assert viewport.lookdev_pass.draws == 0
+    assert np.array_equal(pixels, reference)
+    _release(worklight)
+    _release(viewport)
+
+
+def test_the_albedo_map_reaches_the_lookdev_pass(gl_window, tmp_path):
+    from tests.test_obj_uvs import write_png
+
+    path = tmp_path / "red.png"
+    write_png(path, 4, 4, RED)
+    viewport = _plane_viewport(gl_window)  # no Worklight texture: the UVs come from the LookDev request
+    viewport.set_object_entry("plane", viewport.object_entries["plane"].mesh, (0.5, 0.5, 0.5),
+                              look=LookDraw((0.5, 0.5, 0.5), roughness=1.0, specular=0.0, albedo=str(path)))
+    assert viewport.object_entries["plane"].uvs_requested
+    viewport.set_shading("lookdev", _ld_state())
+    centre = _frame(gl_window, viewport)[SIZE // 2, SIZE // 2]
+    assert centre[0] > centre[1] + 60 and centre[0] > centre[2] + 60, centre
+    viewport.set_object_entry("plane", viewport.object_entries["plane"].mesh, (0.5, 0.5, 0.5), look=None)
+    assert not viewport.object_entries["plane"].uvs_requested
+    _release(viewport)

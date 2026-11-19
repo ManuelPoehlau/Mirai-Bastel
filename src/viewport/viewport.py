@@ -200,6 +200,7 @@ def _mat4_mul(a: list[float], b: list[float]) -> list[float]:
             out[col * 4 + row] = sum(a[k * 4 + row] * b[col * 4 + k] for k in range(4))
     return out
 from .eye_pass import EyeDisplay, EyeDraw
+from .lookdev_pass import LookDraw
 from .light_rig import DEFAULT_PRESET, PRESETS, SPACE_WORLD, LightRig, resolve
 from .material import DEFAULT_FINISH, Material, SurfaceFinish
 from .render_mesh import RenderMesh
@@ -241,6 +242,14 @@ class Viewport:
         # other than the Worklight; applied where the material is handed over, so a SubD / morph / pose surface created
         # later gets it too. Empty in the Worklight: every RenderMesh then has today's resources.
         self._uv_requests: set = set()
+        # AD-038 §3: "worklight" (today's draw) or "lookdev" (set only by the LookDev room through `Application`). The
+        # LookDev pass, its frame and the LookDraws exist only once the room set them; with "worklight" `render()` is
+        # today's code plus one string comparison.
+        self.shading = "worklight"
+        self.lookdev_state = None
+        self._lookdev_pass = None
+        self._edit_look: LookDraw | None = None
+        self._entry_looks: dict = {}
         # Optional (None = headless/TraceStore: es entsteht kein GL-Objekt).
         self.point_overlay = (
             point_overlay_type() if point_overlay_type is not None else None
@@ -354,11 +363,13 @@ class Viewport:
         finish: SurfaceFinish | None = None,
         texture: str | None = None,
         eye: EyeDraw | None = None,
+        look: LookDraw | None = None,
     ) -> bool:
         """Legt den Eintrag `key` für `mesh` an oder aktualisiert Farbe, Glanz (None = der von
         `set_surface_finish`), Matrix und Anzeige. Ein anderes Mesh unter demselben Schlüssel ersetzt
         den Eintrag. True = etwas hat sich geändert. Nie mit `SelectionOverlay` (Modul-Docstring).
-        AD-033: `eye` = the entry is an eye, drawn by the eye pass while `eye_display.preview` is on."""
+        AD-033: `eye` = the entry is an eye, drawn by the eye pass while `eye_display.preview` is on.
+        AD-038: `look` = the entry's LookDev material, drawn by the LookDev pass while `shading == "lookdev"`."""
         color = tuple(base_color) if base_color is not None else DEFAULT_BASE_COLOR
         finish = self.surface_finish if finish is None else finish
         display = (float(alpha), bool(ignores_wireframe))
@@ -398,7 +409,44 @@ class Viewport:
             else:
                 self._eye_entries[key] = eye
             changed = True
+        if self._entry_looks.get(key) != look:
+            if look is None:
+                self._entry_looks.pop(key, None)
+            else:
+                self._entry_looks[key] = look
+            self._request_uvs(key, look is not None and look.albedo is not None)
+            changed = True
         return changed
+
+    def set_edit_look(self, look: LookDraw | None) -> bool:
+        """AD-038 §3.3: the edit object's LookDev material (None = none: the Worklight draws it). True = changed."""
+        if look == self._edit_look:
+            return False
+        self._edit_look = look
+        self._request_uvs(EDIT_KEY, look is not None and look.albedo is not None)
+        return True
+
+    def set_shading(self, shading: str, state=None) -> None:
+        """AD-038 §3.1: "worklight" or "lookdev" with its studio (`lookdev_optics.LookdevState`). Pure draw state."""
+        if shading not in ("worklight", "lookdev"):
+            raise ValueError(f"shading: {shading!r}")
+        self.shading = shading
+        self.lookdev_state = state if shading == "lookdev" else None
+
+    @property
+    def lookdev_pass(self):
+        """The LookDev pass (created on the first LookDev frame)."""
+        if self._lookdev_pass is None:
+            from .lookdev_pass import LookdevPass
+
+            self._lookdev_pass = LookdevPass()
+        return self._lookdev_pass
+
+    def lookdev_frame(self) -> dict:
+        """The LookDev frame dict for the bound camera (`lookdev_optics.frame_uniforms`, once per frame)."""
+        from .lookdev_optics import frame_uniforms
+
+        return frame_uniforms(self.lookdev_state, self.render_mesh.camera)
 
     def set_eye_display(self, **changes) -> EyeDisplay:
         """AD-033 §6: the eye view state (`preview`, `reflection`, `refraction`, `tier`) - not saved, no Undo."""
@@ -419,6 +467,7 @@ class Viewport:
         entry = self.object_entries.pop(key, None)
         self._entry_display.pop(key, None)
         self._eye_entries.pop(key, None)
+        self._entry_looks.pop(key, None)
         self._uv_requests.discard(key)
         self._release_entry_surface(key)
         if entry is None:
@@ -1049,17 +1098,20 @@ class Viewport:
                 set_light_uniforms(light)
         # Reihenfolge (E40, E45, B7, H1): Mesh, Wire, Face-Highlight,
         # Edge-Highlight, Tool-Linien, Zusatz-Overlays, Punkte.
-        if self.show_faces:
-            drawn.render(self.render_mesh.camera)
-        eye_preview = self.eye_display.preview
-        for key in self._entry_draw_order():
-            # AD-033: an eye entry through the eye pass (False = not drawable yet: drawn as usual).
-            eye = self._eye_entries.get(key) if eye_preview else None
-            if eye is not None and key not in self.entry_surface_render_meshes:
-                if self.eye_pass.draw(self.object_entries[key], eye, light, self.eye_display):
-                    continue
-            # H7-E: die Ersatzfläche des Eintrags, wenn der Provider eine nennt.
-            self.entry_surface_render_meshes.get(key, self.object_entries[key]).render(self.render_mesh.camera)
+        if self.shading == "lookdev":
+            self._render_lookdev(drawn, light)
+        else:
+            if self.show_faces:
+                drawn.render(self.render_mesh.camera)
+            eye_preview = self.eye_display.preview
+            for key in self._entry_draw_order():
+                # AD-033: an eye entry through the eye pass (False = not drawable yet: drawn as usual).
+                eye = self._eye_entries.get(key) if eye_preview else None
+                if eye is not None and key not in self.entry_surface_render_meshes:
+                    if self.eye_pass.draw(self.object_entries[key], eye, light, self.eye_display):
+                        continue
+                # H7-E: die Ersatzfläche des Eintrags, wenn der Provider eine nennt.
+                self.entry_surface_render_meshes.get(key, self.object_entries[key]).render(self.render_mesh.camera)
         if (
             self.line_overlay is None
             and self.face_overlay is None
@@ -1093,6 +1145,29 @@ class Viewport:
                 overlay.draw(camera_uniforms)
         if self.point_overlay is not None:
             self.point_overlay.draw(camera_uniforms)
+
+    def _render_lookdev(self, drawn: RenderMesh, light: dict) -> None:
+        """AD-038 §3.1: `render()`'s loop and order with three steps changed - the background first, every mesh with a
+        LookDraw through the LookDev pass, the eyes through the eye pass's LOOKDEV variant. Entries without a LookDraw
+        (References, LD-D15 open) keep the Worklight draw."""
+        camera = self.render_mesh.camera
+        frame = self.lookdev_frame()
+        passes = self.lookdev_pass
+        passes.draw_background(*self.lookdev_state.background_colours())
+        if self.show_faces:
+            look = self._edit_look
+            if look is None or not passes.draw(drawn, look, frame):
+                drawn.render(camera)
+        eye_preview = self.eye_display.preview
+        for key in self._entry_draw_order():
+            eye = self._eye_entries.get(key) if eye_preview else None
+            if eye is not None and key not in self.entry_surface_render_meshes:
+                if self.eye_pass.draw(self.object_entries[key], eye, light, self.eye_display):
+                    continue
+            rm = self.entry_surface_render_meshes.get(key, self.object_entries[key])
+            look = self._entry_looks.get(key)
+            if look is None or not passes.draw(rm, look, frame):
+                rm.render(camera)
 
     def wire_drawn(self) -> bool:
         """Zeichnet `render()` den Wire des Edit-Mesh? Nicht, solange eine Ersatzfläche gezeichnet wird,
