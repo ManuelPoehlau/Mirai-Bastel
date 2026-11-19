@@ -35,6 +35,11 @@ from .surface import pad_width, seam_pad
 from .texel_map import TexelMap
 
 
+#: Texels per piece of the plan's and the read's arrays (AD-037 §11.3 "Speed"): ~1-3 MiB of temporaries, inside the
+#: reference PC's 6 MiB L2 (the texel map's raster went from 5.5x to ~3x the container with the same step, §10.8d).
+CHUNK = 1 << 16
+
+
 class _Changed:
     """`mesh` as it will be after the change: `uvs` ({face: new UVs in boundary order}) and `positions` ({vertex: new
     position}) over its topology - what `TexelMap` reads (`all_face_ids`, `face_vertices`, `face_uvs`,
@@ -71,6 +76,8 @@ class TransferPlan:
     move: np.ndarray
     source_uv: np.ndarray
     faces: int
+    #: seconds the plan took (the texel map of the new layout and the old UV points; the status line's split)
+    seconds: float = 0.0
 
     @property
     def texels(self) -> int:
@@ -80,6 +87,9 @@ class TransferPlan:
 def plan(mesh: Mesh, new_uvs: dict, width: int, height: int, positions: dict | None = None) -> TransferPlan:
     """The transfer for `mesh` (old UVs, unchanged) whose faces `new_uvs` ({face: UVs in boundary order}) get new
     UVs; `positions` the vertices that move with them (the drawn triangulation follows them)."""
+    import time
+
+    started = time.perf_counter()
     changed = _Changed(mesh, new_uvs, positions)
     texel_map = TexelMap(changed, width, height, positions=changed)
     mapped = texel_map.mapped()
@@ -98,14 +108,27 @@ def plan(mesh: Mesh, new_uvs: dict, width: int, height: int, positions: dict | N
             continue
         corner = dict(zip(mesh.face_vertices(fid), uvs))
         old[s] = [corner[VertexId(int(v))] for v in texel_map.tri_vertices[s]]
-    w = texel_map.bary[move].astype(np.float64)
-    tri = old[move_slots]
-    w0 = 1.0 - w[:, 0] - w[:, 1]
-    source = tri[:, 0] * w0[:, None] + tri[:, 1] * w[:, 0:1] + tri[:, 2] * w[:, 1:2]
-    return TransferPlan(width, height, texel_map, keep, move, source, len(new_uvs))
+    source = np.empty((move.size, 2), dtype=np.float64)
+    for a in range(0, move.size, CHUNK):  # cache-sized pieces (module docstring, "Speed")
+        b = min(a + CHUNK, move.size)
+        w = texel_map.bary[move[a:b]].astype(np.float64)
+        tri = old[move_slots[a:b]]
+        w0 = 1.0 - w[:, 0] - w[:, 1]
+        source[a:b] = tri[:, 0] * w0[:, None] + tri[:, 1] * w[:, 0:1] + tri[:, 2] * w[:, 1:2]
+    return TransferPlan(width, height, texel_map, keep, move, source, len(new_uvs), time.perf_counter() - started)
 
 
-def _bilinear(rgba: np.ndarray, uv: np.ndarray) -> np.ndarray:
+def _grown(rgba: np.ndarray) -> np.ndarray:
+    """Where a texel's 2 x 2 bilinear neighbourhood has alpha: the alpha mask grown by one texel towards -x / -y."""
+    painted = rgba[..., 3] != 0
+    grown = painted.copy()
+    grown[:, :-1] |= painted[:, 1:]
+    grown[:-1, :] |= grown[1:, :]
+    return grown
+
+
+def _bilinear(rgba: np.ndarray, uv: np.ndarray, grown: np.ndarray | None = None,
+              opaque: bool | None = None) -> np.ndarray:
     """(n, 4) uint8: `rgba` (row 0 = v = 0) read at `uv` (n, 2) bilinearly in premultiplied alpha (plain for an opaque
     image), float32; NaN or outside [0, 1] reads transparent."""
     height, width = rgba.shape[:2]
@@ -117,10 +140,8 @@ def _bilinear(rgba: np.ndarray, uv: np.ndarray) -> np.ndarray:
     x0, y0 = np.floor(x), np.floor(y)
     # only reads that touch paint: a texel's 2 x 2 neighbourhood has alpha where the alpha mask grown by one texel
     # towards -x / -y is set (the Gollum head at 2048²: 1.3 s for every texel of a layer, most of them empty)
-    painted = rgba[..., 3] != 0
-    grown = painted.copy()
-    grown[:, :-1] |= painted[:, 1:]
-    grown[:-1, :] |= grown[1:, :]
+    if grown is None:
+        grown = _grown(rgba)
     xi, yi = np.clip(x0, 0, width - 1).astype(np.int64), np.clip(y0, 0, height - 1).astype(np.int64)
     touch = grown[yi, xi]
     rows = np.flatnonzero(valid)[touch]
@@ -135,7 +156,9 @@ def _bilinear(rgba: np.ndarray, uv: np.ndarray) -> np.ndarray:
     corners = [(ya * width + xa, (1 - fx) * (1 - fy)), (ya * width + xb, fx * (1 - fy)),
                (yb * width + xa, (1 - fx) * fy), (yb * width + xb, fx * fy)]
     part = np.empty((rows.size, 4), dtype=np.uint8)
-    if bool((rgba[..., 3] == 255).all()):  # an opaque image (a base texture): plain bilinear, alpha stays 255
+    if opaque is None:
+        opaque = bool((rgba[..., 3] == 255).all())
+    if opaque:  # an opaque image (a base texture): plain bilinear, alpha stays 255
         colour = np.zeros((rows.size, 3), dtype=np.float32)
         for index, weight in corners:
             colour += flat[index, :3] * weight
@@ -167,7 +190,10 @@ def transfer(rgba: np.ndarray, transfer_plan: TransferPlan, keep_unmapped: bool 
     old, new = rgba.reshape(-1, 4), out.reshape(-1, 4)
     new[p.keep] = old[p.keep]
     if p.move.size and rgba[..., 3].any():
-        new[p.move] = _bilinear(rgba, p.source_uv)
+        grown, opaque = _grown(rgba), bool((rgba[..., 3] == 255).all())
+        for a in range(0, p.move.size, CHUNK):  # cache-sized pieces (module docstring, "Speed")
+            b = min(a + CHUNK, p.move.size)
+            new[p.move[a:b]] = _bilinear(rgba, p.source_uv[a:b], grown, opaque)
     boxes = [tile_box(tile, p.width, p.height) for tile in tiles_in(occupied(out))]
     if boxes:
         dst, src = seam_pad(p.map, boxes, pad_width(p.width))
@@ -183,6 +209,9 @@ def transfer_command(store: PaintStore, obj: SceneObject, mesh: Mesh, new_uvs: d
     stack = obj.paint
     if transfer_plan is None or (transfer_plan.width, transfer_plan.height) != (stack.width, stack.height):
         transfer_plan = plan(mesh, new_uvs, stack.width, stack.height, positions)
+    import time
+
+    started = time.perf_counter()
     before, after = {}, {}
     for spec in stack.layers:
         rgba = store.load(obj, spec.name)
@@ -190,6 +219,7 @@ def transfer_command(store: PaintStore, obj: SceneObject, mesh: Mesh, new_uvs: d
         after[spec.name] = LayerSnapshot.of(transfer(rgba, transfer_plan), store.source(obj, spec.name), True)
     command = PaintLayersCommand(store, obj, stack, stack, before, after, description)
     command.plan = transfer_plan
+    command.layer_seconds = time.perf_counter() - started  # the layers only (the plan has its own)
     return command
 
 

@@ -618,7 +618,15 @@ until the next topology change; its Undo / Redo were recorded as a non-mesh step
 UVs and was drawn on the old ones: it looked as if the UVs had not arrived. Fixed: a delta with `face_uvs` is not
 layer-only, and a return that changes UVs or groups reports a topology change (`moved_of` → None). Pinned:
 `test_goz_bridge.py::test_a_uv_only_return_reaches_the_viewport` (apply and Undo re-read the faces). The 7.3 s on the
-reference PC (two layers, no texture) are the transfer; the container measures ≈ 2 s for the same work (§11.4). Pinned:
+reference PC (two layers, no texture) are the transfer; the container measures ≈ 2 s for the same work (§11.4).
+
+**Speed (Manu, 2026-11-19: „ja, beschleunige die Übernahme bitte“).** The same work on `Gollum_Head_05`'s painted object
+(2,492 faces, two 2048² layers) takes 0.87 s in the container - the reference PC's 7.3 s are ≈ 8×, not the usual 3×,
+the pattern of the texel map's raster before its fix (§10.8d: arrays far larger than the Q9550's 6 MiB L2). The plan's
+old-UV points and the bilinear read now run in pieces of `uv_transfer.CHUNK` = 65,536 texels (the raster's step; the
+gathered corner UVs alone were ≈ 100 MiB at once) and the read's paint mask and opacity test are made once per layer:
+container 0.87 → 0.76 s. The reference PC decides; the status line now names the split ("… (7.3 s: map …, texture …,
+layers …)") so the next run shows the part to work on. Pinned:
 `test_goz_bridge.py::test_a_uv_change_moves_the_objects_own_texture_too` (a colour of the surface point stays at that
 point, median ≤ 2/255; the old file unchanged; Undo / Redo switch the texture) and
 `::test_a_uv_change_projects_the_shown_texture_and_not_the_one_zbrush_sends`.
