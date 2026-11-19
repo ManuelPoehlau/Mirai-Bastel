@@ -626,7 +626,13 @@ the pattern of the texel map's raster before its fix (§10.8d: arrays far larger
 old-UV points and the bilinear read now run in pieces of `uv_transfer.CHUNK` = 65,536 texels (the raster's step; the
 gathered corner UVs alone were ≈ 100 MiB at once) and the read's paint mask and opacity test are made once per layer:
 container 0.87 → 0.76 s. The reference PC decides; the status line now names the split ("… (7.3 s: map …, texture …,
-layers …)") so the next run shows the part to work on. Pinned:
+layers …)") so the next run shows the part to work on.
+Reference PC after that (Manu, verbatim): „… 2 paint layers moved to the new UVs (6.0 s: map 2.6, layers 3.3)“ (7.3 s
+before). Container for the same: map 0.24, layers ≈ 0.5 s - map ≈ 11×, layers ≈ 6.6×. Second step: the plan's two
+sorts over 2.8 M entries (`np.isin`, `np.unique`) are table lookups now; a layer equal to its file holds no compressed
+copy in the step (its Undo reads the file again), and the moved pixels go in uncompressed (`store.LivePixels`), frozen
+into a `LayerSnapshot` only by the step's first Undo - the four zlib passes over 16 MiB per two layers are gone from the
+return. Container 0.87 → 0.63 s for loaded layers. Pinned: `test_paint_uv_transfer.py::test_a_saved_layer_is_not_copied_and_its_undo_reads_the_file`. Pinned:
 `test_goz_bridge.py::test_a_uv_change_moves_the_objects_own_texture_too` (a colour of the surface point stays at that
 point, median ≤ 2/255; the old file unchanged; Undo / Redo switch the texture) and
 `::test_a_uv_change_projects_the_shown_texture_and_not_the_one_zbrush_sends`.

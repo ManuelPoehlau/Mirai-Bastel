@@ -110,6 +110,21 @@ class LayerSnapshot:
         return len(self.data)
 
 
+@dataclass
+class LivePixels:
+    """Pixels a `PaintLayersCommand` puts in as they are on its first `redo` (no compression, no copy); its first
+    `undo` replaces them by a `LayerSnapshot` of the layer as it is then - which is exactly these pixels' state, since
+    every later step was undone first (History is linear). The UV transfer's moved layers (AD-037 §11.3 "Speed")."""
+
+    rgba: np.ndarray
+    source: str | None
+    dirty: bool
+
+    @property
+    def shape(self) -> tuple[int, int, int]:
+        return tuple(self.rgba.shape)
+
+
 class PaintStore:
     """Pixels per painted object instance (module docstring). `loader(path) -> (h, w, 4) uint8 RGBA in GL row order`
     reads a layer image (`mirai.paint.files.read_layer`); injected so the store has no file dependency in tests."""
@@ -238,7 +253,7 @@ class PaintStore:
         layer = entry.layers[name]
         return LayerSnapshot.of(layer.rgba, layer.source, layer.dirty)
 
-    def restore(self, obj: SceneObject, name: str, snapshot: LayerSnapshot | None) -> None:
+    def restore(self, obj: SceneObject, name: str, snapshot: "LayerSnapshot | LivePixels | None") -> None:
         """Puts `snapshot` in as the pixels of layer `name` (None: none in memory - read from the layer's image on next
         use). The tiles either side has paint in are reported as changed (the composite). Used by `PaintLayersCommand`
         with the stack that names the layer; the store does not check the stack here."""
@@ -249,7 +264,7 @@ class PaintStore:
         if snapshot is not None:
             if snapshot.shape != (entry.size[1], entry.size[0], 4):
                 raise PaintError(f"a snapshot of {snapshot.shape} does not fit the stack {entry.size}")
-            rgba = snapshot.pixels()
+            rgba = snapshot.rgba if isinstance(snapshot, LivePixels) else snapshot.pixels()
             entry.layers[name] = _Layer(rgba, snapshot.source, snapshot.dirty)
             entry.changed.update(tiles_in(occupied(rgba)))
 
@@ -463,6 +478,9 @@ class PaintLayersCommand:
             self.store.restore(self.obj, name, snapshot)
 
     def undo(self) -> None:
+        for name, pixels in self.pixels_after.items():
+            if isinstance(pixels, LivePixels):  # in the store since the first redo: frozen as they are now
+                self.pixels_after[name] = self.store.snapshot(self.obj, name)
         self._apply(self.before, self.pixels_before)
 
     def redo(self) -> None:
@@ -470,7 +488,7 @@ class PaintLayersCommand:
 
     def stored_bytes(self) -> int:
         return sum(s.stored_bytes() for s in (*self.pixels_before.values(), *self.pixels_after.values())
-                   if s is not None)
+                   if isinstance(s, LayerSnapshot))
 
 
 def merge_pixels(upper: np.ndarray, upper_opacity: float, lower: np.ndarray, lower_opacity: float,

@@ -30,7 +30,7 @@ import numpy as np
 
 from core import FaceId, Mesh, SceneObject, VertexId
 
-from .store import LayerSnapshot, PaintLayersCommand, PaintStore, occupied, tile_box, tiles_in
+from .store import LayerSnapshot, LivePixels, PaintLayersCommand, PaintStore, occupied, tile_box, tiles_in
 from .surface import pad_width, seam_pad
 from .texel_map import TexelMap
 
@@ -94,12 +94,17 @@ def plan(mesh: Mesh, new_uvs: dict, width: int, height: int, positions: dict | N
     texel_map = TexelMap(changed, width, height, positions=changed)
     mapped = texel_map.mapped()
     slots = texel_map.slot[mapped]
-    ids = np.fromiter((int(f) for f in new_uvs), dtype=np.int64, count=len(new_uvs))
-    resample = np.isin(texel_map.tri_face[slots], ids)
+    # table lookups, not sorts of 2.8 M entries (`np.isin`, `np.unique` - the reference PC's "map 2.6 s", 2026-11-19)
+    tri_face = texel_map.tri_face
+    changed_face = np.zeros(max(int(tri_face.max(initial=0)), max((int(f) for f in new_uvs), default=0)) + 1, bool)
+    changed_face[np.fromiter((int(f) for f in new_uvs), dtype=np.int64, count=len(new_uvs))] = True
+    resample = changed_face[np.maximum(tri_face[slots], 0)]
     keep, move = mapped[~resample], mapped[resample]
     move_slots = slots[resample]
     # the old corner UVs of every triangle a moved texel lies in (NaN: the face had none)
-    used = np.unique(move_slots)
+    in_use = np.zeros(int(tri_face.size), bool)
+    in_use[move_slots] = True
+    used = np.flatnonzero(in_use)
     old = np.full((int(texel_map.tri_face.size), 3, 2), np.nan, dtype=np.float64)
     for s in used.tolist():
         fid = FaceId(int(texel_map.tri_face[s]))
@@ -215,8 +220,12 @@ def transfer_command(store: PaintStore, obj: SceneObject, mesh: Mesh, new_uvs: d
     before, after = {}, {}
     for spec in stack.layers:
         rgba = store.load(obj, spec.name)
-        before[spec.name] = store.snapshot(obj, spec.name)
-        after[spec.name] = LayerSnapshot.of(transfer(rgba, transfer_plan), store.source(obj, spec.name), True)
+        # a layer equal to its file needs no copy: its Undo reads the file again (None); the moved pixels go in as they
+        # are and are compressed only if the step is undone (`PaintLayersCommand` "live" pixels) - the reference PC's
+        # "layers 3.3 s" were largely four zlib passes over 16 MiB
+        saved = not store.is_dirty(obj, spec.name) and store.source(obj, spec.name) is not None
+        before[spec.name] = None if saved else store.snapshot(obj, spec.name)
+        after[spec.name] = LivePixels(transfer(rgba, transfer_plan), store.source(obj, spec.name), True)
     command = PaintLayersCommand(store, obj, stack, stack, before, after, description)
     command.plan = transfer_plan
     command.layer_seconds = time.perf_counter() - started  # the layers only (the plan has its own)

@@ -108,3 +108,32 @@ def test_a_transfer_into_a_smaller_square_reads_bilinearly_and_pads_the_seam():
     mapped[plan.map.mapped()] = True
     padded = (out.reshape(-1, 4)[:, 3] > 0) & ~mapped
     assert padded.any()  # the seam padding around the moved island
+
+
+def test_a_saved_layer_is_not_copied_and_its_undo_reads_the_file(tmp_path):
+    """Manu 2026-11-19 („beschleunige die Übernahme“): a layer equal to its file holds no compressed copy in the step -
+    Undo reads the file again; the moved pixels go in uncompressed and are frozen only by the first Undo."""
+    from mirai.paint import files
+    from mirai.paint.store import LayerSnapshot, LivePixels
+
+    obj, _, _ = _cube()
+    store = PaintStore(loader=files.read_layer)
+    rgba = np.zeros((SIZE, SIZE, 4), np.uint8)
+    rgba[:, :SIZE // 2] = (10, 200, 30, 255)
+    path = tmp_path / "a.png"
+    path.write_bytes(files.encode_layer(rgba))
+    obj.paint = PaintStack(SIZE, SIZE, (PaintLayer("a", str(path)),))
+    assert np.array_equal(store.pixels(obj, "a"), rgba) and not store.is_dirty(obj, "a")
+    mesh = obj.mesh
+    faces = mesh.all_face_ids()
+    new_uvs = {faces[0]: _shifted(mesh, faces[0], 3 / 6, 0.0), faces[3]: _shifted(mesh, faces[3], -3 / 6, 0.0)}
+    command = uv_transfer.transfer_command(store, obj, mesh, new_uvs, None, "ZBrush return")
+    assert command.pixels_before == {"a": None} and isinstance(command.pixels_after["a"], LivePixels)
+    command.redo()
+    moved = store.pixels(obj, "a").copy()
+    assert not np.array_equal(moved, rgba) and store.is_dirty(obj, "a")
+    command.undo()
+    assert isinstance(command.pixels_after["a"], LayerSnapshot)
+    assert np.array_equal(store.pixels(obj, "a"), rgba) and not store.is_dirty(obj, "a")  # read from the file
+    command.redo()
+    assert np.array_equal(store.pixels(obj, "a"), moved)
