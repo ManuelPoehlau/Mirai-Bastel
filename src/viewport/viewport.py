@@ -442,6 +442,48 @@ class Viewport:
             self._lookdev_pass = LookdevPass()
         return self._lookdev_pass
 
+    def _lookdev_programs(self) -> tuple[list, list]:
+        """The programs the next LookDev frame draws: ([skin (albedo map, env spec)], [eye program arguments])."""
+        skin, eyes = [], []
+        env_spec = self._lookdev_pass.env_spec if self._lookdev_pass is not None else True
+        drawn = [(self.surface_render_mesh or self.render_mesh, self._edit_look)] if self.show_faces else []
+        for key in self._entry_draw_order():
+            eye = self._eye_entries.get(key) if self.eye_display.preview else None
+            if eye is not None and key not in self.entry_surface_render_meshes:
+                eyes.append(self.eye_pass.variant(eye, self.eye_display))
+                continue
+            drawn.append((self.entry_surface_render_meshes.get(key, self.object_entries[key]),
+                          self._entry_looks.get(key)))
+        for rm, look in drawn:
+            if look is not None:
+                skin.append((look.albedo is not None and rm.mesh.has_face_uvs(), env_spec))
+        return sorted(set(skin)), sorted(set(eyes))
+
+    def lookdev_prepare_needed(self) -> bool:
+        """AD-038 §9: a GL viewport whose next LookDev frame would compile a program first."""
+        if not hasattr(self.render_mesh.store, "vertex_list"):
+            return False
+        skin, eyes = self._lookdev_programs()
+        cached = self._lookdev_pass.programs if self._lookdev_pass is not None else {}
+        eye_cache = self._eye_pass.programs if self._eye_pass is not None else {}
+        display = self.eye_display
+        return (any(k not in cached for k in skin)
+                or any(self.eye_pass.program_key(display, *e, lookdev=True) not in eye_cache for e in eyes))
+
+    def prepare_lookdev(self) -> int:
+        """Compile the programs the next LookDev frame draws (the room's entry, once per process, §9). Returns how many
+        were compiled."""
+        if not hasattr(self.render_mesh.store, "vertex_list"):
+            return 0
+        skin, eyes = self._lookdev_programs()
+        passes = self.lookdev_pass
+        before = len(passes.programs) + len(self.eye_pass.programs)
+        for albedo_map, env_spec in skin:
+            passes.program(albedo_map, env_spec)
+        for level, fit, look, iris, sclera in eyes:
+            self.eye_pass.program(self.eye_display, level, fit, look, iris, sclera, lookdev=True)
+        return len(passes.programs) + len(self.eye_pass.programs) - before
+
     def lookdev_frame(self) -> dict:
         """The LookDev frame dict for the bound camera (`lookdev_optics.frame_uniforms`, once per frame)."""
         from .lookdev_optics import frame_uniforms
@@ -1162,7 +1204,7 @@ class Viewport:
         for key in self._entry_draw_order():
             eye = self._eye_entries.get(key) if eye_preview else None
             if eye is not None and key not in self.entry_surface_render_meshes:
-                if self.eye_pass.draw(self.object_entries[key], eye, light, self.eye_display):
+                if self.eye_pass.draw(self.object_entries[key], eye, light, self.eye_display, lighting=frame):
                     continue
             rm = self.entry_surface_render_meshes.get(key, self.object_entries[key])
             look = self._entry_looks.get(key)

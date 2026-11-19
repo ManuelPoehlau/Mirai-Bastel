@@ -51,6 +51,8 @@ REFRACTIONS = tuple(es.VARIANT_IDS)
 #: The quality tier (assessment 2026-11-16 §D change 3): "fast" in the modelling view, "full" while the Eye Lab window
 #: is open. "fast" draws without the look (phase 3), so it draws and costs what it did before phase 3.
 TIERS = ("fast", "full")
+#: AD-038 §5: the sclera's GGX roughness in the LOOKDEV variant of an eye without a look (= `DEFAULT_LOOK`'s).
+LOOKDEV_SCLERA_ROUGHNESS = 0.08
 
 
 @dataclass(frozen=True)
@@ -210,21 +212,26 @@ class EyePass:
         #: {GL texture id: (the texture object, mip-mapped)} - the loader's filter, read once per loaded map.
         self._sclera_filters: dict = {}
 
+    def program_key(self, display: EyeDisplay, level: int, fit: bool, look: bool = False, iris: bool = False,
+                    sclera: bool = False, lookdev: bool = False) -> tuple:
+        """The program cache key. AD-038 §5.1: 9 values; `lookdev` sits before `sclera`, which stays the last."""
+        return (display.refraction, int(level), display.reflection, bool(fit), self.debug_kind, bool(look),
+                bool(iris and look), bool(lookdev), bool(sclera))
+
     def program(self, display: EyeDisplay, level: int, fit: bool, look: bool = False, iris: bool = False,
-                sclera: bool = False):
+                sclera: bool = False, lookdev: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore
 
         iris = bool(iris and look)
-        key = (display.refraction, int(level), display.reflection, bool(fit), self.debug_kind, bool(look), iris,
-               bool(sclera))
+        key = self.program_key(display, level, fit, look, iris, sclera, lookdev)
         program = self.programs.get(key)
         if program is None:
             attributes = GLRenderStore.program().attributes
             locations = {"position": attributes["position"]["location"], "normal": attributes["normal"]["location"]}
             sources = es.shell_sources(locations, display.refraction, level, display.reflection, fit, self.debug_kind,
-                                       look, iris, sclera)
+                                       look, iris, sclera, lookdev)
             program = ShaderProgram(*(Shader(src, kind) for src, kind in sources))
             self.programs[key] = program
         return program
@@ -454,8 +461,22 @@ class EyePass:
         colour = self._ring_colours[key]
         return tuple(spec.limbal_colour) if colour is None else colour
 
-    def draw(self, render_mesh, draw: EyeDraw, light: dict, display: EyeDisplay) -> bool:
-        """Draw one eye entry. False = nothing drawn (no VertexList / camera yet): the caller draws it as usual."""
+    def variant(self, draw: EyeDraw, display: EyeDisplay) -> tuple:
+        """The program arguments `draw` uses: (limbus level, fit, look, iris, sclera map) - for pre-compiling."""
+        from .gl_render_store import GLRenderStore
+
+        look = uses_look(draw, display) or (self.force_look and display.tier == "full" and draw.spec.look is not None)
+        iris = look and (uses_iris(draw, display) or (self.force_iris and draw.spec.look.iris is not None))
+        sclera = GLRenderStore.texture(draw.sclera_texture) if draw.sclera_texture else None
+        if sclera is not None and max(sclera.width, sclera.height) > SCLERA_MAX_SIZE:
+            sclera = None
+        fit = eo.fit_knots(draw.spec, eo.EyeGeometry.from_values(draw.spec)) is not None
+        return (draw.spec.limbus_level, fit, look, iris, sclera is not None)
+
+    def draw(self, render_mesh, draw: EyeDraw, light: dict, display: EyeDisplay, lighting: dict | None = None) -> bool:
+        """Draw one eye entry. False = nothing drawn (no VertexList / camera yet): the caller draws it as usual.
+        AD-038 §5.1: `lighting` = a LookDev frame dict (`lookdev_optics.frame_uniforms`) draws the LOOKDEV variant with
+        its values - the 7 Worklight names then carry the LookDev key and fill (D2); None is today's call."""
         from pyglet import gl
 
         from .gl_render_store import GLRenderStore
@@ -477,9 +498,16 @@ class EyePass:
         sclera = GLRenderStore.texture(draw.sclera_texture) if draw.sclera_texture else None
         if sclera is not None and max(sclera.width, sclera.height) > SCLERA_MAX_SIZE:
             sclera = None  # the base colour, as for a missing file
-        program = self.program(display, draw.spec.limbus_level, "u_fit_lab" in values, look, iris, sclera is not None)
+        lookdev = lighting is not None
+        program = self.program(display, draw.spec.limbus_level, "u_fit_lab" in values, look, iris, sclera is not None,
+                               lookdev)
         model = store.uniform_data("model_uniforms")
         model = list(model) if len(model) == 16 else [1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0]
+        if lookdev:
+            light = lighting
+            spec_look = draw.spec.look
+            values["u_sclera_roughness"] = (spec_look.sclera_roughness if spec_look is not None
+                                            else LOOKDEV_SCLERA_ROUGHNESS)
         values.update(light)
         values.update({"u_view": camera[0:16], "u_proj": camera[16:32], "u_model": model,
                        "u_model_inv": _inverse(model), "u_iris_texture": IRIS_UNIT})

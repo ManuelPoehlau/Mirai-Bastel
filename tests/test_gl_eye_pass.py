@@ -1482,3 +1482,88 @@ def test_map_programs_draw_and_leave_the_gl_state_clean(gl_window, sclera_maps, 
     gl.glBindTexture(texture.target, 0)
     assert wrap.value == gl.GL_REPEAT
     assert gl.glGetError() == gl.GL_NO_ERROR
+
+
+# -- AD-038 §5: the eye's LOOKDEV variant (only added; every test above runs unchanged) -------------------------------
+
+#: E4: every LOOKDEV shell source (`lookdev=True`, all 8 other arguments), float-normalised as `_source_digest`. Taken
+#: at its introduction (AD-038 LD-1): a later change of the LOOKDEV GLSL re-pins it deliberately.
+PINNED_LOOKDEV_SOURCES_SHA256 = "a554aad64d1b5fa3154f72abd2eec33e199680505b74b32e270e869440786f07"
+
+
+def test_lookdev_sources_are_pinned():
+    assert _all_sources_digest(lookdev=True) == (1024, PINNED_LOOKDEV_SOURCES_SHA256)
+    locations = {"position": 0, "normal": 1}
+    plain = es.shell_sources(locations, "V2", 3, "studio", True, look=True, iris=True)[1][0]
+    looked = es.shell_sources(locations, "V2", 3, "studio", True, look=True, iris=True, lookdev=True)[1][0]
+    assert "LOOKDEV" not in plain and "u_ld_" not in plain and "lookdev_output" not in plain
+    assert "#define LOOKDEV 1\n" in looked and "vec3 lookdev_output(vec3 c)" in looked
+    assert looked.index("vec3 lookdev_output(vec3 c)") < looked.index("void main()")
+
+
+def _ld_state(**kw):
+    from viewport import lookdev_optics as lo
+
+    values = dict(preset="test", studio=lo.EYE_STUDIO, key=lo.StudioLight(True, 1.6, 45.0, 30.0, 5600.0, 0.1),
+                  fill=lo.StudioLight(True, 0.5, -60.0, 5.0, 6500.0, 0.25),
+                  rim=lo.StudioLight(True, 1.0, -150.0, 25.0, 7500.0, 0.05), env_intensity=0.3,
+                  background=((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)))
+    values.update(kw)
+    return lo.LookdevState(**values)
+
+
+@pytest.mark.parametrize("level", [0, 3])
+@pytest.mark.parametrize("reflection", ["key", "studio"])
+@pytest.mark.parametrize("variant", ["V2", "V3"])
+@pytest.mark.parametrize("look", [False, True])
+def test_lookdev_programs_draw_and_leave_the_gl_state_clean(gl_window, level, reflection, variant, look):
+    from pyglet import gl
+
+    spec = dataclasses.replace(_iris(light=0.8, crescent=1.0, rim_shadow=0.5, relief=0.5) if look else DEFAULT_EYE,
+                               limbus_level=level, fit_pupil=0.22, fit_limbus=0.88)
+    if look:
+        spec = dataclasses.replace(spec, look=dataclasses.replace(spec.look, wet_sclera=0.7, highlight_softness=0.5,
+                                                                  lid_shadow=0.3, lid_band=0.8))
+    viewport, _ = _scene(spec, yaw=25.0)
+    viewport.set_eye_display(tier="full", reflection=reflection, refraction=variant)
+    worklight = _render(gl_window, viewport)
+    viewport.set_shading("lookdev", _ld_state())
+    gl.glUseProgram(0)
+    from gui.imgui_layer import snapshot_gl_state
+
+    before = snapshot_gl_state()
+    img = _render(gl_window, viewport)
+    assert snapshot_gl_state() == before and gl.glGetError() == gl.GL_NO_ERROR
+    assert np.sum(img.max(-1) > 0) > 3000 and np.any(img != worklight)
+    keys = list(viewport.eye_pass.programs)
+    assert all(len(k) == 9 for k in keys) and {k[7] for k in keys} == {False, True}  # one Worklight, one LOOKDEV
+    assert any(k[7] and k[5] == look and k[6] == look for k in keys)
+
+
+def test_lookdev_iris_table_follows_the_lookdev_key(gl_window):
+    """C5 / D2: the phase 4 key table is baked from `u_key_dir` - in the room the LookDev key; a studio rotation
+    rebakes it once, a frame without a change does not."""
+    spec = _iris(light=1.0, crescent=1.0, rim_shadow=0.5)
+    viewport, _ = _scene(spec, yaw=10.0)
+    viewport.set_eye_display(tier="full")
+    viewport.set_shading("lookdev", _ld_state())
+    passes = viewport.eye_pass
+    _render(gl_window, viewport)
+    bakes = passes.table_bakes
+    assert bakes >= 1
+    _render(gl_window, viewport)
+    assert passes.table_bakes == bakes
+    viewport.set_shading("lookdev", _ld_state(rotation=40.0))
+    _render(gl_window, viewport)
+    assert passes.table_bakes == bakes + 1
+
+
+def test_lookdev_off_draws_the_worklight_eye(gl_window):
+    """`lighting=None` (the Worklight) after LookDev frames is pixel for pixel the eye before them."""
+    viewport, _ = _scene(_with(wet_sclera=0.5), yaw=20.0)
+    viewport.set_eye_display(tier="full")
+    before = _render(gl_window, viewport)
+    viewport.set_shading("lookdev", _ld_state())
+    _render(gl_window, viewport)
+    viewport.set_shading("worklight")
+    assert np.array_equal(_render(gl_window, viewport), before)

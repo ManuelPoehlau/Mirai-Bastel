@@ -606,13 +606,22 @@ uniform sampler2D u_noise_texture;
 uniform sampler2D u_sclera_texture;
 uniform vec4 u_sclera_tint;
 #endif
+#ifdef LOOKDEV
+#ifndef LOOK
+uniform float u_sclera_roughness;
+#endif
+#endif
 out vec4 out_color;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
 vec3 to_world(vec3 n_local) { return normalize(mat3(u_model) * n_local); }
 
+#ifdef LOOKDEV
+vec3 lit(vec3 albedo, vec3 n_local) { return srgb_decode(albedo) * ld_diffuse(to_world(n_local), vec3(0.0)); }
+#else
 vec3 lit(vec3 albedo, vec3 n_local) { return albedo * worklight_light(to_world(n_local)); }
+#endif
 #ifdef SCLERA_MAP
 
 // AD-035: the sclera's colour at an eye-local point - its map (RGB; alpha ignored, S-6), the selection tint over it
@@ -633,8 +642,14 @@ vec3 iris_lit(vec3 albedo, vec3 hit, vec3 n_local) {
     vec3 d = vec3(t.xy, sqrt(max(1.0 - dot(t.xy, t.xy), 0.0)));
     float k = wrap_light(dot(n_world, u_key_dir), u_key_wrap);
     k = mix(k, t.z * wrap_light(dot(n_local, d), u_key_wrap), u_iris_light) * t.w;
+#ifdef LOOKDEV
+    return srgb_decode(albedo) * (ld_env_diffuse(n_world) + u_key_color * k
+                                  + u_fill_color * wrap_light(dot(n_world, u_fill_dir), u_fill_wrap)
+                                  + u_ld_light_color[2] * max(dot(n_world, u_ld_light_dir[2]), 0.0));
+#else
     return albedo * (vec3(u_ambient) + u_key_color * k
                      + u_fill_color * wrap_light(dot(n_world, u_fill_dir), u_fill_wrap));
+#endif
 }
 #endif
 
@@ -647,9 +662,14 @@ float blinn_phong(vec3 n, vec3 l, vec3 v, float e) {
 vec3 cornea_reflection(vec3 n, vec3 v) {
     vec3 key = u_key_color * (u_key_irradiance * direct_specular(n, v, u_key_dir, u_cornea_roughness, u_cornea_f0));
 #if REFLECTION == 1
+#ifdef LOOKDEV
+    float nv = max(dot(n, v), 1e-4);
+    key += ld_env_specular(reflect(-v, n), u_cornea_roughness) * env_brdf_approx(u_cornea_f0, u_cornea_roughness, nv);
+#else
     vec3 r_view = mat3(u_view) * reflect(-v, n);
     float nv = max(dot(n, v), 1e-4);
     key += td_env(r_view, u_cornea_roughness) * env_brdf_approx(u_cornea_f0, u_cornea_roughness, nv);
+#endif
 #endif
     return key;
 }
@@ -664,8 +684,12 @@ vec3 film_sample(vec3 p) {
 // The key's highlight: the point highlight as before, or (I-8) the soft area highlight of the same energy.
 vec3 key_reflection(vec3 n, vec3 v, float roughness) {
     if (u_soft_radiance > 0.0) {
+#ifdef LOOKDEV
+        float w = area_key(reflect(-v, n), u_key_dir, u_ld_key_up, u_ld_key_right, roughness);
+#else
         mat3 view_t = transpose(mat3(u_view));
         float w = area_key(reflect(-v, n), u_key_dir, view_t[1], view_t[0], roughness);
+#endif
         return u_key_color * (w * env_brdf_approx(u_cornea_f0, roughness, max(dot(n, v), 1e-4)));
     }
     return u_key_color * (u_key_irradiance * direct_specular(n, v, u_key_dir, roughness, u_cornea_f0));
@@ -675,9 +699,14 @@ vec3 key_reflection(vec3 n, vec3 v, float roughness) {
 vec3 film_reflection(vec3 n, vec3 v, float roughness, float band) {
     vec3 c = key_reflection(n, v, roughness);
 #if REFLECTION == 1
+#ifdef LOOKDEV
+    float nv = max(dot(n, v), 1e-4);
+    c += ld_env_specular(reflect(-v, n), roughness) * env_brdf_approx(u_cornea_f0, roughness, nv);
+#else
     vec3 r_view = mat3(u_view) * reflect(-v, n);
     float nv = max(dot(n, v), 1e-4);
     c += td_env(r_view, roughness) * env_brdf_approx(u_cornea_f0, roughness, nv);
+#endif
 #endif
     return c * (1.0 - band);
 }
@@ -817,10 +846,18 @@ void main() {
             rough = film_roughness(rough, g.z);
         }
         float band = u_lid_band > 0.0 ? u_lid_band * lid_occlusion(p_rest, u_rest * reflect(dir, n_film), rough) : 0.0;
+#ifdef LOOKDEV
+        colour = (1.0 - fresnel) * transmit_inner * inside + film_reflection(to_world(n_film), v_world, rough, band);
+#else
         colour = (1.0 - fresnel) * transmit_inner * inside
                + display_add(film_reflection(to_world(n_film), v_world, rough, band));
+#endif
+#else
+#ifdef LOOKDEV
+        colour = (1.0 - fresnel) * transmit_inner * inside + cornea_reflection(n_world, v_world);
 #else
         colour = (1.0 - fresnel) * transmit_inner * inside + display_add(cornea_reflection(n_world, v_world));
+#endif
 #endif
     } else {
 #ifdef DEBUG_KIND
@@ -875,10 +912,14 @@ void main() {
 #ifdef LOOK
         vec3 p_rest = u_rest * p;
         colour *= 1.0 - u_lid_shadow * lid_shadow_weight(p_rest);
+#ifdef LOOKDEV
+        vec3 highlight = ld_specular(n_world, v_world, u_sclera_roughness, u_cornea_f0);
+#else
         vec3 highlight = vec3(u_specular * dot(u_key_color, LUMA) * blinn_phong(n_world, u_key_dir, view_axis,
                                                                                u_spec_exponent)
                               + u_fill_specular * dot(u_fill_color, LUMA) * blinn_phong(n_world, u_fill_dir, view_axis,
                                                                                          u_spec_exponent));
+#endif
         if (u_wet > 0.0) {
             // The wet film continues over the sclera (one film across the limbus: the cornea's roughness at the ring,
             // the sclera's beyond the normal transition); it replaces the Worklight's plastic highlight by `u_wet`.
@@ -893,18 +934,31 @@ void main() {
             float f = schlick_scalar(u_cornea_f0, max(dot(nf_world, v_world), 0.0));
             float band = u_lid_band > 0.0 ? u_lid_band * lid_occlusion(p_rest, u_rest * reflect(dir, n_film), rough)
                                           : 0.0;
+#ifdef LOOKDEV
+            colour = (1.0 - u_wet * f) * colour + (1.0 - u_wet) * highlight
+                   + u_wet * film_reflection(nf_world, v_world, rough, band);
+#else
             colour = (1.0 - u_wet * f) * colour + (1.0 - u_wet) * highlight
                    + u_wet * display_add(film_reflection(nf_world, v_world, rough, band));
+#endif
         } else {
             colour += highlight;
         }
+#else
+#ifdef LOOKDEV
+        colour += ld_specular(n_world, v_world, u_sclera_roughness, u_cornea_f0);
 #else
         colour += vec3(u_specular * dot(u_key_color, LUMA) * blinn_phong(n_world, u_key_dir, view_axis, u_spec_exponent)
                      + u_fill_specular * dot(u_fill_color, LUMA) * blinn_phong(n_world, u_fill_dir, view_axis,
                                                                                u_spec_exponent));
 #endif
+#endif
     }
+#ifdef LOOKDEV
+    out_color = vec4(lookdev_output(colour), 1.0);
+#else
     out_color = vec4(colour, 1.0);
+#endif
 }
 """
 
@@ -1024,20 +1078,28 @@ def _header(**defines) -> str:
 
 def shell_sources(locations: dict[str, int], variant: str, level: int, reflection: str, fit: bool,
                   debug_kind: bool = False, look: bool = False, iris: bool = False,
-                  sclera: bool = False) -> list[tuple[str, str]]:
+                  sclera: bool = False, lookdev: bool = False) -> list[tuple[str, str]]:
     """The shell program's sources. Without `look` the fragment source is the one before phase 3, character for
     character (`test_gl_eye_pass.py` pins that), so the "fast" tier and an eye without a look draw and cost as before;
     without `iris` it is the one of phase 3. `iris` needs `look` (the iris values live in the look). Without `sclera`
-    (AD-035: the sclera's colour map) the source is the one before AD-035, character for character."""
+    (AD-035: the sclera's colour map) the source is the one before AD-035, character for character. With `lookdev`
+    (AD-038 §5: the LookDev room) the blocks B1-B8 light the eye with the LookDev studio in linear light and end in
+    `lookdev_shaders.lookdev_output`; without it every source is the one before AD-038, character for character
+    (`PINNED_WORKLIGHT_SOURCES_SHA256`)."""
     iris = bool(iris and look)
     header = _header(VARIANT=VARIANT_IDS[variant], LIMBUS_LEVEL=int(level), REFLECTION=REFLECTIONS[reflection],
                      IRIS_FIT=1 if fit else None, DEBUG_KIND=1 if debug_kind else None, LOOK=1 if look else None,
-                     IRIS=1 if iris else None, SCLERA_MAP=1 if sclera else None)
+                     IRIS=1 if iris else None, SCLERA_MAP=1 if sclera else None, LOOKDEV=1 if lookdev else None)
     library = (EYE_LIB_SRC + (LOOK_LIB_SRC if look else "") + (IRIS_LIB_SRC if iris else "")
                + (SCLERA_LIB_SRC if sclera else ""))
+    if lookdev:
+        from .lookdev_shaders import LD_COMMON_SRC
+
+        library += LD_COMMON_SRC
     body = SHELL_FRAGMENT_BODY if iris else _without(SHELL_FRAGMENT_BODY, "IRIS")
     body = body if look else _without(body, "LOOK")
     body = body if sclera else _without(body, "SCLERA_MAP")
+    body = body if lookdev else _without(body, "LOOKDEV")
     return [(SHELL_VERTEX_SRC.format(**locations), "vertex"), (header + library + body, "fragment")]
 
 
