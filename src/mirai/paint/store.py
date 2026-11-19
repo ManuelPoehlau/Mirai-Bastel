@@ -19,6 +19,10 @@ last call to whoever shows the composite, `dirty` names the layers a save has to
 (compressed), `commit()` turns that into one `PaintStrokeCommand` (one Undo step per stroke), `cancel()` puts every
 touched tile back exactly (Esc). The command keeps only the "before" tiles until its first Undo captures the "after"
 ones (audit §8.4 item 5: about 0.2-0.7 MiB raw per stroke, a fraction of that compressed).
+
+**Layer steps** (Phase 3): `PaintStackCommand` changes the stack value only (opacity, visibility, blend, order);
+`PaintLayersCommand` also moves whole layers' pixels in and out of the store as compressed `LayerSnapshot`s (add, delete,
+rename, merge down, clear, the UV transfer - `mirai.paint.layers`, `mirai.paint.uv_transfer`).
 """
 
 from __future__ import annotations
@@ -69,6 +73,41 @@ def tiles_of(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
 def tile_box(tile: tuple[int, int], width: int, height: int) -> tuple[int, int, int, int]:
     tx, ty = tile
     return tx * TILE, ty * TILE, min((tx + 1) * TILE, width), min((ty + 1) * TILE, height)
+
+
+def occupied(rgba: np.ndarray) -> np.ndarray:
+    """(tiles down, tiles across) bool: the tiles where `rgba` has any alpha (what a layer can change in a composite)."""
+    height, width = rgba.shape[:2]
+    down, across = -(-height // TILE), -(-width // TILE)
+    alpha = np.zeros((down * TILE, across * TILE), dtype=bool)
+    alpha[:height, :width] = rgba[..., 3] != 0
+    return alpha.reshape(down, TILE, across, TILE).any(axis=(1, 3))
+
+
+def tiles_in(grid: np.ndarray) -> list[tuple[int, int]]:
+    """The (tile x, tile y) of the true cells of an `occupied` grid."""
+    ys, xs = np.nonzero(grid)
+    return list(zip(xs.tolist(), ys.tolist()))
+
+
+@dataclass(frozen=True)
+class LayerSnapshot:
+    """A layer's pixels held by an Undo step while they are not in the store (compressed; `PaintLayersCommand`)."""
+
+    data: bytes
+    shape: tuple[int, int, int]
+    source: str | None
+    dirty: bool
+
+    @classmethod
+    def of(cls, rgba: np.ndarray, source: str | None, dirty: bool) -> "LayerSnapshot":
+        return cls(_pack(rgba), tuple(rgba.shape), source, dirty)
+
+    def pixels(self) -> np.ndarray:
+        return _unpack(self.data, self.shape).copy()
+
+    def stored_bytes(self) -> int:
+        return len(self.data)
 
 
 class PaintStore:
@@ -145,7 +184,8 @@ class PaintStore:
         layer.source, layer.dirty = source, False
 
     def set_pixels(self, obj: SceneObject, name: str, rgba: np.ndarray, *, dirty: bool = True) -> None:
-        """Replaces a layer's pixels as a whole (a new layer from an image, a UV transfer later); no Undo here."""
+        """Replaces a layer's pixels as a whole (a new layer from an image, tests); no Undo here (the layer steps use
+        `snapshot` / `restore`)."""
         entry = self._entry(obj)
         width, height = entry.size
         if rgba.shape != (height, width, 4):
@@ -189,6 +229,34 @@ class PaintStore:
         out, entry.changed = entry.changed, set()
         return out
 
+    def snapshot(self, obj: SceneObject, name: str) -> LayerSnapshot | None:
+        """The layer's pixels as they are now, for an Undo step (None: not in memory - its image file holds them, or it
+        is a new transparent layer)."""
+        entry = self._objects.get(id(obj))
+        if entry is None or entry.obj is not obj or name not in entry.layers:
+            return None
+        layer = entry.layers[name]
+        return LayerSnapshot.of(layer.rgba, layer.source, layer.dirty)
+
+    def restore(self, obj: SceneObject, name: str, snapshot: LayerSnapshot | None) -> None:
+        """Puts `snapshot` in as the pixels of layer `name` (None: none in memory - read from the layer's image on next
+        use). The tiles either side has paint in are reported as changed (the composite). Used by `PaintLayersCommand`
+        with the stack that names the layer; the store does not check the stack here."""
+        entry = self._entry(obj)
+        old = entry.layers.pop(name, None)
+        if old is not None:
+            entry.changed.update(tiles_in(occupied(old.rgba)))
+        if snapshot is not None:
+            if snapshot.shape != (entry.size[1], entry.size[0], 4):
+                raise PaintError(f"a snapshot of {snapshot.shape} does not fit the stack {entry.size}")
+            rgba = snapshot.pixels()
+            entry.layers[name] = _Layer(rgba, snapshot.source, snapshot.dirty)
+            entry.changed.update(tiles_in(occupied(rgba)))
+
+    def load(self, obj: SceneObject, name: str) -> np.ndarray:
+        """The layer's pixels, read from its image now if they are not in memory (a layer operation needs them)."""
+        return self._layer(obj, name).rgba
+
     def _touched(self, obj: SceneObject, name: str, tiles) -> None:
         entry = self._entry(obj)
         entry.layers[name].dirty = True
@@ -203,8 +271,9 @@ class PaintStore:
     # -- composite -----------------------------------------------------------------------------------------------
 
     def composite(self, obj: SceneObject, base: np.ndarray, box: tuple[int, int, int, int] | None = None) -> np.ndarray:
-        """The visible layers over `base` ((h, w, 4) uint8 at the stack's size, or an RGB colour), Normal blend with
-        each layer's opacity, in `box` (x0, y0, x1, y1; default the whole image). Returns uint8 RGBA, alpha 255."""
+        """The visible layers over `base` ((h, w, 4) uint8 at the stack's size, or an RGB colour), bottom to top, each
+        with its opacity and blend: Normal `t + (c - t)·a`, Multiply `t + (t·c - t)·a` (straight alpha `a` = the
+        pixel's alpha times the layer's opacity; `t`, `c` in 0-255, `c` scaled by 1/255 for Multiply), in `box` (x0, y0, x1, y1; default the whole image). Returns uint8 RGBA, alpha 255."""
         stack: PaintStack = obj.paint
         width, height = stack.width, stack.height
         x0, y0, x1, y1 = (0, 0, width, height) if box is None else box
@@ -226,7 +295,10 @@ class PaintStore:
             part = rgba[r0:r1, c0:c1]
             target = out[r0:r1, c0:c1]
             alpha = part[..., 3:4].astype(np.float32) * (spec.opacity / 255.0)
-            target += (part[..., :3].astype(np.float32) - target) * alpha
+            colour = part[..., :3].astype(np.float32)
+            if spec.blend == "multiply":
+                colour *= target * (1.0 / 255.0)  # the layer's colour times what lies beneath (P-12)
+            target += (colour - target) * alpha
         result = np.empty((y1 - y0, x1 - x0, 4), dtype=np.uint8)
         result[..., :3] = np.clip(np.rint(out), 0, 255).astype(np.uint8)
         result[..., 3] = 255
@@ -356,3 +428,67 @@ class PaintStackCommand:
 
     def redo(self) -> None:
         self.obj.paint = self.after
+
+
+class PaintLayersCommand:
+    """A change of an object's layers as one Undo step (AD-037 §11, Phase 3): the stack value from `before` to `after`
+    and the pixels of the layers it names - `pixels_before` / `pixels_after`: {layer name: `LayerSnapshot` or None}, None
+    = no pixels in memory (the layer's image, or a new transparent layer). Add, delete, rename, merge down, clear and the
+    UV transfer are all this: the pixels of a layer leave the store into the step and come back with its Undo, so a name
+    used again never finds another layer's pixels. A change of opacity, visibility, blend or order alone is a
+    `PaintStackCommand` (no pixels)."""
+
+    def __init__(self, store: PaintStore, obj: SceneObject, before: PaintStack, after: PaintStack,
+                 pixels_before: dict, pixels_after: dict, description: str) -> None:
+        self.store, self.obj = store, obj
+        self.before, self.after = before, after
+        self.pixels_before, self.pixels_after = dict(pixels_before), dict(pixels_after)
+        self.description = description
+
+    def _apply(self, stack: PaintStack, pixels: dict) -> None:
+        self.obj.paint = stack
+        for name, snapshot in pixels.items():
+            self.store.restore(self.obj, name, snapshot)
+
+    def undo(self) -> None:
+        self._apply(self.before, self.pixels_before)
+
+    def redo(self) -> None:
+        self._apply(self.after, self.pixels_after)
+
+    def stored_bytes(self) -> int:
+        return sum(s.stored_bytes() for s in (*self.pixels_before.values(), *self.pixels_after.values())
+                   if s is not None)
+
+
+def merge_pixels(upper: np.ndarray, upper_opacity: float, lower: np.ndarray, lower_opacity: float,
+                 blend: str) -> np.ndarray:
+    """One layer at opacity 1 that composites like `lower` (at `lower_opacity`) with `upper` (at `upper_opacity`) over
+    it, both in `blend` (`PaintStore.composite`'s arithmetic; equal up to the 8-bit rounding). Normal: Porter-Duff "over"
+    of straight alpha. Multiply: a pixel acts as the factor `f = 1 - a + a·c` per channel; two factors multiply, and the
+    product is written back with the smallest alpha that holds it (`a = 1 - min f`). Computed only where either layer
+    has alpha (the Gollum head at 2048²: 0.9 s over every pixel)."""
+    if blend not in ("normal", "multiply"):
+        raise PaintError(f"merge: unknown blend {blend!r}")
+    out = np.zeros(upper.shape, dtype=np.uint8)
+    where = np.flatnonzero((upper[..., 3] != 0) | (lower[..., 3] != 0))
+    if where.size == 0:
+        return out
+    up, low = upper.reshape(-1, 4)[where], lower.reshape(-1, 4)[where]
+    au = up[:, 3:4].astype(np.float32) * np.float32(upper_opacity / 255.0)
+    al = low[:, 3:4].astype(np.float32) * np.float32(lower_opacity / 255.0)
+    cu = up[:, :3].astype(np.float32) * np.float32(1.0 / 255.0)
+    cl = low[:, :3].astype(np.float32) * np.float32(1.0 / 255.0)
+    if blend == "normal":
+        a = au + al * (1.0 - au)
+        c = (cu * au + cl * al * (1.0 - au)) / np.where(a > 0, a, 1.0)
+    else:
+        f = (1.0 - au + au * cu) * (1.0 - al + al * cl)
+        a = 1.0 - f.min(axis=-1, keepdims=True)
+        c = (f - 1.0 + a) / np.where(a > 0, a, 1.0)
+    part = np.empty((where.size, 4), dtype=np.uint8)
+    part[:, :3] = np.clip(np.rint(c * 255.0), 0, 255).astype(np.uint8)
+    part[:, 3:4] = np.clip(np.rint(a * 255.0), 0, 255).astype(np.uint8)
+    part[part[:, 3] == 0] = 0
+    out.reshape(-1, 4)[where] = part
+    return out

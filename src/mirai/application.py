@@ -195,6 +195,8 @@ from .skinning import SkinDisplay, skin_layer
 from .surface_chain import SurfaceChain
 from .surface_positions import SurfacePositions
 from .paint import files as paint_files
+from .paint import layers as paint_layers_api
+from .paint import uv_transfer as paint_uv_transfer
 from .paint import uv_health as uv_health_api
 from .paint.display import PaintDisplay
 from .paint.store import PaintStore
@@ -1170,6 +1172,67 @@ class Application:
     def paint_surface_text(self) -> str:
         """Which surface the room paints on and at which size ("malt auf der SubD-Fläche (Stufe 1), 2048²")."""
         return self._paint_room.surface_text()
+
+    # -- paint layers (AD-037 Phase 3): every change one Undo step, only in the Paint Room and between strokes ----------
+
+    @property
+    def paint_active_layer(self) -> str | None:
+        """The layer the room's strokes paint on (view state; None before the first stroke)."""
+        return self._paint_room.active_layer()
+
+    def set_paint_active_layer(self, name: str) -> bool:
+        return self._paint_room.set_active_layer(name)
+
+    def add_paint_layer(self) -> bool:
+        """A transparent layer above the active one; it becomes the active one."""
+        room = self._paint_room
+        return room.layer_step(lambda: paint_layers_api.add(self.paint, room.obj, room.active_layer()))
+
+    def delete_paint_layer(self, name: str) -> bool:
+        room = self._paint_room
+        stack = room.obj.paint if room.obj is not None else None
+        below = None
+        if stack is not None:
+            names = [layer.name for layer in stack.layers]
+            if name in names and len(names) > 1:
+                i = names.index(name)
+                below = names[i - 1] if i > 0 else names[1]
+        return room.layer_step(lambda: paint_layers_api.delete(self.paint, room.obj, name), below)
+
+    def rename_paint_layer(self, name: str, new: str) -> bool:
+        room = self._paint_room
+        return room.layer_step(lambda: paint_layers_api.rename(self.paint, room.obj, name, new), new.strip())
+
+    def move_paint_layer(self, name: str, step: int) -> bool:
+        """One place up (`step` > 0) or down."""
+        room = self._paint_room
+        return room.layer_step(lambda: paint_layers_api.move(room.obj, name, step))
+
+    def set_paint_layer(self, name: str, **values) -> bool:
+        """A layer's `opacity`, `visible` or `blend` (one Undo step; ends a running `preview_paint_layer`)."""
+        return self._paint_room.set_layer_values(name, **values)
+
+    def preview_paint_layer(self, name: str, **values) -> bool:
+        """A held slider: the layer drawn with `values`, no Undo step until `set_paint_layer` or `end_paint_layer_preview`."""
+        return self._paint_room.preview_layer(name, **values)
+
+    def end_paint_layer_preview(self) -> bool:
+        return self._paint_room.end_preview()
+
+    def merge_paint_layer_down(self, name: str) -> bool:
+        """The layer into the one beneath it (both shown, the same blend); the composite stays the same."""
+        room = self._paint_room
+        stack = room.obj.paint if room.obj is not None else None
+        below = None
+        if stack is not None:
+            names = [layer.name for layer in stack.layers]
+            if name in names and names.index(name) > 0:
+                below = names[names.index(name) - 1]
+        return room.layer_step(lambda: paint_layers_api.merge_down(self.paint, room.obj, name), below)
+
+    def clear_paint_layer(self, name: str) -> bool:
+        room = self._paint_room
+        return room.layer_step(lambda: paint_layers_api.clear(self.paint, room.obj, name))
 
     def frame_eye(self, eye: SceneObject | None = None, frontal: bool = False) -> bool:
         """Frame one eye (the first selected one by default) close up; `frontal` also turns the camera to look into
@@ -4553,7 +4616,9 @@ class Application:
         inside one `_mesh_transaction` - one Undo step restores both, exact rollback, topology, IDs, UVs and point layers
         untouched. Refused (status, False, nothing changed) during an
         interaction, while the mesh is posed and bound (AD-028 §7.1), while a morph target's editing view is open, and
-        when the object is not the edit object (PROVISIONAL, audit Q8: no silent edit-object switch).
+        when the object is not the edit object (PROVISIONAL, audit Q8: no silent edit-object switch). A painted object
+        whose UVs ZBrush changed keeps its paint: every layer is re-sampled onto the new UVs in the same Undo step
+        (AD-037 Phase 3, `mirai.paint.uv_transfer`; it lifted the P-13 refusal).
         `CONFLICT` / `TOPOLOGY_CHANGED` / `UNKNOWN_OBJECT`: a new object beside the original (fresh IDs, identity
         placement, one Undo step); the original is never touched. Any other kind: status only."""
         from interop.goz.bridge import mesh_from_goz
@@ -4591,11 +4656,18 @@ class Application:
         if posed is not None:
             self._set_status(f"{label}: {posed.split(': ', 1)[-1]}")
             return False
-        if obj.paint is not None and plan.uvs:  # AD-037 P-13 (Manu 2026-11-18): until the UV transfer exists
-            self._set_status(f"{label}: ZBrush changed the UVs of {len(plan.uvs)} face(s) and {obj.name!r} is painted -"
-                             f" its paint would no longer fit; not applied (a UV transfer comes later)")
-            return False
         positions = dict(plan.positions)
+        description = f"ZBrush return {obj.name}"
+        paint_step = None
+        if obj.paint is not None and plan.uvs:
+            # AD-037 Phase 3 (P-13 lifted): the paint follows the new UVs - one Undo step with the return
+            try:
+                paint_step = paint_uv_transfer.transfer_command(self.paint, obj, obj.mesh, plan.uvs, positions,
+                                                                description)
+            except (OSError, ValueError) as exc:  # PaintError is a ValueError
+                self._set_status(f"{label}: ZBrush changed the UVs of {len(plan.uvs)} face(s) and {obj.name!r} is"
+                                 f" painted - its paint could not be moved to them ({exc}); not applied")
+                return False
 
         def mutate(mesh: Mesh) -> set[VertexId]:
             for vertex_id, position in positions.items():
@@ -4608,13 +4680,21 @@ class Application:
                 mesh.set_layer_value(plan.target_layer, vertex_id, offset)
             return set(positions)
 
-        description = f"ZBrush return {obj.name}"
-        companion = (ObjectTextureCommand(obj, obj.texture, plan.texture, description)
-                     if plan.texture_changed else None)
+        companions = [ObjectTextureCommand(obj, obj.texture, plan.texture, description)] if plan.texture_changed else []
+        if paint_step is not None:
+            companions.append(paint_step)
+        companion = (None if not companions else companions[0] if len(companions) == 1
+                     else CompositeCommand(companions, description))
         # A return can move most of the mesh: no localized worked area, the orbit focus stays (P9).
         changed = self._mesh_transaction(description, mutate, moved_of=lambda moved: moved,
                                          companion=companion, focus=False).changed
-        self._set_status(plan.summary() + (" - applied (Ctrl+Z undoes it)" if changed else " - nothing to apply"))
+        moved_paint = ""
+        if paint_step is not None and changed:
+            layers = len(obj.paint.layers)
+            moved_paint = (f" - paint moved to the new UVs ({layers} layer{'s' if layers != 1 else ''},"
+                           f" {paint_step.plan.move.size} texels re-read)")
+        self._set_status(plan.summary() + moved_paint
+                         + (" - applied (Ctrl+Z undoes it)" if changed else " - nothing to apply"))
         return changed
 
     def _mesh_transaction(

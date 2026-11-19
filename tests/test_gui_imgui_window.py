@@ -506,7 +506,8 @@ def test_eye_panel_draws_an_eye_and_leaves_gl_state_as_found():
 
 def test_paint_room_panel_and_a_stroke_through_the_window_upload_the_live_texture():
     """AD-037 §8 Phase 2: the Paint Room in the real window - the panel draws, a plain LMB drag in the viewport paints
-    (one Undo step), the live texture is uploaded box by box, and frames leave the GL state as found."""
+    (one Undo step), the live texture is uploaded box by box, and frames leave the GL state as found; Phase 3: the layer
+    list draws, layer steps keep the texture."""
     try:
         window, app, layer = run.build(argv=["cube"])
     except Exception as exc:
@@ -551,6 +552,12 @@ def test_paint_room_panel_and_a_stroke_through_the_window_upload_the_live_textur
         window.dispatch_event("on_mouse_release", x0, y0 + 10, mouse.LEFT, 0)
         _tick(app, window, 2)
         assert texture.uploads > uploads and len(app.history) == 2  # a dab: its boxes only
+        # Phase 3: the layer list draws with two layers; a layer value is one step and re-sends only painted boxes
+        assert app.add_paint_layer() is True
+        _tick(app, window, 2)
+        assert app.set_paint_layer("Ebene 1", blend="multiply") is True
+        _tick(app, window, 2)
+        assert len(app.history) == 4 and app.paint_display.texture(obj) is texture
         before = snapshot_gl_state()
         _tick(app, window, 1)
         assert snapshot_gl_state() == before

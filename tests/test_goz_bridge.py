@@ -1118,17 +1118,48 @@ def test_reset_names_leaves_the_name_of_a_live_object_of_this_scene(env):
     assert Path(send(env)).name == "head_basemesh_2"
 
 
-def test_a_uv_change_on_a_painted_object_is_refused(env):
-    """AD-037 P-13 (Manu 2026-11-18, „wie vorgeschlagen“): new UVs from ZBrush would mis-map every painted pixel - not
-    applied until a UV transfer exists; nothing changes."""
+def test_a_uv_change_on_a_painted_object_moves_its_paint(env):
+    """AD-037 Phase 3 (P-13 lifted, Manu 2026-11-19: "UV-Transfer"): new UVs from ZBrush (UV Master) re-sample every
+    layer onto them in the same Undo step - a colour painted at a surface point is at that point afterwards; Undo brings
+    the old UVs and the old pixels back exactly, Redo the moved ones."""
+    import numpy as np
+
     from core import PaintLayer, PaintStack
+    from mirai.paint.texel_map import TexelMap
 
     app = env["app"]
     obj = app.scene.edit_object
-    obj.paint = PaintStack(16, 16, (PaintLayer("Haut", None),))
+    size = 256
+    obj.paint = PaintStack(size, size, (PaintLayer("Haut", None), PaintLayer("Adern", None, opacity=0.5)))
+    lo, hi = (np.array(b) for b in zip(*[(min(c), max(c)) for c in zip(*(obj.mesh.vertex_position(v)
+                                                                         for v in obj.mesh.all_vertex_ids()))]))
+
+    def colour(points):  # a smooth colour of the surface point
+        return np.clip(np.rint((points - lo) / (hi - lo) * 255), 0, 255).astype(np.uint8)
+
+    old_map = TexelMap(obj.mesh, size, size)
+    texels = old_map.mapped()
+    rgba = np.zeros((size, size, 4), np.uint8)
+    rgba.reshape(-1, 4)[texels, :3] = colour(old_map.surface_points(texels))
+    rgba.reshape(-1, 4)[texels, 3] = 255
+    app.paint.set_pixels(obj, "Haut", rgba)
+    old_pixels = rgba.copy()
     identifier = send(env)
     uvs_before, history = _uvs(obj.mesh), len(app.history)
     goz_back(env, identifier, fixture("zb2022_E3_head_uvmaster.GoZ"))
-    assert not env["bridge"].activate(row(env, APPLY_PREFIX))
-    assert "is painted" in app.status_message and "not applied" in app.status_message, app.status_message
-    assert _uvs(obj.mesh) == uvs_before and len(app.history) == history
+    assert env["bridge"].activate(row(env, APPLY_PREFIX)), app.status_message
+    assert "paint moved to the new UVs (2 layers" in app.status_message, app.status_message
+    assert _uvs(obj.mesh) != uvs_before and len(app.history) == history + 1
+    moved = app.paint.pixels(obj, "Haut").copy()
+    new_map = TexelMap(obj.mesh, size, size)
+    texels = new_map.mapped()
+    got = moved.reshape(-1, 4)[texels]
+    want = colour(new_map.surface_points(texels))
+    assert (got[:, 3] > 0).mean() > 0.97  # nearly every texel of the new layout has paint
+    error = np.abs(got[got[:, 3] == 255, :3].astype(int) - want[got[:, 3] == 255]).max(axis=1)
+    assert np.median(error) <= 2 and np.percentile(error, 95) <= 8, (np.median(error), np.percentile(error, 95))
+    assert not app.paint.pixels(obj, "Adern")[..., 3].any()  # a transparent layer stays transparent
+    app._undo_redo(commands.UNDO)
+    assert _uvs(obj.mesh) == uvs_before and np.array_equal(app.paint.pixels(obj, "Haut"), old_pixels)
+    app._undo_redo(commands.REDO)
+    assert np.array_equal(app.paint.pixels(obj, "Haut"), moved)

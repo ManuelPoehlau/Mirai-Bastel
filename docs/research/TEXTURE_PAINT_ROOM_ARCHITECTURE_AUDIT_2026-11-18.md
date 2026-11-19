@@ -569,6 +569,15 @@ the live texture (`viewport.live_texture`), 1d `SceneObject.paint` / format v14 
   "deferred" (regenerate at the stroke's end) until P-B runs on the reference PC.
 - P-5 stays open: Phase 1 has no default resolution (the caller names it).
 
+## Addendum 2026-11-19: Phase 3 (first slice) implemented
+
+Manu chose „Mehrere Ebenen, UV-Transfer“ and P-12 „Normal + Multiply“; built as
+[AD-037 §11](../architecture/AD-037-TEXTURE-PAINT.md). Deviations from this report: SubD surface painting (§10 Phase 3)
+was already built in Phase 2 (P-10 revised); §5.3 item 3 is built as proposed (per-triangle affine re-sampling, no ray
+casting), with the texel map of the mesh as it will be rather than of the changed mesh; §7 "merge down" bakes both
+opacities into a layer at 100 % so the image stays the same, and refuses two different blends; at most 8 layers. Not in
+this slice: Blur / Smudge, masks, the 2D UV view, pose / morph painting (P-8 / P-9).
+
 ## Sources (code and docs)
 
 `src/core/mesh.py`, `corner_uvs.py`, `layer_storage.py`, `scene.py`, `serialization.py`, `history.py` ·

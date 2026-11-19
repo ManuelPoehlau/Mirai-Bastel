@@ -46,7 +46,7 @@ def test_a_layer_keeps_its_values_and_has_the_documented_defaults():
     assert other.to_dict() == {"name": "Adern", "image": "maps/a.png", "opacity": 0.25, "visible": False,
                                "blend": "normal"}
     assert PaintLayer.from_dict(other.to_dict()) == other
-    assert PAINT_BLEND_MODES == ("normal",)
+    assert PAINT_BLEND_MODES == ("normal", "multiply")
 
 
 @pytest.mark.parametrize("changes", [
@@ -54,7 +54,7 @@ def test_a_layer_keeps_its_values_and_has_the_documented_defaults():
     {"image": ""}, {"image": "a\0.png"}, {"image": 5},
     {"opacity": -0.1}, {"opacity": 1.5}, {"opacity": float("nan")}, {"opacity": True}, {"opacity": "1"},
     {"visible": 1}, {"visible": None},
-    {"blend": "multiply"}, {"blend": None},
+    {"blend": "screen"}, {"blend": None},
 ])
 def test_an_invalid_layer_is_refused(changes):
     values = dict(name="Paint", image=None)

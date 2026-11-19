@@ -480,6 +480,12 @@ the Core. Existing tests unchanged except the three assertions that pinned 14 as
 (value rules, defaults, the field's type, no-paint equivalence on the Gollum scene's text, v14 round trip on the JSON
 text, the version by content, 2-13 read and 15 refused, a "paint" key below 14 and every invalid stack refused).
 
+**Addendum 2026-11-19 (AD-037 Phase 3, P-12; Manu: „Normal + Multiply“):** `PAINT_BLEND_MODES` gains `"multiply"`
+(now `("normal", "multiply")`) - one more allowed value of the existing `PaintLayer.blend`, no new field, no signature
+change; the format stays **v14** (a build that knows only `"normal"` refuses such a file with the validation error, as
+planned in Phase 1). Contract test `tests/test_paint_format.py` (the tuple pinned; an unknown blend such as `"screen"`
+still refused).
+
 **Decision:** AD-036 slice 1, the bone link of a rigid part, Core part (2026-11-18;
 [AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md) §9, checklist §13.1; Manu: „Baue AD-036, Scheiben 1–2; §13 zuerst als
 Checkliste“ — the build of the slice that is this change, read as the E4 go)

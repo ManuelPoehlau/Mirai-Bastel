@@ -19,6 +19,10 @@ says so when the cursor is on one.
 
 **Pick** (the eyedropper): the composite's colour at the hit's UV (the albedo, not the lit frame colour); then the
 previous tool again (`PROVISIONAL`).
+
+**Layers** (Phase 3, AD-037 §11): strokes paint on the active layer (`active_layer`; view state, the top one by default),
+not on a hidden one; `layer_step` pushes a `mirai.paint.layers` step between strokes; a held opacity slider previews
+(`preview_layer`) and makes its one step on release.
 """
 
 from __future__ import annotations
@@ -52,7 +56,8 @@ from ..interaction.session import (
 )
 from ..mesh_geometry import mesh_center_and_radius
 from ..paint import brush as brush_api
-from ..paint.store import PaintStackCommand, tile_box
+from ..paint import layers as layers_api
+from ..paint.store import PaintError, PaintStackCommand, tile_box
 from ..paint.surface import PaintSurface, mirror, pad_width, seam_pad
 from ..scene_objects import CompositeCommand
 from ..subdivision import SUBD_COMMANDS
@@ -192,6 +197,11 @@ class PaintRoomController:
         self.last_build: tuple[str, float] | None = None
         #: dabs of the last stroke (tests, the probe)
         self.last_dabs = 0
+        #: the layer strokes paint on (view state; `active_layer` falls back to the top one)
+        self.active: str | None = None
+        #: the stack before a held layer slider's first preview (`preview_layer`) and the stack it shows, None without one
+        self._preview_before = None
+        self._preview_shown = None
 
     @property
     def stroking(self) -> bool:
@@ -205,6 +215,7 @@ class PaintRoomController:
         services = self.services
         self.obj = obj
         self.saved_view = saved_view
+        self.active = None
         _, self._bounding_radius = mesh_center_and_radius(obj.mesh)
         self._bounding_radius = self._bounding_radius or 1.0
         self.session = PaintRoomSession(self)
@@ -217,6 +228,7 @@ class PaintRoomController:
             return None
         if self.session.stroking:
             self.session.cancel()
+        self.end_preview()
         self.services.interaction.end(self.session)
         self.session = None
         self.clear_cursor()
@@ -309,6 +321,88 @@ class PaintRoomController:
         self.services.status(self.brush.status_text())
         return False
 
+    # -- layers (Phase 3) ---------------------------------------------------------------------------------------------
+
+    def active_layer(self) -> str | None:
+        """The layer the next stroke paints on: the chosen one while it is in the stack, else the top one (None: the
+        object has no paint yet - the first stroke makes "Ebene 1")."""
+        stack = self.obj.paint if self.obj is not None else None
+        if stack is None:
+            return None
+        names = [layer.name for layer in stack.layers]
+        return self.active if self.active in names else names[-1]
+
+    def set_active_layer(self, name: str) -> bool:
+        stack = self.obj.paint if self.obj is not None else None
+        if stack is None or name not in [layer.name for layer in stack.layers] or self.stroking:
+            return False
+        changed = name != self.active_layer()
+        self.active = name
+        if changed:
+            self.services.status(f"Paint: strokes paint on {name!r}")
+        return changed
+
+    def layer_step(self, make, active: str | None = None) -> bool:
+        """Runs `make()` (a `mirai.paint.layers` function returning a step, or None for "nothing changes") and pushes the
+        step as one History entry; `active` becomes the active layer. Refused between nothing and a stroke: while a
+        stroke runs, and with a `PaintError` (the status line names it)."""
+        services = self.services
+        if self.obj is None:
+            services.status("Paint layers: open the Paint Room first")
+            return False
+        if self.stroking:
+            services.status("Paint layers: not while a stroke runs")
+            return False
+        self.end_preview()
+        try:
+            command = make()
+        except PaintError as exc:
+            services.status(f"Paint layers: {exc}")
+            return False
+        if command is None:
+            return False
+        if isinstance(command, tuple):
+            command, active = command
+        before = services.selection_snapshot()
+        command.redo()
+        services.history.push(command)
+        services.record_selection_history(before, mesh_step=False, focus=False)
+        if active is not None:
+            self.active = active
+        services.status(command.description)
+        return True
+
+    def preview_layer(self, name: str, **values) -> bool:
+        """A held slider (opacity): the layer drawn with `values`, no History step until `set_layer_values` (the release)
+        or `end_preview`."""
+        obj = self.obj
+        if obj is None or obj.paint is None or self.stroking:
+            return False
+        if self._preview_before is None or obj.paint is not self._preview_shown:
+            self._preview_before = obj.paint  # a new preview, or the stack changed under it (an Undo): start from now
+        try:
+            obj.paint = self._preview_shown = layers_api.with_values(self._preview_before, name, **values)
+        except PaintError as exc:
+            self.services.status(f"Paint layers: {exc}")
+            return False
+        return True
+
+    def end_preview(self) -> bool:
+        """The preview ends without a step: the stack it started from again - unless something else changed the stack
+        meanwhile (an Undo), which stays."""
+        before, self._preview_before = self._preview_before, None
+        shown, self._preview_shown = self._preview_shown, None
+        if before is None or self.obj is None or self.obj.paint is not shown:
+            return False
+        self.obj.paint = before
+        return True
+
+    def set_layer_values(self, name: str, **values) -> bool:
+        before = self._preview_before if self.obj is not None and self.obj.paint is self._preview_shown else None
+        self.end_preview()
+        obj = self.obj
+        return self.layer_step(lambda: layers_api.set_values(obj, name, before, **values))
+
     # -- the cursor -------------------------------------------------------------------------------------------------
 
     def _ray(self, x: float, y: float):
@@ -389,6 +483,7 @@ class PaintRoomController:
             return False
         if self.brush.tool == brush_api.TOOL_PICK:
             return self._pick(surface, hit)
+        self.end_preview()
         if hit.uv is None:
             services.status("Paint: this face has no UVs - it cannot be painted (UV check: SPACE)")
         self._stack_command = None
@@ -397,7 +492,11 @@ class PaintRoomController:
             stack = PaintStack(width, height, (PaintLayer(FIRST_LAYER, None),))
             self._stack_command = PaintStackCommand(obj, None, stack, "Paint: new paint")
             obj.paint = stack
-        layer = obj.paint.layers[-1].name  # Phase 2: one layer above the base (the top one)
+        layer = self.active_layer()
+        spec = obj.paint.layers[layers_api.index_of(obj.paint, layer)]
+        if not spec.visible:  # (a new stack's layer is visible)
+            services.status(f"Paint: the layer {layer!r} is hidden - show it to paint on it")
+            return False
         label = "Erase stroke" if self.brush.tool == brush_api.TOOL_ERASE else "Paint stroke"
         recorder = services.paint.begin_stroke(obj, layer, label)
         self._stroke = brush_api.PaintStroke(recorder, self.brush)
@@ -484,7 +583,7 @@ class PaintRoomController:
 
     def _stack_text(self) -> str:
         stack = self.obj.paint
-        return f"{stack.width} x {stack.height}, layer {stack.layers[-1].name!r}"
+        return f"{stack.width} x {stack.height}, layer {self.active_layer()!r}"
 
     def cancel_stroke(self) -> bool:
         stroke, self._stroke = self._stroke, None

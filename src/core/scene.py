@@ -392,8 +392,9 @@ class EyeSpec:
                    sclera_texture=raw.get("sclera_texture"))
 
 
-#: AD-037 §3: the blend modes a paint layer may name (the file stores the name). Phase 1: Normal only (P-12 open).
-PAINT_BLEND_MODES = ("normal",)
+#: AD-037 §3: the blend modes a paint layer may name (the file stores the name). Phase 1: Normal only; Phase 3 adds
+#: Multiply (P-12, Manu 2026-11-19: "Normal + Multiply"). A build that knows fewer modes refuses a file naming another.
+PAINT_BLEND_MODES = ("normal", "multiply")
 #: AD-037 §3: the largest paint-stack side in pixels (4096² is already "not on the reference PC", audit P-5).
 PAINT_MAX_SIZE = 8192
 

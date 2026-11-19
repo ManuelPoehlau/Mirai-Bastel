@@ -1,4 +1,4 @@
-# AD-037 — Texture paint: storage, data model, foundations (Phase 1) and the Paint Room (Phase 2)
+# AD-037 — Texture paint: storage, data model, foundations (Phase 1), the Paint Room (Phase 2), layers and UV transfer (Phase 3)
 
 **Status:** **DECIDED (Manu, 2026-11-18)**: „P-1 ja, P-2 ja, P-3 Go, P-4 ja, P-6 ja“ (the audit's addendum), the additive
 Core change and scene format v14 included. **IMPLEMENTED Phase 1 (2026-11-18, container: TESTED)** as built in §2–§6.
@@ -6,6 +6,8 @@ Core change and scene format v14 included. **IMPLEMENTED Phase 1 (2026-11-18, co
 (7.4 / 9.4 s) failed and were worked on the same day (§7.1), the re-run is open (its output has not reached the repo yet).
 **Decisions P-7, P-10, P-13: Manu, 2026-11-18** (§1); the P-13 refusals are built (§8). **IMPLEMENTED Phase 2, the Paint
 Room (2026-11-18, container: TESTED; reference PC: P-A … P-G pass on the shown surfaces, §10.8e)** as built in §10: SPACE menu row, no key, no keymap entry.
+**Phase 3 scope and P-12: Manu, 2026-11-19** (§1). **IMPLEMENTED Phase 3, several layers, Multiply and the UV transfer
+(2026-11-19, container: TESTED; reference PC: not run yet)** as built in §11; the P-13 refusal of a GoZ UV change is lifted.
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).
@@ -59,6 +61,23 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
 - **Messung im Container:** Raum öffnen 0,5 s (Käfig) / 0,6 s (SubD 1) / 0,9 s (SubD 2) bei 2048²; ein 3-%-Tupfer mit
   Spiegelung rund 2–3 ms CPU. Dein PC entscheidet (Sonde `probe_paint.py`, jetzt mit dem echten Tupfer und SubD-Zeilen).
 
+**Phase 3 – Ebenen und UV-Transfer (gebaut 2026-11-19, §11):**
+
+- **Mehrere Ebenen** im Panel „Paint Room“ (Abschnitt „Ebenen“, oberste zuerst): Häkchen = sichtbar, Klick auf den Namen
+  = auf diese Ebene malen. Für die aktive Ebene: Name, Ebenen-Deckkraft (Vorschau beim Ziehen, ein Undo-Schritt beim
+  Loslassen), Mischmodus; Knöpfe Neu, Hoch, Runter, Zusammenführen, Leeren, Löschen. Jede Änderung ist ein Undo-Schritt.
+  Höchstens 8 Ebenen. Auf eine ausgeblendete Ebene wird nicht gemalt (Statuszeile).
+- **Mischmodi Normal und Multiplizieren** (Deine Entscheidung P-12): Multiplizieren dunkelt die Schichten darunter mit
+  der Ebenenfarbe ab, Weiß ändert nichts – für Adern, Flecken, Schatten in der Haut.
+- **Zusammenführen** geht in die Ebene darunter, wenn beide sichtbar sind und denselben Mischmodus haben; das Bild bleibt
+  dabei gleich (die Deckkräfte werden eingerechnet, das Ergebnis hat 100 %).
+- **UV-Transfer:** Kommt aus ZBrush ein bemaltes Objekt mit neuen UVs zurück (UV Master), wird die Bemalung jeder Ebene
+  auf die neuen UVs umgerechnet – statt die Rückgabe wie bisher abzulehnen. Ein Undo-Schritt nimmt Rückgabe und
+  Umrechnung zusammen zurück. Gemessen auf dem Gollum-Kopf: die Farbe bleibt an ihrer Stelle auf der Fläche
+  (Abweichung im Mittel ≤ 2/255).
+- **Gespeichert** wird jede Ebene als PNG mit Name, Deckkraft, Sichtbarkeit und Mischmodus; das flache PNG für
+  OBJ/ZBrush enthält alle sichtbaren Ebenen.
+
 ## 1. Decisions (Manu, 2026-11-18)
 
 | # | Decision | Where it shows |
@@ -82,7 +101,16 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
 
 **Manu, 2026-11-18 (later, verbatim):** „P-10 Option 1, SubD-Malen in Phase 2“ (after the measurement in §8.1).
 
-Still open: P-8, P-9, P-11, P-12, P-14 … P-17.
+**Manu, 2026-11-19 (session chat, the Phase 3 scope question):** features „Mehrere Ebenen, UV-Transfer“; blend modes
+„Normal + Multiply“.
+
+| # | Decision | Where it shows |
+|---|---|---|
+| P-12 | **Normal and Multiply** (the audit's proposal) | `PAINT_BLEND_MODES` = ("normal", "multiply"), §11.1 |
+| Phase 3 | Several layers and the UV transfer first; pose / morph painting (P-8 / P-9), Blur / Smudge, masks and the 2D UV view not in this slice | §11 |
+| P-13 (GoZ part) | The refusal "until the UV transfer exists" ends with the transfer: a GoZ return that changes a painted object's UVs moves the paint (the Attach refusal stays) | §11.3 |
+
+Still open: P-8, P-9, P-11, P-14 … P-17.
 
 ## 2. The data model (Core part)
 
@@ -250,7 +278,7 @@ Fixes the same day (container numbers, the same probe):
   has the same stack and other pixels); `apply_goz_return` refuses an in-place return that changes a painted object's UVs
   (`plan.uvs`). Tests: `tests/test_attach.py`, `tests/test_goz_bridge.py`. The "shown and skipped" part of P-13 is the UV
   check (§4) and, in Phase 2, the dab skipping those faces.
-- Eyes (P-14), UV transfer (Phase 3), several layers in the UI, blend modes (P-12), undo budget (P-11).
+- Eyes (P-14), undo budget (P-11). UV transfer, several layers in the UI and blend modes (P-12): built in Phase 3, §11.
 
 ### 8.1 What P-10 means once SubD is switched on (measured 2026-11-18, Manu's question)
 
@@ -290,7 +318,16 @@ mirrored dab, the live texture re-composites only changed tiles, SubD on paints 
 the edit object changing, the panel model / SPACE row), `test_paint_texel_map.py` (+3: batched build == per-face build on
 the head's cage and SubD 1, large / concave / unmapped faces), `test_gui_imgui_window.py` (+1: the room in the real
 window - panel, a stroke through window events, box uploads of the live texture, GL state as found),
-`test_interaction_structure.py` (the new fields and commands registered).
+`test_interaction_structure.py` (the new fields and commands registered). Phase 3 (§11): `test_paint_layers.py`
+(Multiply arithmetic, merge == the two layers for both blends, every layer step one Undo step with exact Undo / Redo,
+refusals, a reused name starts transparent, the active / hidden layer, the slider preview, the display's partial
+re-composite == a whole composite with no whole composite made, save / load of three layers with their blends, the panel
+model), `test_paint_uv_transfer.py` (unchanged faces bit for bit, swapped UV squares carry their paint exactly, a face
+without old UVs gets none, every layer moves and Undo / Redo are exact, a smaller square reads bilinearly and is padded),
+`test_goz_bridge.py::test_a_uv_change_on_a_painted_object_moves_its_paint` (UV Master on the Gollum head: one Undo step,
+a colour of the surface point stays at that point - median ≤ 2/255, p95 ≤ 8/255 - Undo / Redo exact; replaces the P-13
+refusal test), `test_gui_imgui_window.py` (the layer list draws in the real window), `test_paint_format.py` (the blend
+values).
 
 Full default run in the container (2026-11-18, `xvfb-run -a python -m pytest`): 7,707 passed, 8 skipped, 1 failed —
 `tests/test_scene_menu_local_tmp.py::test_probe_menu_wiring`, which fails the same way on the base commit `25154ac`
@@ -490,6 +527,84 @@ refused), UV transfer (Phase 3; a GoZ UV change stays refused, P-13), smudge / b
 none), symmetry in a pose (P-9), a depth window for thin gaps beyond the facing test, a key for the room or the tools
 (after Manu's "Taste passt").
 
+## 11. Phase 3 — several layers, Multiply, the UV transfer (built 2026-11-19)
+
+Built on `claude/magical-cray-u17tpf` @ `cb11ebe`. Scope and P-12: Manu, 2026-11-19 (§1). Everything not named by a decision is
+`PROVISIONAL` (agent-set); still no key and no keymap entry.
+
+### 11.1 Blend modes (P-12) — `core.scene.PAINT_BLEND_MODES`, `PaintStore.composite`
+
+`PAINT_BLEND_MODES` = ("normal", "multiply") (CORE_V1_FREEZE §7.1, 2026-11-19 addendum: one more allowed value of an
+existing field; the format stays v14 - a build that knows only "normal" refuses a file naming "multiply" with the
+validation error, as Phase 1 planned). The composite, bottom to top with straight alpha `a` = pixel alpha × layer
+opacity: Normal `t + (c − t)·a`, Multiply `t + (t·c/255 − t)·a` (white changes nothing, the base and every layer beneath are
+darkened). Colour stays display-referred 8 bit (P-16 open).
+
+### 11.2 Layers — `mirai.paint.layers`, `PaintLayersCommand`, `PaintRoomController.layer_step`, the panel
+
+- **Operations** (each one History step; refused with a status line while a stroke runs, outside the room and before the
+  first stroke makes the stack): add a transparent layer above the active one ("Ebene N", the first free N; at most
+  `MAX_LAYERS` = 8, `PROVISIONAL`: 16 MiB each at 2048²), delete (not the only layer - "Leeren" clears it), rename (unique,
+  non-empty, trimmed), move one place up / down, opacity / visibility / blend, merge down, clear.
+- **The step.** A change of values or order is a `PaintStackCommand` (the stack value only). A change of pixels or of
+  which layers exist is a `PaintLayersCommand`: the stack value and, per named layer, a compressed snapshot of its pixels
+  (or none: the layer's image file / a new transparent layer); Undo and Redo put the snapshots back. The pixels of a
+  deleted layer leave the store into the step, so a name used again (a new "Ebene 2" after deleting one) never finds the
+  deleted layer's pixels - which the Phase 1 rule "pixels of a layer that left the stack stay" would have shown.
+- **Merge down**: into the layer beneath, both visible and with the same blend (Normal into Multiply cannot be one layer;
+  refused). The result keeps the lower layer's name and has opacity 1 with both opacities baked in: Normal = Porter-Duff
+  "over"; Multiply = the product of the two per-channel factors `1 − a + a·c`, written with the smallest alpha that holds it.
+  The composite stays equal up to the 8-bit rounding (pinned ≤ 1-2 / 255). Computed only where either layer has alpha.
+- **The active layer** (view state, `PaintRoomController.active`): the strokes paint on it; it falls back to the top
+  layer when it leaves the stack (an Undo). A hidden active layer is not painted (status line). Pick still reads the
+  composite.
+- **The panel** (`gui.paint_panel`, section „Ebenen“, top layer first): visibility checkbox, the name as a selectable row
+  (opacity and a non-Normal blend in the label), then for the active layer: name field (applied on Enter / leaving the
+  field), "Ebenen-Deckkraft" (previewed while held - `Application.preview_paint_layer`, no step - one step on release from
+  the value before the preview; closing the room ends a preview), "Mischmodus", buttons Neu / Hoch / Runter /
+  Zusammenführen / Leeren / Löschen (greyed where refused). All labels and the layout `PROVISIONAL`.
+- **The display** (`PaintDisplay`): a new stack value of the same size over the same base re-composites only the tiles
+  where the composite differed from the base before (`_Entry.nonbase`) or a visible layer has paint now; everything else
+  is the base on both sides. Pinned equal to a whole composite after value / order / delete / Undo / Redo steps.
+- **Save / load** needed no change: every layer is written as its PNG (a transparent one without a file), `blend` is in
+  the stack value, the flattened PNG composites every visible layer with its blend.
+
+### 11.3 The UV transfer — `mirai.paint.uv_transfer`, `Application.apply_goz_return`
+
+When a ZBrush return changes UVs of a painted object (same topology; `plan.uvs`), every layer (hidden ones too) is
+re-sampled onto the new UVs before the mesh changes, and the result joins the return's Undo step (a companion of
+`_mesh_transaction`, with the texture step when there is one). The texel map of the mesh **as it will be** (new UVs and
+positions over the old topology, read through an adapter - nothing is changed for the build) gives every texel of a
+changed face its triangle and weights; the same weights over the triangle's old corner UVs give the old UV point. The
+topology is the same, so each new UV triangle maps affinely onto its old one (audit §5.3). Texels of faces with unchanged
+UVs are copied bit for bit; texels of changed faces are read bilinearly with premultiplied alpha (only reads that touch
+paint are computed); a face that had no UVs, or old UVs outside 0-1, gives transparent texels; the result is seam-padded
+where it has paint. A transfer that fails refuses the return (status line, nothing changed). The status line names the
+moved layers and texels. Attach of differently painted objects stays refused (P-13).
+
+### 11.4 Measurements [C] (container, Gollum head at 2048², paint in 30 % / 15 % of the image; best of 2)
+
+| | container | RPC estimate ×3–3.4 [H] |
+|---|---:|---:|
+| add a layer (+ show) | 0.13–0.15 s | ≈ 0.5 s |
+| opacity preview, one frame (re-composite of the painted tiles) | 0.06–0.08 s (first 0.13 s) | ≈ 0.2–0.3 s |
+| the same as a whole composite (before this slice) | 0.17–0.24 s | ≈ 0.6–0.8 s |
+| merge down (+ show) | 0.29–0.32 s (was 0.98 s over every pixel) | ≈ 1 s |
+| Undo of the merge / clear (+ show) | 0.12–0.14 s | ≈ 0.4–0.5 s |
+| UV transfer, all 2,234 faces new (2.26 M texels): plan / per layer | 0.58–0.82 s / 0.51–0.53 s (was 1.3 s per layer) | ≈ 2–2.8 s / 1.7 s |
+
+Reading: the steps are clicks, not drags, except the opacity slider; its preview costs a frame of re-composite per
+change of the painted tiles - on a heavily painted image the reference PC will show it as a slower slider (≈ 4 frames a
+second). Not measured on the reference PC yet; if it is too slow there, the next step is compositing the layers below the
+active one once per preview (a cached "beneath" image) instead of every layer per frame.
+
+### 11.5 Not in Phase 3 (this slice)
+
+Painting a posed / morphed surface (P-8) and symmetry in a pose (P-9), Blur / Smudge, face regions / Mask Geometry as
+paint masks, the 2D UV view (all audit Phase 3, not chosen for this slice), layer masks, more blend modes, the undo budget
+(P-11: the layer steps hold compressed snapshots - 16 MiB raw per layer at 2048², a fraction compressed), a UV transfer
+for a later Mirai UV tool (the function takes any old / new UVs of one topology), keys (after "Taste passt").
+
 ## Praxistest für Manu (Deutsch, ca. 5 Minuten, optional)
 
 Phase 1 hat nur einen sichtbaren Teil, die UV-Prüfung:
@@ -527,3 +642,25 @@ der SubD-Fläche (P-10), Gesicht in Ruhe (P-8 offen: in einer Pose lehnt der Rau
     sie wieder da? Im Ordner `<Szene>_textures/` liegt die Ebene und das `…_paint_flat_….png`.
 
 Tasten, die Dir passen, bitte mit „Taste passt“ (für die Keymap); Panel-Aufbau und Werte sind vorläufig.
+
+## Praxistest Ebenen und UV-Transfer (Phase 3) für Manu (Deutsch, ca. 15 Minuten)
+
+1. `Gollum_Head_rigging_test` öffnen, Kopf als Edit-Objekt, SPACE → **„Paint Room öffnen“**, einen Strich malen (legt
+   „Ebene 1“ an). Im Panel unten erscheint der Abschnitt **„Ebenen“**.
+2. **Neu**: „Ebene 2“ liegt oben und ist aktiv (hervorgehoben). Eine andere Farbe malen. Klick auf „Ebene 1“: malt der
+   nächste Strich wieder dort? Häkchen bei „Ebene 2“ weg: verschwindet sie, und lässt sich auf ihr (ausgeblendet) nicht
+   malen?
+3. „Ebene 2“ aktiv, **Mischmodus → Multiplizieren**, ein mittleres Rot oder Braun über die Wange: dunkelt es die Haut
+   ab, statt sie zu überdecken? Passt das für Adern / Flecken?
+4. **Ebenen-Deckkraft** ziehen: folgt das Bild beim Ziehen flüssig genug? (Auf einem stark bemalten Bild ist das der
+   langsamste Teil, §11.4.) Nach dem Loslassen: **Strg+Z** nimmt die ganze Änderung in einem Schritt zurück?
+5. **Hoch / Runter**, **Name** ändern (Enter), **Leeren**, **Löschen**, jeweils Strg+Z: alles wie vorher?
+6. Zwei Normal-Ebenen, die obere auf 50 %: **Zusammenführen** – sieht das Bild danach genauso aus? (Mit verschiedenen
+   Mischmodi ist der Knopf grau.)
+7. Strg+S, Szene neu laden: alle Ebenen mit Deckkraft und Mischmodus wieder da? Das `…_paint_flat_….png` zeigt alle
+   sichtbaren Ebenen.
+8. **UV-Transfer:** den bemalten Kopf an ZBrush schicken, dort UV Master neu auswickeln, zurück nach Mirai, „Übernehmen“.
+   (SPACE-Zeile „ZBrush übernehmen: …“). Die Statuszeile sagt „paint moved to the new UVs“. Liegt die Bemalung an derselben Stelle wie vorher (Lippen, Lider,
+   Nähte)? Strg+Z: alte UVs und alte Bemalung zurück? Wie lange hat das Übernehmen gedauert?
+
+Panel-Aufbau, Beschriftungen und die Grenze von 8 Ebenen sind vorläufig.
