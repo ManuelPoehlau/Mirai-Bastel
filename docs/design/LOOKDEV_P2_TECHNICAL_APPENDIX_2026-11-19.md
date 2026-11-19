@@ -1,6 +1,6 @@
 # LookDev Room P2: Technical Appendix
 
-**Status:** PROPOSAL, a companion to
+**Status:** PROPOSAL (decisions LD-D1 … LD-D14 by Manu, 2026-11-19, in the main proposal's §0), a companion to
 [LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md](LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md). It is
 documentation only, at `origin/main` @ `a3bfcc0`, and uses the same evidence tags: [V] verified, [M-RPC] / [M-C]
 measured, [P] proposal, [E] estimate, [O] open for Manu.
@@ -25,8 +25,8 @@ measured, [P] proposal, [E] estimate, [O] open for Manu.
 | P0 §2.10 | background hard-coded | still `main.py:715` [V] | LookDev background from state; Worklight constant unchanged |
 | P0 §5.7 / addenda | cube RGBA16F works; corner seams fixed; CPU prefilter 25 / 40 / 71 s | measured [M-RPC] | cube deferred; GPU prefilter probe (LD-0 c) |
 | P0 §8 D-L3 | linear colour path for LookDev only | the eye built a *mixed* path; never decided for the whole character | one linear pipeline incl. the eye's LookDev variant (proposal §7, §11) |
-| P0 §8 D-L6 | display mode or workspace; overlays; tools; Hide; quad normal | Eye: "im Worklight-Modus"; the rest open | room, tools usable, Hide respected, interpolated normals (proposal §2, §9) |
-| P0 §8 D-L8 | deformation budget | open | LD-D10 narrows it (still / slow poses ≥ 30 fps) |
+| P0 §8 D-L6 | display mode or workspace; overlays; tools; Hide; quad normal | Eye: "im Worklight-Modus"; the rest open | room, tools usable, Hide respected, interpolated normals (proposal §2, §9); → LD-D1 / LD-D2 decided 2026-11-19 |
+| P0 §8 D-L8 | deformation budget | open | LD-D10 narrows it (still / slow poses ≥ 30 fps); → decided 2026-11-19 as target and measurement criterion |
 | P0 §6.3 / D-L5 | main PC unknown → reference PC is the main PC | holds (REFERENCE_HARDWARE §1) | every budget is the 9800 GTX's |
 | P0 §3.1 | SubD unavailable above 25,000 derived faces | holds; Gollum at level 1 (AD-037 §10.3) | documented limitation; LookDev adds no reduction |
 | P0 §7 #11 | a "LookDev Scene Adapter" layer is not needed | holds | `ObjectController.sync_views` resolves `LookDraw` as it resolves `EyeDraw` |
@@ -190,7 +190,7 @@ vec3  lookdev_output(vec3 linear_rgb);    // exposure -> tone curve -> srgb_enco
 | E13 | Selected painted head keeps its albedo in LookDev (I-7 / `_shown_texture` conditions) | GL | LD-1 | albedo drawn |
 | E14 | Each pass leaves GL state as found | GL | LD-1 | the `test_gui_imgui_window.py` pattern |
 | E15 | Picking unchanged in the room (`test_gl_gpu_picking.py`, `test_gl_morph_picking.py` under LookDev) | GL | LD-1 | same IDs |
-| E16 | D3 with LookDev off | probe | LD-1 | within noise of the last reference run |
+| E16 | D3 with LookDev off: the Modelling Room unchanged (LD-D10, decided 2026-11-19) | probe | LD-1 | within noise of the last reference run |
 | E17 | `LookMaterial` contract tests: validation, v15 by content, a file without looks is the same text, round trip, Undo, duplicate, mirror, `replace_scene` | headless | LD-2 | as `test_paint_format.py` |
 | E18 | `view.lookdev` defensive load (bad values skipped) and the documented drop by a capture without the section | headless | LD-2 | skipped list; limitation pinned |
 | E19 | Viewport capture writes the LookDev view without overlays | GL | LD-2 | PNG equals a render without overlays |
