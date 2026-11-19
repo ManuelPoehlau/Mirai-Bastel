@@ -1,8 +1,9 @@
 # AD-038 — LookDev Room M1 (LD-0 / LD-1): room frame, LookDev pass, linear colour pipeline, eye variant, studio, materials
 
-**Status:** **PROPOSED (Architecture Gate), 2026-11-19** — a draft for Manu's review. Nothing in `src/`, `tests/`,
-`config/keymap.json` or `scenes/` is changed by it. LD-1 starts only after (1) Manu accepts this AD and (2) Manu has run
-the LD-0 probe on the reference PC (§13). The number AD-038 and every new name below are `PROVISIONAL`.
+**Status:** **ACCEPTED (Manu, 2026-11-19)**: „AD-038 freigegeben, Fragen 2–4 wie vorgeschlagen, Frage 3 würde ich
+Neutral wählen“ (§15). **LD-0 run on the reference PC (Manu, 2026-11-19)**: LD-D10 met with a wide margin (§16.1).
+LD-1 is unblocked; nothing in `src/` is built yet. Drafted 2026-11-19 as PROPOSED (Architecture Gate). The number
+AD-038 stays; new class, file and panel names remain `PROVISIONAL` until built.
 **Basis:** [LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md)
 (decisions LD-D1 … LD-D14, Manu 2026-11-19, its §0) and its
 [technical appendix](../design/LOOKDEV_P2_TECHNICAL_APPENDIX_2026-11-19.md).
@@ -53,7 +54,10 @@ estimate, **[O]** open for Manu.
   - Zwei Worklight-Stellen im Augen-Shader fehlten in der Liste des Vorschlags.
 - **LD-0-Sonde** `experiments/drag_cost/probe_lookdev.py`: Im Container läuft sie vollständig, aber nur als
   Funktionstest. Die Zahlen deines Referenz-PCs entscheiden (§13, §16).
-- **Stopp:** LD-1 beginnt erst nach deiner Freigabe dieses AD und deinem Lauf der Sonde.
+- **Stand 2026-11-19:** von dir freigegeben, die Sonde lief auf dem Referenz-PC. Der gerahmte Kopf braucht 1,7–2,2 ms
+  GPU bei 1024×768, also 5–7 % von 33,3 ms. LookDev ist in jeder Ansicht billiger als das Worklight. Das erste
+  Kompilieren einer Augen-Variante dauert bis 0,6 s, deshalb wird beim Betreten mit Statuszeile vorkompiliert (§16.1).
+  LD-1 kann beginnen.
 
 ---
 
@@ -411,7 +415,9 @@ Unchanged in both:
     Lambert albedo × `sh9(n)` is the diffuse light. LD-0 container: 2.4–3.6 ms [M-C];
   - `sh9_eval`, `srgb_decode` / `srgb_encode`, the tone curves, `lookdev_output`;
   - `frame_uniforms(state, camera)`.
-- **When SH9 is recomputed:** only on a studio *content* or intensity change, cached by that key. Rotation is a uniform
+- **When SH9 is recomputed:** only on a studio *content* change (a preset, or an edit of the studio itself), cached
+  by that key. The projection costs 10–13 ms on the reference PC (§16.1). Intensity scales it as a uniform
+  (`u_ld_env_intensity`), and rotation is a uniform
   (`u_ld_env_rot`, world → studio), applied to the normal and the reflection vector; the lights rotate in Python.
 - **Studio space:** fixed to the world. "Licht folgt Kamera" takes the camera's basis, like
   `light_rig.frame_for(SPACE_CAMERA)`.
@@ -472,9 +478,14 @@ Unchanged in both:
   3. fewer studio rectangles for rough skin.
 
   The quality manager (LD-3) automates them later. It can never change mesh, SubD, morph, pose, picking or materials.
-- **Compile:** variants compile lazily on first draw. LD-0 times a cold eye-variant compile (§16). If the reference PC
-  shows a visible stall on entry, LD-1 compiles the room's two or three programs once on entry with a status line;
-  this is not a per-frame cost.
+- **Compile (decided, §15 Q4):** on the reference PC a cold eye-variant compile takes 0.24–0.6 s, and the driver cache
+  does not help across processes (§16.1). `open_lookdev` therefore compiles the programs the room will draw first:
+  - the eye LOOKDEV variant of the drawn eyes (usually one for both);
+  - the skin variants the drawn objects need.
+
+  This happens once per process, before the first LookDev frame, behind the status line "LookDev: Shader werden
+  vorbereitet …". Later variants (another object with or without a map) still compile lazily. It is not a per-frame
+  cost.
 
 ---
 
@@ -531,8 +542,8 @@ GL tests run in their own process under xvfb (CLAUDE.md "Testing"); scope per AG
 
 ## 13. Stop points
 
-1. **Now:** this AD (PROPOSED) and the LD-0 probe. **Stop.**
-2. **Before LD-1:**
+1. **Done 2026-11-19:** this AD and the LD-0 probe (container).
+2. **Before LD-1 — done 2026-11-19** (AD accepted, reference-PC run §16.1):
    - Manu accepts AD-038, with or without changes to §14 / §15;
    - Manu runs `probe_lookdev.py` on the reference PC (§16). Its `ld frame` rows decide whether M1 ships the full skin
      or starts with a lever.
@@ -562,16 +573,18 @@ GL tests run in their own process under xvfb (CLAUDE.md "Testing"); scope per AG
 
 ---
 
-## 15. Open questions for Manu [O]
+## 15. Questions for Manu — answered 2026-11-19
 
-1. **Accept AD-038** as it stands, or with changes to D1–D9?
-2. **Tone curve for M1:** luminance Reinhard as the default, with a filmic shoulder tried in the practical test? (No
-   architecture consequence either way.)
-3. **Default material on entry:** every object Neutral until a preset is picked (proposed, no guessing from names), or
-   Creature Skin pre-selected for the edit object?
-4. **Compile on entry:** if the reference PC shows a visible first-use stall, compile the room's programs once on entry
-   with a status line (§9)? The default is lazy compile.
-5. Still open from the proposal and unchanged here: LD-D8 (before P3), LD-D15 (in the M1 test), LD-D16 (later).
+Manu: „AD-038 freigegeben, Fragen 2–4 wie vorgeschlagen, Frage 3 würde ich Neutral wählen.“
+
+1. **AD-038:** accepted as it stands, D1–D9 included.
+2. **Tone curve:** luminance Reinhard is the M1 default, with "Clamp" as the diagnostic. A filmic shoulder is tried in
+   the practical test; changing it needs no architecture change.
+3. **Default material on entry:** every object without a session material is **Neutral** until the artist picks a
+   preset. Nothing is guessed from object names.
+4. **Compile on entry:** yes. The reference PC shows a visible first-use stall, so the room's programs compile on entry
+   with a status line (§9).
+5. Still open from the proposal and unchanged: LD-D8 (before P3), LD-D15 (in the M1 test), LD-D16 (later).
 
 ---
 
@@ -613,6 +626,32 @@ python experiments\drag_cost\probe_lookdev.py | Tee-Object -FilePath lookdev_ld0
 It runs 1024×768 with every extra, then 1920×1080 with the frame rows, each in its own process (about 2–4 minutes
 [E]). The results go into `experiments/drag_cost/RESULTS_LOOKDEV_REFERENCE_PC_<date>.md` from the template
 [`RESULTS_LOOKDEV_REFERENCE_PC_TEMPLATE.md`](../../experiments/drag_cost/RESULTS_LOOKDEV_REFERENCE_PC_TEMPLATE.md).
+
+### 16.1 Reference PC (Manu, 2026-11-19) [M-RPC]
+
+[`RESULTS_LOOKDEV_REFERENCE_PC_2026-11-19.md`](../../experiments/drag_cost/RESULTS_LOOKDEV_REFERENCE_PC_2026-11-19.md).
+The measured `src/` tree `716ec01d5d` = `db9fbea:src`. GPU p50, ms:
+
+| | 1024×768 framed (cage / SubD 1) | 1024×768 close | 1920×1080 close |
+|---|---|---|---|
+| `worklight` (today, eyes at the file's tier) | 3.00 / 5.18 | 6.59 / 9.72 | 10.95 / 14.80 |
+| `ld frame` (background + skin + eyes full) | **1.68 / 2.21** | 4.59 / 5.26 | 7.96 / 8.85 |
+| `ld no env` | 1.19 / 1.50 | 3.15 / 3.55 | 5.35 / 5.85 |
+
+What it decides:
+- **LD-D10 met:** the framed head costs 5–7 % of the 33.3 ms frame at 1024×768; the worst case measured is 8.85 ms.
+  M1 ships the full skin model, studio specular included. No lever is the default.
+- **LookDev is cheaper than the Worklight** in every view, by 1.6–7.2 ms at the same eye tier. The likely cause [H] is
+  the Worklight's per-fragment face-data path. Entering the room does not slow the frame. The `worklight` / `app
+  render` rows are the E16 baseline.
+- **UV request:** a one-time 15 ms (cage) / 61 ms (SubD 1), almost all of it `_triangle_uvs_flat()`. It is set on entry
+  with no status line of its own. Vectorising that loop is a later, separate optimisation.
+- **Compile:** 0.24–0.6 s per cold eye variant, so the room pre-compiles on entry (§9, §15 Q4).
+- **P3:**
+  - the GPU prefilter works: a 128² cube chain takes 12 ms (64 samples) against 40 s on the CPU;
+  - depth textures and PCF work;
+  - the unoptimised shadow stand-in adds 9–11.5 ms. A P3 shadow map renders only on a pose, geometry or key change,
+    smaller first.
 
 **What decides what:**
 

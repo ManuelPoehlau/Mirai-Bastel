@@ -188,6 +188,14 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
   [`RESULTS_EYE_LOOK_REFERENCE_PC_2026-11-16.md`](../../experiments/drag_cost/RESULTS_EYE_LOOK_REFERENCE_PC_2026-11-16.md)):**
   die Reflexe kosten in der Eye-Lab-Großaufnahme (Auge halb so hoch wie das Bild) 0,9 / 2,3 ms GPU zusätzlich,
   höchstens 3,4 ms in den gemessenen Ansichten; die Stufe „schnell“ kostet so viel wie vorher.
+- **LookDev LD-0 (Manu, 2026-11-19, AD-038,
+  [`RESULTS_LOOKDEV_REFERENCE_PC_2026-11-19.md`](../../experiments/drag_cost/RESULTS_LOOKDEV_REFERENCE_PC_2026-11-19.md)):**
+  - Gollum-Kopf mit zwei Augen, gerahmt bei 1024×768: ein stellvertretendes LookDev-Hautprogramm samt Augen
+    („full“) und Hintergrund kostet 1,7 ms (Käfig) bzw. 2,2 ms (SubD 1) GPU. Das Worklight braucht 3,0 / 5,2 ms.
+  - Großaufnahme bei 1920×1080: höchstens 8,9 ms.
+  - Kaltes Kompilieren einer Augen-Variante: 0,24–0,6 s; der Treiber-Cache hilft zwischen Prozessen nicht.
+  - Eine RGBA16F-Cubemap 128² auf der GPU vorgefiltert: 12 ms (64 Proben), auf der CPU waren es 40 s.
+  - Tiefentexturen mit Vergleichsmodus funktionieren.
 
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 
