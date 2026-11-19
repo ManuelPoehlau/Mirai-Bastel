@@ -294,6 +294,8 @@ class RenderMesh:
             declare_uvs(TRIANGLE_UVS)
         # AD-026: ob `triangle_uvs` gerade existiert (Mesh mit UVs und Material mit Textur).
         self._uv_active = False
+        # AD-038 §4.1: a pass other than the Worklight (LookDev) asks for the UVs without a Worklight texture.
+        self._uvs_requested = False
         # Änderungs-Journal der Mesh (AD-023 V1): was sich seit dem letzten Sync geändert hat.
         self._watch = mesh.watch()
         # AD-032 §11.3: a stage's position table hands moved positions over as arrays (module docstring); None = a mesh
@@ -647,8 +649,23 @@ class RenderMesh:
 
     # -- UVs (AD-026, Modul-Docstring) -------------------------------------------------------
 
+    def set_uvs_requested(self, requested: bool) -> None:
+        """AD-038 §4.1: keep `triangle_uvs` on the GPU although the Worklight material has no texture (the LookDev
+        pass reads them for its albedo map). The Worklight draw stays untextured: `_push_texture` still pushes the
+        material's texture only. A change marks the material dirty; the next sync allocates or frees the UVs."""
+        requested = bool(requested)
+        if requested == self._uvs_requested:
+            return
+        self._uvs_requested = requested
+        self.mark_material_dirty()
+
+    @property
+    def uvs_requested(self) -> bool:
+        return self._uvs_requested
+
     def _uv_wanted(self) -> bool:
-        return getattr(self.material, "texture", None) is not None and self.mesh.has_face_uvs()
+        return ((getattr(self.material, "texture", None) is not None or self._uvs_requested)
+                and self.mesh.has_face_uvs())
 
     def _triangle_uv_values(self, t: int, tri, corners: dict | None = None) -> tuple:
         if tri is None or self._triangle_hidden(t, tri):
@@ -1290,6 +1307,9 @@ class RenderMesh:
 
     def _sync_material(self) -> None:
         if self.material is None:
+            # AD-038 §4.1: an unbound material (the edit mesh at the default colour) may still carry a UV request.
+            # With no request this is today's early return (`_uv_wanted()` is False, `_uv_active` stays False).
+            self._sync_uv_resource()
             return
         self.stats.count("material_updates")
         packet = self.material.uniform_packet()

@@ -188,6 +188,9 @@ _TOOL_LINE_DRAW_ORDER = (
 _TOOL_DEPTH_TESTED_LINES = (TOOL_ACTIVE_LAYER, TOOL_MIRROR_LAYER, TOOL_CLIPPED_LAYER)
 from .gl_render_store import DEFAULT_BASE_COLOR
 
+#: AD-038 §4.1: the key of the edit object in `Viewport._uv_requests` (entry keys are the host's opaque keys).
+EDIT_KEY = ("viewport", "edit")
+
 
 def _mat4_mul(a: list[float], b: list[float]) -> list[float]:
     """a·b für spaltenweise 4x4-Matrizen (GL-Konvention wie die Kamera-Matrizen)."""
@@ -234,6 +237,10 @@ class Viewport:
         self._eye_pass = None
         # AD-021 M2-1: Objekt -> Welt des Edit-Objekts (None = Identität).
         self.model_matrix: list[float] | None = None
+        # AD-038 §4.1 (C3): the keys (`EDIT_KEY`, entry keys) whose drawn RenderMesh keeps its triangle UVs for a pass
+        # other than the Worklight; applied where the material is handed over, so a SubD / morph / pose surface created
+        # later gets it too. Empty in the Worklight: every RenderMesh then has today's resources.
+        self._uv_requests: set = set()
         # Optional (None = headless/TraceStore: es entsteht kein GL-Objekt).
         self.point_overlay = (
             point_overlay_type() if point_overlay_type is not None else None
@@ -367,6 +374,8 @@ class Viewport:
                 entry.bind_camera(camera)
                 entry.mark_camera_dirty(aspect=self.render_mesh.aspect)
             self.object_entries[key] = entry
+            if key in self._uv_requests:
+                entry.set_uvs_requested(True)
             changed = True
         if self._entry_display.get(key) != display:
             self._entry_display[key] = display
@@ -410,6 +419,7 @@ class Viewport:
         entry = self.object_entries.pop(key, None)
         self._entry_display.pop(key, None)
         self._eye_entries.pop(key, None)
+        self._uv_requests.discard(key)
         self._release_entry_surface(key)
         if entry is None:
             return False
@@ -417,6 +427,27 @@ class Viewport:
         if release is not None:
             release()
         return True
+
+    def _request_uvs(self, key, on: bool) -> None:
+        """AD-038 §4.1: keep (or stop keeping) the triangle UVs of `key`'s RenderMesh and of the surface drawn in its
+        place. Set when a LookDraw gains or loses an albedo source, never per frame."""
+        if on == (key in self._uv_requests):
+            return
+        if on:
+            self._uv_requests.add(key)
+        else:
+            self._uv_requests.discard(key)
+        if key == EDIT_KEY:
+            for rm in (self.render_mesh, self.surface_render_mesh):
+                if rm is not None:
+                    rm.set_uvs_requested(on)
+            return
+        entry = self.object_entries.get(key)
+        if entry is not None:
+            entry.set_uvs_requested(on)
+        rm = self.entry_surface_render_meshes.get(key)
+        if rm is not None:
+            rm.set_uvs_requested(on)
 
     def _apply_entry_style(self, key, entry: RenderMesh) -> None:
         set_draw_style = getattr(entry.store, "set_draw_style", None)
@@ -463,6 +494,7 @@ class Viewport:
         self._face_tints = {}  # ... and its region colours
         self._surface_tint_key = None
         self.render_mesh = RenderMesh(mesh, overlay=self.overlay, store_type=self._store_type)
+        self.render_mesh.set_uvs_requested(EDIT_KEY in self._uv_requests)
         if old.material is not None:
             self.render_mesh.bind_material(old.material)
             self.render_mesh.mark_material_dirty()
@@ -662,6 +694,8 @@ class Viewport:
         if entry.material is not None and rm.material is not entry.material:
             rm.bind_material(entry.material)
             rm.mark_material_dirty()
+        if rm.uvs_requested != entry.uvs_requested:
+            rm.set_uvs_requested(entry.uvs_requested)
         if rm.model_matrix != entry.model_matrix:
             rm.set_model_matrix(entry.model_matrix)
         if rebuilt:
@@ -690,6 +724,7 @@ class Viewport:
             if self.render_mesh.material is not None:
                 rm.bind_material(self.render_mesh.material)
                 rm.mark_material_dirty()
+            rm.set_uvs_requested(self.render_mesh.uvs_requested)
             rm.set_model_matrix(self.model_matrix)
             self._apply_draw_style()
         elif getattr(self.surface_provider, "surface_topology_changed", False):

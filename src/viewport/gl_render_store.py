@@ -740,44 +740,97 @@ class GLRenderStore(ResourceStore):
     def _flush_face_data(self) -> bool:
         """Uploads pending face data (glBufferData on a new size, else one glBufferSubData per
         merged changed range) and binds the textures. False = no face data to read."""
-        import ctypes
-
         from pyglet import gl
 
         ready = bool(self._face_buffers)
         for name, (fmt, unit, _uniform) in self._face_buffers.items():
-            data = self._face_cpu.get(name)
-            if not data:
-                if name not in self._optional_face_buffers:
-                    ready = False
-                continue
-            buffer_id, texture_id, size = self._face_gl.get(name, (0, 0, 0))
-            gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
-            if not buffer_id:
-                buffer, texture = gl.GLuint(), gl.GLuint()
-                gl.glGenBuffers(1, ctypes.byref(buffer))
-                gl.glGenTextures(1, ctypes.byref(texture))
-                buffer_id, texture_id = buffer.value, texture.value
-                gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, buffer_id)
-                gl.glBindTexture(gl.GL_TEXTURE_BUFFER, texture_id)
-                gl.glTexBuffer(gl.GL_TEXTURE_BUFFER, getattr(gl, fmt), buffer_id)
-                gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, 0)
-            dirty = self._face_dirty.pop(name, False)
-            if size != len(data):
-                dirty = None
-            if dirty is not False:
-                address = data.buffer_info()[0]
-                gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, buffer_id)
-                if dirty is None:
-                    gl.glBufferData(gl.GL_TEXTURE_BUFFER, len(data) * 4, address, gl.GL_DYNAMIC_DRAW)
-                else:
-                    for lo, hi in self._merged_ranges(dirty):
-                        gl.glBufferSubData(gl.GL_TEXTURE_BUFFER, lo * 4, (hi - lo) * 4, address + lo * 4)
-                gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, 0)
-            self._face_gl[name] = (buffer_id, texture_id, len(data))
-            gl.glBindTexture(gl.GL_TEXTURE_BUFFER, texture_id)
+            if not self._flush_face_buffer(name, fmt, unit) and name not in self._optional_face_buffers:
+                ready = False
         gl.glActiveTexture(gl.GL_TEXTURE0)
         return ready
+
+    def _flush_face_buffer(self, name: str, fmt: str, unit: int) -> bool:
+        """One face-data buffer of `_flush_face_data`: uploaded if pending and bound to `unit` (left active). False =
+        it holds no data (nothing bound)."""
+        import ctypes
+
+        from pyglet import gl
+
+        data = self._face_cpu.get(name)
+        if not data:
+            return False
+        buffer_id, texture_id, size = self._face_gl.get(name, (0, 0, 0))
+        gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
+        if not buffer_id:
+            buffer, texture = gl.GLuint(), gl.GLuint()
+            gl.glGenBuffers(1, ctypes.byref(buffer))
+            gl.glGenTextures(1, ctypes.byref(texture))
+            buffer_id, texture_id = buffer.value, texture.value
+            gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, buffer_id)
+            gl.glBindTexture(gl.GL_TEXTURE_BUFFER, texture_id)
+            gl.glTexBuffer(gl.GL_TEXTURE_BUFFER, getattr(gl, fmt), buffer_id)
+            gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, 0)
+        dirty = self._face_dirty.pop(name, False)
+        if size != len(data):
+            dirty = None
+        if dirty is not False:
+            address = data.buffer_info()[0]
+            gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, buffer_id)
+            if dirty is None:
+                gl.glBufferData(gl.GL_TEXTURE_BUFFER, len(data) * 4, address, gl.GL_DYNAMIC_DRAW)
+            else:
+                for lo, hi in self._merged_ranges(dirty):
+                    gl.glBufferSubData(gl.GL_TEXTURE_BUFFER, lo * 4, (hi - lo) * 4, address + lo * 4)
+            gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, 0)
+        self._face_gl[name] = (buffer_id, texture_id, len(data))
+        gl.glBindTexture(gl.GL_TEXTURE_BUFFER, texture_id)
+        return True
+
+    # -- AD-038 §4.2 / §4.3: the LookDev pass's two accesses (no other face data is exposed) --------------------------
+
+    def _triangle_uv_name(self) -> str | None:
+        for name in self._optional_face_buffers:
+            if self._face_buffers[name][2] == "u_triangle_uvs":
+                return name
+        return None
+
+    def bind_triangle_uvs(self, unit: int) -> bool:
+        """Uploads the triangle UVs if pending (as the Worklight draw would) and binds their buffer texture to `unit`;
+        unit 0 is active afterwards. False = this store has none (nothing bound). Face normals, corners and the
+        triangle -> face rows stay private (AD-038 §4.2)."""
+        from pyglet import gl
+
+        name = self._triangle_uv_name()
+        if name is None:
+            return False
+        fmt, _unit, _uniform = self._face_buffers[name]
+        bound = self._flush_face_buffer(name, fmt, unit)
+        gl.glActiveTexture(gl.GL_TEXTURE0)
+        return bound
+
+    @staticmethod
+    def unbind_triangle_uvs(unit: int) -> None:
+        from pyglet import gl
+
+        gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
+        gl.glBindTexture(gl.GL_TEXTURE_BUFFER, 0)
+        gl.glActiveTexture(gl.GL_TEXTURE0)
+
+    @classmethod
+    def texture_binding(cls, source) -> tuple[int, int] | None:
+        """GL `(target, name)` of a texture source the store can show (AD-038 §4.3): a path through the shared cache
+        `texture()`, a `LiveTexture` uploaded first when it has pending boxes (once, whoever draws it first). None =
+        no source or an unreadable image. The caller binds the unit."""
+        from pyglet import gl
+
+        if source is None:
+            return None
+        if isinstance(source, str):
+            texture = cls.texture(source)
+            return None if texture is None else (texture.target, texture.id)
+        if source.gl_name is None or source.pending:
+            _upload_live(source)
+        return (gl.GL_TEXTURE_2D, source.gl_name)
 
     def _bind_vertex_textures(self, vlist) -> bool:
         """O2: binds the VertexList's own `position` and `normal` buffers as R32F buffer textures (units

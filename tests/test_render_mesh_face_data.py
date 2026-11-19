@@ -190,3 +190,104 @@ def test_ngon_rows_keep_their_corner_count(n):
     assert _rows(rm)[0][3] == n
     assert _corner_vertices(rm, mesh.all_face_ids()[0]) == ids[:4]
     assert [int(r) for r in rm.store.data(TRIANGLE_FACES)] == [0] * (n - 2)
+
+
+# -- AD-038 §4.1 (E12b): the UV request of a pass other than the Worklight ----------------------------------------------
+
+def _uv_cube():
+    mesh = create_cube()
+    for face in mesh.all_face_ids():
+        mesh.set_face_uvs(face, [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)][:len(mesh.face_vertices(face))])
+    return mesh
+
+
+def _synced(mesh, texture=None):
+    from viewport.material import Material
+
+    rm = RenderMesh(mesh, store_type=TraceStore)
+    rm.bind_material(Material((0.5, 0.5, 0.5), texture=texture))
+    rm.mark_material_dirty()
+    rm.sync()
+    return rm
+
+
+def test_uv_request_allocates_the_triangle_uvs_without_a_texture_and_frees_them():
+    from viewport.render_mesh import TRIANGLE_UVS
+
+    mesh = _uv_cube()
+    rm = _synced(mesh)
+    before = dict(rm.resource_ids())
+    assert not rm.store.has(TRIANGLE_UVS)  # today: no texture, no UVs on the GPU
+    pushed = []
+    rm.store.set_texture = pushed.append
+    rm.set_uvs_requested(True)
+    rm.sync()
+    assert rm.store.has(TRIANGLE_UVS) and pushed == [None]  # the Worklight draw stays untextured
+    assert rm.store.data(TRIANGLE_UVS) == _synced(mesh, texture="x.png").store.data(TRIANGLE_UVS)
+    rm.set_uvs_requested(True)  # no change: nothing marked
+    assert not rm.dirty.material
+    rm.set_uvs_requested(False)
+    rm.sync()
+    assert not rm.store.has(TRIANGLE_UVS)
+    assert {k: v for k, v in rm.resource_ids().items() if k != TRIANGLE_UVS} == before  # no rebuild
+
+
+def test_uv_request_on_a_mesh_without_uvs_and_off_everywhere_is_today():
+    from viewport.render_mesh import TRIANGLE_UVS
+
+    rm = _synced(create_cube())
+    rm.set_uvs_requested(True)
+    rm.sync()
+    assert not rm.store.has(TRIANGLE_UVS)
+    textured = _synced(_uv_cube(), texture="x.png")
+    textured.set_uvs_requested(True)
+    textured.set_uvs_requested(False)
+    textured.sync()
+    assert textured.store.has(TRIANGLE_UVS)  # the texture keeps them
+
+
+def test_viewport_uv_request_reaches_the_surfaces_drawn_in_place():
+    """C3: the request is held per key and handed over where the material is: the edit object's surface (SubD,
+    morph, pose) and an entry's surface, both created after the request."""
+    from core import Selection
+    from mirai.viewport.camera import OrbitCamera
+    from viewport import Viewport
+    from viewport.render_mesh import TRIANGLE_UVS
+    from viewport.viewport import EDIT_KEY
+
+    class _Provider:
+        dirty = False
+
+        def __init__(self):
+            self.surface_mesh = None
+            self.entry_surfaces = {}
+
+        def sync(self, mesh, selection):
+            return set()
+
+    vp = Viewport(_uv_cube(), selection=Selection())
+    vp.bind_camera(OrbitCamera())
+    vp.set_object_entry("other", _uv_cube())
+    provider = _Provider()
+    vp.set_surface_provider(provider)
+    vp.sync()
+    assert not vp._uv_requests
+    vp._request_uvs(EDIT_KEY, True)
+    vp._request_uvs("other", True)
+    vp._request_uvs("later", True)  # an entry that does not exist yet gets it when created
+    provider.surface_mesh = _uv_cube()
+    provider.entry_surfaces = {"other": _uv_cube()}
+    provider.dirty = True
+    vp.set_object_entry("later", _uv_cube())
+    vp.sync()
+    for rm in (vp.render_mesh, vp.surface_render_mesh, vp.object_entries["other"],
+               vp.entry_surface_render_meshes["other"], vp.object_entries["later"]):
+        assert rm.uvs_requested and rm.store.has(TRIANGLE_UVS)
+    vp._request_uvs(EDIT_KEY, False)
+    vp._request_uvs("other", False)
+    vp.sync()
+    for rm in (vp.render_mesh, vp.surface_render_mesh, vp.object_entries["other"],
+               vp.entry_surface_render_meshes["other"]):
+        assert not rm.uvs_requested and not rm.store.has(TRIANGLE_UVS)
+    vp.remove_object_entry("later")
+    assert vp._uv_requests == set()
