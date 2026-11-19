@@ -1131,6 +1131,38 @@ def test_sources_without_a_map_are_the_ones_before_ad035():
         assert "sclera_albedo(entry)" in mapped and "sclera_albedo(p)" in mapped  # the two reads, one mapping
 
 
+#: AD-038 §5.4 (C6): every Worklight eye source - all `shell_sources` variants with `lookdev` off (the 8 arguments,
+#: the sclera map included), `parity_sources` for both fits and `iris_table_sources`, 1,030 sources in that order,
+#: floats normalised as in `_source_digest`. Taken from `main` @ 89f61fc, before LookDev touched `eye_shaders.py`.
+PINNED_WORKLIGHT_SOURCES_SHA256 = "714a683b3ab967518c032312fc8e2327717d7f3d3afa0389bffa40d9b6df9bf0"
+
+
+def _all_sources_digest(**kw) -> tuple[int, str]:
+    import hashlib
+    import itertools
+    import re
+
+    floats = re.compile(r"-?\d+\.\d+(?:e[-+]?\d+)?")
+    digest, count = hashlib.sha256(), 0
+    locations = {"position": 0, "normal": 1}
+    sources = []
+    for variant, level, reflection, fit, debug, look, iris, sclera in itertools.product(
+            ("V2", "V3"), range(4), ("key", "studio"), (False, True), (False, True), (False, True), (False, True),
+            (False, True)):
+        sources += es.shell_sources(locations, variant, level, reflection, fit, debug, look, iris, sclera, **kw)
+    if not kw:
+        sources += es.parity_sources(False) + es.parity_sources(True) + es.iris_table_sources()
+    for src, _kind in sources:
+        digest.update(floats.sub(lambda m: f"{float(m.group(0)):.9g}", src).encode())
+        count += 1
+    return count, digest.hexdigest()
+
+
+def test_every_worklight_source_is_the_one_before_lookdev():
+    """AD-038 §5.4 / C6: the LookDev variant leaves every Worklight eye source character for character as it was."""
+    assert _all_sources_digest() == (1030, PINNED_WORKLIGHT_SOURCES_SHA256)
+
+
 def test_sclera_st_glsl_matches_numpy(parity):
     """The front disc's GLSL against `eye_optics.sclera_st`: sclera and cornea points, both poles, beyond the rim."""
     rng = np.random.default_rng(23)
