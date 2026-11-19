@@ -78,6 +78,8 @@ class TransferPlan:
     faces: int
     #: seconds the plan took (the texel map of the new layout and the old UV points; the status line's split)
     seconds: float = 0.0
+    #: the bilinear read's four neighbours and weights per moved texel (`_taps`), the same for every layer
+    taps: tuple | None = None
 
     @property
     def texels(self) -> int:
@@ -106,21 +108,42 @@ def plan(mesh: Mesh, new_uvs: dict, width: int, height: int, positions: dict | N
     in_use[move_slots] = True
     used = np.flatnonzero(in_use)
     old = np.full((int(texel_map.tri_face.size), 3, 2), np.nan, dtype=np.float64)
-    for s in used.tolist():
-        fid = FaceId(int(texel_map.tri_face[s]))
-        uvs = mesh.face_uvs(fid)
-        if uvs is None:
-            continue
-        corner = dict(zip(mesh.face_vertices(fid), uvs))
-        old[s] = [corner[VertexId(int(v))] for v in texel_map.tri_vertices[s]]
+    if used.size:
+        # one pass over the faces, then a sorted lookup of (face, corner) for every triangle (the reference PC:
+        # "rest of the plan" 0.4-0.55 s with a Python step per triangle, 2026-11-19)
+        keys, values = [], []
+        stride = int(texel_map.tri_vertices[used].max()) + 1
+        for f in np.unique(tri_face[used]).tolist():
+            uvs = mesh.face_uvs(FaceId(f))
+            if uvs is None:
+                continue
+            keys.extend(f * stride + int(v) for v in mesh.face_vertices(FaceId(f)))
+            values.extend(uvs)
+        if keys:
+            keys_a = np.asarray(keys, dtype=np.int64)
+            order = np.argsort(keys_a)
+            keys_a, values_a = keys_a[order], np.asarray(values, dtype=np.float64)[order]
+            query = tri_face[used][:, None] * stride + texel_map.tri_vertices[used]
+            at = np.clip(np.searchsorted(keys_a, query), 0, keys_a.size - 1)
+            found = keys_a[at] == query
+            old[used] = np.where(found[..., None], values_a[at], np.nan)
     source = np.empty((move.size, 2), dtype=np.float64)
-    for a in range(0, move.size, CHUNK):  # cache-sized pieces (module docstring, "Speed")
+    small = np.int16 if max(width, height) < 32768 else np.int32
+    taps = (np.empty(move.size, bool), *(np.empty(move.size, small) for _ in range(4)),
+            np.empty(move.size, np.float32), np.empty(move.size, np.float32))
+
+    def piece(a: int) -> None:  # cache-sized pieces (module docstring, "Speed"), disjoint: safe from threads
         b = min(a + CHUNK, move.size)
         w = texel_map.bary[move[a:b]].astype(np.float64)
         tri = old[move_slots[a:b]]
         w0 = 1.0 - w[:, 0] - w[:, 1]
         source[a:b] = tri[:, 0] * w0[:, None] + tri[:, 1] * w[:, 0:1] + tri[:, 2] * w[:, 1:2]
-    return TransferPlan(width, height, texel_map, keep, move, source, len(new_uvs), time.perf_counter() - started)
+        for target, values in zip(taps, _taps(source[a:b], width, height)):
+            target[a:b] = values
+
+    _parallel(piece, list(range(0, move.size, CHUNK)))
+    return TransferPlan(width, height, texel_map, keep, move, source, len(new_uvs), time.perf_counter() - started,
+                        taps)
 
 
 def _grown(rgba: np.ndarray) -> np.ndarray:
@@ -132,57 +155,84 @@ def _grown(rgba: np.ndarray) -> np.ndarray:
     return grown
 
 
-def _bilinear(rgba: np.ndarray, uv: np.ndarray, grown: np.ndarray | None = None,
-              opaque: bool | None = None) -> np.ndarray:
-    """(n, 4) uint8: `rgba` (row 0 = v = 0) read at `uv` (n, 2) bilinearly in premultiplied alpha (plain for an opaque
-    image), float32; NaN or outside [0, 1] reads transparent."""
-    height, width = rgba.shape[:2]
-    out = np.zeros((uv.shape[0], 4), dtype=np.uint8)
+def _taps(uv: np.ndarray, width: int, height: int) -> tuple:
+    """The bilinear neighbours of `uv` (n, 2): (valid (n,) bool, xa, xb, ya, yb (n,) int16 - clamped to the image -,
+    fx, fy (n,) float32). NaN or outside [0, 1] is not valid. Shared by every layer of a transfer."""
     valid = np.isfinite(uv).all(axis=1) & (uv >= 0.0).all(axis=1) & (uv <= 1.0).all(axis=1)
-    if not valid.any():
-        return out
-    x, y = uv[valid, 0] * width - 0.5, uv[valid, 1] * height - 0.5
+    x = np.where(valid, uv[:, 0], 0.0) * width - 0.5
+    y = np.where(valid, uv[:, 1], 0.0) * height - 0.5
     x0, y0 = np.floor(x), np.floor(y)
-    # only reads that touch paint: a texel's 2 x 2 neighbourhood has alpha where the alpha mask grown by one texel
-    # towards -x / -y is set (the Gollum head at 2048²: 1.3 s for every texel of a layer, most of them empty)
-    if grown is None:
-        grown = _grown(rgba)
-    xi, yi = np.clip(x0, 0, width - 1).astype(np.int64), np.clip(y0, 0, height - 1).astype(np.int64)
-    touch = grown[yi, xi]
-    rows = np.flatnonzero(valid)[touch]
+    fx, fy = (x - x0).astype(np.float32), (y - y0).astype(np.float32)
+    small = np.int16 if max(width, height) < 32768 else np.int32
+    xa, xb = np.clip(x0, 0, width - 1).astype(small), np.clip(x0 + 1, 0, width - 1).astype(small)
+    ya, yb = np.clip(y0, 0, height - 1).astype(small), np.clip(y0 + 1, 0, height - 1).astype(small)
+    return valid, xa, xb, ya, yb, fx, fy
+
+
+def _read(rgba: np.ndarray, taps: tuple, grown: np.ndarray, opaque: bool) -> np.ndarray:
+    """(n, 4) uint8: `rgba` read bilinearly at `taps` (`_taps`, one piece) - premultiplied alpha, plain for an opaque
+    image; only the texels whose 2 x 2 neighbourhood has paint (`grown`) are computed, the rest is transparent."""
+    valid, xa, xb, ya, yb, fx, fy = taps
+    height, width = rgba.shape[:2]
+    out = np.zeros((valid.size, 4), dtype=np.uint8)
+    i00 = ya.astype(np.int32) * width + xa
+    rows = np.flatnonzero(valid & grown.reshape(-1)[i00])
     if rows.size == 0:
         return out
-    x, y, x0, y0 = x[touch], y[touch], x0[touch], y0[touch]
-    fx = (x - x0).astype(np.float32)[:, None]
-    fy = (y - y0).astype(np.float32)[:, None]
-    xa, ya = np.clip(x0, 0, width - 1).astype(np.int64), np.clip(y0, 0, height - 1).astype(np.int64)
-    xb, yb = np.clip(x0 + 1, 0, width - 1).astype(np.int64), np.clip(y0 + 1, 0, height - 1).astype(np.int64)
-    flat = rgba.reshape(-1, 4)
-    corners = [(ya * width + xa, (1 - fx) * (1 - fy)), (ya * width + xb, fx * (1 - fy)),
-               (yb * width + xa, (1 - fx) * fy), (yb * width + xb, fx * fy)]
+    i00 = i00[rows]
+    i10 = i00 + (xb[rows] - xa[rows])
+    step = (yb[rows].astype(np.int32) - ya[rows]) * width
+    i01, i11 = i00 + step, i10 + step
+    gx, gy = fx[rows, None], fy[rows, None]
+    hx, hy = 1.0 - gx, 1.0 - gy
+    flat = rgba.reshape(-1).view(np.uint32)  # one gather per pixel, not per channel
     part = np.empty((rows.size, 4), dtype=np.uint8)
-    if opaque is None:
-        opaque = bool((rgba[..., 3] == 255).all())
+    taps4 = ((i00, hx * hy), (i10, gx * hy), (i01, hx * gy), (i11, gx * gy))
     if opaque:  # an opaque image (a base texture): plain bilinear, alpha stays 255
         colour = np.zeros((rows.size, 3), dtype=np.float32)
-        for index, weight in corners:
-            colour += flat[index, :3] * weight
-        part[:, :3] = np.clip(np.rint(colour), 0, 255).astype(np.uint8)
+        for index, weight in taps4:
+            colour += flat[index].view(np.uint8).reshape(-1, 4)[:, :3] * weight
+        part[:, :3] = np.rint(colour).astype(np.uint8)
         part[:, 3] = 255
-    else:  # premultiplied: no dark fringe where a stroke ends
+    else:  # premultiplied: no dark fringe where a stroke ends (alpha and colour·alpha in 0-255 units)
         acc = np.zeros((rows.size, 3), dtype=np.float32)
         alpha = np.zeros((rows.size, 1), dtype=np.float32)
-        for index, weight in corners:
-            texel = flat[index]
-            a = texel[:, 3:4] * (weight * np.float32(1.0 / 255.0))
+        for index, weight in taps4:
+            texel = flat[index].view(np.uint8).reshape(-1, 4)
+            a = texel[:, 3:4] * weight
             acc += texel[:, :3] * a
             alpha += a
-        colour = acc / np.where(alpha > 0, alpha, 1.0)
-        part[:, :3] = np.clip(np.rint(colour), 0, 255).astype(np.uint8)
-        part[:, 3] = np.clip(np.rint(alpha[:, 0] * 255.0), 0, 255).astype(np.uint8)
+        part[:, :3] = np.rint(acc / np.where(alpha > 0, alpha, 1.0)).astype(np.uint8)
+        part[:, 3] = np.rint(alpha[:, 0]).astype(np.uint8)
         part[part[:, 3] == 0] = 0
     out[rows] = part
     return out
+
+
+def _bilinear(rgba: np.ndarray, uv: np.ndarray, grown: np.ndarray | None = None,
+              opaque: bool | None = None) -> np.ndarray:
+    """(n, 4) uint8: `rgba` (row 0 = v = 0) read at `uv` (n, 2) bilinearly (`_taps` + `_read`); NaN or outside
+    [0, 1] reads transparent."""
+    height, width = rgba.shape[:2]
+    if grown is None:
+        grown = _grown(rgba)
+    if opaque is None:
+        opaque = bool((rgba[..., 3] == 255).all())
+    return _read(rgba, _taps(uv, width, height), grown, opaque)
+
+
+def _row_boxes(grid: np.ndarray, width: int, height: int) -> list[tuple[int, int, int, int]]:
+    """The true tiles of an `occupied` grid as one box per run of neighbouring tiles in a tile row (the seam padding's
+    windows: the reference PC spent 0.25-0.28 s in one small window per tile, 2026-11-19)."""
+    from .store import TILE
+
+    boxes = []
+    for ty in np.flatnonzero(grid.any(axis=1)).tolist():
+        row = np.r_[False, grid[ty], False]
+        edges = np.flatnonzero(row[1:] != row[:-1])
+        for a, b in zip(edges[0::2].tolist(), edges[1::2].tolist()):
+            boxes.append((a * TILE, ty * TILE, min(b * TILE, width), min((ty + 1) * TILE, height)))
+    return boxes
 
 
 def transfer(rgba: np.ndarray, transfer_plan: TransferPlan, keep_unmapped: bool = False) -> np.ndarray:
@@ -196,15 +246,33 @@ def transfer(rgba: np.ndarray, transfer_plan: TransferPlan, keep_unmapped: bool 
     new[p.keep] = old[p.keep]
     if p.move.size and rgba[..., 3].any():
         grown, opaque = _grown(rgba), bool((rgba[..., 3] == 255).all())
-        for a in range(0, p.move.size, CHUNK):  # cache-sized pieces (module docstring, "Speed")
+        taps = p.taps if p.taps is not None else _taps(p.source_uv, p.width, p.height)
+
+        def piece(a: int) -> None:  # cache-sized pieces (module docstring, "Speed"), disjoint: safe from threads
             b = min(a + CHUNK, p.move.size)
-            new[p.move[a:b]] = _bilinear(rgba, p.source_uv[a:b], grown, opaque)
-    boxes = [tile_box(tile, p.width, p.height) for tile in tiles_in(occupied(out))]
+            new[p.move[a:b]] = _read(rgba, tuple(t[a:b] for t in taps), grown, opaque)
+
+        _parallel(piece, list(range(0, p.move.size, CHUNK)))
+    boxes = _row_boxes(occupied(out), p.width, p.height)
     if boxes:
         dst, src = seam_pad(p.map, boxes, pad_width(p.width))
         if dst.size:
             new[dst] = new[src]
     return out
+
+
+#: Worker threads for the pieces of a layer's read (NumPy releases the GIL in its loops; container: 3 layers 0.31 ->
+#: 0.18 s with 3 threads, 2026-11-19; the reference PC's Q9550 has 4 cores). 1 = in this thread.
+THREADS = 4
+
+
+def _parallel(fn, items: list) -> list:
+    if len(items) < 2 or THREADS < 2:
+        return [fn(item) for item in items]
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(min(THREADS, len(items))) as pool:
+        return list(pool.map(fn, items))
 
 
 def transfer_command(store: PaintStore, obj: SceneObject, mesh: Mesh, new_uvs: dict, positions: dict | None,
@@ -218,14 +286,15 @@ def transfer_command(store: PaintStore, obj: SceneObject, mesh: Mesh, new_uvs: d
 
     started = time.perf_counter()
     before, after = {}, {}
-    for spec in stack.layers:
-        rgba = store.load(obj, spec.name)
+    names = [spec.name for spec in stack.layers]
+    layers = [store.load(obj, name) for name in names]  # the store in this thread (it is not thread-safe)
+    for name in names:
         # a layer equal to its file needs no copy: its Undo reads the file again (None); the moved pixels go in as they
-        # are and are compressed only if the step is undone (`PaintLayersCommand` "live" pixels) - the reference PC's
-        # "layers 3.3 s" were largely four zlib passes over 16 MiB
-        saved = not store.is_dirty(obj, spec.name) and store.source(obj, spec.name) is not None
-        before[spec.name] = None if saved else store.snapshot(obj, spec.name)
-        after[spec.name] = LivePixels(transfer(rgba, transfer_plan), store.source(obj, spec.name), True)
+        # are and are compressed only if the step is undone (`PaintLayersCommand` "live" pixels)
+        saved = not store.is_dirty(obj, name) and store.source(obj, name) is not None
+        before[name] = None if saved else store.snapshot(obj, name)
+    for name, moved in zip(names, (transfer(rgba, transfer_plan) for rgba in layers)):  # each in parallel pieces
+        after[name] = LivePixels(moved, store.source(obj, name), True)
     command = PaintLayersCommand(store, obj, stack, stack, before, after, description)
     command.plan = transfer_plan
     command.layer_seconds = time.perf_counter() - started  # the layers only (the plan has its own)

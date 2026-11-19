@@ -632,7 +632,20 @@ before). Container for the same: map 0.24, layers ≈ 0.5 s - map ≈ 11×, laye
 sorts over 2.8 M entries (`np.isin`, `np.unique`) are table lookups now; a layer equal to its file holds no compressed
 copy in the step (its Undo reads the file again), and the moved pixels go in uncompressed (`store.LivePixels`), frozen
 into a `LayerSnapshot` only by the step's first Undo - the four zlib passes over 16 MiB per two layers are gone from the
-return. Container 0.87 → 0.63 s for loaded layers. Pinned: `test_paint_uv_transfer.py::test_a_saved_layer_is_not_copied_and_its_undo_reads_the_file`. Pinned:
+return. Container 0.87 → 0.63 s for loaded layers. Pinned: `test_paint_uv_transfer.py::test_a_saved_layer_is_not_copied_and_its_undo_reads_the_file`.
+Reference PC after that: „(5.6 s: map 2.2, layers 3.5)“ - little changed, so the guesses stopped and the probe
+`experiments/drag_cost/probe_uv_transfer.py` ran there (Manu, 2026-11-19, with ZBrush open and closed - **no
+difference**: not memory pressure). Its split per 2048² layer [V]: the bilinear read 0.66-0.76 s (nearest: 0.12 s - the
+read is arithmetic, not memory: in source-texel order it is *slower*, 0.88-0.93 s), the seam padding 0.25-0.28 s (one
+small window per tile), the plan's Python step per triangle 0.4-0.55 s (more than the texel map, 0.49-0.58 s); 3-5x the
+container, the usual ratio - the app's 5.6 s move ≈ 2x the probe's 1-1.3 M texels. Third step, built on these numbers:
+the four neighbours and weights of every moved texel are computed once in the plan (`_taps`, int16 / float32) instead
+of once per layer, the read gathers a pixel as one 32-bit value and keeps alpha in 0-255 units (`_read`); the seam
+padding gets one window per run of tiles in a tile row (`_row_boxes`); the old corner UVs come from one pass over the
+faces and a sorted lookup instead of a Python step per triangle; the plan's and the read's pieces run in a thread pool
+(`THREADS` = 4; NumPy releases the GIL; the Q9550 has 4 cores). Same pixels (≤ 1/255 rounding). Container, plan + both
+layers of `Gollum_Head_05`'s object: 0.52 → 0.34 s (re-unwrap-like layout), 0.72 → 0.44 s (fully transposed layout).
+The reference PC decides. Pinned:
 `test_goz_bridge.py::test_a_uv_change_moves_the_objects_own_texture_too` (a colour of the surface point stays at that
 point, median ≤ 2/255; the old file unchanged; Undo / Redo switch the texture) and
 `::test_a_uv_change_projects_the_shown_texture_and_not_the_one_zbrush_sends`.
