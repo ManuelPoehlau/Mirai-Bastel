@@ -36,6 +36,7 @@ import dataclasses
 import json
 import math
 import os
+import time
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Optional
@@ -4659,15 +4660,29 @@ class Application:
         positions = dict(plan.positions)
         description = f"ZBrush return {obj.name}"
         paint_step = None
-        if obj.paint is not None and plan.uvs:
-            # AD-037 Phase 3 (P-13 lifted): the paint follows the new UVs - one Undo step with the return
+        texture, texture_changed, moved_texture = plan.texture, plan.texture_changed, None
+        started = time.perf_counter()
+        if plan.uvs and (obj.paint is not None or (obj.texture is not None and not plan.texture_changed)):
+            # AD-037 Phase 3 (P-13 lifted): the paint follows the new UVs - one Undo step with the return; so does the
+            # object's own texture when the return brings no new one (Manu 2026-11-19: „Die Textur wirkt allerdings
+            # verschoben“ - UV Master does not re-lay a texture map; the old file stays, a new PNG is shown)
             try:
-                paint_step = paint_uv_transfer.transfer_command(self.paint, obj, obj.mesh, plan.uvs, positions,
-                                                                description)
+                plans = {}
+                if obj.texture is not None and not plan.texture_changed:
+                    moved_texture, base_plan = paint_uv_transfer.transfer_texture(obj.texture, obj.mesh, plan.uvs,
+                                                                                  positions)
+                    plans[(base_plan.width, base_plan.height)] = base_plan
+                    texture, texture_changed = moved_texture, moved_texture != obj.texture
+                if obj.paint is not None:
+                    paint_step = paint_uv_transfer.transfer_command(
+                        self.paint, obj, obj.mesh, plan.uvs, positions, description,
+                        plans.get((obj.paint.width, obj.paint.height)))
             except (OSError, ValueError) as exc:  # PaintError is a ValueError
-                self._set_status(f"{label}: ZBrush changed the UVs of {len(plan.uvs)} face(s) and {obj.name!r} is"
-                                 f" painted - its paint could not be moved to them ({exc}); not applied")
+                what = "paint" if obj.paint is not None else "texture"
+                self._set_status(f"{label}: ZBrush changed the UVs of {len(plan.uvs)} face(s) - the {what} of"
+                                 f" {obj.name!r} could not be moved to them ({exc}); not applied")
                 return False
+        transfer_seconds = time.perf_counter() - started
 
         def mutate(mesh: Mesh) -> set[VertexId]:
             for vertex_id, position in positions.items():
@@ -4680,7 +4695,7 @@ class Application:
                 mesh.set_layer_value(plan.target_layer, vertex_id, offset)
             return set(positions)
 
-        companions = [ObjectTextureCommand(obj, obj.texture, plan.texture, description)] if plan.texture_changed else []
+        companions = [ObjectTextureCommand(obj, obj.texture, texture, description)] if texture_changed else []
         if paint_step is not None:
             companions.append(paint_step)
         companion = (None if not companions else companions[0] if len(companions) == 1
@@ -4689,10 +4704,14 @@ class Application:
         changed = self._mesh_transaction(description, mutate, moved_of=lambda moved: moved,
                                          companion=companion, focus=False).changed
         moved_paint = ""
-        if paint_step is not None and changed:
-            layers = len(obj.paint.layers)
-            moved_paint = (f" - paint moved to the new UVs ({layers} layer{'s' if layers != 1 else ''},"
-                           f" {paint_step.plan.move.size} texels re-read)")
+        if changed and (paint_step is not None or moved_texture is not None):
+            parts = []
+            if moved_texture is not None:
+                parts.append("texture")
+            if paint_step is not None:
+                layers = len(obj.paint.layers)
+                parts.append(f"{layers} paint layer{'s' if layers != 1 else ''}")
+            moved_paint = f" - {' and '.join(parts)} moved to the new UVs ({transfer_seconds:.1f} s)"
         self._set_status(plan.summary() + moved_paint
                          + (" - applied (Ctrl+Z undoes it)" if changed else " - nothing to apply"))
         return changed

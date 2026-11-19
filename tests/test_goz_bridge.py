@@ -1148,7 +1148,7 @@ def test_a_uv_change_on_a_painted_object_moves_its_paint(env):
     uvs_before, history = _uvs(obj.mesh), len(app.history)
     goz_back(env, identifier, fixture("zb2022_E3_head_uvmaster.GoZ"))
     assert env["bridge"].activate(row(env, APPLY_PREFIX)), app.status_message
-    assert "paint moved to the new UVs (2 layers" in app.status_message, app.status_message
+    assert "2 paint layers moved to the new UVs" in app.status_message, app.status_message
     assert _uvs(obj.mesh) != uvs_before and len(app.history) == history + 1
     moved = app.paint.pixels(obj, "Haut").copy()
     new_map = TexelMap(obj.mesh, size, size)
@@ -1163,3 +1163,52 @@ def test_a_uv_change_on_a_painted_object_moves_its_paint(env):
     assert _uvs(obj.mesh) == uvs_before and np.array_equal(app.paint.pixels(obj, "Haut"), old_pixels)
     app._undo_redo(commands.REDO)
     assert np.array_equal(app.paint.pixels(obj, "Haut"), moved)
+
+
+def test_a_uv_change_moves_the_objects_own_texture_too(env):
+    """Manu 2026-11-19 after the first UV Master return: „Die Textur wirkt allerdings verschoben“ - the object's texture
+    (the base beneath the paint, P-4) is laid out for the old UVs, and UV Master does not re-lay it. A return without a
+    new texture writes it re-sampled onto the new UVs as a new PNG beside it, the object shows that one (same Undo
+    step); the old file is not touched."""
+    import numpy as np
+
+    from mirai.iris_import import encode_png
+    from mirai.paint.files import read_image
+    from mirai.paint.texel_map import TexelMap
+
+    app = env["app"]
+    obj = app.scene.edit_object
+    size = 256
+    lo, hi = (np.array(b) for b in zip(*[(min(c), max(c)) for c in zip(*(obj.mesh.vertex_position(v)
+                                                                         for v in obj.mesh.all_vertex_ids()))]))
+
+    def colour(points):
+        return np.clip(np.rint((points - lo) / (hi - lo) * 255), 0, 255).astype(np.uint8)
+
+    old_map = TexelMap(obj.mesh, size, size)
+    texels = old_map.mapped()
+    image = np.full((size, size, 4), 255, np.uint8)
+    image.reshape(-1, 4)[texels, :3] = colour(old_map.surface_points(texels))
+    folder = env["tmp"] / "kopf_textures"
+    folder.mkdir()
+    original = folder / "Gollum_0123456789.png"
+    original.write_bytes(encode_png(image[::-1], 1))
+    original_bytes = original.read_bytes()
+    obj.texture = str(original)
+    identifier = send(env)
+    history = len(app.history)
+    goz_back(env, identifier, fixture("zb2022_E3_head_uvmaster.GoZ"))
+    assert env["bridge"].activate(row(env, APPLY_PREFIX)), app.status_message
+    assert "texture moved to the new UVs" in app.status_message, app.status_message
+    moved = Path(obj.texture)
+    assert moved != original and moved.parent == folder and moved.name.startswith("Gollum_uv_")
+    assert original.read_bytes() == original_bytes and len(app.history) == history + 1
+    new_map = TexelMap(obj.mesh, size, size)
+    texels = new_map.mapped()
+    got = np.ascontiguousarray(read_image(str(moved))[::-1]).reshape(-1, 4)[texels, :3].astype(int)
+    error = np.abs(got - colour(new_map.surface_points(texels))).max(axis=1)
+    assert np.median(error) <= 2 and np.percentile(error, 95) <= 8, (np.median(error), np.percentile(error, 95))
+    app._undo_redo(commands.UNDO)
+    assert obj.texture == str(original)
+    app._undo_redo(commands.REDO)
+    assert obj.texture == str(moved)

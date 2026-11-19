@@ -591,6 +591,19 @@ paint are computed); a face that had no UVs, or old UVs outside 0-1, gives trans
 where it has paint. A transfer that fails refuses the return (status line, nothing changed). The status line names the
 moved layers and texels. Attach of differently painted objects stays refused (P-13).
 
+**The object's texture moves too (Manu, 2026-11-19, the first UV Master return on the reference PC: „Neu abgewickeltes Mesh
+aus Zbrush zurück in Mirai dauert ca 5-6 Sekunden (gefühlt nicht gemessen). Die Textur wirkt allerdings verschoben“).**
+Cause [V]: the object's own texture - the base beneath the paint (P-4) - is laid out for the old UVs, and UV Master does
+not re-lay a ZBrush texture map; the paint moved, the base did not, so the composite showed the base shifted under it (an
+unpainted textured object showed the same since WP_GOZ_P3). Now a return that changes UVs **and brings no new texture**
+re-samples the object's texture onto the new UVs as well (`uv_transfer.transfer_texture`: the same plan, plain bilinear
+for the opaque image, texels the new layout does not map keep their old pixels, seam-padded), writes it as a new PNG
+beside the old one (`<stem>_uv_<hash>.png`; the old file is never written - P-4 holds for the file) and shows it - an
+`ObjectTextureCommand` in the same Undo step. A texture the return brings (a new `_TXTR` image, e.g. made from Polypaint
+after the unwrap) is taken as it is (`PROVISIONAL`). The status line names what moved and the seconds it took. Pinned:
+`test_goz_bridge.py::test_a_uv_change_moves_the_objects_own_texture_too` (a colour of the surface point stays at that
+point, median ≤ 2/255; the old file unchanged; Undo / Redo switch the texture).
+
 ### 11.4 Measurements [C] (container, Gollum head at 2048², paint in 30 % / 15 % of the image; best of 2)
 
 | | container | RPC estimate ×3–3.4 [H] |
@@ -602,6 +615,7 @@ moved layers and texels. Attach of differently painted objects stays refused (P-
 | merge down (+ show) | 0.29–0.32 s (was 0.98 s over every pixel) | ≈ 1 s |
 | Undo of the merge / clear (+ show) | 0.12–0.14 s | ≈ 0.4–0.5 s |
 | UV transfer, all 2,234 faces new (2.26 M texels): plan / per layer | 0.58–0.82 s / 0.51–0.53 s (was 1.3 s per layer) | ≈ 2–2.8 s / 1.7 s |
+| UV transfer with the 2048² texture and 2 layers (paint in 30 % / 10 %), after the float32 read | texture 1.32 s (plan included) + layers 0.67 s ≈ 2.0 s (2.7 s before the float32 read) | ≈ 6–7 s |
 
 Reading: the steps are clicks, not drags, except the opacity slider. Manu found it slow on the reference PC (as
 estimated, ≈ 4 frames a second); the slider fix (§11.2, "the held slider") cuts its frame 6× in the container's heavier

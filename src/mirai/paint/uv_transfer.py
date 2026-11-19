@@ -14,6 +14,12 @@ triangle maps affinely onto its old one - no ray casting, no 3D search.
 
 `transfer_command` makes the Undo step (`PaintLayersCommand`, every layer of the stack, also hidden ones); the caller
 runs it with the mesh change (`Application.apply_goz_return`: one Undo step for the return and the moved paint).
+
+**The base texture** (Manu 2026-11-19 after the first UV Master return: „Die Textur wirkt allerdings verschoben“): the
+object's own texture is laid out for the old UVs as well - UV Master does not re-lay a ZBrush texture map. When the return
+brings no new texture, `transfer_texture` writes the texture re-sampled onto the new UVs as a new PNG beside it (the old
+file stays, P-4) and the object shows that one (the same Undo step). A texture the return brings is taken as it is (made
+in ZBrush for the new UVs, e.g. from Polypaint).
 """
 
 from __future__ import annotations
@@ -100,15 +106,14 @@ def plan(mesh: Mesh, new_uvs: dict, width: int, height: int, positions: dict | N
 
 
 def _bilinear(rgba: np.ndarray, uv: np.ndarray) -> np.ndarray:
-    """(n, 4) uint8: `rgba` (row 0 = v = 0) read at `uv` (n, 2) bilinearly in premultiplied alpha; NaN or outside
-    [0, 1] reads transparent."""
+    """(n, 4) uint8: `rgba` (row 0 = v = 0) read at `uv` (n, 2) bilinearly in premultiplied alpha (plain for an opaque
+    image), float32; NaN or outside [0, 1] reads transparent."""
     height, width = rgba.shape[:2]
     out = np.zeros((uv.shape[0], 4), dtype=np.uint8)
     valid = np.isfinite(uv).all(axis=1) & (uv >= 0.0).all(axis=1) & (uv <= 1.0).all(axis=1)
     if not valid.any():
         return out
-    u, v = uv[valid, 0], uv[valid, 1]
-    x, y = u * width - 0.5, v * height - 0.5
+    x, y = uv[valid, 0] * width - 0.5, uv[valid, 1] * height - 0.5
     x0, y0 = np.floor(x), np.floor(y)
     # only reads that touch paint: a texel's 2 x 2 neighbourhood has alpha where the alpha mask grown by one texel
     # towards -x / -y is set (the Gollum head at 2048²: 1.3 s for every texel of a layer, most of them empty)
@@ -122,35 +127,43 @@ def _bilinear(rgba: np.ndarray, uv: np.ndarray) -> np.ndarray:
     if rows.size == 0:
         return out
     x, y, x0, y0 = x[touch], y[touch], x0[touch], y0[touch]
-    u = u[touch]
-    fx, fy = (x - x0)[:, None], (y - y0)[:, None]
-    x0, y0 = x0.astype(np.int64), y0.astype(np.int64)
+    fx = (x - x0).astype(np.float32)[:, None]
+    fy = (y - y0).astype(np.float32)[:, None]
+    xa, ya = np.clip(x0, 0, width - 1).astype(np.int64), np.clip(y0, 0, height - 1).astype(np.int64)
+    xb, yb = np.clip(x0 + 1, 0, width - 1).astype(np.int64), np.clip(y0 + 1, 0, height - 1).astype(np.int64)
     flat = rgba.reshape(-1, 4)
-    acc = np.zeros((u.size, 4), dtype=np.float64)
-    for dx, dy, weight in ((0, 0, (1 - fx) * (1 - fy)), (1, 0, fx * (1 - fy)), (0, 1, (1 - fx) * fy), (1, 1, fx * fy)):
-        xs = np.clip(x0 + dx, 0, width - 1)
-        ys = np.clip(y0 + dy, 0, height - 1)
-        texel = flat[ys * width + xs].astype(np.float64)
-        alpha = texel[:, 3:4] / 255.0
-        acc[:, :3] += texel[:, :3] * alpha * weight
-        acc[:, 3:4] += alpha * weight
-    alpha = acc[:, 3:4]
-    with np.errstate(invalid="ignore", divide="ignore"):
-        colour = np.where(alpha > 0, acc[:, :3] / np.where(alpha > 0, alpha, 1.0), 0.0)
-    part = np.empty((u.size, 4), dtype=np.uint8)
-    part[:, :3] = np.clip(np.rint(colour), 0, 255).astype(np.uint8)
-    part[:, 3] = np.clip(np.rint(alpha[:, 0] * 255.0), 0, 255).astype(np.uint8)
-    part[part[:, 3] == 0] = 0
+    corners = [(ya * width + xa, (1 - fx) * (1 - fy)), (ya * width + xb, fx * (1 - fy)),
+               (yb * width + xa, (1 - fx) * fy), (yb * width + xb, fx * fy)]
+    part = np.empty((rows.size, 4), dtype=np.uint8)
+    if bool((rgba[..., 3] == 255).all()):  # an opaque image (a base texture): plain bilinear, alpha stays 255
+        colour = np.zeros((rows.size, 3), dtype=np.float32)
+        for index, weight in corners:
+            colour += flat[index, :3] * weight
+        part[:, :3] = np.clip(np.rint(colour), 0, 255).astype(np.uint8)
+        part[:, 3] = 255
+    else:  # premultiplied: no dark fringe where a stroke ends
+        acc = np.zeros((rows.size, 3), dtype=np.float32)
+        alpha = np.zeros((rows.size, 1), dtype=np.float32)
+        for index, weight in corners:
+            texel = flat[index]
+            a = texel[:, 3:4] * (weight * np.float32(1.0 / 255.0))
+            acc += texel[:, :3] * a
+            alpha += a
+        colour = acc / np.where(alpha > 0, alpha, 1.0)
+        part[:, :3] = np.clip(np.rint(colour), 0, 255).astype(np.uint8)
+        part[:, 3] = np.clip(np.rint(alpha[:, 0] * 255.0), 0, 255).astype(np.uint8)
+        part[part[:, 3] == 0] = 0
     out[rows] = part
     return out
 
 
-def transfer(rgba: np.ndarray, transfer_plan: TransferPlan) -> np.ndarray:
-    """The layer `rgba` (old layout) on the new layout (module docstring)."""
+def transfer(rgba: np.ndarray, transfer_plan: TransferPlan, keep_unmapped: bool = False) -> np.ndarray:
+    """The layer `rgba` (old layout) on the new layout (module docstring). `keep_unmapped`: texels the new layout does
+    not map keep their old pixels instead of becoming transparent (a base texture: opaque everywhere)."""
     p = transfer_plan
     if rgba.shape != (p.height, p.width, 4):
         raise ValueError(f"layer {rgba.shape} does not fit the plan {p.width} x {p.height}")
-    out = np.zeros_like(rgba)
+    out = rgba.copy() if keep_unmapped else np.zeros_like(rgba)
     old, new = rgba.reshape(-1, 4), out.reshape(-1, 4)
     new[p.keep] = old[p.keep]
     if p.move.size and rgba[..., 3].any():
@@ -164,11 +177,12 @@ def transfer(rgba: np.ndarray, transfer_plan: TransferPlan) -> np.ndarray:
 
 
 def transfer_command(store: PaintStore, obj: SceneObject, mesh: Mesh, new_uvs: dict, positions: dict | None,
-                     description: str) -> PaintLayersCommand:
+                     description: str, transfer_plan: TransferPlan | None = None) -> PaintLayersCommand:
     """The Undo step that puts every layer of `obj` (painted, its mesh `mesh` with the old UVs) on `new_uvs`; not applied
-    yet (`redo()` applies it)."""
+    yet (`redo()` applies it). `transfer_plan`: one made already at the stack's size (shared with the base)."""
     stack = obj.paint
-    transfer_plan = plan(mesh, new_uvs, stack.width, stack.height, positions)
+    if transfer_plan is None or (transfer_plan.width, transfer_plan.height) != (stack.width, stack.height):
+        transfer_plan = plan(mesh, new_uvs, stack.width, stack.height, positions)
     before, after = {}, {}
     for spec in stack.layers:
         rgba = store.load(obj, spec.name)
@@ -177,3 +191,27 @@ def transfer_command(store: PaintStore, obj: SceneObject, mesh: Mesh, new_uvs: d
     command = PaintLayersCommand(store, obj, stack, stack, before, after, description)
     command.plan = transfer_plan
     return command
+
+
+def transfer_texture(path: str, mesh: Mesh, new_uvs: dict, positions: dict | None,
+                     plans: dict | None = None) -> tuple[str, TransferPlan]:
+    """The object's texture image at `path` (laid out for `mesh`'s old UVs) re-sampled onto `new_uvs`, written as a new
+    PNG beside it under its content name; returns (the new path, the plan). The file at `path` is not touched (AD-037
+    P-4: the base is never written). `plans`: {(width, height): plan} to reuse (the paint's). `OSError` / `ValueError`
+    when it cannot be read or written."""
+    from pathlib import Path
+
+    from .. import texture_files
+    from ..iris_import import encode_png
+    from .files import PNG_LEVEL, read_image
+
+    image = np.ascontiguousarray(read_image(path)[::-1])  # row 0 = v = 0, as the texel map
+    height, width = image.shape[:2]
+    transfer_plan = (plans or {}).get((width, height)) or plan(mesh, new_uvs, width, height, positions)
+    moved = transfer(image, transfer_plan, keep_unmapped=True)
+    data = encode_png(moved[::-1], PNG_LEVEL)
+    source = Path(path)
+    match = texture_files._HASHED.match(source.stem)  # "Gollum_cbf9c7702d" -> "Gollum_uv_<new hash>.png"
+    stem = match.group("stem") if match else source.stem
+    stem = (stem[:-3] if stem.endswith("_uv") else stem) + "_uv"  # a second re-unwrap: "Gollum_uv" again
+    return str(texture_files.store(data, source.parent, texture_files.hashed_name(stem, data, ".png"))), transfer_plan
