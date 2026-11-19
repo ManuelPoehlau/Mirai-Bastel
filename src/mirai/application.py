@@ -1354,6 +1354,30 @@ class Application:
         return [obj for obj in chosen
                 if obj.eye is None and obj.state is not ObjectState.REFERENCE and obj.state is not ObjectState.GROUP]
 
+    def set_lookdev_wire(self, on: bool) -> bool:
+        """The wire overlay inside the room (the panel's "Wire"); closing the room restores the value from before."""
+        if bool(on) == self.display.wireframe_overlay:
+            return False
+        self.display.set_wireframe_overlay(bool(on))
+        self._apply_display()
+        return True
+
+    def lookdev_eye_selected(self) -> bool:
+        """An eye is among the selected objects (the panel says its values stay in the panel "Auge")."""
+        objects = self.scene.objects
+        return any(objects[oid].eye is not None for oid in self._objects.highlighted() if oid in objects)
+
+    def frame_lookdev(self, yaw_degrees: float, pitch_degrees: float) -> None:
+        """The room's framing (Front / ¾ / Profil): the edit object framed, seen from `yaw` / `pitch`. View only."""
+        import math
+
+        if self.viewport is None:
+            return
+        self.frame_scene()
+        self._leave_view()
+        self.camera.set_view(math.radians(yaw_degrees), math.radians(pitch_degrees))
+        self.camera.camera_revision += 1
+
     def set_lookdev_material(self, name: str) -> bool:
         """Give the material targets the preset `name` (`mirai.lookdev_material`; session only, no Undo). True =
         changed."""

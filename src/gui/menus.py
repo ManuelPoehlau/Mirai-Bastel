@@ -40,7 +40,7 @@ from mirai.detach import LABEL as DETACH_LABEL, LINKED_LABEL
 from mirai.topology.bridge import LABEL as BRIDGE_LABEL
 from mirai.topology.weld import LABEL as WELD_LABEL
 
-from . import paint_model
+from . import lookdev_model, paint_model
 from .file_browser import FileBrowser
 from .file_browser_model import ALL_FILTER, OBJ_FILTER, SCENE_FILTER, LastDirs, RecentFiles
 
@@ -347,6 +347,9 @@ class Menus:
         room = paint_model.menu_label(app)  # AD-037 Phase 2: the Paint Room (no key until Manu's "Taste passt")
         if room is not None and imgui.menu_item(room, "", app.paint_room_open)[0]:
             paint_model.toggle(app)
+        # AD-038: the LookDev room (no key, D-L9)
+        if imgui.menu_item(lookdev_model.menu_label(app), "", app.lookdev_open)[0]:
+            lookdev_model.toggle(app)
         imgui.separator()
         imgui.text_disabled("Szene laden (Shift+Klick: als Referenz)")
         for name in sv.scenes():
