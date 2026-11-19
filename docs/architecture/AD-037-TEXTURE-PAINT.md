@@ -570,6 +570,11 @@ darkened). Colour stays display-referred 8 bit (P-16 open).
 - **The display** (`PaintDisplay`): a new stack value of the same size over the same base re-composites only the tiles
   where the composite differed from the base before (`_Entry.nonbase`) or a visible layer has paint now; everything else
   is the base on both sides. Pinned equal to a whole composite after value / order / delete / Undo / Redo steps.
+  **The held slider (Manu, 2026-11-19, after the first try: „ja, der Slider ist recht langsam“):** when only one layer's
+  opacity, visibility or blend differs, only that layer's painted tiles are re-composited, in one array pass, from a
+  cache of what lies beneath it there (base + lower layers, kept while the slider is held; dropped when any pixels
+  change) plus the layers above; bit-identical to a whole composite (pinned, both blends). Changed tiles are uploaded as
+  one box per run of neighbouring tiles in a row instead of one GL call per tile.
 - **Save / load** needed no change: every layer is written as its PNG (a transparent one without a file), `blend` is in
   the stack value, the flattened PNG composites every visible layer with its blend.
 
@@ -591,16 +596,16 @@ moved layers and texels. Attach of differently painted objects stays refused (P-
 | | container | RPC estimate ×3–3.4 [H] |
 |---|---:|---:|
 | add a layer (+ show) | 0.13–0.15 s | ≈ 0.5 s |
-| opacity preview, one frame (re-composite of the painted tiles) | 0.06–0.08 s (first 0.13 s) | ≈ 0.2–0.3 s |
+| opacity preview, one frame - first build (re-composite of every painted tile) | 0.06–0.08 s (first 0.13 s) | ≈ 0.2–0.3 s |
+| opacity preview, one frame - after the slider fix (one layer's tiles, cached beneath; paint in 60 % / 25 %) | 7–8 ms (first frame of a hold 28–34 ms; 122 → 19–20 ms in the heavier slider probe) | ≈ 25–70 ms [H] |
 | the same as a whole composite (before this slice) | 0.17–0.24 s | ≈ 0.6–0.8 s |
 | merge down (+ show) | 0.29–0.32 s (was 0.98 s over every pixel) | ≈ 1 s |
 | Undo of the merge / clear (+ show) | 0.12–0.14 s | ≈ 0.4–0.5 s |
 | UV transfer, all 2,234 faces new (2.26 M texels): plan / per layer | 0.58–0.82 s / 0.51–0.53 s (was 1.3 s per layer) | ≈ 2–2.8 s / 1.7 s |
 
-Reading: the steps are clicks, not drags, except the opacity slider; its preview costs a frame of re-composite per
-change of the painted tiles - on a heavily painted image the reference PC will show it as a slower slider (≈ 4 frames a
-second). Not measured on the reference PC yet; if it is too slow there, the next step is compositing the layers below the
-active one once per preview (a cached "beneath" image) instead of every layer per frame.
+Reading: the steps are clicks, not drags, except the opacity slider. Manu found it slow on the reference PC (as
+estimated, ≈ 4 frames a second); the slider fix (§11.2, "the held slider") cuts its frame 6× in the container's heavier
+probe and ~10× in this table's case. Not re-measured on the reference PC yet.
 
 ### 11.5 Not in Phase 3 (this slice)
 

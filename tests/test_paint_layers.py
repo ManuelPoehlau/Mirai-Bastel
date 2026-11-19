@@ -341,3 +341,35 @@ def test_the_panel_model_lists_the_layers_top_first():
     app.set_paint_active_layer("Ebene 1")
     st = pm.state(app)
     assert st.can_up and not st.can_down and not st.can_merge
+
+
+def test_a_held_slider_recomposites_only_its_layer_and_equals_a_whole_composite(app):
+    """Manu 2026-11-19: „der Slider ist recht langsam“ - a one-layer value change re-composites that layer's tiles only,
+    with what lies beneath kept between frames; a stroke between two frames drops that cache."""
+    obj = app.scene.edit_object
+    app.set_paint_layer("Ebene 1", blend="multiply")
+    app.add_paint_layer()
+    app.set_paint_brush(colour=(0.2, 0.6, 0.9))
+    _stroke(app, dx=-3.0)
+    app.add_paint_layer()
+    app.set_paint_brush(colour=(0.9, 0.9, 0.1))
+    _stroke(app, dx=2.0)
+    app.set_paint_active_layer("Ebene 2")
+    _shown(app, obj)
+    entry = app.paint_display._entries[id(obj)]
+    for value in (0.8, 0.5, 0.2):
+        app.preview_paint_layer("Ebene 2", opacity=value)
+        assert np.array_equal(_shown(app, obj), _whole(app, obj))
+        assert entry.preview is not None
+    boxes = entry.live.take()[1]
+    painted = app.paint_display._painted(obj)
+    assert len(boxes) < int(painted.sum())  # neighbouring tiles go up as one box
+    app.end_paint_layer_preview()
+    app.set_paint_active_layer("Ebene 1")
+    _stroke(app, dx=-2.0)  # pixels beneath "Ebene 2" change
+    _shown(app, obj)
+    assert entry.preview is None
+    app.preview_paint_layer("Ebene 2", opacity=0.4)
+    assert np.array_equal(_shown(app, obj), _whole(app, obj))
+    app.set_paint_layer("Ebene 2", opacity=0.4)
+    assert np.array_equal(_shown(app, obj), _whole(app, obj))

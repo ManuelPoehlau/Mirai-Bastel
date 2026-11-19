@@ -27,7 +27,7 @@ from core import SceneObject
 from viewport.live_texture import LiveTexture
 
 from . import files
-from .store import TILE, PaintStore, occupied, tile_box, tiles_in
+from .store import TILE, PaintStore, blend_into, occupied, tile_box, tile_view, tiles_in
 
 #: The live texture's mip policy (`viewport.live_texture.MIP_POLICIES`; see the module docstring). P-B on the reference PC:
 #: "frame" 4.7 ms against "deferred" 4.0 ms per frame at 3 % (2048²).
@@ -55,10 +55,35 @@ class _Entry:
     #: (tiles down, across) bool: where the composite may differ from the base (a superset) - a change of the layers'
     #: values or order re-composites only these and the tiles the new stack has paint in
     nonbase: np.ndarray | None = None
+    #: the held layer slider's cache (`_one_layer`): what lies beneath the layer and its pixels in its tiles
+    preview: tuple | None = None
 
 
 def _grid(height: int, width: int) -> np.ndarray:
     return np.zeros((-(-height // TILE), -(-width // TILE)), dtype=bool)
+
+
+def _mark_runs(live: LiveTexture, grid: np.ndarray) -> None:
+    """Marks the true tiles of `grid`, one box per run of neighbouring tiles in a tile row (one upload call per run,
+    not per tile)."""
+    height, width = live.height, live.width
+    for ty in np.flatnonzero(grid.any(axis=1)).tolist():
+        row = np.r_[False, grid[ty], False]
+        edges = np.flatnonzero(row[1:] != row[:-1])
+        for a, b in zip(edges[0::2].tolist(), edges[1::2].tolist()):
+            live.mark(a * TILE, ty * TILE, min(b * TILE, width), min((ty + 1) * TILE, height))
+
+
+def _one_layer(old, new) -> int | None:
+    """The index of the one layer whose opacity, visibility or blend is all that differs between two stacks, else None."""
+    if old is None or new is None or (old.width, old.height) != (new.width, new.height) \
+            or len(old.layers) != len(new.layers):
+        return None
+    diff = [i for i, (a, b) in enumerate(zip(old.layers, new.layers)) if a != b]
+    if len(diff) != 1:
+        return None
+    a, b = old.layers[diff[0]], new.layers[diff[0]]
+    return diff[0] if (a.name, a.image) == (b.name, b.image) else None
 
 
 class PaintDisplay:
@@ -83,13 +108,59 @@ class PaintDisplay:
         return grid
 
     def _recomposite(self, entry: _Entry, grid: np.ndarray) -> int:
+        """Re-composites the true tiles of `grid` (tile by tile: each layer cropped to where it has paint - measured
+        faster than one gathered pass over many tiles) and marks them in runs (one upload per run)."""
         obj, stack = entry.obj, entry.obj.paint
         tiles = tiles_in(grid)
         for tile in tiles:
             x0, y0, x1, y1 = tile_box(tile, stack.width, stack.height)
             entry.composite[y0:y1, x0:x1] = self.store.composite(obj, entry.base, (x0, y0, x1, y1))
-            entry.live.mark(x0, y0, x1, y1)
+        _mark_runs(entry.live, grid)
         return len(tiles)
+
+    @staticmethod
+    def _gather_base(entry: _Entry, ys: np.ndarray, xs: np.ndarray) -> np.ndarray:
+        """The base in the tiles (ys, xs) as float32 RGB (n, TILE, TILE, 3) - the composite's start."""
+        if isinstance(entry.base, np.ndarray):
+            return tile_view(np.ascontiguousarray(entry.base))[ys, :, xs, :, :3].astype(np.float32)
+        block = np.empty((ys.size, TILE, TILE, 3), dtype=np.float32)
+        block[...] = np.asarray(entry.base, dtype=np.float32)[:3] * 255.0
+        return block
+
+    def _one_layer_preview(self, entry: _Entry, i: int) -> None:
+        """One layer's value changed (a held opacity slider): only its tiles change. What lies beneath it there is kept
+        between frames (`entry.preview`), so a frame blends this layer and those above it only."""
+        obj, stack = entry.obj, entry.obj.paint
+        spec = stack.layers[i]
+        key = (spec.name, stack.layers[:i], stack.layers[i + 1:])
+        cache = entry.preview
+        if cache is None or cache[0] != key:
+            pixels = self.store.pixels(obj, spec.name)
+            grid = occupied(pixels)
+            ys, xs = np.nonzero(grid)
+            under = self._gather_base(entry, ys, xs)
+            for lower in stack.layers[:i]:
+                if lower.visible and lower.opacity > 0.0:
+                    blend_into(under, tile_view(self.store.pixels(obj, lower.name))[ys, :, xs], lower.opacity,
+                               lower.blend)
+            above = [(tile_view(self.store.pixels(obj, upper.name))[ys, :, xs], upper)
+                     for upper in stack.layers[i + 1:] if upper.visible and upper.opacity > 0.0]
+            own = tile_view(pixels)[ys, :, xs]
+            cache = entry.preview = (key, grid, ys, xs, under, own[..., 3:4].astype(np.float32),
+                                     own[..., :3].astype(np.float32), above)
+        _, grid, ys, xs, under, own_alpha, own_colour, above = cache
+        if ys.size == 0:
+            return
+        block = under.copy()
+        if spec.visible and spec.opacity > 0.0:  # `blend_into` with the layer's floats kept: the same arithmetic
+            alpha = own_alpha * (spec.opacity / 255.0)
+            colour = own_colour * (block * (1.0 / 255.0)) if spec.blend == "multiply" else own_colour
+            block += (colour - block) * alpha
+        for pixels, upper in above:
+            blend_into(block, pixels, upper.opacity, upper.blend)
+        tile_view(entry.composite)[ys, :, xs] = _to_rgba(block)
+        _mark_runs(entry.live, grid)
+        entry.nonbase |= grid
 
     def prepare(self, obj: SceneObject, width: int, height: int) -> None:
         """Show `obj` through a composite of `width` x `height` from now on, painted or not (the Paint Room opens)."""
@@ -158,10 +229,16 @@ class PaintDisplay:
                 and entry.composite.shape[:2] == (stack.height, stack.width) and entry.nonbase is not None):
             # another stack of the same size over the same base (a layer's opacity, visibility, blend, order; a layer
             # added, deleted, merged): every tile outside the old and the new paint is the base on both sides
-            entry.key = key
+            old, entry.key = entry.key[0], key
+            changed_tiles = self.store.take_changed(obj)
+            one = _one_layer(old, stack)
+            if one is not None and not changed_tiles and tile_view(entry.composite) is not None:
+                self._one_layer_preview(entry, one)  # only the pixels of that layer can show differently
+                return entry.live
+            entry.preview = None
             painted = self._painted(obj)
             changed = _grid(stack.height, stack.width)
-            for tx, ty in self.store.take_changed(obj):
+            for tx, ty in changed_tiles:
                 changed[ty, tx] = True
             self._recomposite(entry, entry.nonbase | painted | changed)
             entry.nonbase = painted | changed
@@ -198,6 +275,7 @@ class PaintDisplay:
             tiles = self.store.take_changed(obj)
             if not tiles:
                 continue
+            entry.preview = None  # pixels changed under a held slider's cache
             grid = _grid(obj.paint.height, obj.paint.width)
             for tx, ty in tiles:
                 grid[ty, tx] = True
@@ -227,6 +305,14 @@ class PaintDisplay:
         for entry in self._entries.values():
             _release(entry.live)
         self._entries.clear()
+
+
+def _to_rgba(block: np.ndarray) -> np.ndarray:
+    """float32 RGB 0-255 -> uint8 RGBA with alpha 255 (`PaintStore.composite`'s rounding)."""
+    out = np.empty((*block.shape[:-1], 4), dtype=np.uint8)
+    out[..., :3] = np.clip(np.rint(block), 0, 255).astype(np.uint8)
+    out[..., 3] = 255
+    return out
 
 
 def _release(live: LiveTexture) -> None:

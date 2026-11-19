@@ -292,17 +292,29 @@ class PaintStore:
                 continue  # nothing painted here
             cols = np.flatnonzero(covered[rows[0]:rows[-1] + 1].any(axis=0))
             r0, r1, c0, c1 = rows[0], rows[-1] + 1, cols[0], cols[-1] + 1  # only where the layer has alpha
-            part = rgba[r0:r1, c0:c1]
-            target = out[r0:r1, c0:c1]
-            alpha = part[..., 3:4].astype(np.float32) * (spec.opacity / 255.0)
-            colour = part[..., :3].astype(np.float32)
-            if spec.blend == "multiply":
-                colour *= target * (1.0 / 255.0)  # the layer's colour times what lies beneath (P-12)
-            target += (colour - target) * alpha
+            blend_into(out[r0:r1, c0:c1], rgba[r0:r1, c0:c1], spec.opacity, spec.blend)
         result = np.empty((y1 - y0, x1 - x0, 4), dtype=np.uint8)
         result[..., :3] = np.clip(np.rint(out), 0, 255).astype(np.uint8)
         result[..., 3] = 255
         return result
+
+
+def tile_view(image: np.ndarray) -> np.ndarray | None:
+    """`image` (h, w, c) as (tiles down, TILE, tiles across, TILE, c) - a view; None when a side is no multiple of TILE.
+    `view[ys, :, xs]` gathers tiles as (n, TILE, TILE, c), and assigning to it scatters them back."""
+    height, width = image.shape[:2]
+    if height % TILE or width % TILE:
+        return None
+    return image.reshape(height // TILE, TILE, width // TILE, TILE, *image.shape[2:])
+
+
+def blend_into(target: np.ndarray, rgba: np.ndarray, opacity: float, blend: str) -> None:
+    """One layer over `target` (float32 RGB 0-255, changed in place) - `PaintStore.composite`'s arithmetic."""
+    alpha = rgba[..., 3:4].astype(np.float32) * (opacity / 255.0)
+    colour = rgba[..., :3].astype(np.float32)
+    if blend == "multiply":
+        colour *= target * (1.0 / 255.0)
+    target += (colour - target) * alpha
 
 
 def _pack(block: np.ndarray) -> bytes:
