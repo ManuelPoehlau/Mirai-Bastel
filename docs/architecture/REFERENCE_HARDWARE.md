@@ -196,6 +196,12 @@ Auswertung in den jeweiligen READMEs (`gpu_picking_spike` „Result: reference P
   - Kaltes Kompilieren einer Augen-Variante: 0,24–0,6 s; der Treiber-Cache hilft zwischen Prozessen nicht.
   - Eine RGBA16F-Cubemap 128² auf der GPU vorgefiltert: 12 ms (64 Proben), auf der CPU waren es 40 s.
   - Tiefentexturen mit Vergleichsmodus funktionieren.
+- **LookDev LD-1, der gebaute Raum (Manu, 2026-11-20, AD-038 §17.4,
+  [`RESULTS_LOOKDEV_ROOM_REFERENCE_PC_2026-11-20.md`](../../experiments/drag_cost/RESULTS_LOOKDEV_ROOM_REFERENCE_PC_2026-11-20.md)):**
+  - Gollum-Kopf gerahmt bei 1024×768, `Viewport.render()` mit Overlays: 2,4 ms (Käfig) bzw. 3,3 ms (SubD 1) GPU im
+    LookDev-Raum, 3,0 / 5,2 ms im Worklight.
+  - Erster Eintritt im Prozess ≈ 0,15 s (2 Programme in 27 ms kompiliert, hinter der Statuszeile), danach ≈ 13 ms.
+  - Worklight und D3-Abnahme unverändert (E16).
 
 **Vor der Aufrüstung sichern (Empfehlung, Agent):** Die drei Punkte oben einmal auf diesem PC messen und hier eintragen. Nach dem Wechsel sind diese Werte nicht mehr reproduzierbar, und sie sind die einzige Worst-Case-Baseline, die das Projekt hat.
 

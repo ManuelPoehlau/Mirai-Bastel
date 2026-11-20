@@ -2,7 +2,9 @@
 
 **Status:** **ACCEPTED (Manu, 2026-11-19)**: „AD-038 freigegeben, Fragen 2–4 wie vorgeschlagen, Frage 3 würde ich
 Neutral wählen“ (§15). **LD-0 run on the reference PC (Manu, 2026-11-19)**: LD-D10 met with a wide margin (§16.1).
-**LD-1 built 2026-11-19** (branch `claude/sweet-hamilton-pzimll`, implementation note §17); next: Manu's M1 practical
+**LD-1 built 2026-11-19** (branch `claude/sweet-hamilton-pzimll`, implementation note §17). **LD-1 measured on the
+reference PC (2026-11-20, §17.4): LD-D10 and E16 met** — the room's frame 2.4 / 3.3 ms GPU (cage / SubD 1, framed
+1024×768), cheaper than the Worklight; the Modelling Room unchanged. Next: Manu's M1 practical
 test (§13.3, checklist §17.5). Drafted 2026-11-19 as PROPOSED (Architecture Gate). The number
 AD-038 stays; new class, file and panel names remain `PROVISIONAL` until built.
 **Basis:** [LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md)
@@ -756,6 +758,28 @@ python experiments\drag_cost\probe_d3_acceptance.py | Tee-Object -FilePath d3_af
 The first gives the room's rows (`modelling` / `lookdev` / `modelling after`, the entry with the cold compile); the
 second and third are E16: their `worklight` / `app render` rows and the D3 p95 within noise of the last reference-PC
 runs ([LD-0](../../experiments/drag_cost/RESULTS_LOOKDEV_REFERENCE_PC_2026-11-19.md) and the D3 acceptance record).
+
+**Reference PC result (Manu, handed over 2026-11-20) [M-RPC]:**
+[`RESULTS_LOOKDEV_ROOM_REFERENCE_PC_2026-11-20.md`](../../experiments/drag_cost/RESULTS_LOOKDEV_ROOM_REFERENCE_PC_2026-11-20.md),
+`src/` tree `90a2e01a9e` = `0e2386f:src`.
+
+| `Viewport.render()`, framed, 1024×768, GPU p50 ms | modelling | lookdev | modelling after |
+|---|---:|---:|---:|
+| cage | 2.99 | **2.42** (7.3 % of 33.3 ms) | 2.99 |
+| SubD 1 | 5.20 | **3.28** (9.8 %) | 5.22 |
+
+- **LD-D10 met in the app**, no lever (§9). The room is 0.56 / 1.92 ms cheaper than the Worklight. It costs 0.7 / 1.1 ms
+  more than LD-0's stand-in `ld frame`: overlays and the production skin pass. Wall time incl. `glFinish`: 11.6 /
+  12.6 ms.
+- **Entry:** ≈ 0.15 s the first time in the process — `open_lookdev` 96 ms [H: first imports on Windows], the compile
+  of 2 programs 27 ms behind the status line, first frame 29 ms. Again: 1.1 ms + 12 ms.
+  - The compile was far below LD-0's cold 0.24–0.6 s per eye variant [H: the NVIDIA disk cache knew these sources].
+  - A truly cold entry stays behind the status line; its „(N Shader in X s vorbereitet)“ shows the value in the app.
+- **E16 met.**
+  - `probe_lookdev.py`: all 16 `worklight` / `app render` values within 0.04 ms of LD-0.
+  - `probe_d3_acceptance.py`: within noise of O3 stage 2. Three rows +0.4 … +1.0 ms p50. `pose wire off` +1.7 ms p50,
+    all of it in the CPU's `_sync_geometry`, while `pose wire ON` came out 1.2 ms faster there.
+  - LD-1 has no change in that per-frame path. The UV request acts in `_sync_material` only.
 
 ### 17.5 Checklist for the M1 practical test (`scenes/Gollum_Head_05.mirai.json`)
 
