@@ -815,6 +815,13 @@ runs ([LD-0](../../experiments/drag_cost/RESULTS_LOOKDEV_REFERENCE_PC_2026-11-19
     pore- or wrinkle-scale normal detail to break the highlight; no cavity darkening (M1 has no shadows, and SH9 fills
     the creases evenly); the wrap diffuse.
     The first two are exactly the P3 maps; a parameter retune cannot replace them.
+  - **Manu, 2026-11-20 (order after M1):** „Regionsmaterialien können noch warten. Material speichern mit Platz für
+    Masken. Einen detaillierten Zbrush Gollum habe ich noch nicht, daher denke ich bringen grobe Masken für
+    Roughness, Weichheit wahrscheinlich für den Look erstmal mehr als eine Normalmap für Fältchen oder Poren?!“
+    - **LD-2** saves the material (`SceneObject.look`, format v15) with a place for masks from the start.
+    - The **first masks** are coarse painted UV-space masks for `roughness` (Rauheit) and `wrap` (the material's
+      „Weichheit“). They are pulled ahead of the rest of P3.
+    - Normal / detail maps wait for a detailed ZBrush sculpt. LD-D8 (region materials) waits as well.
 - I-3 / I-4 / I-6 (rim on the eye, Lambert sclera in LookDev) — keep, or give the sclera its own softness later?
 - A filmic tone candidate after the Reinhard / Clamp comparison (no architecture change, §15 Q2).
 - LD-2 (`SceneObject.look`, format v15, `view.lookdev`) only after the M1 verdict.
