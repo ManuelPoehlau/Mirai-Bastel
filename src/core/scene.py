@@ -36,6 +36,10 @@ Architekturvertrag:
 - Bemalung (`PaintStack`, `PaintLayer`, `SceneObject.paint`; AD-037 §3, CORE_V1_FREEZE §7.1 2026-11-18): reine
   Daten - Ebenen über der Textur des Objekts, je ein Bildpfad, Deckkraft, Sichtbarkeit, Mischmodus. Pixel, Malen und
   Undo der Pinselstriche leben in `src/mirai` (`mirai.paint`).
+- LookDev-Material (`LookMaterial`, `SceneObject.look`; AD-038 §18 LD-2, CORE_V1_FREEZE §7.1 2026-11-21): reine
+  Daten - das organische Material des LookDev-Raums (Vorlage, Farbe, Albedo-Quelle, Rauheit, Glanz, Weichheit,
+  Durchscheinen); unabhängig vom Worklight-`ObjectMaterial`. Zeichnung, Vorlagen und Undo leben in `src/mirai` /
+  `src/viewport`.
 - Augen (`EyeSpec`, `SceneObject.eye`; AD-033 §4, CORE_V1_FREEZE §7.1 2026-11-15): reine Daten. Seit 2026-11-16
   (Eye LookDev Phase 3, Manu I-5 "Core Change erlaubt") trägt ein Auge optional eine verschachtelte Look-Gruppe
   (`EyeLook`, `EyeSpec.look`; `None` = neutral, wie bisher); Bedeutung und Zeichnung leben in `src/viewport`.
@@ -44,6 +48,7 @@ Architekturvertrag:
 from __future__ import annotations
 
 import math
+import numbers
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, fields
 from enum import Enum
@@ -477,6 +482,75 @@ class PaintStack:
         return cls(raw["width"], raw["height"], tuple(PaintLayer.from_dict(layer) for layer in raw["layers"]))
 
 
+#: AD-038 §18 (LD-2): where a LookDev material takes its albedo - the object's shown texture or paint composite
+#: (`texture`), or its colour (`color`). The file stores the name.
+LOOK_ALBEDO_SOURCES = ("texture", "color")
+
+
+def _look_unit(value: object, what: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        raise ValueError(f"look {what}: expected a number, got {value!r}")
+    return _unit(value, f"look {what}")
+
+
+def _look_colour(value: object, what: str) -> Vec3:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+        raise ValueError(f"look {what}: expected three numbers, got {value!r}")
+    values = tuple(value)
+    if len(values) != 3:
+        raise ValueError(f"look {what}: expected three numbers, got {value!r}")
+    return tuple(_look_unit(c, what) for c in values)  # type: ignore[return-value]
+
+
+@dataclass(frozen=True)
+class LookMaterial:
+    """The organic LookDev material of one object (AD-038 §7 / §18, LD-2; proposal §4): data only. `preset` names the
+    preset it started from (free text: the presets are `src/mirai`'s data and may be renamed), `base_color` an sRGB
+    artist colour, `albedo_source` one of `LOOK_ALBEDO_SOURCES`, `roughness` perceptual, `specular` the level (F0 is
+    `src/mirai`'s / `src/viewport`'s business), `wrap` with its per-channel `wrap_tint`, `backscatter` with its colour,
+    `adjusted` = a value changed after the preset was picked. Every number in [0, 1]; invalid values are refused, not
+    clamped. `None` at the object = no LookDev material (the room draws its Neutral fallback). Independent of
+    `ObjectMaterial`, the Worklight material (nothing is mapped between them, proposal §4.3)."""
+
+    preset: str
+    base_color: Vec3
+    albedo_source: str = "texture"
+    roughness: float = 0.6
+    specular: float = 0.5
+    wrap: float = 0.0
+    wrap_tint: Vec3 = (1.0, 1.0, 1.0)
+    backscatter: float = 0.0
+    backscatter_color: Vec3 = (1.0, 1.0, 1.0)
+    adjusted: bool = False
+
+    def __post_init__(self) -> None:
+        _clean_text(self.preset, "look preset")
+        if self.albedo_source not in LOOK_ALBEDO_SOURCES:
+            raise ValueError(f"look albedo_source: one of {LOOK_ALBEDO_SOURCES}, got {self.albedo_source!r}")
+        for name in ("roughness", "specular", "wrap", "backscatter"):
+            object.__setattr__(self, name, _look_unit(getattr(self, name), name))
+        for name in ("base_color", "wrap_tint", "backscatter_color"):
+            object.__setattr__(self, name, _look_colour(getattr(self, name), name))
+        if not isinstance(self.adjusted, bool):
+            raise ValueError(f"look adjusted: expected true or false, got {self.adjusted!r}")
+
+    def to_dict(self) -> dict:
+        out = {f.name: getattr(self, f.name) for f in fields(self)}
+        for name in ("base_color", "wrap_tint", "backscatter_color"):
+            out[name] = list(out[name])
+        return out
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "LookMaterial":
+        names = [f.name for f in fields(cls)]
+        if not isinstance(raw, dict) or set(raw) != set(names):
+            raise ValueError(f"look: expected exactly {names}, got {raw!r}")
+        for name in ("base_color", "wrap_tint", "backscatter_color"):
+            if not isinstance(raw[name], list):
+                raise ValueError(f"look {name}: expected a list of three numbers, got {raw[name]!r}")
+        return cls(**raw)
+
+
 @dataclass(frozen=True)
 class MirrorPair:
     """Zwei Objekte, deren Platzierungen über die Weltebene `normal·x = offset` gekoppelt sind
@@ -538,7 +612,7 @@ class SceneObject:
     """
 
     __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material", "texture", "hidden", "parent", "eye",
-                 "bone", "paint")
+                 "bone", "paint", "look")
 
     def __init__(
         self,
@@ -556,6 +630,7 @@ class SceneObject:
         eye: EyeSpec | None = None,
         bone: BoneId | None = None,
         paint: PaintStack | None = None,
+        look: LookMaterial | None = None,
     ) -> None:
         self._id = _require_object_id(object_id)
         self.mesh: Mesh = mesh
@@ -588,6 +663,10 @@ class SceneObject:
         if paint is not None and not isinstance(paint, PaintStack):
             raise TypeError(f"erwartet ein PaintStack oder None, nicht {paint!r}")
         self.paint: PaintStack | None = paint
+        # AD-038 §18 (LD-2): None = no LookDev material (the room's Neutral fallback); else the object's organic look.
+        if look is not None and not isinstance(look, LookMaterial):
+            raise TypeError(f"erwartet ein LookMaterial oder None, nicht {look!r}")
+        self.look: LookMaterial | None = look
 
     @property
     def id(self) -> ObjectId:

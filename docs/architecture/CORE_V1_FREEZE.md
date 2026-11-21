@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-11-18 (AD-037 Phase 1d: `PaintLayer`, `PaintStack`, `SceneObject.paint`, format version 14); previously 2026-11-18 (AD-036 slice 1: `SceneObject.bone`, format version 13); previously 2026-11-17 (AD-035 M1: `EyeSpec.sclera_texture`, format version 12); previously 2026-11-16 (Eye LookDev phase 4: `EyeIris`, `EyeLook.iris`, format version 11); previously 2026-11-16 (Eye LookDev phase 3: `EyeLook`, `EyeSpec.look`, format version 10); previously 2026-11-15 (AD-033 eyes: `EyeSpec`, `SceneObject.eye`, format version 9); previously 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-11-21 (AD-038 §18 LD-2: `LookMaterial`, `SceneObject.look`, format version 15); previously 2026-11-18 (AD-037 Phase 1d: `PaintLayer`, `PaintStack`, `SceneObject.paint`, format version 14); previously 2026-11-18 (AD-036 slice 1: `SceneObject.bone`, format version 13); previously 2026-11-17 (AD-035 M1: `EyeSpec.sclera_texture`, format version 12); previously 2026-11-16 (Eye LookDev phase 4: `EyeIris`, `EyeLook.iris`, format version 11); previously 2026-11-16 (Eye LookDev phase 3: `EyeLook`, `EyeSpec.look`, format version 10); previously 2026-11-15 (AD-033 eyes: `EyeSpec`, `SceneObject.eye`, format version 9); previously 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -455,6 +455,30 @@ untouched: every existing signature's behaviour on a mesh without UVs (export: o
 vertex record shapes, point layers; (5) tests `tests/test_core_face_uvs.py` (every primitive incl. seams, journal
 exactness, file validation, random sequences against U1 and exact Undo), `tests/mesh_invariants.assert_uv_invariants`,
 `tests/test_obj_uvs.py`, `tests/test_point_layers.py` (the pinned export key list now ends with `"face_uvs"`).
+
+**Decision:** AD-038 §18 (LD-2), the LookDev material of an object, Core part (2026-11-21;
+[AD-038](AD-038-LOOKDEV-ROOM-M1.md) §13.4 / §18; Manu: „LookDev LD-2 umsetzen“ — the go for this change, LD-D12)
+
+Freeze rule (§7): (1) requirement - the organic LookDev material an artist picks per object travels with the object
+through Undo / Redo, save / load, Duplicate, mirror copy, Detach and the scene reset (proposal §5, LD-D12); (2) not
+solvable with the public API: `SceneObject` has `__slots__`; the M1 session table keyed by `ObjectId` is transient and
+would need a remap on every load for persistence (AD-024 §1.2, the same reason as AD-037 D2); `ObjectMaterial` is the
+Worklight's and is never mapped (proposal §4.3); (3) documented in AD-038 §7 / §18 and the proposal §4 / §5;
+(4) smallest extension, **data only**: `src/core/scene.py` gains `LookMaterial` (frozen: `preset` non-empty text,
+`base_color` / `wrap_tint` / `backscatter_color` three numbers in [0, 1], `albedo_source` in `LOOK_ALBEDO_SOURCES` =
+("texture", "color"), `roughness` / `specular` / `wrap` / `backscatter` numbers in [0, 1], `adjusted` a bool;
+`ValueError` otherwise, never clamped; `to_dict` / `from_dict` with exactly the field names) and
+`SceneObject.look: LookMaterial | None = None` (a slot and a keyword; `TypeError` otherwise). The field set is M1's
+(AD-038 §7), unchanged. `src/core/serialization.py` writes `"look"` only when set and **version 15** only when an object
+has one (else 4-14 as before; a scene without looks is the same text); reads 2-15; invalid (the file is refused): a
+`"look"` key in a file below 15 and every invalid material. Exported from `core`. Presets, the Neutral fallback, F0
+(0.08 x level), the Undo step (`ObjectLookCommand`, the Core `Command` protocol) and the drawing live in `src/mirai` /
+`src/viewport`. Not touched: `Mesh`, `Operation`, `HistoryStack`, `Selection`, `ObjectMaterial`, every other field and
+signature; no NumPy in the Core. Existing tests unchanged except the four assertions that pinned 15 as the first unknown
+version (`test_rig.py`, `test_eye_sclera.py`, `test_bone_link_format.py`, `test_paint_format.py`: now 16). (5) contract
+tests `tests/test_look_format.py` (value rules, defaults, the field's type, no-look equivalence on the text of a v12 and
+the painted v14 Gollum scene, v15 round trip on the JSON text, the version by content, 2-14 read and 16 refused, a
+"look" key below 15 and every invalid material refused) and `tests/test_lookdev_persistence.py` (the application part).
 
 **Decision:** AD-037 Phase 1d, the paint layers of an object, Core part (2026-11-18;
 [AD-037](AD-037-TEXTURE-PAINT.md) §2; Manu: „P-1 ja, P-2 ja, P-3 Go, P-4 ja, P-6 ja“ on the

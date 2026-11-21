@@ -100,6 +100,14 @@ Speichern still zu verlieren. Gelesen werden 2-14. Ungültig (die Datei wird abg
 14 und jeder ungültige Stapel. Was ein Ebenen-Bildpfad bedeutet (relativ zur Szene, `<Szene>_textures/`), entscheidet
 `src/mirai` (`mirai.paint.files`).
 
+Version 15 (LookDev-Material, AD-038 §18 LD-2, Manu 2026-11-21 „LookDev LD-2 umsetzen“, CORE_V1_FREEZE §7.1) ist
+additiv: ein Objekt mit LookDev-Material trägt `"look": {"preset", "base_color", "albedo_source", "roughness",
+"specular", "wrap", "wrap_tint", "backscatter", "backscatter_color", "adjusted"}` (die Werte von
+`core.scene.LookMaterial`; fehlt = keines, der Raum zeichnet Neutral). Nur geschrieben, wenn ein Objekt eines hat (sonst
+4-14 wie bisher, eine Datei ohne LookDev-Material bleibt Byte für Byte gleich), damit ein älterer Build die Datei
+ablehnt, statt die Materialien beim Speichern still zu verlieren. Gelesen werden 2-15. Ungültig (die Datei wird
+abgelehnt): ein `"look"` in einer Datei unter 15 und jedes ungültige Material.
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -112,7 +120,8 @@ import json
 from .ids import BoneId, ObjectId
 from .mesh import LayerKind, Mesh
 from .rig import Rig
-from .scene import EyeSpec, MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, PaintStack, Scene, SceneObject
+from .scene import (EyeSpec, LookMaterial, MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, PaintStack, Scene,
+                    SceneObject)
 
 FORMAT_VERSION = 4
 #: Written instead of FORMAT_VERSION when any mesh has point layers (AD-025 §4.2).
@@ -135,6 +144,8 @@ EYE_SCLERA_FORMAT_VERSION = 12
 BONE_LINK_FORMAT_VERSION = 13
 #: Written when any object has paint (`SceneObject.paint`, AD-037 §3).
 PAINT_FORMAT_VERSION = 14
+#: Written when any object has a LookDev material (`SceneObject.look`, AD-038 §18).
+LOOK_FORMAT_VERSION = 15
 
 
 def scene_to_dict(scene: Scene) -> dict:
@@ -146,7 +157,9 @@ def scene_to_dict(scene: Scene) -> dict:
         obj.state is ObjectState.GROUP or obj.hidden or obj.parent is not None for obj in scene.objects.values()
     ) or (scene.rig is not None and bool(scene.rig.hidden_ids()))
     looks = [obj.eye.look for obj in objects if obj.eye is not None and obj.eye.look is not None]
-    if any(obj.paint is not None for obj in objects):
+    if any(obj.look is not None for obj in objects):
+        version = LOOK_FORMAT_VERSION
+    elif any(obj.paint is not None for obj in objects):
         version = PAINT_FORMAT_VERSION
     elif any(obj.bone is not None for obj in objects):
         version = BONE_LINK_FORMAT_VERSION
@@ -187,7 +200,7 @@ def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
     if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION, GROUP_FORMAT_VERSION,
                    EYE_FORMAT_VERSION, EYE_LOOK_FORMAT_VERSION, EYE_IRIS_FORMAT_VERSION, EYE_SCLERA_FORMAT_VERSION,
-                   BONE_LINK_FORMAT_VERSION, PAINT_FORMAT_VERSION):
+                   BONE_LINK_FORMAT_VERSION, PAINT_FORMAT_VERSION, LOOK_FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw, version) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
@@ -252,7 +265,18 @@ def _object_to_dict(obj: SceneObject) -> dict:
         out["bone"] = int(obj.bone)  # version 13 (AD-036)
     if obj.paint is not None:
         out["paint"] = obj.paint.to_dict()  # version 14 (AD-037)
+    if obj.look is not None:
+        out["look"] = obj.look.to_dict()  # version 15 (AD-038 §18)
     return out
+
+
+def _look_from(raw: dict, version: int) -> LookMaterial | None:
+    value = raw.get("look")
+    if value is None:
+        return None
+    if version < LOOK_FORMAT_VERSION:
+        raise ValueError(f"Objekt {raw.get('id')!r}: \"look\" erst ab Version {LOOK_FORMAT_VERSION}, Datei {version}")
+    return LookMaterial.from_dict(value)
 
 
 def _paint_from(raw: dict, version: int) -> PaintStack | None:
@@ -295,6 +319,7 @@ def _object_from_dict(raw: dict, version: int) -> SceneObject:
         eye=None if raw.get("eye") is None else EyeSpec.from_dict(raw["eye"]),
         bone=_bone_from(raw, version),
         paint=_paint_from(raw, version),
+        look=_look_from(raw, version),
     )
 
 

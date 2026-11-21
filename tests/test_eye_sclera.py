@@ -114,7 +114,7 @@ def test_v12_only_with_a_map_and_an_unknown_version_is_refused():
     assert [o.eye for o in scene_from_dict(data).objects.values() if o.eye] == [spec]
     removed = json.loads(json.dumps(scene_to_dict(_eye_scene(dataclasses.replace(spec, sclera_texture=None)))))
     assert removed["version"] == EYE_LOOK_FORMAT_VERSION  # without the map: the older format again
-    data["version"] = 15  # 13: bone links (AD-036), 14: paint (AD-037)
+    data["version"] = 16  # 13: bone links (AD-036), 14: paint (AD-037), 15: LookDev material (AD-038 §18)
     with pytest.raises(ValueError):
         scene_from_dict(data)
     bad = json.loads(json.dumps(scene_to_dict(_eye_scene(spec))))

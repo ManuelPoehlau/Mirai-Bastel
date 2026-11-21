@@ -146,14 +146,14 @@ def test_the_version_follows_the_content():
 # -- older versions and invalid files --------------------------------------------------------------------------------
 
 
-def test_versions_2_to_13_read_without_paint_and_15_is_refused():
+def test_versions_2_to_13_read_without_paint_and_16_is_refused():
     plain = scene_to_dict(Scene())
-    for version in range(2, 15):
+    for version in range(2, 16):  # 15: LookDev material (AD-038 §18)
         data = json.loads(json.dumps(plain))
         data["version"] = version
         assert all(obj.paint is None for obj in scene_from_dict(data).objects.values())
     data = json.loads(json.dumps(plain))
-    data["version"] = 15  # the first unknown
+    data["version"] = 16  # the first unknown
     with pytest.raises(ValueError):
         scene_from_dict(data)
 
