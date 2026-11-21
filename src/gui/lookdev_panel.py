@@ -1,8 +1,9 @@
 """The LookDev panel (AD-038 §7, proposal §3): Studio, Licht, Material, Ansicht, Status.
 
 Drawn while `app.lookdev_open` (like the Paint Room's window); the logic is `gui.lookdev_model` (headless). Every value
-goes through `Application` and is session state - not saved, no Undo (M1). A held slider shows its value at once (the
-studio's rotation, intensity and exposure are uniforms; no projection), so preview and release are the same step here.
+goes through `Application`. Studio and lights are view state (saved in `view.lookdev`, no Undo): a held slider changes
+them at once (rotation, intensity and exposure are uniforms; no projection). The material is document data since LD-2
+(AD-038 §18): a held slider or colour previews (`MaterialEdit.hold`), the release is one Undo step.
 About 15 controls are visible; the tone curve, softness, "Licht folgt Kamera" and backscatter sit under "Mehr".
 """
 
@@ -17,6 +18,7 @@ class LookdevPanel:
     def __init__(self, imgui, app, layer) -> None:
         self.imgui, self.app, self.layer = imgui, app, layer
         self.more = False
+        self.edit = lm.MaterialEdit()
 
     def _slider(self, label: str, value: float, low: float, high: float, fmt: str = "%.2f"):
         imgui = self.imgui
@@ -25,6 +27,8 @@ class LookdevPanel:
 
     def draw(self) -> None:
         imgui, app = self.imgui, self.app
+        if self.edit.held and not imgui.is_any_item_active() and not imgui.is_mouse_down(0):
+            self.edit.release(app)  # the held material control was let go: one Undo step
         st = lm.state(app)
         imgui.text_disabled(st.status)
         # -- Studio
@@ -95,30 +99,40 @@ class LookdevPanel:
             if imgui.begin_combo("Material", lm.material_label(row)):
                 for name in lm.MATERIAL_PRESETS:
                     if imgui.selectable(name, name == row.preset)[0]:
+                        self.edit.drop(app)
                         app.set_lookdev_material(name)
                 imgui.end_combo()
             if imgui.radio_button(row.albedo_label, row.albedo_source == "texture"):
+                self.edit.drop(app)
                 app.set_lookdev_material_values(albedo_source="texture")
             imgui.same_line()
             if imgui.radio_button("Farbe", row.albedo_source == "color"):
+                self.edit.drop(app)
                 app.set_lookdev_material_values(albedo_source="color")
             imgui.same_line()
             changed, colour = imgui.color_edit3("##farbe", list(row.base_color), imgui.ColorEditFlags_.no_inputs)
             if changed:
-                app.set_lookdev_material_values(base_color=tuple(colour))
+                self.edit.hold(app, base_color=tuple(colour))
             for field, label in (("roughness", "Rauheit"), ("specular", "Glanz"), ("wrap", "Weichheit")):
                 changed, value = self._slider(label, getattr(row, field), 0.0, 1.0)
                 if changed:
-                    app.set_lookdev_material_values(**{field: value})
+                    self.edit.hold(app, **{field: value})
             if self.more:
                 changed, value = self._slider("Durchscheinen", row.backscatter, 0.0, 1.0)
                 if changed:
-                    app.set_lookdev_material_values(backscatter=value)
+                    self.edit.hold(app, backscatter=value)
                 imgui.same_line()
                 changed, colour = imgui.color_edit3("##durch", list(row.backscatter_color),
                                                     imgui.ColorEditFlags_.no_inputs)
                 if changed:
-                    app.set_lookdev_material_values(backscatter_color=tuple(colour))
+                    self.edit.hold(app, backscatter_color=tuple(colour))
+            imgui.begin_disabled(not row.has_look)
+            if imgui.button(lm.RESET):
+                self.edit.drop(app)
+                app.reset_lookdev_material()
+            imgui.end_disabled()
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(lm.RESET_HINT)
         # -- Ansicht
         imgui.separator_text("Ansicht")
         for i, (name, (yaw, pitch)) in enumerate(lm.VIEWS.items()):
@@ -133,6 +147,12 @@ class LookdevPanel:
         changed, on = imgui.checkbox("Augen: Vorschau", st.eye_preview)
         if changed:
             app.set_eye_display(preview=on)
+        imgui.begin_disabled(st.preparing)
+        if imgui.button(lm.SAVE_IMAGE):
+            app.save_lookdev_image()
+        imgui.end_disabled()
+        if imgui.is_item_hovered():
+            imgui.set_tooltip(lm.SAVE_IMAGE_HINT)
         # -- Mehr
         changed, self.more = imgui.checkbox("Mehr", self.more)
         if self.more:

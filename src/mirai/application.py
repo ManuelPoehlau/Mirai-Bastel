@@ -385,6 +385,9 @@ class CommandGate:
 #: Eye LookDev phase 5: imported iris images of a scene that has no file yet (gitignored; `save_scene_file` copies them
 #: beside the scene). Like `config/eye_presets/`, relative to the repository root.
 EYE_IMPORT_DIR = Path(__file__).resolve().parents[2] / "eye_import"
+#: AD-038 §18 (LD-2): "Bild speichern" of a scene that has no file yet (gitignored; with a file: `<stem>_lookdev/`
+#: beside it).
+LOOKDEV_IMAGE_DIR = Path(__file__).resolve().parents[2] / "lookdev_images"
 
 
 class Application:
@@ -1236,6 +1239,7 @@ class Application:
         if not self._lookdev.open:
             return False
         saved = self._lookdev.stop()
+        self._lookdev.preview.clear()  # a held material preview ends without a step
         display = self.display
         display.set_mode(saved["mode"])
         display.set_wireframe_overlay(saved["wire"])
@@ -1260,7 +1264,8 @@ class Application:
         elif viewport.shading != "worklight":
             viewport.set_shading("worklight")
 
-    # The session studio and materials (AD-038 §6, §7): view / session state - no Undo, never saved (LD-D12).
+    # The studio (AD-038 §6): view state - no Undo, saved in `view.lookdev` (§18). The materials (§7): document data
+    # since LD-2 (`SceneObject.look`, one Undo step each).
 
     def _set_lookdev_studio_state(self, state) -> None:
         self._lookdev.studio = state
@@ -1378,9 +1383,26 @@ class Application:
         self.camera.set_view(math.radians(yaw_degrees), math.radians(pitch_degrees))
         self.camera.camera_revision += 1
 
+    def _lookdev_material_refusal(self) -> str | None:
+        owner = self.interaction_owner
+        if owner is not None:
+            return f"LookDev material: not while the {owner} interaction runs"
+        return None
+
+    def _lookdev_material_targets_or_status(self) -> list | None:
+        refusal = self._lookdev_material_refusal()
+        if refusal is not None:
+            self._set_status(refusal)
+            return None
+        targets = self.lookdev_material_targets()
+        if not targets:
+            self._set_status("LookDev material: no object (eyes keep the panel Auge)")
+            return None
+        return targets
+
     def set_lookdev_material(self, name: str) -> bool:
-        """Give the material targets the preset `name` (`mirai.lookdev_material`; session only, no Undo). True =
-        changed."""
+        """Give the material targets the preset `name` (`mirai.lookdev_material`): `SceneObject.look`, one Undo step,
+        saved with the scene (AD-038 §18, LD-2). True = changed."""
         from . import lookdev_material
 
         try:
@@ -1388,42 +1410,133 @@ class Application:
         except ValueError as exc:
             self._set_status(str(exc))
             return False
-        targets = self.lookdev_material_targets()
-        if not targets:
-            self._set_status("LookDev material: no object (eyes keep the panel Auge)")
+        targets = self._lookdev_material_targets_or_status()
+        if targets is None:
             return False
-        table = self._lookdev.materials
-        changed = [obj for obj in targets if table.get(obj.id) != material]
-        for obj in changed:
-            table[obj.id] = material
+        self._lookdev.preview.clear()
+        changed = self._objects.commit_looks([(obj, obj.look, material) for obj in targets], f"LookDev {name}")
         if changed:
-            self._objects.sync_views()
-            self._set_status(f"LookDev material {name!r}: {', '.join(repr(o.name) for o in targets)} (nicht gespeichert)")
-        return bool(changed)
+            self._set_status(f"LookDev material {name!r}: {', '.join(repr(o.name) for o in targets)}")
+        return changed
 
-    def set_lookdev_material_values(self, **changes) -> bool:
-        """Change values of the targets' current material (`base_color`, `albedo_source`, `roughness`, `specular`,
-        `wrap`, `backscatter`, `backscatter_color`); the preset name stays, marked "angepasst". True = changed."""
-        targets = self.lookdev_material_targets()
-        if not targets:
-            self._set_status("LookDev material: no object (eyes keep the panel Auge)")
-            return False
+    def _lookdev_values(self, targets: list, changes: dict) -> dict | None:
+        """`{oid: material}` of the targets' committed materials with `changes` (None + status line = refused)."""
+        from .lookdev_material import with_values
+
         room = self._lookdev
         try:
-            updated = {obj.id: room.material(obj).with_(**changes) for obj in targets}
+            return {obj.id: with_values(room.committed(obj), **changes) for obj in targets}
         except (TypeError, ValueError) as exc:
             self._set_status(f"LookDev material: {exc}")
+            return None
+
+    def set_lookdev_material_values(self, **changes) -> bool:
+        """Change values of the targets' material (`base_color`, `albedo_source`, `roughness`, `specular`, `wrap`,
+        `backscatter`, `backscatter_color`); the preset name stays, marked "angepasst". One Undo step (a slider's
+        release); a held preview ends. True = changed."""
+        targets = self._lookdev_material_targets_or_status()
+        if targets is None:
+            self.end_lookdev_material_preview()
             return False
-        changed = [oid for oid, m in updated.items() if room.materials.get(oid) != m]
-        for oid in changed:
-            room.materials[oid] = updated[oid]
-        if changed:
+        updated = self._lookdev_values(targets, changes)
+        self._lookdev.preview.clear()
+        if updated is None:
             self._objects.sync_views()
-        return bool(changed)
+            return False
+        changed = self._objects.commit_looks([(obj, obj.look, updated[obj.id]) for obj in targets],
+                                             "LookDev material")
+        if not changed:
+            self._objects.sync_views()  # the preview (if any) is gone: the committed values again
+        return changed
+
+    def preview_lookdev_material_values(self, **changes) -> bool:
+        """A held slider or colour picker (AD-038 §7 / §18): the targets drawn with `changes`, nothing in the document
+        changes, no Undo step - until `set_lookdev_material_values` (the release) or `end_lookdev_material_preview`.
+        True = the drawing changed."""
+        if self._lookdev_material_refusal() is not None:
+            return False
+        targets = self.lookdev_material_targets()
+        if not targets:
+            return False
+        updated = self._lookdev_values(targets, changes)
+        if updated is None:
+            return False
+        preview = self._lookdev.preview
+        if all(preview.get(oid) == m for oid, m in updated.items()) and len(preview) == len(updated):
+            return False
+        preview.clear()
+        preview.update(updated)
+        self._objects.sync_views()
+        return True
+
+    def end_lookdev_material_preview(self) -> bool:
+        """The preview ends without a step: the committed materials again. True = a preview was shown."""
+        if not self._lookdev.preview:
+            return False
+        self._lookdev.preview.clear()
+        self._objects.sync_views()
+        return True
+
+    def reset_lookdev_material(self) -> bool:
+        """"Zurücksetzen": the targets lose their look (`SceneObject.look = None`) and draw the Neutral fallback again;
+        one Undo step. True = changed."""
+        targets = self._lookdev_material_targets_or_status()
+        if targets is None:
+            return False
+        self._lookdev.preview.clear()
+        changed = self._objects.commit_looks([(obj, obj.look, None) for obj in targets], "LookDev reset")
+        if changed:
+            self._set_status(f"LookDev material: {', '.join(repr(o.name) for o in targets)} Neutral (kein Material)")
+        return changed
+
+    def lookdev_image_path(self) -> Path:
+        """Where "Bild speichern" writes: `<scene stem>_lookdev/<stem>_<date-time>.png` beside the scene file, else
+        `lookdev_images/` in the repository (gitignored); a number is added when the name exists."""
+        stem = "lookdev" if self.scene_path is None else texture_files.scene_stem(self.scene_path)
+        folder = LOOKDEV_IMAGE_DIR if self.scene_path is None else self.scene_path.parent / f"{stem}_lookdev"
+        name = f"{stem}_{time.strftime('%Y%m%d-%H%M%S')}"
+        path, n = folder / f"{name}.png", 2
+        while path.exists():
+            path, n = folder / f"{name}_{n}.png", n + 1
+        return path
+
+    def save_lookdev_image(self, path: str | Path | None = None) -> bool:
+        """"Bild speichern" (AD-038 §18, LD-2): a PNG of the current LookDev view **without overlays** (no wire,
+        gizmo, HUD or panels), at window resolution - written in the next frame (one extra render of the meshes into
+        the back buffer, `glReadPixels`, then the normal frame). A screenshot of what the room shows, not a render
+        export (P5). Nothing in the document changes. True = requested."""
+        if not self._lookdev.open:
+            self._set_status("LookDev image: only inside the LookDev room")
+            return False
+        if self._lookdev.preparing:
+            self._set_status("LookDev image: the room is still preparing its shaders")
+            return False
+        viewport = self.viewport
+        if viewport is None:
+            self._set_status("LookDev image: no viewport")
+            return False
+        target = Path(os.path.abspath(path)) if path is not None else self.lookdev_image_path()
+        viewport.request_capture(lambda rgba: self._write_lookdev_image(target, rgba))
+        self._set_status("LookDev image: wird gespeichert …")
+        return True
+
+    def _write_lookdev_image(self, path: Path, rgba) -> None:
+        from .iris_import import encode_png
+
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_bytes(encode_png(rgba))
+            os.replace(tmp, path)
+        except OSError as exc:
+            self._set_status(f"LookDev image: not written ({exc})")
+            return
+        self._lookdev.last_image = path
+        self._set_status(f"LookDev image saved: {path} ({rgba.shape[1]}×{rgba.shape[0]})")
 
     def lookdev_status(self) -> str:
         studio = self._lookdev.studio
-        return f"LookDev: Studio {studio.preset!r} - Material und Studio nicht gespeichert (M1)"
+        return f"LookDev: Studio {studio.preset!r} - Material und Studio werden mit der Szene gespeichert"
 
     def set_paint_brush(self, **changes) -> bool:
         """Change the brush (any `BrushSettings` field; clamped). True = changed."""

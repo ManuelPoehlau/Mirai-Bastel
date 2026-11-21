@@ -145,6 +145,7 @@ def replace_scene(scene: Scene, loaded: Scene) -> SceneObject:
         obj.eye = source.eye  # AD-033
         obj.bone = source.bone  # AD-036 (a BoneId of the file: the rig comes along unchanged)
         obj.paint = source.paint  # AD-037 (its layer images: the pixels load on first use)
+        obj.look = source.look  # AD-038 §18 (LD-2)
         new_ids[source.id] = obj.id
         if source.id == loaded.edit_object_id:
             edit = obj
@@ -457,6 +458,24 @@ class ObjectMaterialCommand:
     def redo(self) -> None:
         for obj, _, after in self.changes:
             obj.material = after
+
+
+class ObjectLookCommand:
+    """The LookDev material of one or more objects as one Undo step (AD-038 §18, LD-2; shaped like
+    `ObjectMaterialCommand`). `changes` = `(obj, before, after)` per object (`None` = no look: the room's Neutral
+    fallback); sets only `obj.look`. The view follows through the highlight signature (it holds `obj.look`)."""
+
+    def __init__(self, changes: list, description: str) -> None:
+        self.changes = list(changes)
+        self.description = description
+
+    def undo(self) -> None:
+        for obj, before, _ in reversed(self.changes):
+            obj.look = before
+
+    def redo(self) -> None:
+        for obj, _, after in self.changes:
+            obj.look = after
 
 
 class ObjectEyeCommand:

@@ -401,3 +401,70 @@ def test_both_passes_and_the_background_leave_the_gl_state_as_found(gl_window, t
     assert viewport.lookdev_pass.draws >= 2 and any(k[7] for k in viewport.eye_pass.programs)
     _release(viewport)
     viewport.eye_pass.release()
+
+
+# -- E19 (LD-2, AD-038 §18): "Bild speichern" - the LookDev view without overlays ------------------------------------
+
+def test_the_capture_is_the_lookdev_view_without_overlays_and_the_frame_after_it_is_unchanged(gl_window):
+    """One extra render of the meshes into the back buffer, read back: it equals the frame drawn with the wire off; the
+    normal frame that follows (wire on) equals a frame without a capture; nothing is bound or left changed."""
+    from pyglet import gl
+
+    from viewport.gl_line_overlay import GLLineOverlay
+
+    gl_window.switch_to()
+    viewport = Viewport(Mesh(), store_type=GLRenderStore, line_overlay_type=GLLineOverlay)
+    viewport.bind_camera(OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.2, yaw=0.4, pitch=0.3))
+    viewport.on_camera_changed(aspect=1.0)
+    viewport.set_edit_mesh(_plane(True))
+    viewport.set_edit_look(LookDraw((0.5, 0.5, 0.5)))
+    viewport.set_shading("lookdev", _ld_state())
+    viewport.set_display(show_faces=True, show_edges=False, flat=False)
+    without = _frame(gl_window, viewport)
+    viewport.set_display(show_faces=True, show_edges=True, flat=False)
+    wired = _frame(gl_window, viewport)
+    assert np.any(without != wired)  # the wire shows in the normal frame
+
+    got = []
+    viewport.request_capture(got.append)
+    assert viewport.capture_pending
+    gl.glUseProgram(0)
+    before = snapshot_gl_state()
+    after = _frame(gl_window, viewport, clear=(1.0, 0.0, 1.0))  # a different clear: the capture's own clear must not leak
+    assert not viewport.capture_pending and len(got) == 1
+    rgba = got[0]
+    assert rgba.shape == (SIZE, SIZE, 4) and rgba.dtype == np.uint8 and (rgba[..., 3] == 255).all()
+    assert np.array_equal(rgba[::-1, :, :3].astype(int), without)  # top row first; no wire
+    assert np.array_equal(after, wired)  # the frame after the capture is the normal one
+    gl.glUseProgram(0)
+    assert snapshot_gl_state() == before
+    viewport.lookdev_pass.release()
+    viewport.render_mesh.store.release()
+
+
+def test_save_lookdev_image_writes_the_png(gl_window, tmp_path):
+    """`Application.save_lookdev_image` in the real draw path: refused outside the room, a PNG of the window's size
+    written by the next frame, its pixels the captured ones."""
+    from mirai import iris_import
+    from mirai.application import Application
+
+    gl_window.switch_to()
+    app = Application()
+    app.init_scene("cube", store_type=GLRenderStore)
+    app.set_viewport_size(SIZE, SIZE)
+    app.frame_scene()
+    assert app.save_lookdev_image(tmp_path / "x.png") is False and "only inside" in app.status_message
+    app.open_lookdev()
+    for _ in range(app.LOOKDEV_PREPARE_FRAMES + 1):
+        app.update_viewport(0.0)
+        _frame(gl_window, app.viewport)
+    assert app.viewport.shading == "lookdev"
+    path = tmp_path / "shots" / "head.png"
+    assert app.save_lookdev_image(path) and not path.exists()  # written in the next frame
+    _frame(gl_window, app.viewport)
+    assert path.exists() and app.lookdev.last_image == path and "saved" in app.status_message
+    rgba = iris_import.decode_png(path.read_bytes())
+    assert rgba.shape == (SIZE, SIZE, 4) and (rgba[..., 3] == 255).all()
+    centre, corner = rgba[SIZE // 2, SIZE // 2, :3], rgba[0, 0, :3]
+    assert np.any(centre != corner)  # the cube in front of the studio background
+    app.close_lookdev()

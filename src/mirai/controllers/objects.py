@@ -67,6 +67,7 @@ from ..scene_objects import (
     MirrorRefused,
     ObjectHiddenCommand,
     ObjectNameCommand,
+    ObjectLookCommand,
     ObjectMaterialCommand,
     ObjectParentCommand,
     ObjectPivotCommand,
@@ -846,6 +847,7 @@ class ObjectController:
         obj.material = source.material  # AD-024 Q-M2: the copy keeps the source's material
         obj.texture = source.texture  # AD-026: and its texture (the UVs come with the mesh)
         obj.paint = source.paint  # AD-037: and its paint, with the current pixels
+        obj.look = source.look  # AD-038 §18: and its LookDev material
         self.services.paint.copy_object(source, obj)
         # AD-036 §4.4: the copy keeps the link only for a bone on the mirror plane (the AD-028 §8.4 seam rule)
         link_note = ""
@@ -1352,6 +1354,7 @@ class ObjectController:
             obj.eye = source.eye  # AD-033: a copied eye stays an eye
             obj.bone = source.bone  # AD-036 §4.4: same place, same bone
             obj.paint = source.paint  # AD-037: the same paint, with the current pixels
+            obj.look = source.look  # AD-038 §18: and the same LookDev material
             services.paint.copy_object(source, obj)
             copies[source.id] = obj
             steps.append(AddObjectCommand(scene, obj))
@@ -1591,7 +1594,8 @@ class ObjectController:
             self.services.display.eye_lab is not None,  # AD-035 S-4: no selection tint on eyes in the Eye Lab
             scene.edit_object_id,
             tuple(
-                (oid, obj.state, obj.material, obj.texture, obj.hidden, obj.parent, obj.eye, id(obj.mesh), obj.paint)
+                (oid, obj.state, obj.material, obj.texture, obj.hidden, obj.parent, obj.eye, id(obj.mesh), obj.paint,
+                 obj.look)
                 for oid, obj in scene.objects.items()
             ),
         )
@@ -2008,6 +2012,22 @@ class ObjectController:
             obj.material = after
         names = ", ".join(repr(obj.name) for obj, _, _ in changes)
         services.history.push(ObjectMaterialCommand(changes, f"Material {names}"))
+        services.record_selection_history(before, mesh_step=False)
+        self.sync_views()
+        return True
+
+    def commit_looks(self, changes: list, label: str) -> bool:
+        """AD-038 §18 (LD-2): one Undo step (`ObjectLookCommand`) for `(obj, before, after)` LookDev materials
+        (unchanged ones dropped) and the view; the caller posts the status line. True = something changed."""
+        changes = [(obj, before, after) for obj, before, after in changes if before != after]
+        if not changes:
+            return False
+        services = self.services
+        before = services.selection_snapshot()
+        for obj, _, after in changes:
+            obj.look = after
+        names = ", ".join(repr(obj.name) for obj, _, _ in changes)
+        services.history.push(ObjectLookCommand(changes, f"{label} {names}"))
         services.record_selection_history(before, mesh_step=False)
         self.sync_views()
         return True

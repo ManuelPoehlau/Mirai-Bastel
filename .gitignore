@@ -57,6 +57,7 @@ obj/
 
 # Eye LookDev phase 5: iris images imported into a scene that has no file yet (src/mirai/application.py)
 /eye_import/
+/lookdev_images/
 # Manu's own iris photo (I-9 decision 2026-11-16: never in the public repository) - its copies beside a scene
 scenes/**/iris_custom_*
 # AD-035 M1 (S-12, 2026-11-17): Manu's own sclera maps / photos, named sclera_custom*, stay local - their copies too

@@ -3,7 +3,7 @@
 **Status:** PROPOSAL; **decisions LD-D1 … LD-D14 by Manu, 2026-11-19** (§0). Still design and research only: no
 production code, Core, scene format, render behaviour or GUI is changed, and no key binding is authorised. LD-D8,
 LD-D15 and LD-D16 stay open (§0). Items still marked **[O]** in the body are those open ones or are settled by §0.
-**AD-038 accepted 2026-11-19 (Manu):** [AD-038](../architecture/AD-038-LOOKDEV-ROOM-M1.md) is the architecture for LD-0 / LD-1. Where it deviates from this proposal (after a code check at `89f61fc`), its §1.2 and §14 say so and the AD holds. **LD-1 (M1) built 2026-11-19:** AD-038 §17.
+**AD-038 accepted 2026-11-19 (Manu):** [AD-038](../architecture/AD-038-LOOKDEV-ROOM-M1.md) is the architecture for LD-0 / LD-1. Where it deviates from this proposal (after a code check at `89f61fc`), its §1.2 and §14 say so and the AD holds. **LD-1 (M1) built 2026-11-19:** AD-038 §17. **LD-2 built 2026-11-21** (Manu: „LookDev LD-2 umsetzen“): AD-038 §18.
 **Date:** 2026-11-19.
 **State inspected:** `origin/main` @ `a3bfcc0` ("AD-037 §11.3: the reference PC's 4.2 s …"), working branch
 `claude/busy-brown-svigg5` at the same commit, clean tree. Changes of 2026-11-18/19 on `main` were read (AD-036 slices

@@ -43,7 +43,7 @@ class LinkedSeed:
 
 def detached_object(scene: Scene, src: SceneObject, mesh: Mesh) -> tuple[SceneObject, AddObjectCommand]:
     """The new object for the detached `mesh`, with `src`'s placement and look (transform, pivot, material, texture,
-    state, hidden flag, group) and a free name after `src`'s (`unique_object_name`, as Duplicate); and the not yet
+    state, hidden flag, group, LookDev material) and a free name after `src`'s (`unique_object_name`, as Duplicate); and the not yet
     applied step that adds it (`_mesh_transaction` applies it after the deletion). The scene hands out the id now
     (AD-001: it is never reused, also when the step is refused) and holds the object only once the step runs."""
     obj = scene.add_object(
@@ -52,6 +52,7 @@ def detached_object(scene: Scene, src: SceneObject, mesh: Mesh) -> tuple[SceneOb
     obj.transform, obj.pivot, obj.material, obj.hidden = src.transform, src.pivot, src.material, src.hidden
     obj.bone = src.bone  # AD-036: a detached part of a rigid part follows the same bone
     obj.paint = src.paint  # AD-037: the same UVs, the same paint (the caller copies the pixels)
+    obj.look = src.look  # AD-038 §18: and the same LookDev material
     scene.remove_object(obj.id)
     return obj, AddObjectCommand(scene, obj)
 

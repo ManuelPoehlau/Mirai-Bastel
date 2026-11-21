@@ -1,8 +1,9 @@
 """Ansichts-Zustand einer Szene speichern und laden (Manu 2026-11-07).
 
 Shading, Wireframe, Region-Farben, Symmetrie-Anzeige, Worklight, Glanz, Kamera (Ansicht, Fokus, Ortho),
-Referenz-Ghost, Texturen, die SubD-Vorschau und die Morph-Regler (Gewichte und aktuelles Ziel je Objekt, Manu
-2026-11-16) sollen beim Öffnen einer gespeicherten Szene nicht neu
+Referenz-Ghost, Texturen, die SubD-Vorschau, die Morph-Regler (Gewichte und aktuelles Ziel je Objekt, Manu
+2026-11-16) und das LookDev-Studio (Vorlage, Drehung, Helligkeit, Belichtung, Tonkurve, Key / Fill / Rim, Hintergrund;
+AD-038 §18 LD-2, Abschnitt `"lookdev"`) sollen beim Öffnen einer gespeicherten Szene nicht neu
 eingestellt werden müssen. Der Zustand reist in der Szenendatei unter dem optionalen Schlüssel `"view"`
 (neben `objects`, `rig`, ...): `core.serialization` ignoriert unbekannte Schlüssel, das Core-Format
 (Version, Vertrag) bleibt unverändert, und ältere Builds lesen die Datei weiter (sie verlieren nur die Ansicht).
@@ -11,6 +12,10 @@ Reiner Ansichts-Zustand: kein History-Eintrag, keine Mesh-Änderung. Nicht gespe
 Hover, Gizmo-Größe, Maske/Hide (gehören zum Mesh der Sitzung) und die Look-Zeile der Pfeiltasten.
 Eine Datei ohne `"view"` (oder mit einem kaputten Abschnitt) lässt die jeweilige Ansicht stehen -
 jeder Abschnitt wird einzeln und defensiv gelesen, ein Fehler darin verhindert nie das Laden der Szene.
+
+Kompatibilität (AD-038 §18, proposal §5.1): ein älterer Build ohne `"lookdev"` liest die Datei und verliert beim
+Speichern nur diesen Abschnitt (`capture` schreibt nur die bekannten Abschnitte) - wie jede Ansicht; die LookDev-
+Materialien sind Dokument-Daten (`SceneObject.look`, v15) und gehen nie still verloren.
 
 pyglet-frei; `capture(app)` liefert ein JSON-fähiges dict, `apply(app, view)` setzt es zurück.
 """
@@ -76,7 +81,23 @@ def capture(app) -> dict:
             "lines_shown": bool(subd.lines_shown),
         },
         "morph": _capture_morph(app),
+        "lookdev": _capture_lookdev(app._lookdev.studio),
     }
+
+
+#: The studio values `view.lookdev` holds; the studio content (dome, softboxes) comes from the preset by name.
+LOOKDEV_VALUES = ("rotation", "env_intensity", "exposure", "tone_curve", "follow_camera", "background_gradient")
+LOOKDEV_LIGHT_VALUES = ("on", "intensity", "azimuth", "elevation", "kelvin", "size")
+
+
+def _capture_lookdev(state) -> dict:
+    """The LookDev studio (AD-038 §18): its preset (the studio content), the values the panel edits and the lights."""
+    out = {"preset": state.preset}
+    out.update({name: getattr(state, name) for name in LOOKDEV_VALUES})
+    out["background"] = [list(colour) for colour in state.background]
+    for light in ("key", "fill", "rim"):
+        out[light] = {name: getattr(getattr(state, light), name) for name in LOOKDEV_LIGHT_VALUES}
+    return out
 
 
 def _capture_morph(app) -> dict:
@@ -126,6 +147,7 @@ def apply(app, view: Any) -> list[str]:
         ("symmetry_display", _apply_symmetry),
         ("reference_ghost", _apply_ghost),
         ("morph", _apply_morph),
+        ("lookdev", _apply_lookdev),
     ):
         if name not in view:
             continue
@@ -263,3 +285,59 @@ def _apply_morph(app, raw: dict) -> None:
         if oid is not None:
             provider.set_current(oid, lid)
     app.morph.refresh()
+
+
+def _apply_lookdev(app, raw: dict) -> None:
+    """The saved studio (AD-038 §18): the preset's studio content with the saved values and lights. Every value is
+    checked against the ranges the panel's setters keep; an unknown preset or a bad value skips the whole section (the
+    studio stays as it is)."""
+    from viewport.lookdev_optics import StudioLight
+
+    from .lookdev_presets import PRESETS as STUDIOS
+
+    preset = raw["preset"]
+    if preset not in STUDIOS:
+        raise ValueError(f"unknown LookDev studio {preset!r}")
+    ranges = app.LOOKDEV_STUDIO_RANGES
+    values: dict[str, Any] = {}
+    for name in LOOKDEV_VALUES:
+        value = raw[name]
+        if name in ("follow_camera", "background_gradient"):
+            values[name] = _flag(value)
+        elif name == "tone_curve":
+            if not isinstance(value, str):
+                raise ValueError(f"tone curve: {value!r}")
+            values[name] = value
+        else:
+            number = _number(value)
+            low, high = ranges[name]
+            if not low <= number <= high:
+                raise ValueError(f"{name} out of range: {number}")
+            values[name] = number
+    background = raw["background"]
+    if not isinstance(background, list) or len(background) != 2:
+        raise ValueError("background needs [bottom, top]")
+    colours = []
+    for colour in background:
+        if not isinstance(colour, list) or len(colour) != 3:
+            raise ValueError("a background colour needs three numbers")
+        colour = tuple(_number(c) for c in colour)
+        if not all(0.0 <= c <= 1.0 for c in colour):
+            raise ValueError("background colours need 0 .. 1")
+        colours.append(colour)
+    values["background"] = (colours[0], colours[1])
+    light_ranges = app.LOOKDEV_LIGHT_RANGES
+    for light in ("key", "fill", "rim"):
+        entry = raw[light]
+        if not isinstance(entry, dict):
+            raise ValueError(f"{light}: expected an object")
+        light_values: dict[str, Any] = {"on": _flag(entry["on"])}
+        for name in LOOKDEV_LIGHT_VALUES[1:]:
+            number = _number(entry[name])
+            low, high = light_ranges[name]
+            if not low <= number <= high:
+                raise ValueError(f"{light} {name} out of range: {number}")
+            light_values[name] = number
+        values[light] = StudioLight(**light_values)
+    state = dataclasses.replace(STUDIOS[preset], **values)  # an unknown tone curve raises ValueError here
+    app._set_lookdev_studio_state(state)

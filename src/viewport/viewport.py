@@ -246,6 +246,7 @@ class Viewport:
         # LookDev pass, its frame and the LookDraws exist only once the room set them; with "worklight" `render()` is
         # today's code plus one string comparison.
         self.shading = "worklight"
+        self._capture_request = None  # AD-038 §18: the next render()'s capture callback ("Bild speichern")
         self.lookdev_state = None
         self._lookdev_pass = None
         self._edit_look: LookDraw | None = None
@@ -1139,6 +1140,36 @@ class Viewport:
         (Duck-Typing-Bindung, siehe Paket-Docstring)."""
         if self.render_mesh.camera is None:
             return None
+        capture, self._capture_request = self._capture_request, None
+        if capture is not None:
+            # AD-038 §18 (LD-2): one extra render of the meshes (no overlays) into the back buffer, read back, cleared;
+            # then the normal frame. Not a render export (P5): what the room shows, at window resolution.
+            from pyglet import gl
+
+            from .lookdev_pass import read_back_buffer
+
+            self._render_meshes()
+            rgba = read_back_buffer()
+            gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
+            capture(rgba)
+        if self._render_meshes() is None:
+            return None
+        self._render_overlays()
+
+    def request_capture(self, callback) -> None:
+        """AD-038 §18: the next `render()` first draws the meshes without overlays, reads them back and calls
+        `callback(rgba)` (an `(h, w, 4)` uint8 array, top row first), then draws the normal frame. A second request
+        before that frame replaces the first."""
+        self._capture_request = callback
+
+    @property
+    def capture_pending(self) -> bool:
+        return self._capture_request is not None
+
+    def _render_meshes(self):
+        """The meshes of `render()` (the background first in LookDev); None = nothing is drawn (no camera)."""
+        if self.render_mesh.camera is None:
+            return None
         light = self.light_uniforms()
         surface = self.surface_render_mesh
         drawn = self.render_mesh if surface is None else surface
@@ -1162,6 +1193,10 @@ class Viewport:
                         continue
                 # H7-E: die Ersatzfläche des Eintrags, wenn der Provider eine nennt.
                 self.entry_surface_render_meshes.get(key, self.object_entries[key]).render(self.render_mesh.camera)
+        return True
+
+    def _render_overlays(self) -> None:
+        """The overlays of `render()`, over the meshes."""
         if (
             self.line_overlay is None
             and self.face_overlay is None

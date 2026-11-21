@@ -78,14 +78,15 @@ def test_a_save_in_the_room_writes_the_restored_view(app, tmp_path):
     assert app.lookdev_open  # saving does not end the room
     a, b = json.loads(outside.read_text()), json.loads(inside.read_text())
     assert b["view"]["display"] == a["view"]["display"]
-    assert a["view"]["display"]["mode"] == "FLAT_SHADED" and "lookdev" not in json.dumps(b["view"]).lower()
+    assert a["view"]["display"]["mode"] == "FLAT_SHADED"
+    assert b["view"]["lookdev"] == a["view"]["lookdev"]  # LD-2: the studio is saved whether the room is open or not
 
 
-def test_a_load_closes_the_room_and_drops_the_session_materials(app):
+def test_a_load_closes_the_room_and_drops_a_held_preview(app):
     app.open_lookdev()
-    app.lookdev.materials[app.scene.edit_object_id] = PRESETS["Creature Skin"]
+    app.lookdev.preview[app.scene.edit_object_id] = PRESETS["Creature Skin"]
     app.init_scene("cube")
-    assert not app.lookdev_open and app.viewport.shading == "worklight" and not app.lookdev.materials
+    assert not app.lookdev_open and app.viewport.shading == "worklight" and not app.lookdev.preview
 
 
 # -- E11: refusals and the room order --------------------------------------------------------------------------

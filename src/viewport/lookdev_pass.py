@@ -188,3 +188,26 @@ class LookdevPass:
             self._background.delete()
             gl.glDeleteVertexArrays(1, ctypes.byref(gl.GLuint(self._vao)))
             self._background, self._vao = None, None
+
+
+def read_back_buffer():
+    """AD-038 §18 (LD-2, "Bild speichern"): the current framebuffer's viewport rectangle as an `(h, w, 4)` uint8 RGBA
+    array, top row first. Reads the back buffer (`glReadPixels`), binds nothing (no FBO, I-4); the pack alignment it
+    sets for the read is restored."""
+    import ctypes
+
+    import numpy as np
+    from pyglet import gl
+
+    rect = (gl.GLint * 4)()
+    gl.glGetIntegerv(gl.GL_VIEWPORT, rect)
+    x, y, width, height = (int(v) for v in rect)
+    out = np.empty((height, width, 4), np.uint8)
+    alignment = gl.GLint()
+    gl.glGetIntegerv(gl.GL_PACK_ALIGNMENT, ctypes.byref(alignment))
+    gl.glPixelStorei(gl.GL_PACK_ALIGNMENT, 1)
+    gl.glReadPixels(x, y, width, height, gl.GL_RGBA, gl.GL_UNSIGNED_BYTE, out.ctypes.data_as(ctypes.c_void_p))
+    gl.glPixelStorei(gl.GL_PACK_ALIGNMENT, alignment.value)
+    out = out[::-1].copy()
+    out[..., 3] = 255  # the default framebuffer's alpha is not part of the picture
+    return out

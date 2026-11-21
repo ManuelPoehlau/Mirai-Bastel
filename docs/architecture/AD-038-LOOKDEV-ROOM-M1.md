@@ -4,8 +4,9 @@
 Neutral wählen“ (§15). **LD-0 run on the reference PC (Manu, 2026-11-19)**: LD-D10 met with a wide margin (§16.1).
 **LD-1 built 2026-11-19** (branch `claude/sweet-hamilton-pzimll`, implementation note §17). **LD-1 measured on the
 reference PC (2026-11-20, §17.4): LD-D10 and E16 met** — the room's frame 2.4 / 3.3 ms GPU (cage / SubD 1, framed
-1024×768), cheaper than the Worklight; the Modelling Room unchanged. Next: Manu's M1 practical
-test (§13.3, checklist §17.5). Drafted 2026-11-19 as PROPOSED (Architecture Gate). The number
+1024×768), cheaper than the Worklight; the Modelling Room unchanged. **LD-2 built 2026-11-21** on Manu's go
+„LookDev LD-2 umsetzen“ (§18): `SceneObject.look` (Core, format v15), one Undo step per material change, `view.lookdev`,
+the finished material panel and „Bild speichern“. Next: Manu's practical test of M1 + LD-2 (§13.3, §17.5, §18.6). Drafted 2026-11-19 as PROPOSED (Architecture Gate). The number
 AD-038 stays; new class, file and panel names remain `PROVISIONAL` until built.
 **Basis:** [LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md)
 (decisions LD-D1 … LD-D14, Manu 2026-11-19, its §0) and its
@@ -57,6 +58,11 @@ estimate, **[O]** open for Manu.
   - Zwei Worklight-Stellen im Augen-Shader fehlten in der Liste des Vorschlags.
 - **LD-0-Sonde** `experiments/drag_cost/probe_lookdev.py`: Im Container läuft sie vollständig, aber nur als
   Funktionstest. Die Zahlen deines Referenz-PCs entscheiden (§13, §16).
+- **LD-2 gebaut 2026-11-21 (§18)**, auf dein „LookDev LD-2 umsetzen“: Das Material ist jetzt Teil der Szene
+  (`SceneObject.look`, Format v15, nur geschrieben, wenn ein Objekt eines hat), jede Änderung ist ein Undo-Schritt
+  (ein gehaltener Regler zeigt eine Vorschau, das Loslassen ist ein Schritt), es reist mit Duplizieren, Spiegeln,
+  Detach und dem Laden. Das Studio (Vorlage, Drehung, Helligkeit, Belichtung, Tonkurve, Licht, Hintergrund) steht in
+  `view.lookdev`. Neu im Panel: „Zurücksetzen“ und „Bild speichern“ (PNG der Ansicht ohne Overlays, kein Render-Export).
 - **Stand 2026-11-19:** von dir freigegeben, die Sonde lief auf dem Referenz-PC. Der gerahmte Kopf braucht 1,7–2,2 ms
   GPU bei 1024×768, also 5–7 % von 33,3 ms. LookDev ist in jeder Ansicht billiger als das Worklight. Das erste
   Kompilieren einer Augen-Variante dauert bis 0,6 s, deshalb wird beim Betreten mit Statuszeile vorkompiliert (§16.1).
@@ -432,6 +438,9 @@ Unchanged in both:
 ---
 
 ## 7. The organic material model and presets — M1 session only [P] (LD-D6, LD-D12)
+
+> **Since LD-2 (2026-11-21, §18):** the material is document data — `core.LookMaterial` on `SceneObject.look`, saved
+> as v15, one Undo step per change. The session table, "nicht gespeichert" and "No Undo" below describe M1.
 
 - **`LookMaterial`:** a frozen, validated dataclass in `src/mirai/lookdev_material.py`, **not** in `src/core/` in M1.
   - Fields: `preset`, `base_color`, `albedo_source` (`texture` | `color`), `roughness` (perceptual, α = r²),
@@ -809,3 +818,109 @@ runs ([LD-0](../../experiments/drag_cost/RESULTS_LOOKDEV_REFERENCE_PC_2026-11-19
 - I-3 / I-4 / I-6 (rim on the eye, Lambert sclera in LookDev) — keep, or give the sclera its own softness later?
 - A filmic tone candidate after the Reinhard / Clamp comparison (no architecture change, §15 Q2).
 - LD-2 (`SceneObject.look`, format v15, `view.lookdev`) only after the M1 verdict.
+
+---
+
+## 18. LD-2 — persistence, the finished material panel, the viewport capture (built 2026-11-21)
+
+**Go:** Manu, 2026-11-21: „LookDev LD-2 umsetzen“ (stop point §13.4; the proposal's "(LD-2 go)", §16 there). The M1
+practical-test verdict (§17.5) was not written down before the go; the go is taken as Manu's decision that the M1
+field set holds. The field set is M1's, unchanged (§7); preset values stay `PROVISIONAL`.
+
+### 18.1 The Core field [P → built]
+
+- `core.LookMaterial` (`src/core/scene.py`): frozen, data only, validated (`ValueError`, never clamped): `preset`
+  (non-empty text), `base_color`, `albedo_source` (`LOOK_ALBEDO_SOURCES` = texture / color), `roughness`, `specular`
+  (the level), `wrap`, `wrap_tint`, `backscatter`, `backscatter_color`, `adjusted`. `to_dict` / `from_dict` take exactly
+  the field names.
+- `SceneObject.look: LookMaterial | None = None` (slot + keyword). `None` = the room's Neutral fallback (§15 Q3).
+- Format **v15 by content** (`core/serialization.py`): `"look"` only when set, v15 only when an object has one; a scene
+  without looks is the same text in its old version (E17); a `"look"` below 15 and any invalid material refuse the file.
+  An older build refuses a v15 file, so materials are never silently lost (proposal §5.1).
+- CORE_V1_FREEZE §7.1 entry 2026-11-21. Not touched: `Mesh`, `Operation`, `HistoryStack`, `Selection`, `ObjectMaterial`.
+- `mirai.lookdev_material` keeps what is the app's: presets, `fallback`, `f0`, `wrap_rgb`, `with_values` ("angepasst").
+
+### 18.2 Undo and the carried field
+
+- `ObjectLookCommand` (`mirai/scene_objects.py`, shaped like `ObjectMaterialCommand`); `ObjectController.commit_looks`
+  pushes one step for every changed target and redraws. `obj.look` is in the highlight signature, so Undo / Redo
+  (also outside the room) redraw the LookDraws in the next tick.
+- Carried like `paint` / `material`: `replace_scene` (load / reset), Duplicate, mirror copy, Detach, and the morph
+  target's editing view (display parity with its base; a material change on that view is not carried back, as for
+  `material`).
+- **Preview / commit (§7 "a held slider previews, release commits"):** `Application.preview_lookdev_material_values`
+  draws the targets with the held values (`LookdevRoom.preview`, nothing in the document, no step);
+  `set_lookdev_material_values` commits one step and ends the preview; `end_lookdev_material_preview` drops it. The
+  panel's `MaterialEdit` holds the values of a slider or colour drag and releases them when no control is active and
+  the mouse is up (one step per drag, the colour picker's popup included). A preview the app already ended (room
+  closed, preset picked, scene load) is dropped, never committed late. **I-14 (preview = commit) is superseded.**
+- Refused (status line) while an interaction owns the input, like the Worklight material setters.
+- **"Zurücksetzen"**: `reset_lookdev_material` sets `look = None` (Neutral again), one step.
+
+### 18.3 `view.lookdev`
+
+- `mirai.view_state` gains the section `"lookdev"`: the studio preset (its name selects the studio *content*: dome and
+  softboxes, which the panel does not edit), rotation, environment intensity, exposure, tone curve, "Licht folgt
+  Kamera", background (bottom, top) and gradient, key / fill / rim (on, intensity, azimuth, elevation, Kelvin, size).
+- Read defensively: every value against the setters' ranges (`LOOKDEV_STUDIO_RANGES`, `LOOKDEV_LIGHT_RANGES`); an
+  unknown preset or any bad value skips the whole section and the studio stays (E18). A file without the section keeps
+  the current studio. View state: no Undo; a load never reopens the room. Saved whether the room is open or not.
+- **Compatibility (proposal §5.1), pinned by a test:** `capture` writes only its known sections, so a build before
+  LD-2 drops `view.lookdev` on save (as it would any unknown section). The quality override of the proposal's list is
+  LD-3's and not in the section yet.
+
+### 18.4 "Bild speichern" (the viewport capture)
+
+- `Viewport.request_capture(callback)`: the next `render()` first draws the meshes **without overlays** (background,
+  LookDev pass, eyes; no wire, highlights, points, tool lines), reads the back buffer (`lookdev_pass.read_back_buffer`:
+  `glReadPixels` of `GL_VIEWPORT`, pack alignment restored, no FBO — I-4), clears colour + depth and calls back; then
+  the normal frame. `render()` is split into `_render_meshes` / `_render_overlays` with today's order; the Worklight
+  path is the same calls (one more `None` check).
+- Gizmo, HUD, triad and imgui are drawn by `main.py` after `render()` and are therefore never in the image; `main.py`
+  is not touched.
+- `Application.save_lookdev_image(path=None)`: only inside the room and after the compile; default path
+  `<scene stem>_lookdev/<stem>_<date-time>.png` beside the scene, else `lookdev_images/` (gitignored). Written by the
+  next frame (`iris_import.encode_png`, temp file + replace); status line with path and size. A screenshot at window
+  resolution, explicitly **not** a render export (P5).
+
+### 18.5 Files and tests
+
+| Layer | Changed |
+|---|---|
+| Core | `core/scene.py` (`LookMaterial`, `SceneObject.look`), `core/serialization.py` (v15), `core/__init__.py` |
+| App | `mirai/lookdev_material.py`, `mirai/scene_objects.py` (`ObjectLookCommand`, `replace_scene`), `mirai/detach.py`, `controllers/objects.py` (carry, signature, `commit_looks`), `controllers/morph.py`, `controllers/lookdev_room.py` (`preview`, `committed`), `mirai/view_state.py` (`lookdev`), `mirai/application.py` (setters, preview, reset, image) |
+| Viewport | `viewport/viewport.py` (`request_capture`, `render` split), `viewport/lookdev_pass.py` (`read_back_buffer`) |
+| GUI | `gui/lookdev_model.py` (`MaterialEdit`, `SAVED`, `has_look`), `gui/lookdev_panel.py` (preview / release, Zurücksetzen, Bild speichern) |
+| Tests | new `test_look_format.py` (E17 Core), `test_lookdev_persistence.py` (E17 app, E18); added E19 in `test_gl_lookdev_pass.py`, LD-2 panel tests in `test_gui_lookdev_model.py`; the M1 "not saved / no Undo / session table" assertions in `test_lookdev_session.py`, `test_lookdev_room.py`, `test_gui_lookdev_model.py` rewritten to LD-2; the first-unknown-version pins 15 → 16 |
+| Not touched | `src/main.py`, `config/keymap.json`, `scenes/`, the Worklight programs, `GLRenderStore.draw()`, the eye shaders |
+
+Test results: §18.7.
+
+### 18.6 Practical-test checklist (adds to §17.5)
+
+1. Material on the head, save, reopen: the material is back; the file's `version` is 15 (16 is refused by this build).
+2. A slider drag is one Undo step (Ctrl+Z puts the whole drag back); a colour pick likewise; Undo also outside the room.
+3. Duplicate / mirror copy / Detach of the head: the copy has the same LookDev material.
+4. „Zurücksetzen“: the object is Neutral again; Undo brings the material back.
+5. Studio (preset, rotation, lights, background), save, reopen: the studio is back (the room itself stays closed).
+6. „Bild speichern“: a PNG in `<Szene>_lookdev/` without wire, gizmo, HUD or panels, at window size.
+
+### 18.7 Tests (container, 2026-11-21)
+
+GL files each in their own process under xvfb (CLAUDE.md "Testing"):
+
+| Command | Result |
+|---|---|
+| `python -m pytest tests/test_look_format.py -q` | 40 passed (E17, Core) |
+| `python -m pytest tests/test_lookdev_persistence.py -q` | 21 passed (E17 app: save / load, Undo / Redo, Duplicate, mirror, Detach, reset; E18 incl. the §5.1 limitation) |
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_pass.py -q` | 13 passed (E19: the capture equals the frame without overlays, the next frame unchanged, GL state as found; the PNG written) |
+| `xvfb-run -a python -m pytest tests/test_gl_eye_pass.py -q` | 126 passed (both pins; `PINNED_SOURCES_SHA256` untouched) |
+| `xvfb-run -a python -m pytest tests/test_gl_texture.py tests/test_gl_face_data_layout.py tests/test_gl_shading.py -q` | 45 passed (E1) |
+| `xvfb-run -a python -m pytest tests/test_gl_gpu_picking.py tests/test_gl_morph_picking.py -q` | 53 passed (E15) |
+| `xvfb-run -a python -m pytest tests/test_gui_imgui_window.py tests/test_gui_lookdev_window.py -q` | 18 + 1 passed (the panel in the real window) |
+| `xvfb-run -a python -m pytest tests/test_main_wiring.py -q` | **1 skipped** (no EGL in this container, as before) — not a pass |
+| `xvfb-run -a python -m pytest tests -q` | 7,891 passed, 8 skipped, 2 failed: `test_scene_menu_local_tmp.py::test_probe_menu_wiring` (**pre-existing**, fails identically without these changes) and `test_interaction_structure.py` (a new `Application` field; fixed by keeping the last image path on `LookdevRoom`, then 34 passed) |
+| `xvfb-run -a python -m pytest experiments/morph_lab/tests experiments/drag_cost/tests -q` | 146 passed |
+
+No reference-PC run is needed for LD-2's gate: the Worklight path renders the same calls (E1, the eye pins and the
+picking suites green); the capture costs one extra mesh render only in the frame it is asked for.

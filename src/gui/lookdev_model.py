@@ -2,9 +2,11 @@
 
 The panel reads the room's state (`state(app)`) and calls `Application` (`set_lookdev_studio_preset`,
 `set_lookdev_studio`, `set_lookdev_light`, `set_lookdev_material`, `set_lookdev_material_values`, `frame_lookdev`,
-`close_lookdev`); it holds no document state. Everything it changes is session state: not saved, no Undo (M1, LD-D12) -
-the status row says "nicht gespeichert". About 15 controls are visible; the rest sits under "Mehr". Labels German, every
-layout choice `PROVISIONAL` (proposal §3).
+`close_lookdev`, `preview_lookdev_material_values`, `reset_lookdev_material`, `save_lookdev_image`); it holds no document
+state. Since LD-2 (AD-038 §18) the material is document data (`SceneObject.look`, saved, one Undo step per change: a
+held slider or colour previews, the release commits - `MaterialEdit`); the studio is view state saved in
+`view.lookdev` (no Undo). About 15 controls are visible; the rest sits under "Mehr". Labels German, every layout choice
+`PROVISIONAL` (proposal §3).
 """
 
 from __future__ import annotations
@@ -18,7 +20,11 @@ from mirai.lookdev_presets import PRESET_NAMES as STUDIO_PRESETS
 TITLE = "LookDev"
 MENU_OPEN = "LookDev öffnen"
 MENU_CLOSE = "LookDev schließen"
-NOT_SAVED = "Material und Studio: nicht gespeichert (M1)"
+SAVED = "Material und Studio werden mit der Szene gespeichert"
+SAVE_IMAGE = "Bild speichern"
+SAVE_IMAGE_HINT = "PNG der LookDev-Ansicht ohne Overlays (Fenstergröße) - kein Render-Export"
+RESET = "Zurücksetzen"
+RESET_HINT = "kein LookDev-Material: das Objekt zeigt wieder Neutral"
 EYE_NOTE = "Auge - Werte im Panel „Auge“"
 LIGHTS = ("key", "fill", "rim")
 LIGHT_LABELS = {"key": "Key", "fill": "Fill", "rim": "Rim"}
@@ -56,6 +62,8 @@ class MaterialRow:
     backscatter_color: tuple[float, float, float]
     #: a selected eye: its values stay in the panel "Auge"
     eye_selected: bool
+    #: a target has its own look (`SceneObject.look`); False = all draw the Neutral fallback ("Zurücksetzen" has nothing)
+    has_look: bool = False
 
 
 @dataclass(frozen=True)
@@ -94,7 +102,7 @@ def _material(app) -> MaterialRow | None:
     m = room.material(first)
     return MaterialRow(tuple(obj.name for obj in targets), m.preset, m.adjusted, m.base_color, m.albedo_source,
                        _albedo_label(app, first), m.roughness, m.specular, m.wrap, m.backscatter, m.backscatter_color,
-                       eye_selected)
+                       eye_selected, any(obj.look is not None for obj in targets))
 
 
 def state(app) -> LookdevPanelState:
@@ -108,8 +116,37 @@ def state(app) -> LookdevPanelState:
         background=s.background, background_gradient=s.background_gradient, lights=lights,
         material=_material(app) if app.lookdev_open else None, wire=app.display.wireframe_overlay,
         eye_preview=app.display.eye_preview,
-        status="Shader werden vorbereitet …" if room.preparing else NOT_SAVED,
+        status="Shader werden vorbereitet …" if room.preparing else SAVED,
     )
+
+
+class MaterialEdit:
+    """A held material control (AD-038 §7 / §18): `hold` previews the values (no Undo step), `release` commits them all
+    as one step. The panel releases when no control is active and the mouse is up, so a slider drag and a colour
+    picker's drag are each one step. A preview the application already ended (the room closed, a preset was picked)
+    is dropped, never committed late."""
+
+    def __init__(self) -> None:
+        self.values: dict = {}
+
+    @property
+    def held(self) -> bool:
+        return bool(self.values)
+
+    def hold(self, app, **values) -> bool:
+        self.values.update(values)
+        return app.preview_lookdev_material_values(**self.values)
+
+    def release(self, app) -> bool:
+        values, self.values = self.values, {}
+        if not values or not app.lookdev.preview:
+            return False
+        return app.set_lookdev_material_values(**values)
+
+    def drop(self, app) -> None:
+        if self.values:
+            self.values = {}
+            app.end_lookdev_material_preview()
 
 
 def menu_label(app) -> str:
@@ -138,6 +175,7 @@ def targets_label(row: MaterialRow) -> str:
     return names + (f"  ({EYE_NOTE})" if row.eye_selected else "")
 
 
-__all__ = ["EYE_NOTE", "LIGHTS", "LIGHT_LABELS", "MATERIAL_PRESETS", "MENU_CLOSE", "MENU_OPEN", "NOT_SAVED",
-           "STUDIO_PRESETS", "TITLE", "TONE_LABELS", "VIEWS", "LightRow", "LookdevPanelState", "MaterialRow",
-           "material_label", "menu_label", "preset_label", "state", "targets_label", "toggle"]
+__all__ = ["EYE_NOTE", "LIGHTS", "LIGHT_LABELS", "MATERIAL_PRESETS", "MENU_CLOSE", "MENU_OPEN", "RESET", "RESET_HINT",
+           "SAVED", "SAVE_IMAGE", "SAVE_IMAGE_HINT", "STUDIO_PRESETS", "TITLE", "TONE_LABELS", "VIEWS", "LightRow",
+           "LookdevPanelState", "MaterialEdit", "MaterialRow", "material_label", "menu_label", "preset_label", "state",
+           "targets_label", "toggle"]

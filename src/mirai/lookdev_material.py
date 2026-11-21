@@ -1,11 +1,15 @@
-"""The organic LookDev material (AD-038 §7) - M1: session only, never saved, not in `src/core/` (LD-D12).
+"""The organic LookDev material's presets and value rules (AD-038 §7, §18).
+
+Since LD-2 (2026-11-21) the value itself is the Core type `core.LookMaterial` on `SceneObject.look` (saved with the
+scene, format v15; changed by `ObjectLookCommand`, one Undo step). This module keeps what is `src/mirai`'s: the presets,
+the Neutral fallback, F0 from the level and the "angepasst" rule (`with_values`).
 
 `LookMaterial` is one value bundle of the one organic shading model (`viewport.lookdev_pass`, proposal §4): an sRGB
 artist colour, where the albedo comes from (`texture`: the object's shown texture or paint composite; `color`: the
 colour), perceptual roughness (alpha = r²), the specular *level* (F0 = 0.08 x level; 0.5 -> 0.04), the diffuse wrap
 (softness; the preset fixes its per-channel tint) and the backscatter with its colour.
 
-Six presets (`PRESETS`, values `PROVISIONAL`, tuned in the M1 practical test). An object without a session row is drawn
+Six presets (`PRESETS`, values `PROVISIONAL`, tuned in the M1 practical test). An object without a look (`SceneObject.look is None`) is drawn
 **Neutral** (Manu 2026-11-19, AD-038 §15 Q3): nothing is guessed from object names. Its albedo is then the shown texture
 or paint composite when it has UVs and one, else `ObjectMaterial.base_color` read as a colour only, else the Worklight's
 `DEFAULT_BASE_COLOR`; `glossiness` is never read as roughness, nor `specular` as F0 (proposal §4.3).
@@ -14,49 +18,31 @@ or paint composite when it has UVs and one, else `ObjectMaterial.base_color` rea
 from __future__ import annotations
 
 import dataclasses
-from dataclasses import dataclass
 
-ALBEDO_SOURCES = ("texture", "color")
+from core import LookMaterial
+from core.scene import LOOK_ALBEDO_SOURCES as ALBEDO_SOURCES
 
 
-@dataclass(frozen=True)
-class LookMaterial:
-    preset: str
-    base_color: tuple[float, float, float]
-    albedo_source: str = "texture"
-    roughness: float = 0.6
-    specular: float = 0.5
-    wrap: float = 0.0
-    wrap_tint: tuple[float, float, float] = (1.0, 1.0, 1.0)
-    backscatter: float = 0.0
-    backscatter_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
-    #: True once a value was changed after the preset was picked ("angepasst", proposal §4.2)
-    adjusted: bool = False
+def f0(material: LookMaterial) -> float:
+    """The specular level as F0 (0.5 -> 0.04)."""
+    return 0.08 * material.specular
 
-    def __post_init__(self) -> None:
-        if self.albedo_source not in ALBEDO_SOURCES:
-            raise ValueError(f"albedo_source: {ALBEDO_SOURCES}")
-        for name in ("roughness", "specular", "wrap", "backscatter"):
-            value = getattr(self, name)
-            if not 0.0 <= value <= 1.0:
-                raise ValueError(f"{name}: needs 0 <= value <= 1, got {value}")
-        for name in ("base_color", "wrap_tint", "backscatter_color"):
-            colour = getattr(self, name)
-            if len(colour) != 3 or not all(0.0 <= c <= 1.0 for c in colour):
-                raise ValueError(f"{name}: three values in 0 .. 1")
 
-    @property
-    def f0(self) -> float:
-        return 0.08 * self.specular
+def wrap_rgb(material: LookMaterial) -> tuple[float, float, float]:
+    return tuple(material.wrap * t for t in material.wrap_tint)
 
-    def wrap_rgb(self) -> tuple[float, float, float]:
-        return tuple(self.wrap * t for t in self.wrap_tint)
 
-    def with_(self, **changes) -> "LookMaterial":
-        """A copy with `changes`; a value change marks it "angepasst" (the preset name stays)."""
-        values = {k: v for k, v in changes.items() if k not in ("preset", "adjusted")}
-        adjusted = self.adjusted or any(getattr(self, k) != v for k, v in values.items())
-        return dataclasses.replace(self, **changes, adjusted=changes.get("adjusted", adjusted))
+def with_values(material: LookMaterial, **changes) -> LookMaterial:
+    """A copy with `changes`; a value change marks it "angepasst" (the preset name stays)."""
+    values = {k: v for k, v in changes.items() if k not in ("preset", "adjusted")}
+    for name in ("base_color", "wrap_tint", "backscatter_color"):
+        if name in values:
+            values[name] = tuple(float(c) for c in values[name])
+    adjusted = material.adjusted or any(getattr(material, k) != v for k, v in values.items())
+    adjusted = changes.get("adjusted", adjusted)
+    if "preset" in changes:
+        values["preset"] = changes["preset"]
+    return dataclasses.replace(material, **values, adjusted=adjusted)
 
 
 NEUTRAL = "Neutral"
@@ -85,6 +71,6 @@ def preset(name: str) -> LookMaterial:
 
 
 def fallback(base_color: tuple[float, float, float] | None, default: tuple[float, float, float]) -> LookMaterial:
-    """Neutral for an object without a session row: its `ObjectMaterial.base_color` as the colour (else `default`)."""
+    """Neutral for an object without a look: its `ObjectMaterial.base_color` as the colour (else `default`)."""
     colour = tuple(float(c) for c in (base_color if base_color is not None else default))
     return dataclasses.replace(PRESETS[NEUTRAL], base_color=colour)

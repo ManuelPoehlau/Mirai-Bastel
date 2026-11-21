@@ -1,6 +1,7 @@
-"""The LookDev session studio and materials (AD-038 §6, §7, §15), headless: four studio presets with Portrait the default,
-six material presets with Neutral the fallback, luminance Reinhard by default with Clamp as the diagnostic; the setters
-change session state only (no Undo step, nothing saved); a deleted object loses its row."""
+"""The LookDev studio and materials (AD-038 §6, §7, §15, §18), headless: four studio presets with Portrait the default,
+six material presets with Neutral the fallback, luminance Reinhard by default with Clamp as the diagnostic; the studio
+setters are view state (no Undo step; saved in `view.lookdev`, `test_lookdev_persistence.py`); the material setters
+write `SceneObject.look`, one Undo step each (LD-2)."""
 
 from __future__ import annotations
 
@@ -36,9 +37,9 @@ def test_the_presets():
         assert state.preset == name and state.tone_curve == "reinhard" and not state.follow_camera
         assert len(state.studio.softboxes) <= 4
     neutral = lm.PRESETS[lm.NEUTRAL]
-    assert (neutral.roughness, neutral.f0, neutral.wrap, neutral.backscatter) == (0.6, 0.04, 0.0, 0.0)
+    assert (neutral.roughness, lm.f0(neutral), neutral.wrap, neutral.backscatter) == (0.6, 0.04, 0.0, 0.0)
     skin = lm.PRESETS["Creature Skin"]
-    assert skin.wrap_rgb()[0] > skin.wrap_rgb()[1] >= skin.wrap_rgb()[2]  # wider in red (§9.1)
+    assert lm.wrap_rgb(skin)[0] > lm.wrap_rgb(skin)[1] >= lm.wrap_rgb(skin)[2]  # wider in red (§9.1)
     with pytest.raises(ValueError):
         lm.LookMaterial("x", (0.5, 0.5, 0.5), roughness=1.5)
 
@@ -64,7 +65,7 @@ def test_tone_curve_default_and_diagnostic(app):
     assert app.set_lookdev_studio(tone_curve="filmic") is False and "tone curve" in app.status_message
 
 
-def test_studio_setters_are_session_state(app, tmp_path):
+def test_studio_setters_are_view_state(app, tmp_path):
     history = len(app.history)
     app.open_lookdev()
     assert app.lookdev.studio.preset == "Portrait"
@@ -86,40 +87,40 @@ def test_studio_setters_are_session_state(app, tmp_path):
     assert app.open_lookdev() and app.lookdev.studio.preset == "Dramatic"  # kept for the session
     path = tmp_path / "s.mirai.json"
     assert app.save_scene_file(path)
-    assert "Dramatic" not in path.read_text() and "lookdev" not in json.loads(path.read_text())["view"]
+    assert json.loads(path.read_text())["view"]["lookdev"]["preset"] == "Dramatic"  # LD-2: in the saved view
 
 
 def test_material_setters_targets_and_rows(app):
     history = len(app.history)
     app.open_lookdev()
     edit = app.scene.edit_object
-    assert app.lookdev.material(edit).preset == lm.NEUTRAL  # §15 Q3: Neutral until a preset is picked
+    assert edit.look is None and app.lookdev.material(edit).preset == lm.NEUTRAL  # §15 Q3: Neutral until picked
     assert app.set_lookdev_material("Creature Skin")
-    assert app.lookdev.materials[edit.id].preset == "Creature Skin"
+    assert edit.look == lm.PRESETS["Creature Skin"] and len(app.history) == history + 1  # LD-2: one Undo step
     assert app.viewport._edit_look.roughness == lm.PRESETS["Creature Skin"].roughness
-    assert app.set_lookdev_material("Creature Skin") is False
+    assert app.set_lookdev_material("Creature Skin") is False and len(app.history) == history + 1
     assert app.set_lookdev_material_values(roughness=0.4)
-    row = app.lookdev.materials[edit.id]
+    row = edit.look
     assert row.preset == "Creature Skin" and row.adjusted and row.roughness == 0.4
     assert app.set_lookdev_material_values(roughness=2.0) is False and "roughness" in app.status_message
     assert app.set_lookdev_material_values(albedo_source="color")
     assert app.viewport._edit_look.albedo is None
-    assert len(app.history) == history
+    assert len(app.history) == history + 3
 
 
 def test_material_applies_to_the_selected_objects_but_never_an_eye(app):
     eye = app.add_eye()  # selected in mode 4
     app.open_lookdev()
     assert app.set_lookdev_material("Zähne") is False and "Auge" in app.status_message  # an eye keeps its panel
-    assert not app.lookdev.materials
+    assert eye.look is None
     app.select_objects([app.scene.edit_object_id, eye.id])
     assert app.set_lookdev_material("Zähne") is True
-    assert eye.id not in app.lookdev.materials and app.scene.edit_object_id in app.lookdev.materials
+    assert eye.look is None and app.scene.edit_object.look.preset == "Zähne"
 
 
-def test_a_deleted_object_loses_its_row(app):
-    eye_free = app.scene.edit_object_id
+def test_a_deleted_object_loses_its_preview_row(app):
+    edit = app.scene.edit_object_id
     app.open_lookdev()
-    app.lookdev.materials[12345] = lm.PRESETS["Organisch"]  # an id no object has (a deleted one)
+    app.lookdev.preview[12345] = lm.PRESETS["Organisch"]  # an id no object has (a deleted one)
     app._objects.sync_views()
-    assert 12345 not in app.lookdev.materials and eye_free not in app.lookdev.materials
+    assert 12345 not in app.lookdev.preview and edit not in app.lookdev.preview
