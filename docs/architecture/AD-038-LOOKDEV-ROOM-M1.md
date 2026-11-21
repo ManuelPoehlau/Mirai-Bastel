@@ -6,7 +6,7 @@ Neutral wählen“ (§15). **LD-0 run on the reference PC (Manu, 2026-11-19)**: 
 reference PC (2026-11-20, §17.4): LD-D10 and E16 met** — the room's frame 2.4 / 3.3 ms GPU (cage / SubD 1, framed
 1024×768), cheaper than the Worklight; the Modelling Room unchanged. **LD-2 built 2026-11-21** on Manu's go
 „LookDev LD-2 umsetzen“ (§18): `SceneObject.look` (Core, format v15), one Undo step per material change, `view.lookdev`,
-the finished material panel and „Bild speichern“. Next: Manu's practical test of M1 + LD-2 (§13.3, §17.5, §18.6). Drafted 2026-11-19 as PROPOSED (Architecture Gate). The number
+the finished material panel and „Bild speichern“. Next: Manu's practical test of M1 + LD-2 (§13.3, §17.5, §18.6). **Order changed 2026-11-21** (Manu: „LookDev P3 vor LD-3 vorziehen“): P3 follows LD-2, LD-3 follows P3; P3 gets its own AD (§13.6). Drafted 2026-11-19 as PROPOSED (Architecture Gate). The number
 AD-038 stays; new class, file and panel names remain `PROVISIONAL` until built.
 **Basis:** [LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md)
 (decisions LD-D1 … LD-D14, Manu 2026-11-19, its §0) and its
@@ -489,7 +489,7 @@ Unchanged in both:
   2. the "fast" eye tier;
   3. fewer studio rectangles for rough skin.
 
-  The quality manager (LD-3) automates them later. It can never change mesh, SubD, morph, pose, picking or materials.
+  The quality manager (LD-3, after P3 since 2026-11-21, §13.6) automates them later. It can never change mesh, SubD, morph, pose, picking or materials.
 - **Compile (decided, §15 Q4):** on the reference PC a cold eye-variant compile takes 0.24–0.6 s, and the driver cache
   does not help across processes (§16.1). `open_lookdev` therefore compiles the programs the room will draw first:
   - the eye LOOKDEV variant of the drawn eyes (usually one for both);
@@ -566,6 +566,12 @@ GL tests run in their own process under xvfb (CLAUDE.md "Testing"); scope per AG
    - LD-D15 (References / Ghosts).
 4. **LD-2** (`SceneObject.look`, format v15, `view.lookdev`): only on Manu's go after the M1 verdict.
 5. **Keys:** none until a practical test and "Taste passt" (D-L9).
+6. **P3 before LD-3** (Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“; proposal §0.1):
+   - P3 is outside this AD: its own architecture AD comes before any `src/` change and fixes the order of the P3 items;
+   - each P3 effect ships with one fixed setting measured on the reference PC against LD-D10 (§9), its own on/off in
+     the panel, and the feature check it needs (cube FBO, depth texture), by feature, never by GPU name;
+   - LD-3 follows P3 with the full knob set and takes over those checks; §9's levers stay manual until then;
+   - LD-D8 is due before P3's region-material item, the paint channel decision before its maps.
 
 ---
 

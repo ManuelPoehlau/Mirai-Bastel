@@ -259,7 +259,7 @@ Do not select a tier from a GPU name alone. Do not promise a frame rate before m
 
 ## 9. Staged delivery
 
-> **Pointer 2026-11-19:** the eye and the Paint Room have moved ahead of this phase list. The reconciliation and the proposed re-cut of P2 (M1 / LD-1 … LD-3, then P3 … P5) are in [LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md](LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md) (PROPOSAL, not decided). The list below is unchanged.
+> **Pointer 2026-11-19:** the eye and the Paint Room have moved ahead of this phase list. The reconciliation and the proposed re-cut of P2 (M1 / LD-1, LD-2, then P3, LD-3, P4, P5 — P3 before LD-3 since Manu 2026-11-21) are in [LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md](LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md) (PROPOSAL, not decided). The list below is unchanged.
 
 ### P0 — Current-state and hardware audit
 - Map the actual viewport draw path and its ownership boundaries.

@@ -4,6 +4,7 @@
 production code, Core, scene format, render behaviour or GUI is changed, and no key binding is authorised. LD-D8,
 LD-D15 and LD-D16 stay open (§0). Items still marked **[O]** in the body are those open ones or are settled by §0.
 **AD-038 accepted 2026-11-19 (Manu):** [AD-038](../architecture/AD-038-LOOKDEV-ROOM-M1.md) is the architecture for LD-0 / LD-1. Where it deviates from this proposal (after a code check at `89f61fc`), its §1.2 and §14 say so and the AD holds. **LD-1 (M1) built 2026-11-19:** AD-038 §17. **LD-2 built 2026-11-21** (Manu: „LookDev LD-2 umsetzen“): AD-038 §18.
+**Order changed 2026-11-21** (Manu: „LookDev P3 vor LD-3 vorziehen“): P3 comes before LD-3 (§0.1, §1.3, §13).
 **Date:** 2026-11-19.
 **State inspected:** `origin/main` @ `a3bfcc0` ("AD-037 §11.3: the reference PC's 4.2 s …"), working branch
 `claude/busy-brown-svigg5` at the same commit, clean tree. Changes of 2026-11-18/19 on `main` were read (AD-036 slices
@@ -95,6 +96,39 @@ Modelling Room darf durch LookDev keine Performanceeinbußen bekommen.“
 - LD-D10 reads in the design as: the 30 FPS figure is the LD-0 / LD-1 measurement criterion, and "no loss in the
   Modelling Room" is a gate (E1, E16, §12.4).
 
+### 0.1 Order changed: P3 before LD-3 (Manu, 2026-11-21, chat; entered by the agent)
+
+Manu (verbatim): „LookDev P3 vor LD-3 vorziehen“. After LD-2 the next LookDev stage is **P3**; the quality manager
+(LD-3) follows P3. What this means in the design [P]:
+
+- **P3 does not wait for LD-3.** Its own dependencies stay as §13 lists them:
+  - cube environment and key shadow map: LD-0 (c) and (d) are **met** on the reference PC (AD-038 §16.1: the GPU
+    prefilter of a 128² chain takes 12 ms, depth textures and PCF work);
+  - roughness / normal / translucency maps: the paint channel decision (§6.1), still open;
+  - region materials: **LD-D8**, now due before that P3 item (no longer "before P3" as a whole).
+- **Without the quality manager each P3 effect ships with one fixed setting**, measured on the reference PC against
+  LD-D10 (≥ 30 fps, framed Gollum head, 1024×768), and with its own on/off in the panel as the manual lever. This is
+  how M1 shipped (§12.3 "M1 ships without it").
+  - The key shadow map is re-rendered only on a pose, geometry or key-light change, never per frame (AD-038 §16.1:
+    the unoptimised 2048² stand-in costs 9–11.5 ms as a per-frame pass).
+- **Feature checks come with the effect that needs them.** The part of LD-3's capability detection that P3 uses
+  (cube FBO completeness, a depth texture with compare mode) is built with that P3 item, by feature and never by GPU
+  name: a missing feature disables that effect with a status line. LD-3 takes these checks over later; it does not
+  rebuild them.
+- **LD-3 is designed once, with the full knob set**: besides the M1 knobs also cube size, shadow-map size and PCF
+  taps (§12.3 "later also"), measured with P3 in place.
+- **Unchanged gates:** the Modelling Room loses nothing (LD-D10, E1, E16, §12.4); the eye pins; R-1; keys only after a
+  practical test (D-L9).
+- **Stop point:** P3 needs its own architecture AD before any `src/` change (as AD-038 was for M1). It fixes the order
+  of the P3 items. Proposal for that order, not decided:
+  1. the key shadow map (the named M1 weakness, §9.2, §15 "shadow map early in P3");
+  2. dual-lobe specular (cheap, no authoring);
+  3. the cube environment with the GPU prefilter (§8.3 option 1, now proven);
+  4. region materials, after LD-D8;
+  5. roughness / normal / translucency maps and backscatter with thickness, after the paint channel decision.
+
+  Painting in a pose stays its own AD outside LookDev (P-8 / P-9).
+
 ---
 
 ## Kurzfassung für Manu (Deutsch)
@@ -127,8 +161,11 @@ Modelling Room darf durch LookDev keine Performanceeinbußen bekommen.“
     `view.lookdev`.
   - Achtung: Heutige Versionen **verwerfen** einen unbekannten `view.lookdev`-Abschnitt beim Speichern. Das ist im
     Code geprüft und steht in §10 als Einschränkung.
-- **Was später kommt:** Qualitäts-Automatik (LD-3), Cubemap-Umgebung, Schatten, Rauheits- und Normal-Maps, Durchscheinen
-  (P3), aufwendigere Haut (P4), ein eigener Final-Render (P5).
+- **Was später kommt:** Cubemap-Umgebung, Schatten, Rauheits- und Normal-Maps, Durchscheinen (P3), danach die
+  Qualitäts-Automatik (LD-3), aufwendigere Haut (P4), ein eigener Final-Render (P5).
+  - **Reihenfolge geändert 2026-11-21** (dein „LookDev P3 vor LD-3 vorziehen“, §0.1): P3 kommt vor LD-3. Jeder
+    P3-Effekt kommt mit einer festen, auf dem Referenz-PC gemessenen Einstellung und einem eigenen Ein/Aus im Panel.
+    P3 braucht vorher ein eigenes AD.
 - **Entschieden 2026-11-19:** LD-D1 … LD-D14 (mit deinen Präzisierungen zu LD-D2 und LD-D10, §0). Offen: LD-D8 (vor
   P3), LD-D15 (im M1-Praxistest), LD-D16 (nach dem Pose-Painting).
 
@@ -178,10 +215,12 @@ Modelling Room darf durch LookDev keine Performanceeinbußen bekommen.“
 | **LD-0** | A small probe on the reference PC | none |
 | **M1 = LD-1** | Room + LookDev pass + linear colour pipeline + portrait studio (lights, analytic studio, SH9 diffuse) + eye LookDev variant + Creature Skin and the other presets, assigned per object **for the session only**. **The first demonstration** | none |
 | **LD-2** | The persistence slice (`LookMaterial` v15 + `view.lookdev`), the material panel completed, a simple viewport capture | v15 (by content) |
-| **LD-3** | Quality manager (capabilities, timing, Auto / override) | none |
 | **P3** | Cube environment, key shadow map, roughness / normal / translucency maps, backscatter, region materials | per item |
+| **LD-3** | Quality manager (capabilities, timing, Auto / override), with the P3 knobs | none |
 | **P4** | Optional advanced skin tiers (measured), MSAA / HDR target on a capable PC | — |
 | **P5** | Final-render export (immutable snapshot to an external renderer) | — |
+
+Order since 2026-11-21 (Manu, §0.1): P3 before LD-3. The original cut had LD-3 before P3.
 
 ---
 
@@ -848,7 +887,7 @@ The Gollum head at SubD 1 (≈ 9k faces) is about a tenth of that geometry.
 - **Levers if over budget** (render-only): drop the studio specular on skin, use the "fast" eye tier, render the
   analytic studio cheaper for rough skin (fewer rectangles).
 
-### 12.3 Quality adaptation (LD-3, after M1) [P]
+### 12.3 Quality adaptation (LD-3, after P3 since 2026-11-21, §0.1) [P]
 
 - **Capability detection on room entry, by feature and never by GPU name:**
   - compile the LookDev variants;
@@ -866,6 +905,8 @@ The Gollum head at SubD 1 (≈ 9k faces) is about a tenth of that geometry.
   14 ms > 12 ms Ziel").
 - **M1 ships without it:** one fixed full setting, measured on the reference PC in LD-0 and LD-1. This keeps it off the
   M1 critical path.
+- **P3 ships without it too (§0.1):** each P3 effect has one fixed setting, measured on the reference PC, its own on/off
+  as the manual lever, and the feature check it needs. LD-3 then adapts M1's and P3's knobs together.
 
 ### 12.4 The Worklight is unaffected [P]
 
@@ -923,11 +964,9 @@ and working morph and pose evaluation.
 
 **Stop point:** Manu's go for the Core field (as Q-E2 / P-3 were).
 
-### LD-3: quality manager [P]
+### P3: lighting, shadows, maps, regions [P]
 
-§12.3. It needs LD-1's timing data.
-
-### P3, P4, P5
+**Order since 2026-11-21 (Manu, §0.1): P3 before LD-3.** P3 starts with its own architecture AD (stop point).
 
 - **P3:**
   - cube environment with GPU prefilter or a machine cache (§8.3);
@@ -937,6 +976,14 @@ and working morph and pose evaluation.
   - region materials (LD-D8);
   - lid shadows from geometry for the eye;
   - painting in a pose (P-8 / P-9) as its own AD, which LookDev already accommodates (§6.2).
+
+### LD-3: quality manager [P]
+
+§12.3. It needs LD-1's timing data and, since the re-order (§0.1), P3's measured knobs (cube size, shadow-map size,
+PCF taps). It takes over the feature checks P3 built.
+
+### P4, P5
+
 - **P4:**
   - optional skin diffusion tiers;
   - MSAA or an HDR target when a capable PC exists (REFERENCE_HARDWARE §5).
@@ -950,10 +997,12 @@ and working morph and pose evaluation.
 |---|---|
 | LD-1 | LD-0 (a, b) |
 | LD-2 | the M1 verdict |
-| LD-3 | LD-1 timings |
-| P3 cube | LD-0 (c) |
-| P3 shadows | LD-0 (d) |
+| P3 (as a whole) | its architecture AD; **not** LD-3 (§0.1) |
+| P3 cube | LD-0 (c) — met 2026-11-19 (AD-038 §16.1) |
+| P3 shadows | LD-0 (d) — met 2026-11-19 (AD-038 §16.1) |
 | P3 maps | the paint channel decision (§6.1) |
+| P3 region materials | LD-D8 |
+| LD-3 | LD-1 timings; P3 (§0.1) |
 | Painting in a pose | P-8 / P-9 (outside LookDev) |
 
 ---
@@ -1047,7 +1096,7 @@ Needed **later**:
 
 | # | Question | When (Manu, 2026-11-19: deliberately open) |
 |---|---|---|
-| **LD-D8** | Region materials (mouth interior): face regions with a per-face index, or a separate mouth object? | open — before P3 |
+| **LD-D8** | Region materials (mouth interior): face regions with a per-face index, or a separate mouth object? | open — before P3 (since §0.1: before P3's region-material item) |
 | **LD-D15** | References / Ghosts in the room: Worklight ghost on top (default) or hidden? | open — in the M1 practical test |
 | **LD-D16** | Later "paint inside LookDev light" as a combined configuration, after P-8? | open — later, after pose painting |
 | **(LD-2 go)** | The Core field `SceneObject.look` and scene format v15 | after the M1 verdict |
