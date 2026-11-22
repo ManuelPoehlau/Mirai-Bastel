@@ -6,6 +6,7 @@ Usage (from the repo root; opens hidden pyglet windows):
     python experiments/drag_cost/probe_lookdev.py --draws 5             # container: a function check
     python experiments/drag_cost/probe_lookdev.py --size 1024 768 --skip cube,depth
     python experiments/drag_cost/probe_lookdev.py --png out_dir         # also writes the stand-in frames as PNGs
+    python experiments/drag_cost/probe_lookdev.py --p3                  # P3-0 (AD-039 §11.1) instead of the LD-0 rows
 
 Set the NVIDIA driver to "prefer maximum performance" first (as for `probe_shading_gpu.py`). Without `--size` each
 size of `--sizes` runs in its own process (a fresh GL context and app); the extras run in the first one only.
@@ -43,6 +44,13 @@ preview at the file's level 1, the head's drawn surface). Views: `framed` (the h
     `ld shadow` row); completeness, texels written, pixels the lookup darkens.
 (compile) first use: the eye shell program of four variants compiled and linked cold (a comment no driver cache has
     seen) and again unchanged (the driver cache), `EyePass.program()` on a fresh pass, the skin stand-in's variants.
+
+`--p3` (P3-0, AD-039 §11.1, 2026-11-22) runs instead: (p3a) the key's depth pass alone at 512² / 1024² / 2048², casters
+skin only and skin + eyes (what a pose, morph or key change costs); (p3b) the environment cube prefiltered on the GPU
+with and without the corner fix, the corner spread per level; (p3c) frame rows against `ld frame`: `shadow <size>
+x<fetches>` (a map rendered once: the lookup of a still pose), `drag` (the map every frame), `thick` (+ the thickness
+from the raw depth), `dual direct` / `dual env` (a second GGX lobe), `cube env` / `cube dual env` (the environment
+specular from the cube), `p3 all` (the candidate fixed settings together), and the LD-D10 share.
 
 Plain ASCII output; prints the commit and working-tree state (`_paths.source_state`). Reads `src/` (`core`, `mirai`,
 `viewport`, `main.GL_TYPES`) only and changes nothing there: the UV request and the triangle-UV binding are stand-ins
@@ -86,6 +94,17 @@ SHADOW_UNIT = 6       # not one of the units `_flush_face_data` binds (1, 2, 3, 
 SHADOW_SIZE = 2048
 CUBE_SIZE = 128
 CUBE_SAMPLES = (64, 256)
+# P3-0 (`--p3`, AD-039): the candidates for the P3 fixed settings, measured before any `src/` change.
+CUBE_UNIT = 5         # the P3 environment cube (not a unit the skin pass or the store's face data use while it draws)
+SHADOW_RAW_UNIT = 7   # the shadow map's raw depth (a second sampler object, no compare) for the thickness
+P3_DEPTH_SIZES = (512, 1024, 2048)
+P3_SHADOW = ((1024, 2), (1024, 3), (1024, 4), (2048, 3), (2048, 4))   # (map size, PCF grid: grid^2 fetches)
+P3_SETTING = (1024, 3)  # the fixed-setting candidate (AD-039 S1): 1024^2, 9 bilinear compare fetches
+P3_CUBE_SAMPLES = 64
+#: Dual lobe (AD-039 S3, `PROVISIONAL`): roughness x DUAL[0] and x DUAL[1], mixed DUAL[2] / 1 - DUAL[2].
+DUAL = (0.75, 1.3, 0.85)
+#: Thickness (AD-039 S4, `PROVISIONAL`): the light's transmission falls to 1/e over this many world units (cm).
+THICKNESS_SCALE = 0.6
 IDENTITY4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
 # Portrait stand-in (proposal §8.2, `PROVISIONAL`): (azimuth, elevation in degrees, Kelvin, intensity, size), world
@@ -173,10 +192,26 @@ uniform sampler2D u_albedo;
 #ifdef SHADOW
 uniform sampler2DShadow u_shadow;
 uniform mat4 u_light_vp;
+#ifndef SHADOW_GRID
+#define SHADOW_GRID 4
+#endif
+#endif
+#ifdef THICKNESS
+uniform sampler2D u_shadow_depth;
+uniform float u_light_depth_range;
+uniform float u_thickness_scale;
+#endif
+#ifdef CUBE_ENV
+uniform samplerCube u_env_cube;
+uniform float u_env_levels;
 #endif
 out vec4 out_color;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+#ifdef DUAL_LOBE
+// the second specular lobe (P3, AD-039 S3): roughness x 0.75 and x 1.3, mixed 0.85 / 0.15 [PROVISIONAL]
+const vec3 DUAL = vec3({dual_a!r}, {dual_b!r}, {dual_mix!r});
+#endif
 const float SPEC_AA_K = {spec_aa_k!r};
 
 vec3 srgb_decode(vec3 c) {{
@@ -249,15 +284,17 @@ void main() {{
     albedo = srgb_decode(albedo);
     float shadow = 1.0;
 #ifdef SHADOW
+    vec4 lp = u_light_vp * vec4(v_world_pos, 1.0);
+    vec3 sp = lp.xyz / lp.w * 0.5 + 0.5;
     {{
-        vec4 lp = u_light_vp * vec4(v_world_pos, 1.0);
-        vec3 p = lp.xyz / lp.w * 0.5 + 0.5;
+        // SHADOW_GRID^2 fetches, each a hardware 2x2 bilinear compare (sampler2DShadow, GL_LINEAR)
         vec2 texel = 1.0 / vec2(textureSize(u_shadow, 0));
         float sum = 0.0;
-        for (int y = 0; y < 4; ++y)
-            for (int x = 0; x < 4; ++x)
-                sum += texture(u_shadow, vec3(p.xy + (vec2(x, y) - 1.5) * texel, p.z - 0.0015));
-        shadow = sum / 16.0;
+        for (int y = 0; y < SHADOW_GRID; ++y)
+            for (int x = 0; x < SHADOW_GRID; ++x)
+                sum += texture(u_shadow, vec3(sp.xy + (vec2(x, y) - 0.5 * float(SHADOW_GRID - 1)) * texel,
+                                              sp.z - 0.0015));
+        shadow = sum / float(SHADOW_GRID * SHADOW_GRID);
     }}
 #endif
     vec3 diffuse = vec3(0.0);
@@ -269,16 +306,41 @@ void main() {{
         diffuse += u_light_color[i] * wrap3(ndl, u_wrap) * s;
         if (ndl > 0.0) {{
             vec3 h = normalize(v + l);
+            float nh = max(dot(n, h), 0.0);
+#ifdef DUAL_LOBE
+            float a0 = clamp(DUAL.x * DUAL.x * alpha + u_light_size[i], 1e-3, 1.0);
+            float a1 = clamp(DUAL.y * DUAL.y * alpha + u_light_size[i], 1e-3, 1.0);
+            float lobe = mix(ggx_d(nh, a1) * smith_vis(ndl, nv, a1), ggx_d(nh, a0) * smith_vis(ndl, nv, a0), DUAL.z);
+#else
             float a = clamp(alpha + u_light_size[i], 1e-3, 1.0);
-            specular += u_light_color[i] * (ggx_d(max(dot(n, h), 0.0), a) * smith_vis(ndl, nv, a) * ndl
-                                            * schlick_scalar(u_f0, max(dot(v, h), 0.0))) * s;
+            float lobe = ggx_d(nh, a) * smith_vis(ndl, nv, a);
+#endif
+            specular += u_light_color[i] * (lobe * ndl * schlick_scalar(u_f0, max(dot(v, h), 0.0))) * s;
         }}
     }}
     vec3 colour = albedo * (diffuse + u_env_intensity * sh9(u_env_rot * n)) + specular;
 #ifdef ENV_SPEC
-    colour += u_env_intensity * studio_radiance(u_env_rot * reflect(-v, n), rough) * env_brdf_approx(u_f0, rough, nv);
+    vec3 r_env = u_env_rot * reflect(-v, n);
+#ifdef CUBE_ENV
+#define ENV_AT(rr) textureLod(u_env_cube, r_env, clamp(rr, 0.0, 1.0) * (u_env_levels - 1.0)).rgb
+#else
+#define ENV_AT(rr) studio_radiance(r_env, rr)
 #endif
+#ifdef DUAL_LOBE_ENV
+    vec3 env = mix(ENV_AT(DUAL.y * rough), ENV_AT(DUAL.x * rough), DUAL.z);
+#else
+    vec3 env = ENV_AT(rough);
+#endif
+    colour += u_env_intensity * env * env_brdf_approx(u_f0, rough, nv);
+#endif
+#ifdef THICKNESS
+    // light through thin parts (ears, nostril wings): the key's depth map gives the distance the key light travels
+    // inside the mesh to this fragment (translucent shadow maps); no authoring
+    float thickness = max(sp.z - texture(u_shadow_depth, sp.xy).r, 0.0) * u_light_depth_range;
+    float back = exp(-thickness / u_thickness_scale) * max(-dot(n, u_light_dir[0]), 0.0);
+#else
     float back = (1.0 - nv) * (1.0 - nv) * (1.0 - nv) * max(-dot(n, u_light_dir[0]), 0.0);
+#endif
     colour += u_backscatter * back * u_backscatter_color * albedo * u_light_color[0];
     out_color = vec4(lookdev_output(colour), 1.0);
 }}
@@ -317,6 +379,7 @@ uniform int u_face;
 uniform float u_size;
 uniform float u_roughness;
 uniform int u_samples;
+uniform int u_corner_fix;  // P3 (AD-039 S5): 1 = a corner texel takes the cube corner's direction (equal on 3 faces)
 out vec4 out_color;
 
 vec3 face_direction(int face, vec2 uv) {{
@@ -337,6 +400,11 @@ float radical_inverse(uint bits) {{
 }}
 void main() {{
     vec2 uv = gl_FragCoord.xy / u_size * 2.0 - 1.0;
+    if (u_corner_fix != 0) {{
+        vec2 last = vec2(u_size - 1.0);
+        vec2 texel = floor(gl_FragCoord.xy);
+        if ((texel.x == 0.0 || texel.x == last.x) && (texel.y == 0.0 || texel.y == last.y)) uv = sign(uv);
+    }}
     vec3 n = normalize(face_direction(u_face, uv));
     if (u_samples <= 1) {{
         out_color = vec4(studio_radiance(n, u_roughness), 1.0);
@@ -376,17 +444,31 @@ void main() { out_color = textureLod(u_cube, CENTRES[int(gl_FragCoord.x)], u_lod
 
 
 def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, shadow: bool,
-                 nonce: str | None = None) -> list[tuple[str, str]]:
+                 nonce: str | None = None, *, shadow_grid: int = 4, thickness: bool = False, dual: int = 0,
+                 cube_env: bool = False) -> list[tuple[str, str]]:
     """The stand-in skin program: the textured Worklight program's vertex and geometry sources (same transform, same
-    barycentrics and `gl_PrimitiveID`), the stand-in fragment source. `nonce` = a comment no driver cache has seen."""
+    barycentrics and `gl_PrimitiveID`), the stand-in fragment source. `nonce` = a comment no driver cache has seen.
+
+    P3 variants (`--p3`, AD-039): `shadow_grid` (the PCF grid: grid² bilinear compare fetches; 4 = LD-0's 16 taps),
+    `thickness` (the key's raw depth through a second sampler: backscatter by the distance the key light travels in
+    the mesh; needs `shadow`), `dual` (1 = a second GGX lobe on the three lights, 2 = also on the environment
+    specular), `cube_env` (the environment specular from a prefiltered cube instead of the analytic studio)."""
     from viewport import eye_optics as eo
     from viewport.gl_render_store import TEXTURED_GEOMETRY_SRC, TEXTURED_VERTEX_SRC
 
-    defines = "".join(f"#define {name} 1\n" for name, on in (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec),
-                                                            ("SHADOW", shadow)) if on)
+    if thickness and not shadow:
+        raise ValueError("thickness reads the shadow map: needs shadow")
+    if dual not in (0, 1, 2) or not 1 <= shadow_grid <= 8:
+        raise ValueError(f"dual {dual!r}, shadow_grid {shadow_grid!r}")
+    flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow), ("THICKNESS", thickness),
+             ("DUAL_LOBE", dual > 0), ("DUAL_LOBE_ENV", dual == 2), ("CUBE_ENV", cube_env))
+    defines = "".join(f"#define {name} 1\n" for name, on in flags if on)
+    if shadow and shadow_grid != 4:
+        defines += f"#define SHADOW_GRID {int(shadow_grid)}\n"
     fragment = ("#version 330 core\n" + defines
                 + STUDIO_LIB.format(sigma_scale=eo.TD_SIGMA_SCALE, sigma_power=eo.TD_SIGMA_POWER)
-                + SKIN_FRAGMENT_BODY.format(spec_aa_k=SPEC_AA_K) + (f"// {nonce}\n" if nonce else ""))
+                + SKIN_FRAGMENT_BODY.format(spec_aa_k=SPEC_AA_K, dual_a=DUAL[0], dual_b=DUAL[1], dual_mix=DUAL[2])
+                + (f"// {nonce}\n" if nonce else ""))
     return [(TEXTURED_VERTEX_SRC.format(**locations), "vertex"), (TEXTURED_GEOMETRY_SRC, "geometry"),
             (fragment, "fragment")]
 
@@ -421,6 +503,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--skip", default="", help=f"extras to skip, comma separated: {','.join(EXTRAS)}")
     p.add_argument("--no-extras", action="store_true", help="frame rows only (later sizes run with it)")
     p.add_argument("--png", default=None, metavar="DIR", help="write the last round's frames as PNGs into DIR")
+    p.add_argument("--p3", action="store_true",
+                   help="P3-0 only (AD-039): the depth pass alone and the P3 frame rows (shadow sizes / PCF, thickness, "
+                        "dual lobe, environment cube) instead of the LD-0 rows and extras")
     return p
 
 
@@ -781,16 +866,20 @@ class Frames:
             self.depth = DepthTarget(self.locations)
         self.depth_report: list[str] = []
 
-    def skin_program(self, albedo_map: bool, env_spec: bool, shadow: bool) -> Program:
-        key = (albedo_map, env_spec, shadow)
+    def skin_program(self, albedo_map: bool, env_spec: bool, shadow: bool, **p3) -> Program:
+        """A stand-in variant, compiled on first use; `p3` = `skin_sources`'s P3 keywords."""
+        key = (albedo_map, env_spec, shadow, tuple(sorted(p3.items())))
         if key not in self.skin:
-            program = Program(skin_sources(self.locations, *key, nonce=uuid.uuid4().hex))
+            program = Program(skin_sources(self.locations, albedo_map, env_spec, shadow, nonce=uuid.uuid4().hex, **p3))
             program.use()
             for name, value in self.values.items():
                 program.set(name, value)
             program.set("u_triangle_uvs", UV_UNIT)
             program.set("u_albedo", ALBEDO_UNIT)
             program.set("u_shadow", SHADOW_UNIT)
+            program.set("u_shadow_depth", SHADOW_RAW_UNIT)
+            program.set("u_env_cube", CUBE_UNIT)
+            program.set("u_thickness_scale", THICKNESS_SCALE)
             self.skin[key] = program
             self.first_use[key] = program.compile_ms
         return self.skin[key]
@@ -835,16 +924,24 @@ class Frames:
         gl.glDepthMask(gl.GL_TRUE)
         gl.glUseProgram(0)
 
-    def lookdev(self, *, background: bool, eyes: bool, albedo_map: bool, env_spec: bool, shadow: bool) -> None:
+    def lookdev(self, *, background: bool, eyes: bool, albedo_map: bool, env_spec: bool, shadow: bool,
+                depth: "DepthTarget | None" = None, render_depth: bool = True, cube=None, **p3) -> None:
+        """The stand-in LookDev frame. `depth` (P3): the shadow map to read (default the (d) target); `render_depth`
+        False reads it as it is (a still pose: the lookup only); `cube` = (texture, levels) for `cube_env`."""
         from pyglet import gl
 
         vp = self.app.viewport
         light = vp.light_uniforms()
-        if shadow:
-            self.depth.render(self.drawn(), self.values["u_light_dir"][0], self.app)
+        target = depth if depth is not None else self.depth
+        if shadow and render_depth:
+            target.render(self.drawn(), self.values["u_light_dir"][0], self.app)
         if background:
             self.draw_background()
         eye_pos = self.eye_position()
+        thickness = bool(p3.get("thickness"))
+        cube_env = bool(p3.get("cube_env"))
+        if cube_env:
+            gl.glEnable(gl.GL_TEXTURE_CUBE_MAP_SEAMLESS)
         for rm, obj, eye in self.drawn():
             if eye is not None:
                 if eyes:
@@ -857,7 +954,7 @@ class Frames:
                 continue
             uvs = albedo_map and bind_triangle_uvs(store)
             mapped = uvs and obj is not None and bind_albedo(albedo_source(self.app, obj), ALBEDO_UNIT)
-            program = self.skin_program(bool(mapped), env_spec, shadow)
+            program = self.skin_program(bool(mapped), env_spec, shadow, **p3)
             program.use()
             model = store.uniform_data("model_uniforms")
             program.set("u_view", tuple(camera[0:16]))
@@ -867,8 +964,16 @@ class Frames:
             colour = getattr(rm.material, "color", None) or (0.72, 0.75, 0.82)
             program.set("u_base_color", tuple(float(c) for c in colour))
             if shadow:
-                program.set("u_light_vp", tuple(self.depth.light_vp))
-                self.depth.bind(SHADOW_UNIT)
+                program.set("u_light_vp", tuple(target.light_vp))
+                target.bind(SHADOW_UNIT)
+            if thickness:
+                program.set("u_light_depth_range", float(target.depth_range))
+                target.bind_raw(SHADOW_RAW_UNIT)
+            if cube_env:
+                program.set("u_env_levels", float(cube[1]))
+                gl.glActiveTexture(gl.GL_TEXTURE0 + CUBE_UNIT)
+                gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, cube[0])
+                gl.glActiveTexture(gl.GL_TEXTURE0)
             gl.glEnable(gl.GL_DEPTH_TEST)
             gl.glDepthMask(gl.GL_TRUE)
             gl.glDisable(gl.GL_BLEND)
@@ -885,11 +990,18 @@ class Frames:
             gl.glDisable(gl.GL_DEPTH_TEST)
             if uvs:
                 store._unbind_face_data()
+            if thickness:
+                DepthTarget.unbind_raw(SHADOW_RAW_UNIT)
+            if cube_env:
+                gl.glActiveTexture(gl.GL_TEXTURE0 + CUBE_UNIT)
+                gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, 0)
             for unit in (ALBEDO_UNIT, SHADOW_UNIT):
                 gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
                 gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
             gl.glActiveTexture(gl.GL_TEXTURE0)
             gl.glUseProgram(0)
+        if cube_env:
+            gl.glDisable(gl.GL_TEXTURE_CUBE_MAP_SEAMLESS)
 
     def eye_position(self) -> tuple[float, float, float]:
         return tuple(float(c) for c in self.app.camera.eye())
@@ -916,15 +1028,18 @@ class Frames:
 
 
 class DepthTarget:
-    """(d): a DEPTH_COMPONENT24 texture with compare mode, its depth-only FBO and the depth program."""
+    """(d): a DEPTH_COMPONENT24 texture with compare mode, its depth-only FBO and the depth program. P3 (`--p3`): any
+    `size`, the casters with or without the eyes, and a second sampler object without compare mode for the raw depth
+    (the thickness)."""
 
-    def __init__(self, locations: dict) -> None:
+    def __init__(self, locations: dict, size: int = SHADOW_SIZE) -> None:
         from pyglet import gl
 
+        self.size = int(size)
         texture, fbo = gl.GLuint(), gl.GLuint()
         gl.glGenTextures(1, ctypes.byref(texture))
         gl.glBindTexture(gl.GL_TEXTURE_2D, texture.value)
-        gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_DEPTH_COMPONENT24, SHADOW_SIZE, SHADOW_SIZE, 0,
+        gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_DEPTH_COMPONENT24, self.size, self.size, 0,
                         gl.GL_DEPTH_COMPONENT, gl.GL_FLOAT, None)
         for name, value in ((gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR), (gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR),
                             (gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP_TO_EDGE), (gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP_TO_EDGE),
@@ -944,27 +1059,33 @@ class DepthTarget:
         self.texture, self.fbo = texture.value, fbo.value
         self.program = Program([(DEPTH_VS.format(**locations), "vertex"), (DEPTH_FS, "fragment")])
         self.light_vp = list(IDENTITY4)
+        self.depth_range = 1.0  # world units from the near to the far plane of the last pass
+        self._raw_sampler = None
 
     @property
     def complete(self) -> bool:
         return self.status == 0x8CD5  # GL_FRAMEBUFFER_COMPLETE
 
-    def render(self, drawn, key_direction, app) -> None:
+    def render(self, drawn, key_direction, app, eyes: bool = True) -> None:
+        """The depth pass from the key (`eyes` False: only the non-eye meshes cast)."""
         from pyglet import gl
 
         centre, radius = world_bounds(app)
         self.light_vp = look_at_ortho(key_direction, centre, 1.15 * radius)
+        self.depth_range = (4.0 - 0.01) * 1.15 * radius  # `look_at_ortho`'s far - near
         viewport = (gl.GLint * 4)()
         gl.glGetIntegerv(gl.GL_VIEWPORT, viewport)
         gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, self.fbo)
-        gl.glViewport(0, 0, SHADOW_SIZE, SHADOW_SIZE)
+        gl.glViewport(0, 0, self.size, self.size)
         gl.glClear(gl.GL_DEPTH_BUFFER_BIT)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glEnable(gl.GL_POLYGON_OFFSET_FILL)
         gl.glPolygonOffset(2.0, 4.0)
         self.program.use()
         self.program.set("u_light_vp", tuple(self.light_vp))
-        for rm, _obj, _eye in drawn:
+        for rm, _obj, eye in drawn:
+            if eye is not None and not eyes:
+                continue
             store = rm.store
             vlist = store.vertex_list() if hasattr(store, "vertex_list") else None
             if vlist is None:
@@ -985,11 +1106,47 @@ class DepthTarget:
         gl.glBindTexture(gl.GL_TEXTURE_2D, self.texture)
         gl.glActiveTexture(gl.GL_TEXTURE0)
 
+    def bind_raw(self, unit: int) -> None:
+        """The same texture on `unit` through a sampler object without compare mode (GL 3.3 core; the eye pass uses
+        sampler objects already): the raw depth for the thickness."""
+        from pyglet import gl
+
+        if self._raw_sampler is None:
+            ident = gl.GLuint()
+            gl.glGenSamplers(1, ctypes.byref(ident))
+            for name, value in ((gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST), (gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST),
+                                (gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP_TO_EDGE), (gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP_TO_EDGE),
+                                (gl.GL_TEXTURE_COMPARE_MODE, gl.GL_NONE)):
+                gl.glSamplerParameteri(ident.value, name, value)
+            self._raw_sampler = ident.value
+        gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, self.texture)
+        gl.glBindSampler(unit, self._raw_sampler)
+        gl.glActiveTexture(gl.GL_TEXTURE0)
+
+    @staticmethod
+    def unbind_raw(unit: int) -> None:
+        from pyglet import gl
+
+        gl.glBindSampler(unit, 0)
+        gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+        gl.glActiveTexture(gl.GL_TEXTURE0)
+
+    def release(self) -> None:
+        from pyglet import gl
+
+        gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(self.texture)))
+        gl.glDeleteFramebuffers(1, ctypes.byref(gl.GLuint(self.fbo)))
+        if self._raw_sampler is not None:
+            gl.glDeleteSamplers(1, ctypes.byref(gl.GLuint(self._raw_sampler)))
+        self.program.delete()
+
     def texels_written(self) -> int:
         import numpy as np
         from pyglet import gl
 
-        buf = (gl.GLfloat * (SHADOW_SIZE * SHADOW_SIZE))()
+        buf = (gl.GLfloat * (self.size * self.size))()
         gl.glBindTexture(gl.GL_TEXTURE_2D, self.texture)
         gl.glGetTexImage(gl.GL_TEXTURE_2D, 0, gl.GL_DEPTH_COMPONENT, gl.GL_FLOAT, buf)
         gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
@@ -1312,6 +1469,248 @@ def measure_cube() -> list[str]:
     return lines
 
 
+# -- P3-0 (`--p3`, AD-039): the candidates for the P3 fixed settings --------------------------------------------------
+
+
+def p3_rows() -> list[tuple[str, dict]]:
+    """The P3 frame rows: (name, keywords of `Frames.lookdev` on top of `ld frame`). Every row is a whole stand-in
+    LookDev frame (background, skin, eyes full), so `vs ld` is the effect's own cost."""
+    rows: list[tuple[str, dict]] = [("ld frame", {})]
+    for size, grid in P3_SHADOW:
+        rows.append((f"shadow {size // 1024}k x{grid * grid}", {"shadow": True, "shadow_size": size, "shadow_grid": grid,
+                                                               "render_depth": False}))
+    size, grid = P3_SETTING
+    tag = f"{size // 1024}k x{grid * grid}"
+    rows += [
+        (f"drag {tag}", {"shadow": True, "shadow_size": size, "shadow_grid": grid, "render_depth": True}),
+        (f"thick {tag}", {"shadow": True, "shadow_size": size, "shadow_grid": grid, "render_depth": False,
+                          "thickness": True}),
+        ("dual direct", {"dual": 1}),
+        ("dual env", {"dual": 2}),
+        ("cube env", {"cube_env": True}),
+        ("cube dual env", {"cube_env": True, "dual": 2}),
+        ("p3 all", {"shadow": True, "shadow_size": size, "shadow_grid": grid, "render_depth": False,
+                    "thickness": True, "dual": 1, "cube_env": True}),
+    ]
+    return rows
+
+
+def build_env_cube(samples: int = P3_CUBE_SAMPLES, corner_fix: bool = True) -> tuple[int, int, float]:
+    """The analytic studio prefiltered on the GPU into a 128² RGBA16F cube, mips to 2² (the (c) chain, level L at
+    roughness L / (levels - 1)): (texture, levels, GPU ms). `corner_fix`: a corner texel takes the cube corner's
+    direction, so the three texels meeting there hold the same value (the GPU form of the lab's corner equalization)."""
+    from pyglet import gl
+
+    levels = int(math.log2(CUBE_SIZE))
+    texture, fbo, query, vao = gl.GLuint(), gl.GLuint(), gl.GLuint(), gl.GLuint()
+    gl.glGenTextures(1, ctypes.byref(texture))
+    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, texture.value)
+    for level in range(levels):
+        side = CUBE_SIZE >> level
+        for face in range(6):
+            gl.glTexImage2D(gl.GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, level, gl.GL_RGBA16F, side, side, 0, gl.GL_RGBA,
+                            gl.GL_FLOAT, None)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_BASE_LEVEL, 0)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MAX_LEVEL, levels - 1)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR_MIPMAP_LINEAR)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+    for wrap in (gl.GL_TEXTURE_WRAP_S, gl.GL_TEXTURE_WRAP_T, gl.GL_TEXTURE_WRAP_R):
+        gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, wrap, gl.GL_CLAMP_TO_EDGE)
+    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, 0)
+    gl.glGenFramebuffers(1, ctypes.byref(fbo))
+    gl.glGenQueries(1, ctypes.byref(query))
+    gl.glGenVertexArrays(1, ctypes.byref(vao))
+    program = Program(cube_sources())
+    program.use()
+    for name, value in studio_values().items():
+        program.set(name, value)
+    program.set("u_corner_fix", 1 if corner_fix else 0)
+    viewport = (gl.GLint * 4)()
+    gl.glGetIntegerv(gl.GL_VIEWPORT, viewport)
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo.value)
+    gl.glBindVertexArray(vao.value)
+    gl.glFinish()
+    gl.glBeginQuery(gl.GL_TIME_ELAPSED, query.value)
+    for level in range(levels):
+        side = CUBE_SIZE >> level
+        gl.glViewport(0, 0, side, side)
+        program.set("u_size", float(side))
+        program.set("u_roughness", level / (levels - 1))
+        program.set("u_samples", 1 if level == 0 else samples)
+        for face in range(6):
+            gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0,
+                                      gl.GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, texture.value, level)
+            program.set("u_face", face)
+            gl.glDrawArrays(gl.GL_TRIANGLES, 0, 3)
+    gl.glEndQuery(gl.GL_TIME_ELAPSED)
+    gl.glFinish()
+    value = ctypes.c_uint64()
+    gl.glGetQueryObjectui64v(query.value, gl.GL_QUERY_RESULT, ctypes.byref(value))
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)
+    gl.glBindVertexArray(0)
+    gl.glUseProgram(0)
+    gl.glViewport(*viewport)
+    gl.glDeleteFramebuffers(1, ctypes.byref(fbo))
+    gl.glDeleteQueries(1, ctypes.byref(query))
+    gl.glDeleteVertexArrays(1, ctypes.byref(vao))
+    program.delete()
+    return texture.value, levels, value.value / 1e6
+
+
+def corner_spread(texture: int, levels: int) -> list[float]:
+    """Per level, the largest relative difference among the three texels that meet at a cube corner (0 = equal)."""
+    import numpy as np
+    from pyglet import gl
+
+    out = []
+    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, texture)
+    for level in range(levels):
+        side = CUBE_SIZE >> level
+        faces = []
+        for face in range(6):
+            buf = (gl.GLfloat * (side * side * 4))()
+            gl.glGetTexImage(gl.GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, level, gl.GL_RGBA, gl.GL_FLOAT, buf)
+            faces.append(np.frombuffer(buf, np.float32).reshape(side, side, 4)[..., :3].copy())
+        worst = 0.0
+        for corner in np.array(np.meshgrid([-1.0, 1.0], [-1.0, 1.0], [-1.0, 1.0])).T.reshape(-1, 3):
+            texels = []
+            for face in range(6):
+                for ty, tx in ((0, 0), (0, side - 1), (side - 1, 0), (side - 1, side - 1)):
+                    u, v = (tx + 0.5) / side * 2 - 1, (ty + 0.5) / side * 2 - 1
+                    d = np.array(cube_face_direction(face, float(np.sign(u)), float(np.sign(v))))
+                    if np.allclose(d, corner):
+                        texels.append(faces[face][ty, tx])
+            if len(texels) == 3:
+                values = np.array(texels)
+                worst = max(worst, float(np.max((values.max(0) - values.min(0)) / (np.abs(values).mean(0) + 1e-3))))
+        out.append(worst)
+    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, 0)
+    return out
+
+
+def measure_depth_passes(window, app, frames: "Frames", args, size) -> list[str]:
+    """The depth pass alone (it runs only on a pose, geometry or key change): GPU ms per map size, casters with and
+    without the eyes, cage and SubD 1."""
+    from pyglet import gl
+
+    query = gl.GLuint()
+    gl.glGenQueries(1, ctypes.byref(query))
+    lines = ["(p3) depth pass alone (re-rendered only on a pose / geometry / key change; a drag pays it per frame), "
+             f"GL_TIME_ELAPSED ms, {args.draws} rounds after {WARMUP_ROUNDS}"]
+    lines.append(f"      {'surface':<8} {'map':>6} {'casters':<12} {'GPU p50':>9} {'min':>8} {'max':>8}")
+    key = frames.values["u_light_dir"][0]
+    for surface in args.surfaces:
+        if not set_surface(app, surface):
+            lines.append(f"  [{surface}] not available (SubD refused): skipped")
+            continue
+        drawn = frames.drawn()
+        for map_size in P3_DEPTH_SIZES:
+            target = DepthTarget(frames.locations, map_size)
+            for eyes in (False, True):
+                values = []
+                for round_ in range(WARMUP_ROUNDS + args.draws):
+                    ms, _wall = timed_frame(window, size, query.value, lambda: target.render(drawn, key, app, eyes))
+                    if round_ >= WARMUP_ROUNDS:
+                        values.append(ms)
+                p50, lo, hi = summary(values)
+                lines.append(f"      {surface:<8} {map_size:>6} {'skin + eyes' if eyes else 'skin':<12} "
+                             f"{p50:9.2f} {lo:8.2f} {hi:8.2f}")
+            if not target.complete:
+                lines.append(f"      depth FBO {map_size}^2 INCOMPLETE 0x{target.status:04X}")
+            target.release()
+    gl.glDeleteQueries(1, ctypes.byref(query))
+    return lines
+
+
+def measure_p3(window, app, frames: "Frames", args, size) -> list[str]:
+    """P3-0 (AD-039): the P3 frame rows (`p3_rows`) per surface and view, against `ld frame`."""
+    from pyglet import gl
+
+    window.switch_to()
+    lines: list[str] = []
+    raw_tex, levels, raw_ms = build_env_cube(corner_fix=False)
+    raw_spread = corner_spread(raw_tex, levels)
+    gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(raw_tex)))
+    cube_tex, levels, cube_ms = build_env_cube(corner_fix=True)
+    fixed_spread = corner_spread(cube_tex, levels)
+    lines.append(f"(p3) environment cube {CUBE_SIZE}^2 RGBA16F, mips to 2^2, the analytic studio prefiltered on the "
+                 f"GPU ({P3_CUBE_SAMPLES} samples): {cube_ms:.2f} ms with the corner fix, {raw_ms:.2f} ms without")
+    lines.append("      corner spread per level (largest relative difference of the 3 texels at a cube corner), "
+                 "without / with the fix: " + ", ".join(f"L{i} {a:.3f}/{b:.3f}"
+                                                          for i, (a, b) in enumerate(zip(raw_spread, fixed_spread))))
+    lines.append("")
+    targets = {s: DepthTarget(frames.locations, s) for s in sorted({s for s, _g in P3_SHADOW})}
+    rows = p3_rows()
+    query = gl.GLuint()
+    gl.glGenQueries(1, ctypes.byref(query))
+    lines.append(f"(p3) frame rows, {size[0]}x{size[1]}, {args.draws} rounds after {WARMUP_ROUNDS}; GL_TIME_ELAPSED ms; "
+                 "'vs ld' = minus `ld frame` (the effect's own cost); shadow rows read a map rendered once (a still "
+                 "pose), `drag` renders it every frame; casters: skin only (the eyes receive, AD-039 S2)")
+    verdict = []
+    key = frames.values["u_light_dir"][0]
+
+    def draw(options: dict) -> None:
+        options = dict(options)
+        map_size = options.pop("shadow_size", None)
+        shadow = options.pop("shadow", False)
+        render_depth = options.pop("render_depth", True)
+        depth = targets[map_size] if shadow else None
+        if shadow and render_depth:
+            depth.render(frames.drawn(), key, app, eyes=False)
+        frames.lookdev(background=True, eyes=True, albedo_map=True, env_spec=True, shadow=shadow, depth=depth,
+                       render_depth=False, cube=(cube_tex, levels), **options)
+
+    for surface in args.surfaces:
+        if not set_surface(app, surface):
+            lines.append(f"  [{surface}] not available (SubD refused): skipped")
+            continue
+        for view in args.views:
+            set_view(app, view)
+            for target in targets.values():
+                target.render(frames.drawn(), key, app, eyes=False)
+            gpu = {name: [] for name, _o in rows}
+            cpu = {name: [] for name, _o in rows}
+            images = {}
+            for round_ in range(WARMUP_ROUNDS + args.draws):
+                for name, options in rows:
+                    ms, wall = timed_frame(window, size, query.value, lambda: draw(options))
+                    if round_ >= WARMUP_ROUNDS:
+                        gpu[name].append(ms)
+                        cpu[name].append(wall)
+                    if round_ == WARMUP_ROUNDS + args.draws - 1 and name in ("ld frame", rows[1][0], "p3 all"):
+                        images[name] = read_rgb(size)
+            lines.append(f"  [{surface} / {view}]")
+            lines.append(f"      {'row':<13} {'GPU p50':>9} {'min':>8} {'max':>8} {'vs ld':>9} {'CPU p50':>9}")
+            floor = statistics.median(gpu["ld frame"])
+            for name, _o in rows:
+                lines.append(format_row(name, gpu[name], cpu[name], None if name == "ld frame" else floor))
+            base = images["ld frame"].astype(int).sum(axis=2)
+            for name in (rows[1][0], "p3 all"):
+                diff = base - images[name].astype(int).sum(axis=2)
+                lines.append(f"      {name}: {int((diff > 24).sum())} px darker, {int((diff < -24).sum())} px brighter "
+                             f"than `ld frame` (of {size[0] * size[1]})")
+            if size == (1024, 768) and view == "framed":
+                total = statistics.median(gpu["p3 all"])
+                verdict.append(f"  LD-D10 [{surface} / framed / 1024x768]: `p3 all` {total:.2f} ms GPU = "
+                               f"{100.0 * total / FRAME_BUDGET_MS:.0f} % of the 33.3 ms frame; `ld frame` {floor:.2f} ms")
+            if args.png:
+                for name, rgb in images.items():
+                    write_png(args.png, f"p3_{name.replace(' ', '_')}_{surface}_{view}_{size[0]}x{size[1]}", rgb)
+    gl.glDeleteQueries(1, ctypes.byref(query))
+    states = ", ".join(f"{s}^2 {'complete' if t.complete else f'INCOMPLETE 0x{t.status:04X}'}"
+                       for s, t in targets.items())
+    lines.append(f"  depth FBOs: {states}; the raw-depth sampler object for `thick`")
+    for target in targets.values():
+        target.release()
+    gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(cube_tex)))
+    if verdict:
+        lines.append("")
+        lines.extend(verdict)
+        lines.append("  (stand-ins: the production effects follow AD-039; the reference PC decides each slice's fixed "
+                     "setting)")
+    return lines
+
+
 def measure_compile(app, locations) -> list[str]:
     """First use: eye shell variants cold (a never-seen comment) and unchanged twice; `EyePass.program()` fresh."""
     from viewport import eye_shaders as es
@@ -1384,7 +1783,8 @@ def run_single(args) -> int:
     window, app = build_app(size)
     width, height = window.get_framebuffer_size()
     size = (width, height)
-    print(f"LookDev LD-0 probe (AD-038 draft, 2026-11-19), {width}x{height}")
+    title = "LookDev P3-0 probe (AD-039, 2026-11-22)" if args.p3 else "LookDev LD-0 probe (AD-038 draft, 2026-11-19)"
+    print(f"{title}, {width}x{height}")
     for line in machine_info(pyglet.gl.gl_info.get_version_string(), pyglet.gl.gl_info.get_renderer()):
         print(line)
     print(f"Source: {source_state()}")
@@ -1392,6 +1792,14 @@ def run_single(args) -> int:
     for line in header_lines(app, sh_ms):
         print(line)
     print()
+    if args.p3:
+        frames = Frames(window, app, values, depth=False)
+        for line in measure_depth_passes(window, app, frames, args, size):
+            print(line)
+        print()
+        for line in measure_p3(window, app, frames, args, size):
+            print(line)
+        return _finish(window)
     extras = set() if args.no_extras else set(EXTRAS) - args.skip
     frames = Frames(window, app, values, depth="depth" in extras)
     if "compile" in extras:
@@ -1409,6 +1817,10 @@ def run_single(args) -> int:
         window.switch_to()
         for line in measure_cube():
             print(line)
+    return _finish(window)
+
+
+def _finish(window) -> int:
     from pyglet import gl
 
     error = gl.glGetError()
@@ -1432,6 +1844,8 @@ def main(argv: list[str] | None = None) -> int:
             command.append("--no-extras")
         if args.png:
             command += ["--png", args.png]
+        if args.p3:
+            command.append("--p3")
         sys.stdout.flush()
         status = max(status, subprocess.call(command))
         print(flush=True)

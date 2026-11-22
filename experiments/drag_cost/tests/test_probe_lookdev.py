@@ -118,3 +118,41 @@ def test_every_glsl_source_is_ascii():
                 probe.CUBE_SAMPLE_FS]
     for source in sources:
         assert source.isascii()
+
+
+# -- P3-0 (`--p3`, AD-039) ---------------------------------------------------------------------------------------------
+
+
+def test_p3_flag_defaults_off():
+    assert probe.parse_args([]).p3 is False
+    assert probe.parse_args(["--p3", "--size", "1024", "768"]).p3 is True
+
+
+def test_p3_rows_are_unique_and_fit_the_table():
+    rows = probe.p3_rows()
+    names = [name for name, _options in rows]
+    assert names[0] == "ld frame" and len(set(names)) == len(names)
+    assert all(len(name) <= 13 for name in names)  # `format_row`'s column
+    for name, options in rows:
+        assert not options.get("thickness") or options.get("shadow")  # the thickness reads the shadow map
+        if options.get("shadow"):
+            assert options["shadow_size"] in {s for s, _g in probe.P3_SHADOW}
+    assert probe.P3_SETTING in probe.P3_SHADOW
+
+
+def test_p3_variants_add_their_defines_and_only_those():
+    locations = {"position": 0, "normal": 1}
+    plain = probe.skin_sources(locations, True, True, False)[2][0]
+    for define in ("SHADOW", "THICKNESS", "DUAL_LOBE", "DUAL_LOBE_ENV", "CUBE_ENV", "SHADOW_GRID"):
+        assert f"#define {define} " not in plain.split("const float PI")[0]
+    lod = probe.skin_sources(locations, True, True, True)[2][0]
+    assert "#define SHADOW_GRID" not in lod.split("const float PI")[0]  # LD-0's `ld shadow`: the 4x4 default
+    full = probe.skin_sources(locations, True, True, True, shadow_grid=3, thickness=True, dual=2, cube_env=True)[2][0]
+    head = full.split("const float PI")[0]
+    for define in ("SHADOW", "THICKNESS", "DUAL_LOBE", "DUAL_LOBE_ENV", "CUBE_ENV"):
+        assert f"#define {define} 1\n" in head
+    assert "#define SHADOW_GRID 3\n" in head and "{{" not in full and full.isascii()
+    with pytest.raises(ValueError):
+        probe.skin_sources(locations, True, True, False, thickness=True)
+    with pytest.raises(ValueError):
+        probe.skin_sources(locations, True, True, True, dual=3)
