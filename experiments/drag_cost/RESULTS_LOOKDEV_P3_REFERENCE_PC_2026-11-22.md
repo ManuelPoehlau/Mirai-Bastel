@@ -84,10 +84,25 @@ The shadow darkens 4,929 / 52,518 px (cage framed / close) and 3,805 / 39,046 px
 
 What it decides is in AD-039 §11.1 (S1: 1024², 3 × 3; the drag cost open; S3: the second lobe on the lights only).
 
+## Run 3 (commit `4391e64`, cube rows only) [M-RPC]
+
+With the cube on unit 8, `cube env`, `cube dual env` and `p3 all` **still fail** in round 0 of every view at both sizes
+with `GL_OUT_OF_MEMORY`, with 277–311 MiB VRAM free; `ld frame` in the same run draws (1.86 / 2.42 ms framed, cage /
+SubD 1). **The unit clash of run 2 was not the cause** (that hypothesis is withdrawn). The prefilter itself works on
+this card (12.1 ms, corner spread 0 with the fix), so the failure is in *sampling* the cube in the skin stand-in.
+
+Changed for run 4 (commit after `4391e64`):
+- the stand-in's environment lookup is a plain function (`env_at`) instead of a function-like `#define` macro (the
+  only construct the cube variants have that no working variant has);
+- `--p3-cube-check`: one frame per case, each changing one thing against the failing row - the cube only bound (no
+  lookup), seamless filtering off / on, `texture()` instead of `textureLod`, the rendered cube at level 0 only, a cube
+  uploaded from the CPU (RGBA16F with and without mips, RGBA8), without the albedo map, without the eyes. Each case
+  reports `ok` or its GL error with the free VRAM.
+
 ## Next
 
-Run 3, only the cube rows:
+Run 4, the cube diagnosis (one size is enough):
 
 ```
-python experiments\drag_cost\probe_lookdev.py --p3 --p3-no-depth --p3-rows "cube env,cube dual env,p3 all" | Tee-Object -FilePath lookdev_p3_0_run3.txt
+python experiments\drag_cost\probe_lookdev.py --p3 --p3-cube-check --size 1024 768 | Tee-Object -FilePath lookdev_p3_0_run4.txt
 ```

@@ -245,8 +245,9 @@ region materials; roughness, normal and translucency maps.
   Every pass unbinds what it bound, including sampler objects (`glBindSampler(unit, 0)`), and leaves unit 0 active.
   **No unit carries two texture targets at a draw.** P3-0 run 2 [M-RPC]: the stand-in's cube on unit 5, where the
   stand-in UV binding (`_flush_face_data`) had bound the face corners as a buffer texture, failed every draw with
-  `GL_OUT_OF_MEMORY` while 270 MiB were free. That is why the cube is on 8 [H: the two targets on one unit; run 3
-  checks it]. The production `bind_triangle_uvs` binds unit 3 only, but the rule holds for every slice.
+  `GL_OUT_OF_MEMORY` while 270 MiB were free. Run 3 (cube on 8) failed the same way, so the
+  clash was **not** the cause. The cause of the cube rows' failure is open (run 4, `--p3-cube-check`, §11.1). The rule
+  stays: the production `bind_triangle_uvs` binds unit 3 only, and the cube stays on 8.
 
 - **Off-screen passes:** the shadow depth pass and the cube prefilter render through their own FBO **inside**
   `_render_lookdev`. They save and restore what `EyePass.iris_table` saves (V12): draw / read framebuffer, viewport,
@@ -687,7 +688,10 @@ python experiments\drag_cost\probe_lookdev.py --p3 | Tee-Object -FilePath lookde
     so the environment keeps one lobe until S5's cube is measured (`cube dual env`).
   - **S4 is cheap:** `thick 1k x9` costs less than the shadow row alone (+0.50 against +1.11), a compiler difference
     between the two variants [H]. S4's production row decides.
-  - **Run 3** measures only the cube rows: `--p3 --p3-no-depth --p3-rows "cube env,cube dual env,p3 all"`.
+  - **Run 3 (cube rows only, cube on unit 8):** failed again with 277–311 MiB free. The unit hypothesis is withdrawn.
+    The GPU prefilter works (12.1 ms); sampling the cube in the skin stand-in fails. **S5 stays blocked on this until
+    run 4** (`--p3 --p3-cube-check --size 1024 768`) shows which part fails. If the cube cannot be sampled in the skin
+    pass on this card, S5 falls back to the analytic studio and moves behind S6 / S7, and the rest of P3 is unaffected.
 
 ### 11.2 After each slice
 

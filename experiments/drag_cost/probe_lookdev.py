@@ -210,6 +210,20 @@ uniform float u_env_levels;
 #endif
 out vec4 out_color;
 
+// the environment specular: the prefiltered cube (CUBE_ENV; CUBE_NOLOD = plain texture(), a diagnostic) or the
+// analytic studio
+#ifdef CUBE_ENV
+vec3 env_at(vec3 r, float rr) {{
+#ifdef CUBE_NOLOD
+    return texture(u_env_cube, r).rgb;
+#else
+    return textureLod(u_env_cube, r, clamp(rr, 0.0, 1.0) * (u_env_levels - 1.0)).rgb;
+#endif
+}}
+#else
+vec3 env_at(vec3 r, float rr) {{ return studio_radiance(r, rr); }}
+#endif
+
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 #ifdef DUAL_LOBE
 // the second specular lobe (P3, AD-039 S3): roughness x 0.75 and x 1.3, mixed 0.85 / 0.15 [PROVISIONAL]
@@ -324,15 +338,10 @@ void main() {{
     vec3 colour = albedo * (diffuse + u_env_intensity * sh9(u_env_rot * n)) + specular;
 #ifdef ENV_SPEC
     vec3 r_env = u_env_rot * reflect(-v, n);
-#ifdef CUBE_ENV
-#define ENV_AT(rr) textureLod(u_env_cube, r_env, clamp(rr, 0.0, 1.0) * (u_env_levels - 1.0)).rgb
-#else
-#define ENV_AT(rr) studio_radiance(r_env, rr)
-#endif
 #ifdef DUAL_LOBE_ENV
-    vec3 env = mix(ENV_AT(DUAL.y * rough), ENV_AT(DUAL.x * rough), DUAL.z);
+    vec3 env = mix(env_at(r_env, DUAL.y * rough), env_at(r_env, DUAL.x * rough), DUAL.z);
 #else
-    vec3 env = ENV_AT(rough);
+    vec3 env = env_at(r_env, rough);
 #endif
     colour += u_env_intensity * env * env_brdf_approx(u_f0, rough, nv);
 #endif
@@ -448,7 +457,7 @@ void main() { out_color = textureLod(u_cube, CENTRES[int(gl_FragCoord.x)], u_lod
 
 def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, shadow: bool,
                  nonce: str | None = None, *, shadow_grid: int = 4, thickness: bool = False, dual: int = 0,
-                 cube_env: bool = False) -> list[tuple[str, str]]:
+                 cube_env: bool = False, cube_nolod: bool = False) -> list[tuple[str, str]]:
     """The stand-in skin program: the textured Worklight program's vertex and geometry sources (same transform, same
     barycentrics and `gl_PrimitiveID`), the stand-in fragment source. `nonce` = a comment no driver cache has seen.
 
@@ -464,7 +473,8 @@ def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, sh
     if dual not in (0, 1, 2) or not 1 <= shadow_grid <= 8:
         raise ValueError(f"dual {dual!r}, shadow_grid {shadow_grid!r}")
     flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow), ("THICKNESS", thickness),
-             ("DUAL_LOBE", dual > 0), ("DUAL_LOBE_ENV", dual == 2), ("CUBE_ENV", cube_env))
+             ("DUAL_LOBE", dual > 0), ("DUAL_LOBE_ENV", dual == 2), ("CUBE_ENV", cube_env),
+             ("CUBE_NOLOD", cube_env and cube_nolod))
     defines = "".join(f"#define {name} 1\n" for name, on in flags if on)
     if shadow and shadow_grid != 4:
         defines += f"#define SHADOW_GRID {int(shadow_grid)}\n"
@@ -512,6 +522,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--p3-rows", default="", help="with --p3: only these frame rows (comma separated names of "
                    "`p3_rows()`, e.g. 'shadow 1k x9,cube env'; `ld frame` always runs)")
     p.add_argument("--p3-no-depth", action="store_true", help="with --p3: skip the depth-pass-alone section")
+    p.add_argument("--p3-cube-check", action="store_true", help="with --p3: only the cube diagnosis (one frame per "
+                   "case: which part of the cube rows fails)")
     return p
 
 
@@ -934,7 +946,8 @@ class Frames:
         gl.glUseProgram(0)
 
     def lookdev(self, *, background: bool, eyes: bool, albedo_map: bool, env_spec: bool, shadow: bool,
-                depth: "DepthTarget | None" = None, render_depth: bool = True, cube=None, **p3) -> None:
+                depth: "DepthTarget | None" = None, render_depth: bool = True, cube=None,
+                bind_cube: bool | None = None, seamless: bool = True, **p3) -> None:
         """The stand-in LookDev frame. `depth` (P3): the shadow map to read (default the (d) target); `render_depth`
         False reads it as it is (a still pose: the lookup only); `cube` = (texture, levels) for `cube_env`."""
         from pyglet import gl
@@ -948,8 +961,8 @@ class Frames:
             self.draw_background()
         eye_pos = self.eye_position()
         thickness = bool(p3.get("thickness"))
-        cube_env = bool(p3.get("cube_env"))
-        if cube_env:
+        cube_env = bool(p3.get("cube_env")) if bind_cube is None else bind_cube  # whether the cube is bound
+        if cube_env and seamless:
             gl.glEnable(gl.GL_TEXTURE_CUBE_MAP_SEAMLESS)
         for rm, obj, eye in self.drawn():
             if eye is not None:
@@ -980,6 +993,7 @@ class Frames:
                 target.bind_raw(SHADOW_RAW_UNIT)
             if cube_env:
                 program.set("u_env_levels", float(cube[1]))
+                program.set("u_env_cube", CUBE_UNIT)
                 gl.glActiveTexture(gl.GL_TEXTURE0 + CUBE_UNIT)
                 gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, cube[0])
                 gl.glActiveTexture(gl.GL_TEXTURE0)
@@ -1009,7 +1023,7 @@ class Frames:
                 gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
             gl.glActiveTexture(gl.GL_TEXTURE0)
             gl.glUseProgram(0)
-        if cube_env:
+        if cube_env and seamless:
             gl.glDisable(gl.GL_TEXTURE_CUBE_MAP_SEAMLESS)
 
     def eye_position(self) -> tuple[float, float, float]:
@@ -1774,6 +1788,97 @@ def measure_p3(window, app, frames: "Frames", args, size):
                "setting)")
 
 
+def upload_cube(internal: str, levels: int, value: float = 0.2) -> int:
+    """A cube filled from the CPU (no FBO): `internal` "RGBA16F" or "RGBA8", `levels` mips (1 = level 0 only)."""
+    import numpy as np
+    from pyglet import gl
+
+    texture = gl.GLuint()
+    gl.glGenTextures(1, ctypes.byref(texture))
+    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, texture.value)
+    fmt = gl.GL_RGBA16F if internal == "RGBA16F" else gl.GL_RGBA8
+    for level in range(levels):
+        side = CUBE_SIZE >> level
+        data = np.full((side, side, 4), value, np.float32)
+        for face in range(6):
+            gl.glTexImage2D(gl.GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, level, fmt, side, side, 0, gl.GL_RGBA,
+                            gl.GL_FLOAT, data.ctypes.data_as(ctypes.c_void_p))
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_BASE_LEVEL, 0)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MAX_LEVEL, levels - 1)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MIN_FILTER,
+                       gl.GL_LINEAR_MIPMAP_LINEAR if levels > 1 else gl.GL_LINEAR)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+    for wrap in (gl.GL_TEXTURE_WRAP_S, gl.GL_TEXTURE_WRAP_T, gl.GL_TEXTURE_WRAP_R):
+        gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, wrap, gl.GL_CLAMP_TO_EDGE)
+    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, 0)
+    return texture.value
+
+
+def cube_check_cases() -> list[tuple[str, str, dict]]:
+    """(label, cube kind, `Frames.lookdev` keywords): each case changes one thing against the failing `cube env` row
+    (the GPU-rendered RGBA16F cube with mips, `textureLod`, seamless filtering on)."""
+    return [
+        ("A bound only, seamless off", "rendered", {"bind_cube": True, "seamless": False}),
+        ("B bound only, seamless on", "rendered", {"bind_cube": True, "seamless": True}),
+        ("C cube env, seamless off", "rendered", {"cube_env": True, "seamless": False}),
+        ("D cube env, seamless on", "rendered", {"cube_env": True, "seamless": True}),
+        ("E texture(), seamless off", "rendered", {"cube_env": True, "cube_nolod": True, "seamless": False}),
+        ("F rendered, level 0 only", "rendered0", {"cube_env": True, "seamless": False}),
+        ("G uploaded 16F, mips", "upload16", {"cube_env": True, "seamless": False}),
+        ("H uploaded 16F, level 0", "upload16_0", {"cube_env": True, "seamless": False}),
+        ("I uploaded RGBA8, mips", "upload8", {"cube_env": True, "seamless": False}),
+        ("J no ALBEDO_MAP, cube env", "rendered", {"cube_env": True, "seamless": False, "albedo_map": False}),
+        ("K no eyes, cube env", "rendered", {"cube_env": True, "seamless": False, "eyes": False}),
+    ]
+
+
+def measure_cube_check(window, app, frames: "Frames", args, size):
+    """`--p3-cube-check`: which part of the cube rows fails (run 3: every `cube env` draw raised GL_OUT_OF_MEMORY with
+    about 290 MiB VRAM free). One frame per case on the framed cage; each case reports ok or its GL error."""
+    from pyglet import gl
+    from pyglet.gl.lib import GLException
+
+    window.switch_to()
+    set_surface(app, "cage")
+    set_view(app, "framed")
+    yield f"(p3 cube check) cage / framed, {size[0]}x{size[1]}; {vram_free()}"
+    rendered, levels, _ms = build_env_cube()
+    cubes = {"rendered": (rendered, levels)}
+    query = gl.GLuint()
+    gl.glGenQueries(1, ctypes.byref(query))
+    made = []
+    for label, kind, options in cube_check_cases():
+        options = dict(options)
+        try:
+            if kind not in cubes:
+                if kind == "rendered0":
+                    tex, _l, _ms = build_env_cube()
+                    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, tex)
+                    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MAX_LEVEL, 0)
+                    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
+                    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, 0)
+                    cubes[kind] = (tex, 1)
+                else:
+                    count = 1 if kind.endswith("_0") else int(math.log2(CUBE_SIZE))
+                    cubes[kind] = (upload_cube("RGBA8" if kind == "upload8" else "RGBA16F", count), count)
+                made.append(cubes[kind][0])
+            albedo = options.pop("albedo_map", True)
+            eyes = options.pop("eyes", True)
+            bind = options.pop("bind_cube", None)
+            seamless = options.pop("seamless", True)
+            ms, _wall = timed_frame(window, size, query.value, lambda: frames.lookdev(
+                background=True, eyes=eyes, albedo_map=albedo, env_spec=True, shadow=False, cube=cubes[kind],
+                bind_cube=bind, seamless=seamless, **options))
+            yield f"      {label:<28} ok      {ms:6.2f} ms GPU"
+        except GLException as exc:
+            errors = drain_gl_errors()
+            frames_reset()
+            yield f"      {label:<28} FAILED  {str(exc).strip()[:60]} (pending {[hex(e) for e in errors]}); {vram_free()}"
+    gl.glDeleteQueries(1, ctypes.byref(query))
+    for tex in [rendered, *made]:
+        gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(tex)))
+
+
 def frames_reset() -> None:
     """After a draw raised mid-frame: the state a row may have left (program, units 0-7 incl. sampler objects, cube
     seamless filtering, the timer query ended by `timed_frame`)."""
@@ -1879,6 +1984,10 @@ def run_single(args) -> int:
     print()
     if args.p3:
         frames = Frames(window, app, values, depth=False)
+        if args.p3_cube_check:
+            for line in measure_cube_check(window, app, frames, args, size):
+                print(line, flush=True)
+            return _finish(window)
         for line in ([] if args.p3_no_depth else measure_depth_passes(window, app, frames, args, size)):
             print(line, flush=True)
         print()
@@ -1935,6 +2044,8 @@ def main(argv: list[str] | None = None) -> int:
                 command += ["--p3-rows", ",".join(args.p3_rows)]
             if args.p3_no_depth:
                 command.append("--p3-no-depth")
+            if args.p3_cube_check:
+                command.append("--p3-cube-check")
         sys.stdout.flush()
         status = max(status, subprocess.call(command))
         print(flush=True)
