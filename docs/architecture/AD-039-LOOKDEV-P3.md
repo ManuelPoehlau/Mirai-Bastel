@@ -1,9 +1,10 @@
 # AD-039 — LookDev P3: key shadow map, eye shadow, dual lobe, thickness, environment cube, region materials, maps
 
-**Status:** **PROPOSED (2026-11-22, Architecture Gate).** No `src/` change in this AD's session. It needs Manu's
-acceptance (with or without changes to §13) before slice S1 starts. The number AD-039 follows AD-038; AD-034 was never
-assigned (no file, no reference, no commit in the history). New class, file and panel names stay `PROVISIONAL` until
-built.
+**Status:** **ACCEPTED (2026-11-22, Manu):** „AD-039 freigegeben, Reihenfolge S1–S7 und Q-P3-0, Q-P3-3, Q-P3-5,
+Q-P3-8, Q-P3-9 wie vorgeschlagen.“ LD-D8 and the paint channel (Q-P3-1, Q-P3-2) stay open until before S6 / S7;
+Q-P3-4, Q-P3-6 and Q-P3-7 belong to S2, S3 and S5 and are judged there. Proposed 2026-11-22 (Architecture Gate). The
+number AD-039 follows AD-038; AD-034 was never assigned (no file, no reference, no commit in the history). New class,
+file and panel names stay `PROVISIONAL` until built. **S1 in progress** (§16).
 **Why now:** Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“
 ([proposal §0.1](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md), [AD-038](AD-038-LOOKDEV-ROOM-M1.md)
 §13.6). P3 needs its own AD before any `src/` change and fixes the order of the P3 items.

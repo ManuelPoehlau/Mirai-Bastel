@@ -48,3 +48,27 @@ def test_skin_sources_are_the_worklight_vertex_and_geometry_stages():
             assert fs.startswith("#version 330 core\n")
             assert ("#define ALBEDO_MAP 1\n" in fs) == albedo_map and ("#define ENV_SPEC 1\n" in fs) == env_spec
             assert fs.count("vec3 srgb_encode(") == 1 and fs.count("vec3 lookdev_output(") == 1
+
+
+#: AD-039 §2.3 point 3 (the C6 / I-0 pattern of AD-038): the 4 M1 skin variants (`skin_sources` for `ALBEDO_MAP` x
+#: `ENV_SPEC`, attribute locations 0 / 1; vertex, geometry and fragment source each, 12 sources in that order, kind and
+#: text hashed character for character). Taken from the code before S1 changed `lookdev_shaders.py` (`9e7dbea`). With
+#: every P3 effect off, `skin_sources` must give exactly these sources.
+PINNED_SKIN_SOURCES_SHA256 = "a71bd9740763a4c20d5a4703153acb317a477ceacb4f43b7439eed66007f4c38"
+
+
+def skin_sources_digest(**effects) -> tuple[int, str]:
+    import hashlib
+    import itertools
+
+    digest, count = hashlib.sha256(), 0
+    for albedo_map, env_spec in itertools.product((False, True), (False, True)):
+        for src, kind in ls.skin_sources({"position": 0, "normal": 1}, albedo_map, env_spec, **effects):
+            digest.update(kind.encode() + b"\0" + src.encode() + b"\0")
+            count += 1
+    return count, digest.hexdigest()
+
+
+def test_the_m1_skin_sources_are_pinned():
+    """AD-039 §2.3 / §14: every P3 effect off = the M1 skin program, character for character."""
+    assert skin_sources_digest() == (12, PINNED_SKIN_SOURCES_SHA256)
