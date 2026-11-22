@@ -23,7 +23,10 @@ P3 rows (AD-039 §4 / §11.2; `--effects` names the built effects to measure, de
 is entered with the effects of `--effects` on; then every row switches the effects it needs (a switch that compiles
 runs its preparation frames first, unmeasured):
 - `lookdev`                every P3 effect off: the M1 frame (compare with the LD-1 room run);
-- `lookdev +shadow`        S1, a still pose: the key's map renders once, the lookup every frame;
+- `lookdev +shadow`        S1, a still pose: the key's map renders once, the lookup every frame (skin and teeth; the
+                           eyes unshadowed, `eye_shadow` off);
+- `lookdev +shadow +eyes`  S2 (AD-039 §5): the same with the eyes in the key's shadow (`eye_shadow`; target <= +0.5 ms
+                           against `lookdev +shadow`, §2.5);
 - `lookdev +shadow drag`   S1 with a morph weight step on the head every frame (the map re-renders each frame: a slow
                            morph or pose drag). The edit object gets a probe target in memory (the file is not touched);
 - `... drag flush`         the same with `KeyShadow.flush` (a `glFlush` after the depth pass, before the background);
@@ -62,6 +65,9 @@ WARMUP_ROUNDS = 5
 DEFAULT_DRAWS = 30
 SURFACES = ("cage", "subd1")
 FRAME_BUDGET_MS = 1000.0 / 30.0
+#: A P3 effect's row: its label and the effects it switches on (an effect that needs another one switches both).
+EFFECT_ROWS = {"shadow": ("lookdev +shadow", ("shadow",)),
+               "eye_shadow": ("lookdev +shadow +eyes", ("shadow", "eye_shadow"))}
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -164,7 +170,8 @@ def probe_target(app):
 
 
 def p3_rows(window, size, query, app, draws: int, effects, floor: float, lid) -> list[str]:
-    """AD-039 §11.2: `lookdev` (every effect off), one row per effect, the shadow's drag rows."""
+    """AD-039 §11.2: `lookdev` (every effect off), one row per effect (with the effects it needs), the shadow's drag
+    rows."""
     from viewport.lookdev_shadow import KeyShadow
 
     lines = []
@@ -183,7 +190,8 @@ def p3_rows(window, size, query, app, draws: int, effects, floor: float, lid) ->
 
     measured("lookdev", ())
     for name in effects:
-        measured(f"lookdev +{name}", (name,))
+        label, names = EFFECT_ROWS.get(name, (f"lookdev +{name}", (name,)))
+        measured(label, names)
     if "shadow" in effects:
         def step(i):
             app.set_morph_weight(20 + (i % 2) * 20 + (i // 2) % 3, lid, quiet=True)
@@ -245,8 +253,8 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     window, app = build_app(tuple(args.size))
     size = window.get_framebuffer_size()
-    print(f"LookDev room probe (AD-038 LD-1, 2026-11-19; AD-039 S1), {size[0]}x{size[1]}, {args.draws} rounds after "
-          f"{WARMUP_ROUNDS}")
+    print(f"LookDev room probe (AD-038 LD-1, 2026-11-19; AD-039 S1, S2), {size[0]}x{size[1]}, {args.draws} rounds "
+          f"after {WARMUP_ROUNDS}")
     for line in machine_info(gl.gl_info.get_version_string(), gl.gl_info.get_renderer()):
         print(line)
     print(f"Source: {source_state()}")

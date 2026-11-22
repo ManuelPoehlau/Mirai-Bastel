@@ -1,5 +1,6 @@
 """The key light's shadow map (AD-039 §4, LookDev P3 S1): one 2D depth map from the key, orthographic over the casters'
-bounding sphere; the skin pass reads it through `lookdev_shaders.LD_SHADOW_SRC` on unit 6.
+bounding sphere; the skin pass reads it through `lookdev_shaders.LD_SHADOW_SRC` on unit 6, and since S2 (AD-039 §5) the
+eye pass's LOOKDEV + LD_SHADOW variant does (the eyes receive, they never cast).
 
 - **Fixed setting** (`PROVISIONAL`, P3-0 on the reference PC, Q-P3-3): 1024² DEPTH_COMPONENT24, `GL_LINEAR` with
   compare mode (3 x 3 hardware bilinear-compare fetches in the shader), `CLAMP_TO_BORDER` with border depth 1.0 (outside

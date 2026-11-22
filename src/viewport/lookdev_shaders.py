@@ -24,6 +24,7 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
   bilinear-compare fetches one texel apart with a receiver-plane bias and a normal offset sideways to the key; outside the map = lit; the
   key's softness is the map's effective resolution, `u_ld_shadow_scale`); the `SHADOW` block subtracts the key's own
   diffuse and specular term times (1 - visibility). Twins: `lookdev_optics.pcf_visibility` / `ld_key_shadowed`.
+  S2 (AD-039 §5): the eye's `LD_SHADOW` variant appends the same string (`eye_shaders.shell_sources`).
   `SHADOW_DEPTH_SRC`: the depth pass's program (`viewport.lookdev_shadow.KeyShadow`).
 
 Colour (AD-038 §5.5): every albedo is an sRGB artist value, decoded here; lights are linear; one `lookdev_output` per

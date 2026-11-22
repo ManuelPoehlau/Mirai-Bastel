@@ -480,12 +480,19 @@ class Viewport:
             self._lookdev_pass = LookdevPass()
         return self._lookdev_pass
 
+    @staticmethod
+    def _casts_key_shadow(rm, look) -> bool:
+        """AD-039 §4: a skin object with a LookDraw that is not a Ghost casts the key's shadow (the eyes never do)."""
+        return look is not None and getattr(rm.store, "alpha", 1.0) >= 1.0
+
     def _lookdev_programs(self) -> tuple[list, list]:
         """The programs the next LookDev frame draws: ([skin (albedo map, env spec, shadow)], [eye program
-        arguments])."""
+        arguments + (ld_shadow,)]). AD-039 §5: the eyes receive the key's shadow when `shadow` and `eye_shadow` are in
+        force and something casts it."""
         skin, eyes = [], []
         env_spec = self._lookdev_pass.env_spec if self._lookdev_pass is not None else True
-        shadow = self.lookdev_effects().shadow
+        effects = self.lookdev_effects()
+        shadow = effects.shadow
         drawn = [(self.surface_render_mesh or self.render_mesh, self._edit_look)] if self.show_faces else []
         for key in self._entry_draw_order():
             eye = self._eye_entries.get(key) if self.eye_display.preview else None
@@ -497,7 +504,8 @@ class Viewport:
         for rm, look in drawn:
             if look is not None:
                 skin.append((look.albedo is not None and rm.mesh.has_face_uvs(), env_spec, shadow))
-        return sorted(set(skin)), sorted(set(eyes))
+        eye_shadow = shadow and effects.eye_shadow and any(self._casts_key_shadow(rm, look) for rm, look in drawn)
+        return sorted(set(skin)), sorted(set(e + (eye_shadow,) for e in eyes))
 
     def lookdev_prepare_needed(self) -> bool:
         """AD-038 §9: a GL viewport whose next LookDev frame would compile a program first."""
@@ -508,7 +516,8 @@ class Viewport:
         eye_cache = self._eye_pass.programs if self._eye_pass is not None else {}
         display = self.eye_display
         return (any(k not in cached for k in skin)
-                or any(self.eye_pass.program_key(display, *e, lookdev=True) not in eye_cache for e in eyes))
+                or any(self.eye_pass.program_key(display, *e[:5], lookdev=True, ld_shadow=e[5]) not in eye_cache
+                       for e in eyes))
 
     def prepare_lookdev(self) -> int:
         """Compile the programs the next LookDev frame draws (the room's entry, once per process, §9). Returns how many
@@ -520,8 +529,8 @@ class Viewport:
         before = len(passes.programs) + len(self.eye_pass.programs)
         for albedo_map, env_spec, shadow in skin:
             passes.program(albedo_map, env_spec, shadow)
-        for level, fit, look, iris, sclera in eyes:
-            self.eye_pass.program(self.eye_display, level, fit, look, iris, sclera, lookdev=True)
+        for level, fit, look, iris, sclera, ld_shadow in eyes:
+            self.eye_pass.program(self.eye_display, level, fit, look, iris, sclera, lookdev=True, ld_shadow=ld_shadow)
         return len(passes.programs) + len(self.eye_pass.programs) - before
 
     def lookdev_frame(self) -> dict:
@@ -1273,8 +1282,8 @@ class Viewport:
         """AD-038 §3.1: `render()`'s loop and order with three steps changed - the background first, every mesh with a
         LookDraw through the LookDev pass, the eyes through the eye pass's LOOKDEV variant. Entries without a LookDraw
         (References, LD-D15 open) keep the Worklight draw. AD-039 S1: with the shadow on, the key's map is brought up
-        to date before the background (re-rendered only on a change, `KeyShadow.key`); skin and teeth cast and receive,
-        the eyes neither (S2 makes them receive)."""
+        to date before the background (re-rendered only on a change, `KeyShadow.key`); skin and teeth cast and receive.
+        AD-039 S2: with `eye_shadow` as well the eyes receive it (they never cast) - when something casts."""
         camera = self.render_mesh.camera
         frame = self.lookdev_frame()
         passes = self.lookdev_pass
@@ -1289,16 +1298,19 @@ class Viewport:
                 continue
             skins.append((self.entry_surface_render_meshes.get(key, self.object_entries[key]),
                           self._entry_looks.get(key), None))
-        shadow = None
-        if self.lookdev_effects(wanted=False).shadow:
-            casters = [rm for rm, look, eye_key in skins
-                       if eye_key is None and look is not None and getattr(rm.store, "alpha", 1.0) >= 1.0]
+        shadow = eye_shadow = None
+        effects = self.lookdev_effects(wanted=False)
+        if effects.shadow:
+            casters = [rm for rm, look, eye_key in skins if eye_key is None and self._casts_key_shadow(rm, look)]
             shadow = passes.key_shadow()
             shadow.update(casters, frame["u_ld_light_dir"][0], frame["u_ld_light_size"][0])
+            if effects.eye_shadow and casters:
+                eye_shadow = shadow
         passes.draw_background(*self.lookdev_state.background_colours())
         for rm, look, eye_key in skins:
             if eye_key is not None:
-                if self.eye_pass.draw(self.object_entries[eye_key], look, light, self.eye_display, lighting=frame):
+                if self.eye_pass.draw(self.object_entries[eye_key], look, light, self.eye_display, lighting=frame,
+                                      shadow=eye_shadow):
                     continue
                 rm = self.entry_surface_render_meshes.get(eye_key, self.object_entries[eye_key])
                 look = self._entry_looks.get(eye_key)

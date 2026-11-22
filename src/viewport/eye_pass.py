@@ -31,6 +31,7 @@ import numpy as np
 
 from . import eye_optics as eo
 from . import eye_shaders as es
+from .lookdev_shaders import SHADOW_UNIT as SKIN_SHADOW_UNIT
 from .material import SurfaceFinish
 
 #: The iris texture's unit (any unit the Worklight's face data does not use while the pass runs).
@@ -53,6 +54,8 @@ REFRACTIONS = tuple(es.VARIANT_IDS)
 TIERS = ("fast", "full")
 #: AD-038 §5: the sclera's GGX roughness in the LOOKDEV variant of an eye without a look (= `DEFAULT_LOOK`'s).
 LOOKDEV_SCLERA_ROUGHNESS = 0.08
+#: AD-039 §2.4 / §5: the key's shadow map while a LOOKDEV + LD_SHADOW eye draws (the skin's unit).
+SHADOW_UNIT = SKIN_SHADOW_UNIT
 
 
 @dataclass(frozen=True)
@@ -213,25 +216,33 @@ class EyePass:
         self._sclera_filters: dict = {}
 
     def program_key(self, display: EyeDisplay, level: int, fit: bool, look: bool = False, iris: bool = False,
-                    sclera: bool = False, lookdev: bool = False) -> tuple:
-        """The program cache key. AD-038 §5.1: 9 values; `lookdev` sits before `sclera`, which stays the last."""
+                    sclera: bool = False, lookdev: bool = False, ld_shadow: bool = False) -> tuple:
+        """The program cache key. AD-038 §5.1: 9 values; `lookdev` sits before `sclera`, which stays the last.
+        AD-039 §5: an `LD_SHADOW` program's key has 10, `True` inserted before `sclera`; without it the key is the one
+        before S2 (as its sources are)."""
+        shadow = (True,) if ld_shadow and lookdev else ()
         return (display.refraction, int(level), display.reflection, bool(fit), self.debug_kind, bool(look),
-                bool(iris and look), bool(lookdev), bool(sclera))
+                bool(iris and look), bool(lookdev)) + shadow + (bool(sclera),)
 
     def program(self, display: EyeDisplay, level: int, fit: bool, look: bool = False, iris: bool = False,
-                sclera: bool = False, lookdev: bool = False):
+                sclera: bool = False, lookdev: bool = False, ld_shadow: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore
 
         iris = bool(iris and look)
-        key = self.program_key(display, level, fit, look, iris, sclera, lookdev)
+        ld_shadow = bool(ld_shadow and lookdev)
+        key = self.program_key(display, level, fit, look, iris, sclera, lookdev, ld_shadow)
         program = self.programs.get(key)
         if program is None:
+            if ld_shadow:
+                from .lookdev_shadow import register_shadow_sampler_uniform
+
+                register_shadow_sampler_uniform()
             attributes = GLRenderStore.program().attributes
             locations = {"position": attributes["position"]["location"], "normal": attributes["normal"]["location"]}
             sources = es.shell_sources(locations, display.refraction, level, display.reflection, fit, self.debug_kind,
-                                       look, iris, sclera, lookdev)
+                                       look, iris, sclera, lookdev, ld_shadow)
             program = ShaderProgram(*(Shader(src, kind) for src, kind in sources))
             self.programs[key] = program
         return program
@@ -473,10 +484,13 @@ class EyePass:
         fit = eo.fit_knots(draw.spec, eo.EyeGeometry.from_values(draw.spec)) is not None
         return (draw.spec.limbus_level, fit, look, iris, sclera is not None)
 
-    def draw(self, render_mesh, draw: EyeDraw, light: dict, display: EyeDisplay, lighting: dict | None = None) -> bool:
+    def draw(self, render_mesh, draw: EyeDraw, light: dict, display: EyeDisplay, lighting: dict | None = None,
+             shadow=None) -> bool:
         """Draw one eye entry. False = nothing drawn (no VertexList / camera yet): the caller draws it as usual.
         AD-038 §5.1: `lighting` = a LookDev frame dict (`lookdev_optics.frame_uniforms`) draws the LOOKDEV variant with
-        its values - the 7 Worklight names then carry the LookDev key and fill (D2); None is today's call."""
+        its values - the 7 Worklight names then carry the LookDev key and fill (D2); None is today's call.
+        AD-039 §5: `shadow` = a rendered `KeyShadow` (with `lighting`) draws the LOOKDEV + LD_SHADOW variant: the
+        head's lids, brow and nose shadow the eye's key; its map on `SHADOW_UNIT` for the draw, freed after it."""
         from pyglet import gl
 
         from .gl_render_store import GLRenderStore
@@ -499,8 +513,9 @@ class EyePass:
         if sclera is not None and max(sclera.width, sclera.height) > SCLERA_MAX_SIZE:
             sclera = None  # the base colour, as for a missing file
         lookdev = lighting is not None
+        shadow = shadow if lookdev and shadow is not None and shadow.ready else None
         program = self.program(display, draw.spec.limbus_level, "u_fit_lab" in values, look, iris, sclera is not None,
-                               lookdev)
+                               lookdev, shadow is not None)
         model = store.uniform_data("model_uniforms")
         model = list(model) if len(model) == 16 else [1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0]
         if lookdev:
@@ -528,6 +543,9 @@ class EyePass:
         if sclera is not None:
             sampler = self.sclera_sampler(sclera)
             values.update({"u_sclera_texture": SCLERA_UNIT, "u_sclera_tint": tuple(draw.sclera_tint)})
+        if shadow is not None:
+            values.update(shadow.uniforms())
+            values["u_ld_shadow"] = SHADOW_UNIT
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw, not once per value
         for name, value in values.items():
@@ -545,6 +563,8 @@ class EyePass:
             gl.glActiveTexture(gl.GL_TEXTURE0 + SCLERA_UNIT)
             gl.glBindTexture(sclera.target, sclera.id)
             gl.glBindSampler(SCLERA_UNIT, sampler)
+        if shadow is not None:
+            shadow.bind(SHADOW_UNIT)
         gl.glActiveTexture(gl.GL_TEXTURE0)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthMask(gl.GL_TRUE)
@@ -572,6 +592,9 @@ class EyePass:
             gl.glBindSampler(SCLERA_UNIT, 0)
             gl.glActiveTexture(gl.GL_TEXTURE0 + SCLERA_UNIT)
             gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+        if shadow is not None:
+            gl.glBindSampler(SHADOW_UNIT, 0)
+            shadow.unbind(SHADOW_UNIT)
         gl.glActiveTexture(gl.GL_TEXTURE0)
         program.stop()
         return True

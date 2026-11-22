@@ -1567,3 +1567,280 @@ def test_lookdev_off_draws_the_worklight_eye(gl_window):
     _render(gl_window, viewport)
     viewport.set_shading("worklight")
     assert np.array_equal(_render(gl_window, viewport), before)
+
+
+# -- AD-039 §5 (S2): the eye in the key's shadow (only added; every test above runs unchanged) ------------------------
+
+#: T2-2: every LOOKDEV + LD_SHADOW shell source (`lookdev=True, ld_shadow=True`, all 8 other arguments), normalised as
+#: `_source_digest`. Taken at its introduction (AD-039 S2): a later change of the eye's LD_SHADOW GLSL (or of the
+#: shared `LD_SHADOW_SRC`) re-pins it deliberately.
+PINNED_LD_SHADOW_SOURCES_SHA256 = "de3510eaf6944dd8893d59315c993b248bec1d1d47fdb4f704954f43c7d17931"
+S2_KEY = (30.0, 65.0)
+
+
+def _s2_state(key=S2_KEY, intensity=1.6, effects=None, **kw):
+    from viewport import lookdev_optics as lo
+
+    state = _ld_state(key=lo.StudioLight(True, intensity, key[0], key[1], 5600.0, 0.1), **kw)
+    return dataclasses.replace(state, effects=effects) if effects is not None else state
+
+
+def _plate(centre, normal, half, n=6) -> Mesh:
+    """A square plate of n x n quads centred at `centre`, perpendicular to `normal`, facing it."""
+    normal = eo.normalize(np.asarray(normal, dtype=np.float64))
+    ref = np.array([0.0, 0.0, 1.0]) if abs(normal[2]) < 0.9 else np.array([1.0, 0.0, 0.0])
+    a = eo.normalize(np.cross(normal, ref))
+    b = np.cross(normal, a)
+    mesh = Mesh()
+    ids = {(i, j): mesh.add_vertex(tuple(float(c) for c in np.asarray(centre) + half * ((2 * i / n - 1) * a
+                                                                                         + (2 * j / n - 1) * b)))
+           for i in range(n + 1) for j in range(n + 1)}
+    for i in range(n):
+        for j in range(n):
+            mesh.add_face([ids[i, j], ids[i + 1, j], ids[i + 1, j + 1], ids[i, j + 1]])
+    return mesh
+
+
+def _key_dir(state) -> np.ndarray:
+    from viewport import lookdev_optics as lo
+
+    return np.asarray(lo.frame_uniforms(state)["u_ld_light_dir"][0], dtype=np.float64)
+
+
+def _s2_scene(spec, state, blocker: str | None, yaw=20.0, floor=True):
+    """The eye at the origin in the room, a floor below it (a caster that does not shadow the eye, so the map exists)
+    and `blocker`: None, "full" (a plate between the key and the whole eye) or "half" (its edge across the eye)."""
+    from viewport.lookdev_pass import LookDraw
+
+    grey = LookDraw((0.5, 0.5, 0.5), roughness=1.0, specular=0.0)
+    viewport, camera = _scene(spec, yaw=yaw)
+    viewport.set_eye_display(tier="full")
+    if floor:
+        viewport.set_object_entry("floor", _plate((0.0, -2.2, 0.0), (0.0, 1.0, 0.0), 3.0), (0.5, 0.5, 0.5), look=grey)
+    if blocker is not None:
+        k = _key_dir(state)
+        side = eo.normalize(np.cross(k, np.array([0.0, 1.0, 0.0])))
+        centre = 3.2 * k + (0.0 if blocker == "full" else 2.2) * side
+        viewport.set_object_entry("blocker", _plate(centre, k, 2.2), (0.5, 0.5, 0.5), look=grey)
+    viewport.set_shading("lookdev", state)
+    return viewport, camera
+
+
+def _eye_mask(gl_window, spec, state, yaw=20.0):
+    """The eye's own pixels (an eye-only frame on black, eroded by one pixel)."""
+    viewport, _ = _s2_scene(spec, state, None, yaw=yaw, floor=False)
+    img = _render(gl_window, viewport)
+    mask = img.max(-1) > 0
+    return mask & np.roll(mask, 1, 0) & np.roll(mask, -1, 0) & np.roll(mask, 1, 1) & np.roll(mask, -1, 1)
+
+
+def _plate_mask(gl_window, spec, state, blocker, yaw=20.0):
+    """Pixels a plate covers (drawn without the eye): excluded from eye comparisons."""
+    viewport, _ = _s2_scene(spec, state, blocker, yaw=yaw)
+    viewport.set_eye_display(preview=False)
+    viewport.remove_object_entry("eye")
+    img = _render(gl_window, viewport)
+    mask = img.max(-1) > 0
+    return mask | np.roll(mask, 1, 0) | np.roll(mask, -1, 0) | np.roll(mask, 1, 1) | np.roll(mask, -1, 1)
+
+
+def _s2_eye(look: str):
+    """The eye variants S2 scales: plain (B1, B6 and the cornea's point key), a look with the wet film's soft key
+    (B5) and the iris's key table (B2), a look with the point key on the film."""
+    if look == "plain":
+        return dataclasses.replace(DEFAULT_EYE, limbus_level=3)
+    spec = dataclasses.replace(_iris(light=0.8, crescent=1.0, rim_shadow=0.5), limbus_level=3, fit_pupil=0.22,
+                               fit_limbus=0.88)
+    soft = 0.5 if look == "soft" else 0.0
+    return dataclasses.replace(spec, look=dataclasses.replace(spec.look, wet_sclera=0.7, highlight_softness=soft,
+                                                              lid_shadow=0.3, lid_band=0.8))
+
+
+def test_ld_shadow_sources_are_pinned_and_the_old_ones_unchanged():
+    """T2-2: the three eye pins as they were (above), a new pin over LOOKDEV + LD_SHADOW; the shadow's library is the
+    skin's string, appended only with the define; `ld_shadow` without `lookdev` is the Worklight source."""
+    from viewport import lookdev_shaders as ls
+
+    assert _all_sources_digest() == (1030, PINNED_WORKLIGHT_SOURCES_SHA256)
+    assert _all_sources_digest(lookdev=True) == (1024, PINNED_LOOKDEV_SOURCES_SHA256)
+    assert _all_sources_digest(lookdev=True, ld_shadow=False) == (1024, PINNED_LOOKDEV_SOURCES_SHA256)
+    assert _all_sources_digest(lookdev=True, ld_shadow=True) == (1024, PINNED_LD_SHADOW_SOURCES_SHA256)
+    locations = {"position": 0, "normal": 1}
+    for look, iris in ((False, False), (True, False), (True, True)):
+        args = (locations, "V2", 3, "studio", True)
+        worklight = es.shell_sources(*args, look=look, iris=iris)
+        assert es.shell_sources(*args, look=look, iris=iris, ld_shadow=True) == worklight
+        looked = es.shell_sources(*args, look=look, iris=iris, lookdev=True)[1][0]
+        shadowed = es.shell_sources(*args, look=look, iris=iris, lookdev=True, ld_shadow=True)[1][0]
+        assert "LD_SHADOW" not in looked and "ld_key_vis" not in looked and "u_ld_shadow" not in looked
+        assert "#define LD_SHADOW 1\n" in shadowed and shadowed.count(ls.LD_SHADOW_SRC) == 1
+        assert shadowed.index(ls.LD_COMMON_SRC) < shadowed.index(ls.LD_SHADOW_SRC) < shadowed.index("void main()")
+        assert shadowed.count("ld_key_vis = ld_key_visibility(") == 1  # once, at the start of main()
+        assert shadowed.index("ld_key_vis = ld_key_visibility(") < shadowed.index("bool cornea =")
+
+
+@pytest.mark.parametrize("look", ["plain", "soft", "point"])
+def test_a_blocker_between_key_and_eye_darkens_every_key_term(gl_window, look):
+    """T2-1 + parity (`lookdev_optics.eye_key_dimmed`): a plate between the key and the eye takes the key's light off
+    the whole eye - the eye in its full shadow equals the eye under a key of intensity 0 (every key term scaled,
+    ambient / fill / rim / the studio's reflection kept); a plate whose edge crosses the eye leaves each pixel between
+    the two; without a blocker the eye equals the frame with the eye shadow off (the S1 eye)."""
+    from viewport import lookdev_optics as lo
+
+    spec = _s2_eye(look)
+    state = _s2_state()
+    on = _s2_state(effects=lo.LookdevEffects(shadow=True, eye_shadow=True))
+    off = _s2_state(effects=lo.LookdevEffects(shadow=True, eye_shadow=False))
+    mask = _eye_mask(gl_window, spec, state)
+    assert mask.sum() > 3000
+    lit = _render(gl_window, _s2_scene(spec, on, None)[0])
+    viewport, _ = _s2_scene(spec, off, None)
+    s1 = _render(gl_window, viewport)
+    assert np.array_equal(lit, s1)  # no blocker: pixel for pixel the S1 eye
+    assert not any(len(k) == 10 for k in viewport.eye_pass.programs)  # eye shadow off: the S1 program
+    viewport, _ = _s2_scene(spec, on, "full")
+    shadowed = _render(gl_window, viewport)
+    keys = [k for k in viewport.eye_pass.programs if len(k) == 10]
+    assert keys and all(k[7] and k[8] for k in keys)  # the LOOKDEV + LD_SHADOW program drew
+    dark = _render(gl_window, _s2_scene(spec, _s2_state(intensity=0.0), "full")[0])
+    eye = mask & ~_plate_mask(gl_window, spec, state, "full")
+    assert eye.sum() > 0.8 * mask.sum()
+    delta = np.abs(shadowed - dark)[eye]
+    assert delta.max() <= 2 and delta.mean() < 0.05  # full shadow = no key, for every term
+    drop = (lit - shadowed).max(-1)[eye]
+    assert np.mean(drop > 8) > 0.3 and np.percentile(drop, 99) > 40  # the key's light is gone
+    half = _render(gl_window, _s2_scene(spec, on, "half")[0])
+    eye_half = mask & ~_plate_mask(gl_window, spec, state, "half")
+    lo_, hi_ = np.minimum(lit, dark)[eye_half], np.maximum(lit, dark)[eye_half]
+    value = half[eye_half]
+    assert np.all(value >= lo_ - 2) and np.all(value <= hi_ + 2)
+    near_dark = np.all(np.abs(value - dark[eye_half]) <= 2, -1)
+    near_lit = np.all(np.abs(value - lit[eye_half]) <= 2, -1)
+    changed = np.any(lit[eye_half] != dark[eye_half], -1)
+    assert np.mean(near_dark & changed) > 0.05 and np.mean(near_lit & changed) > 0.05  # the edge crosses the eye
+
+
+def test_the_twin_lights_the_plain_sclera_in_full_light_and_full_shadow(gl_window):
+    """Parity of the key's scaling (`lookdev_optics.eye_sclera_shadowed`, the plain sclera: `lit` + GGX, AD-038
+    B1 / B6) against the GPU on the sclera's pixels: visibility 1 without, 0 under the blocker."""
+    from viewport import lookdev_optics as lo
+    from viewport.eye_pass import LOOKDEV_SCLERA_ROUGHNESS
+
+    spec = dataclasses.replace(DEFAULT_EYE, limbus_level=0)
+    state = _s2_state(fill=lo.StudioLight(False), rim=lo.StudioLight(False))
+    sclera = None
+    for blocker, vis in ((None, 1.0), ("full", 0.0)):
+        viewport, camera = _s2_scene(spec, state, blocker, yaw=35.0)
+        img = _render(gl_window, viewport)
+        frame = viewport.lookdev_frame()
+        if sclera is None:
+            kinds = _cpu_kinds(camera, "V2")
+            sclera = kinds == -1
+            for axis in (0, 1):
+                sclera &= np.roll(kinds, 1, axis) == -1
+                sclera &= np.roll(kinds, -1, axis) == -1
+            sclera &= ~_plate_mask(gl_window, spec, state, "full", yaw=35.0)
+            assert sclera.sum() > 2000
+            eye, d = _camera_rays(camera)
+            hit, t = eo.sphere_entry(np.broadcast_to(eye, d.shape), d, np.zeros(3), 1.0)
+            n = eo.normalize(eye + t[..., None] * d)
+        values = eye_uniforms(viewport._eye_entries["eye"])
+        colour = lo.eye_sclera_shadowed(np.asarray(values["u_sclera_albedo"]), n, -d, LOOKDEV_SCLERA_ROUGHNESS,
+                                        values["u_cornea_f0"], frame, np.full(n.shape[:2], vis))
+        expected = np.round(lo.lookdev_output(colour, frame["u_ld_exposure"]) * 255.0)
+        delta = np.abs(img - expected)[sclera]
+        assert np.percentile(delta, 99) <= 3 and delta.mean() < 1.0, (blocker, delta.max())
+
+
+def test_eye_shadow_or_shadow_off_is_the_s1_eye(gl_window):
+    """T2-3: with a blocker over the eye, `eye_shadow` off or `shadow` off draws the eye of the S1 frame - the
+    LOOKDEV program of before (pinned), no map bound for it; the grey card (E7) is unchanged by construction
+    (`test_gl_lookdev_pass.py`)."""
+    from viewport import lookdev_optics as lo
+
+    spec = _s2_eye("soft")
+    state = _s2_state()
+    mask = _eye_mask(gl_window, spec, state) & ~_plate_mask(gl_window, spec, state, "full")
+    frames = {}
+    for name, effects in (("eye off", lo.LookdevEffects(shadow=True, eye_shadow=False)),
+                          ("shadow off", lo.LookdevEffects(shadow=False, eye_shadow=True)),
+                          ("on", lo.LookdevEffects())):
+        viewport, _ = _s2_scene(spec, _s2_state(effects=effects), "full")
+        drawn = []
+        original = viewport.eye_pass.draw
+
+        def spy(*args, **kw):
+            drawn.append(kw.get("shadow"))
+            return original(*args, **kw)
+
+        viewport.eye_pass.draw = spy
+        frames[name] = _render(gl_window, viewport)
+        assert drawn and all((s is not None) == (name == "on") for s in drawn)
+        assert all(len(k) == 9 for k in viewport.eye_pass.programs) == (name != "on")
+    # the eye with no blocker in the S1 build: the LOOKDEV program, which does not read the map
+    viewport, _ = _s2_scene(spec, _s2_state(effects=lo.LookdevEffects(shadow=True, eye_shadow=False)), None)
+    s1 = _render(gl_window, viewport)
+    assert np.array_equal(frames["eye off"][mask], s1[mask])
+    assert np.array_equal(frames["shadow off"][mask], s1[mask])
+    assert np.any(frames["on"][mask] != s1[mask])
+
+
+def _units_state() -> dict:
+    from pyglet import gl
+
+    from gui.imgui_layer import snapshot_gl_state
+
+    def geti(name):
+        buf = (gl.GLint * 1)()
+        gl.glGetIntegerv(name, buf)
+        return buf[0]
+
+    state = snapshot_gl_state()
+    state.update(draw_fbo=geti(gl.GL_DRAW_FRAMEBUFFER_BINDING), read_fbo=geti(gl.GL_READ_FRAMEBUFFER_BINDING),
+                 depth_func=geti(gl.GL_DEPTH_FUNC), offset_fill=bool(gl.glIsEnabled(gl.GL_POLYGON_OFFSET_FILL)))
+    active = geti(gl.GL_ACTIVE_TEXTURE)
+    for unit in range(8):
+        gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
+        state[f"unit{unit}"] = (geti(gl.GL_TEXTURE_BINDING_2D), geti(gl.GL_TEXTURE_BINDING_BUFFER),
+                                geti(gl.GL_SAMPLER_BINDING))
+    gl.glActiveTexture(active)
+    return state
+
+
+@pytest.mark.parametrize("look", ["plain", "soft"])
+def test_ld_shadow_programs_draw_and_leave_the_gl_state_clean(gl_window, look):
+    """T2-4: the LOOKDEV + LD_SHADOW eye draws (the map on unit 6) and leaves the GL state as found - units 0-7 with
+    their sampler bindings, framebuffers, program, caps; `glGetError` 0."""
+    from pyglet import gl
+
+    spec = _s2_eye(look)
+    viewport, _ = _s2_scene(spec, _s2_state(), "half")
+    _render(gl_window, viewport)  # compiles, renders the map
+    gl.glUseProgram(0)
+    before = _units_state()
+    for rotation in (0.0, 15.0):  # a still frame, then one that renders the map again
+        viewport.set_shading("lookdev", _s2_state(rotation=rotation))
+        img = _render(gl_window, viewport)
+        assert _units_state() == before and gl.glGetError() == gl.GL_NO_ERROR
+    assert np.sum(img.max(-1) > 0) > 3000
+    assert any(len(k) == 10 and k[8] for k in viewport.eye_pass.programs)
+
+
+def test_prepare_lookdev_compiles_the_eye_variant_the_effects_need(gl_window):
+    """AD-039 §5 / I-10: `prepare_lookdev` compiles the LOOKDEV + LD_SHADOW eye program before the frame (no compile
+    in a frame); without a caster, or with the eye shadow off, the eye's program is the LOOKDEV one of before."""
+    from viewport import lookdev_optics as lo
+
+    spec = _s2_eye("plain")
+    viewport, _ = _s2_scene(spec, _s2_state(), None)
+    assert viewport.lookdev_prepare_needed() and viewport.prepare_lookdev() >= 2  # the floor's skin, the eye
+    keys = list(viewport.eye_pass.programs)
+    assert len(keys) == 1 and len(keys[0]) == 10 and keys[0][8] and not viewport.lookdev_prepare_needed()
+    _render(gl_window, viewport)
+    assert list(viewport.eye_pass.programs) == keys  # the frame compiled nothing
+    viewport.set_lookdev_effects(lo.LookdevEffects(shadow=True, eye_shadow=False))
+    assert viewport.lookdev_prepare_needed() and viewport.prepare_lookdev() == 1
+    assert sorted(len(k) for k in viewport.eye_pass.programs) == [9, 10]
+    lonely, _ = _s2_scene(spec, _s2_state(), None, floor=False)
+    lonely.prepare_lookdev()
+    assert [len(k) for k in lonely.eye_pass.programs] == [9]  # nothing casts: no shadow program for the eye

@@ -5,7 +5,9 @@ Q-P3-8, Q-P3-9 wie vorgeschlagen.“ LD-D8 and the paint channel (Q-P3-1, Q-P3-2
 Q-P3-4, Q-P3-6 and Q-P3-7 belong to S2, S3 and S5 and are judged there. Proposed 2026-11-22 (Architecture Gate). The
 number AD-039 follows AD-038; AD-034 was never assigned (no file, no reference, no commit in the history). New class,
 file and panel names stay `PROVISIONAL` until built. **S1 built 2026-11-22** (§16): the reference-PC run (E16, the
-shadow's drag cost) and Manu's practical test (§16.5) are open; S2 next.
+shadow's drag cost) and Manu's practical test (§16.5) are open. **S2 built 2026-11-22** (§17: the eyes in the key's
+shadow, „Augen-Schatten“; eye shadow off = S1 by pin and pixels): its reference-PC row and practical test (§17.4–§17.5)
+are open; S3 next.
 **Why now:** Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“
 ([proposal §0.1](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md), [AD-038](AD-038-LOOKDEV-ROOM-M1.md)
 §13.6). P3 needs its own AD before any `src/` change and fixes the order of the P3 items.
@@ -222,8 +224,9 @@ region materials; roughness, normal and translucency maps.
      because all objects share the effects. With S6 / S7 the key depends on the object (whether it has regions or
      maps).
    - The eye key grows from 9 to 10 values. `ld_shadow` is inserted **before** `sclera`, which stays last, because the
-     unchangeable eye tests read `key[-1]` (AD-038 I-1).
-5. **Compile:** `Viewport.prepare_lookdev` (`viewport.py:475`) compiles the variants the effects and the drawn objects
+     unchangeable eye tests read `key[-1]` (AD-038 I-1). **As built (S2-1, §17.2):** only an LD_SHADOW program's key
+     has the 10th value; every other program keeps the 9-value key (an unchangeable test asserts `len(k) == 9`).
+5. **Compile:** `Viewport.prepare_lookdev` (`viewport.py:522` at S2; the AD had `:475`) compiles the variants the effects and the drawn objects
    need, behind the status line, as in M1 (AD-038 §9).
 6. **NumPy twins:** every new GLSL function gets a twin in `lookdev_optics.py`, with GPU parity in
    `tests/test_gl_lookdev_parity.py` (the E5 pattern): the PCF weight, the thickness transmission, the dual lobe, the
@@ -404,7 +407,7 @@ The head's lids, brow and nose cast this shadow onto the eyeball. Ambient, fill 
 stay unshadowed.
 
 - **Define:** `LD_SHADOW`, body blocks nested inside the existing `#ifdef LOOKDEV` blocks, resolved by `_without`
-  (V9). The library piece `LD_SHADOW_SRC` (shared with S1, the same text) is appended only when it is on. A global
+  (V9). (As built, §17.2 S2-2: three sites without a LOOKDEV block take a standalone `#ifdef LD_SHADOW` block.) The library piece `LD_SHADOW_SRC` (shared with S1, the same text) is appended only when it is on. A global
   `float ld_key_vis` is set once at the start of `main()`.
 - **Approximation, named:** the iris is seen through the cornea a few mm behind the shell. The lookup at the shell point
   shifts the shadow's edge on the iris by up to that distance [E]. The probe and the practical test judge whether it
@@ -416,7 +419,8 @@ stay unshadowed.
   14,976 triangles in the depth pass (C6). The lids are the head mesh.
 - **Files:**
   - `eye_shaders.py`: the `ld_shadow=False` keyword, last among the new ones, and the body blocks;
-  - `eye_pass.py`: the key 9 → 10 (before `sclera`), unit 6, the shadow uniforms from the frame dict;
+  - `eye_pass.py`: the key 9 → 10 (before `sclera`), unit 6, the shadow uniforms from the frame dict (as built:
+    from `KeyShadow.uniforms()`, §17.2 S2-3);
   - `viewport.py`: the eye draw gets the `KeyShadow`.
   - The Worklight path is not touched.
 - **Tests** (`tests/test_gl_eye_pass.py`, which **only adds** tests; existing tests and pins untouched):
@@ -984,3 +988,154 @@ cancelled that cast shadow); the cage at softness 0.26 as clean as with the fade
 Tests: `test_a_cast_shadow_at_a_grazing_key_keeps_the_wrap_and_the_highlight_dark` (fails on `af4fe14`),
 `test_the_wrap_past_a_convex_terminator_is_not_cut`, the twins (`shadow_coords(..., key_dir, lift)`,
 `ld_key_shadowed(..., wrap_visibility)`).
+
+---
+
+## 17. Implementation note — S2 built (2026-11-22)
+
+**Kurzfassung (Deutsch):** Die Augen liegen jetzt im Schatten des Key: Lider, Brauen und Nase des Kopfes werfen ihn auf
+den Augapfel, aus derselben Schattenkarte wie S1 (die Augen werfen weiter keinen). Der Schatten skaliert jedes
+Key-Licht des Auges – Lambert der Sklera und Iris (samt Key-Tabelle), GGX-Glanz, Key-Spiegelung auf Hornhaut und Film,
+Punkt und weich; Umgebung, Fill, Rim und Studio-Spiegelung bleiben. Neuer Schalter „Augen-Schatten“ im Block „Effekte“
+(Standard an, braucht „Schatten“), mit der Szene gespeichert; eine S1-Datei behält ihre Einstellungen. Augen-Schatten
+oder Schatten aus = das S1-Auge, Zeichen für Zeichen (Pins) und Pixel für Pixel (alter gegen neuen Code am Gollum-Kopf,
+12 Bilder). `EyeLook.lid_shadow` bleibt (Q-P3-6, dein Praxistest). Die Kosten misst erst dein PC (Zeile
+`lookdev +shadow +eyes`).
+
+### 17.1 What is built
+
+| Layer | Built |
+|---|---|
+| Effects | `LookdevEffects.eye_shadow` (default on), `EFFECT_NEEDS = {"eye_shadow": "shadow"}` (the panel's reason „braucht Schatten“), `EFFECT_LABEL` „Augen-Schatten“; `view.lookdev.effects` reads it optionally (S1's reader already replaces only the names present: an S1 file without `eye_shadow` keeps the current eye shadow) |
+| Shaders | `eye_shaders.shell_sources(..., lookdev=False, ld_shadow=False)`: `ld_shadow` the last keyword, forced off without `lookdev`; define `LD_SHADOW`; `lookdev_shaders.LD_SHADOW_SRC` (the skin's string, unchanged) appended after `LD_COMMON_SRC` only with it; the body blocks resolved by `_without(body, "LD_SHADOW")` before `LOOKDEV`. `LD_COMMON_SRC` unchanged |
+| Body blocks (9) | the global `float ld_key_vis` (in the LOOKDEV uniform block); `ld_key_vis = ld_key_visibility(v_world_pos, to_world(normalize(p)), u_ld_light_dir[0])` once in `main()` right after the shell point `p` (uniform control flow, before any branch); B1 `lit()` minus (1 − vis) × the key's Lambert term; `ld_specular_vis` (the three GGX lobes, the key's times vis) at both B6 sites; B2 `iris_lit` `u_key_color * (ld_key_vis * k)` (the key table's term); B5 `cornea_reflection`'s key and `key_reflection`'s point and soft (area) key times vis |
+| Pass | `EyePass.program_key(..., ld_shadow=False)` / `program(...)` / `draw(..., shadow=None)`: a rendered `KeyShadow` with `lighting` draws the LOOKDEV + LD_SHADOW program, its `uniforms()` set, the map bound on `SHADOW_UNIT` = 6 (`lookdev_shaders.SHADOW_UNIT`) for the draw; after it `glBindSampler(6, 0)` and the texture unbound; `register_shadow_sampler_uniform()` before the first such compile |
+| Viewport | `_casts_key_shadow` (a LookDraw, not a Ghost: S1's caster rule, now one place); `_render_lookdev` hands the `KeyShadow` to the eye draw when `shadow` and `eye_shadow` are in force **and** something casts; `_lookdev_programs` adds the same flag to every eye variant, so `prepare_lookdev` compiles the LD_SHADOW eye program behind the status line (I-10) and `lookdev_prepare_needed` sees a switch. The Worklight path is untouched |
+| Twins | `lookdev_optics.eye_key_dimmed(values, vis)` (the blocks as a frame dict: the eye with visibility vis = the eye without the blocks under a key of vis × its colour); `eye_sclera_shadowed` (the plain sclera: `lit` + GGX with the key scaled) |
+| GUI | `lookdev_model.EFFECT_LABELS` / `EFFECT_HINTS`: the row „Augen-Schatten“ (greyed „braucht Schatten“ with the shadow off) |
+| Probe | `probe_lookdev_room.py`: `EFFECT_ROWS`; the row `lookdev +shadow` now has the eye shadow **off** (skin and teeth only, as S1 measured it) and `lookdev +shadow +eyes` switches both on (S2's cost = the difference) |
+
+Not touched: `src/core/`, `serialization.py`, `LD_COMMON_SRC`, `LD_SHADOW_SRC`, the Worklight eye sources and the eye's
+Worklight draw, `GLRenderStore.draw()`, `KeyShadow`, `main.py`, `config/keymap.json` (no keys), `EyeLook` and every eye
+value (Q-P3-6). R-1 unchanged.
+
+**Code check (§5's references, before the build):** `SHELL_VERTEX_SRC` writes `v_world_pos` [V]; V9 (`_without` on the
+body only, `eye_shaders.py:1099–1102` at `c1b7732`), V10 (the three pins at `test_gl_eye_pass.py:1099`, `:1137`, `:1491`),
+V11 (eye units 1–4, `eye_pass.py:37–43`; the sampler objects at `:295`, not `:296`), V12 (`iris_table`, `:305–374`), V13
+(`lid_shadow_weight` at `eye_shaders.py:366–369`, `:840`, `:914`) held; the three eye pins were green before the first
+change. §2.3 point 5's `viewport.py:475` for `prepare_lookdev` was stale (`:513` at `c1b7732`, `:522` now) - corrected
+there.
+
+### 17.2 Where the build differs from §2 / §5, and why
+
+| # | AD | Built | Why |
+|---|---|---|---|
+| S2-1 | §2.3 point 4 / §5: "the eye key grows from 9 to 10 values" | an **LD_SHADOW** program's key has 10 values (`True` at index 8, `sclera` stays `key[-1]`, `lookdev` stays `key[7]`); every other program keeps the 9-value key of before | the unchangeable `test_lookdev_programs_draw_and_leave_the_gl_state_clean` asserts `len(k) == 9` for its LOOKDEV programs (an eye with no caster); "effect off = before" now holds for the key as for the sources |
+| S2-2 | §5 "body blocks nested inside the existing `#ifdef LOOKDEV` blocks" | six blocks are nested so; three are standalone `#ifdef LD_SHADOW` blocks (the `ld_key_vis` lookup in `main()`, `cornea_reflection`'s key, `key_reflection`'s point key) | those sites have no LOOKDEV block, and a new one would leave `#ifdef LOOKDEV … #endif` text behind with `ld_shadow` off (the LOOKDEV pin). `LD_SHADOW` implies `LOOKDEV` (`shell_sources` forces it), so the standalone blocks are equivalent |
+| S2-3 | §5 "the shadow uniforms from the frame dict" | from `KeyShadow.uniforms()`, as the skin pass takes them | the frame dict holds the studio; the map's matrix, scale and offset belong to the map (S1) |
+| S2-4 | §5 "the lookup at the shell's world position with its normal" | the normal is the eyeball sphere's radial direction `to_world(normalize(p))`, also on the cornea | the shell VS writes no normal (and is pinned); the normal only steers the sideways offset (1.5 texels), the eyes do not cast, so there is no self-shadow to bias against |
+| S2-5 | (not stated) | no caster in the frame (an eye alone) → the eye draws the LOOKDEV program without LD_SHADOW | the map would be empty; the fetches would cost for nothing |
+
+**The approximation, named (§5):** the iris and the limbal tissue seen through the cornea take the visibility of the
+shell point in front of them; they lie a few mm behind it, so a lid shadow's edge on the iris can sit up to that
+distance off. The practical test judges whether it shows.
+
+### 17.3 Tests (container, llvmpipe, 2026-11-22)
+
+New tests (`tests/test_gl_eye_pass.py` only adds; no existing test or pin changed):
+
+| # | Test |
+|---|---|
+| T2-1 + parity | `test_a_blocker_between_key_and_eye_darkens_every_key_term` (plain eye; a look with wet film, soft key and the iris key table; a look with the point key): a plate between key and eye → the eye equals the eye under a key of intensity 0 (`eye_key_dimmed(…, 0)`; max 0/255 in the run, bound 2), the key's light gone (99th percentile of the drop > 40/255); a plate whose edge crosses the eye leaves every pixel between the two (±2) with both ends present; without a blocker (a floor casts, not on the eye) the eye equals the eye-shadow-off frame **pixel for pixel**, and that frame drew no 10-value program |
+| twin | `test_the_twin_lights_the_plain_sclera_in_full_light_and_full_shadow`: `eye_sclera_shadowed` (CPU sphere normals, the frame dict) against the GPU on the sclera's pixels at visibility 1 and 0 (99th percentile ≤ 3/255, mean < 1) |
+| T2-2 | `test_ld_shadow_sources_are_pinned_and_the_old_ones_unchanged`: the Worklight pin (1,030) and the LOOKDEV pin (1,024, also with `ld_shadow=False`) unchanged; new `PINNED_LD_SHADOW_SOURCES_SHA256` over the 1,024 LOOKDEV + LD_SHADOW sources; `LD_SHADOW_SRC` appended once after `LD_COMMON_SRC`; `ld_shadow` without `lookdev` = the Worklight source; the lookup once, before the cornea branch |
+| T2-3 | `test_eye_shadow_or_shadow_off_is_the_s1_eye`: with a blocker, `eye_shadow` off and `shadow` off each draw the eye of the S1 frame (no map handed to the eye, 9-value keys only); E7 (grey card, `test_gl_lookdev_pass.py`) unchanged |
+| T2-4 | `test_ld_shadow_programs_draw_and_leave_the_gl_state_clean` (plain, soft look): a still frame and one that re-renders the map leave units 0–7 (2D, buffer, **sampler**), framebuffers, program, caps, depth function as found; `glGetError` 0 |
+| I-10 | `test_prepare_lookdev_compiles_the_eye_variant_the_effects_need`: `prepare_lookdev` compiles the LD_SHADOW eye program before the frame, the frame compiles nothing; eye shadow off → the 9-value program is prepared; no caster → no shadow program |
+| headless | `test_lookdev_optics.py` (the dependency, the reasons), `test_lookdev_persistence.py` (`test_an_s1_file_without_eye_shadow_keeps_its_settings`; the round trip writes both names), `test_lookdev_room.py` (the switch is view state, no Undo, „braucht Schatten“), `test_gui_lookdev_model.py` (the row, greyed with its reason), `experiments/drag_cost/tests/test_probe_lookdev_room.py` (the row `lookdev +shadow +eyes`) |
+
+**Gollum, old against new (one-off, not committed):** `Gollum_Head_05`, cage and SubD 1, Portrait and Dramatic, the
+framed ¾ view, the face from the front and a close-up of each eye (1024 × 768, wire and points off): the S1 code
+(`c1b7732`) and the S2 code with `eye_shadow` off are **pixel-identical** in all 12 frames. With the eye shadow on,
+554–20,753 px change per frame, every one darker (no pixel brighter by more than 2/255).
+
+**The picture, checked with a CPU ray test** (as §16.7; script in the session, not committed): for the eyes' pixels
+facing the key (n·l > 0.15) a ray toward the key against the drawn SubD 1 head (19,692 triangles):
+- **No light leaks:** of the pixels the GPU leaves lit, 99.5–99.7 % are unoccluded on the CPU.
+- **The lid's shadow is geometric:** of the pixels the GPU darkens, 9–38 % are occluded on the CPU; of the rest,
+  83–100 % are blocked within 3 texels sideways (Portrait texel 2.9 × 10⁻³ world units = 3 % of the eye's radius at the
+  effective 683², Dramatic 2.2 × 10⁻³ at 890²): the penumbra of the 3 × 3 fetches plus the normal offset.
+- **What it looks like:** with Portrait (key 45° / 30°) and Dramatic (70° / 20°) the lids cast a **narrow** band on the
+  eyeball - a contact shadow along the upper lid, widening toward the outer corner, and the lower lid's rim; the CPU
+  agrees that only about 1 % of the key-facing eyeball is occluded at these key heights. A higher key widens it.
+- **Named:** in Portrait from the front, the lower inner sclera of one eye darkens faintly beyond the geometric
+  penumbra (≤ 8/255, mostly ≤ 3/255; up to 6 % of the darkened samples lie > 6 texels from an occluder), with a faint
+  texel staircase only visible amplified × 8. No acne on the cornea: the cornea's pixels change only at the lid margin,
+  the highlight is unchanged where the key is unoccluded. Flicker needs the drag and the reference PC: the lookup is in
+  world space and the map re-renders only on a change (S1), so an orbit cannot move it.
+
+Runs (GL files each in their own process under xvfb):
+
+| Command | Result |
+|---|---|
+| `xvfb-run -a python -m pytest tests/test_gl_eye_pass.py -q` | 135 passed (126 before + 9 new; all pins incl. the Worklight pin unchanged) |
+| `… tests/test_gl_lookdev_shadow.py` / `test_gl_lookdev_pass.py` / `test_gl_lookdev_parity.py` | 18 / 13 / 7 passed |
+| `… tests/test_gl_face_data_layout.py` / `test_gl_shading.py` / `test_gl_texture.py` (E1) | 16 / 19 / 10 passed |
+| `… tests/test_gl_gpu_picking.py` / `test_gl_morph_picking.py` (E15) | 37 / 16 passed |
+| `… tests/test_gui_imgui_window.py` / `test_gui_lookdev_window.py` | 18 / 1 passed |
+| `xvfb-run -a python -m pytest tests -q` | 7,938 passed, 8 skipped, 1 failed: `test_scene_menu_local_tmp.py::test_probe_menu_wiring` - **pre-existing** (fails identically before S1, §16.3) |
+| `xvfb-run -a python -m pytest experiments/morph_lab/tests -q` | 49 passed |
+| `xvfb-run -a python -m pytest experiments/drag_cost/tests -q` | 104 passed |
+| `xvfb-run -a python -m pytest experiments/lookdev_eye_lab/tests -q` | 206 passed (the frozen oracle) |
+
+Not run: `experiments/knife_oracle/tests` (no Knife or topology code touched).
+
+### 17.4 Measurement
+
+Container (llvmpipe, a function check only): `python experiments/drag_cost/probe_lookdev_room.py --draws 3` ran every
+row (`lookdev`, `lookdev +shadow`, `lookdev +shadow +eyes`, the three drag rows) with `glGetError` 0; `KeyShadow.renders`
+0 in the still rows, 8 of 8 in the drag rows; the cage entry compiled 2 programs behind the status line (the skin and
+the LD_SHADOW eye). Its ms are a CPU rasteriser's (one still row read 24 ms at SubD 1 in this run, the next 0.9 ms) and
+say nothing about the reference PC.
+
+**Reference PC (E16, S1's open drag decision and S2):** NVIDIA "Maximale Leistung bevorzugen", repository root,
+`.venv312`:
+
+```
+python experiments\drag_cost\probe_lookdev_room.py | Tee-Object -FilePath lookdev_room_s2.txt
+python experiments\drag_cost\probe_lookdev.py --no-extras | Tee-Object -FilePath lookdev_ld0_after_s2.txt
+python experiments\drag_cost\probe_d3_acceptance.py | Tee-Object -FilePath d3_after_s2.txt
+```
+
+What the run decides:
+- `lookdev +shadow +eyes` against `lookdev +shadow`: S2's target ≤ +0.5 ms (§2.5). Missed → the levers of §2.5.
+- Everything S1's run decides (§16.4): `lookdev +shadow` against `lookdev` (≤ +2 ms; the row is skin and teeth only,
+  as S1 built it), the drag rows (plain / flush / ping-pong, the default in `KeyShadow`), E16 (`modelling` /
+  `modelling after`, `probe_lookdev.py --no-extras`, `probe_d3_acceptance.py` within noise of the last runs).
+- If S1's run is done already, only the first command is new for S2; the other two confirm E16 after S2.
+
+### 17.5 Practical test S2 (`scenes/Gollum_Head_05.mirai.json`, about 15 minutes; together with S1's §16.5)
+
+Open LookDev, SubD 1, view „¾“ and front; zoom close to one eye for points 1–4.
+1. **Lid-Schatten in Portrait und Dramatic:** Erwartet: Oberlid (und am äußeren Winkel breiter) und der Rand des
+   Unterlids legen einen schmalen Schatten auf den Augapfel; die Iris unter dem Lidrand wird mit dunkel. Bei diesen
+   Key-Höhen (30° / 20°) ist der Schatten schmal – das ist die Geometrie (CPU-Strahltest, §17.3). Liest er sich als
+   Kontaktschatten oder als Rand / Linie? Zu hart, zu weich, zu dunkel?
+2. **Blickrichtung ändern** (Panel „Auge“, das Blick-Feld: links / rechts / oben / unten): Erwartet: der Schatten bleibt am Lid, er
+   wandert nicht mit der Iris; die Iris taucht beim Blick nach oben in den Lidschatten. Sieht die Iris-Kante im Schatten
+   versetzt aus (die benannte Näherung: der Schatten wird an der Hornhaut-Oberfläche gelesen, die Iris liegt dahinter)?
+3. **Key drehen:** in „Licht“ den Key in Höhe (z. B. 30° → 60°) und Richtung drehen. Erwartet: höherer Key → breiterer
+   Oberlid-Schatten; Brauen und Nase werfen ihn auf das ferne Auge, wenn der Key von der Seite kommt. Springt oder
+   flackert er beim Drehen, besonders auf der Hornhaut?
+4. **„Weichheit“ des Key** (0 → 1, „Mehr“, Zeile **Key**): Erwartet: die Kante auf dem Auge wird mit der auf der Haut
+   gleich weich; bei sehr weichem Key verblasst der schmale Lidschatten fast ganz (wie feine Falten in S1).
+5. **„Augen-Schatten“ an / aus** (Block „Effekte“): aus = genau das Auge von vorher; „Schatten“ aus → „Augen-Schatten“
+   wird grau („braucht Schatten“). Wird der Augen-Schatten nach dem Speichern und Laden so wiederhergestellt?
+6. **`EyeLook.lid_shadow` (Q-P3-6):** im Panel „Auge“ die Lid-Abdunklung vergleichen (aktueller Wert, dann 0). Wirkt sie
+   mit dem echten Lidschatten jetzt zu stark (doppelt dunkel unter dem Lid)? Wenn ja: welcher Wert fühlt sich richtig an?
+   Eine Code-Änderung folgt nur auf dein Wort.
+7. **Front, Portrait, nah am Auge zur Nase hin:** eine sehr schwache Abdunklung der unteren inneren Sklera über den
+   geometrischen Halbschatten hinaus (≤ 8/255, §17.3). Siehst du sie, und stört sie?
+
+Assumptions to correct in one sentence: the eye shadow is on by default; it needs the skin shadow; the eyes still cast
+no shadow (Q-P3-5); `EyeLook.lid_shadow` is unchanged.
