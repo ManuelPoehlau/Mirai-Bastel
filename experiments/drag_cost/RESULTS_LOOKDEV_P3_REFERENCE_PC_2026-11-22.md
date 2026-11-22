@@ -1,4 +1,4 @@
-# LookDev P3-0 probe — reference PC, runs 1 and 2 (Manu, 2026-11-22)
+# LookDev P3-0 probe — reference PC, runs 1–5 (Manu, 2026-11-22): complete
 
 `python experiments\drag_cost\probe_lookdev.py --p3` ([AD-039](../../docs/architecture/AD-039-LOOKDEV-P3.md) §11.1).
 Q9550, GeForce 9800 GTX+ (512 MiB), GL 3.3.0, Python 3.12.10, Windows 10; source "commit unknown (no git)" (the
@@ -127,11 +127,28 @@ Changed for run 5:
 - the check adds L (a fresh rendered cube, 5 frames: expected to fail after the first) and M (rendered + CPU copy,
   5 frames: expected to work).
 
+## Run 5 (commit `694def7`) [M-RPC]
+
+**5a, `--p3-cube-check`:** A–K as in run 4. **L** (a freshly rendered cube, 5 frames) failed in its first frame;
+**M** (rendered, then read back and uploaded) drew all 5 frames (63.2 / 1.6 / 1.4 / 1.4 / 1.4 ms GPU, the first with
+the compile). The CPU copy of the 128² chain took 24.1 ms wall. Reading: an FBO-rendered float cube cannot be sampled
+reliably on this card and driver (it sometimes passes its first lookup, C and F, sometimes not, L); a CPU-uploaded
+copy always works [H: a driver defect].
+
+**5b, the cube rows on the copy** (copy 16.9 / 17.4 ms wall once, prefilter 12.1 ms GPU). GPU p50 ms, `vs ld` =
+minus `ld frame`:
+
+| Row | 1024 cage framed | 1024 cage close | 1024 SubD 1 framed | 1024 SubD 1 close | 1920 SubD 1 close |
+|---|---:|---:|---:|---:|---:|
+| `ld frame` | 1.98 | 4.58 | 2.21 | 5.25 | 8.82 |
+| `cube env` | −0.41 | −1.25 | −0.62 | −1.48 | −2.60 |
+| `cube dual env` | −0.67 | −1.06 | −0.54 | −1.28 | −2.22 |
+| `p3 all` | −0.29 | −0.40 | +0.08 | −0.21 | −0.69 |
+
+`p3 all` = shadow 1k × 9 + thickness + dual lobe on the lights + the cube's environment: **1.69 / 2.29 ms GPU framed
+at 1024×768 (5 / 7 % of 33.3 ms), about what `ld frame` costs without any P3 effect.** The cube lookup is cheaper
+than the analytic studio by more than the shadow, thickness and dual lobe cost together.
+
 ## Next
 
-Run 5: the check (L, M) and the cube rows on the copy:
-
-```
-python experiments\drag_cost\probe_lookdev.py --p3 --p3-cube-check --size 1024 768 | Tee-Object -FilePath lookdev_p3_0_run5a.txt
-python experiments\drag_cost\probe_lookdev.py --p3 --p3-no-depth --p3-rows "cube env,cube dual env,p3 all" | Tee-Object -FilePath lookdev_p3_0_run5b.txt
-```
+P3-0 is complete. The production slices measure themselves through `probe_lookdev_room.py` (AD-039 §11.2).

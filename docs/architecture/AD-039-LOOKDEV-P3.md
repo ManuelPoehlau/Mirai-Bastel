@@ -274,7 +274,7 @@ wall 11.6 / 12.6 ms (AD-038 §17.4).
 | S2 eye shadow | ≤ +0.5 ms | — |
 | S3 dual lobe | ≤ +0.5 ms | — |
 | S4 thickness | ≤ +0.5 ms | — |
-| S5 cube | ≤ +0.3 ms (expected: cheaper than the analytic studio, appendix B6) | prefilter ≈ 12 ms on a preset switch [M-RPC LD-0 (c)] |
+| S5 cube | ≤ +0.3 ms (P3-0 run 5: −0.4 / −0.6 ms, cheaper than the analytic studio) | prefilter 12 ms + CPU copy 17–24 ms on a preset switch [M-RPC] |
 | S6 regions | ≤ +0.3 ms | slot upload on a region or topology change |
 | S7 maps | ≤ +0.4 ms per map | — |
 
@@ -698,7 +698,19 @@ python experiments\drag_cost\probe_lookdev.py --p3 | Tee-Object -FilePath lookde
     card]. **S5's design changes accordingly [P]:** prefilter on the GPU (12 ms), then read the chain back and upload
     it into the sampled cube once per studio content change (container ≈ 2 ms for 128²; the reference PC measures it).
     This is a workaround for an observed defect, so it is gated: S5 keeps a test that a rendered-then-copied cube
-    samples over many frames. Run 5 confirms it on the reference PC (cases L, M and the cube rows).
+    samples over many frames.
+  - **Run 5 — P3-0 complete.** Case M (rendered, then read back and uploaded) draws 5 of 5 frames; case L (rendered
+    only) fails in its first. The copy costs 17–24 ms wall once per studio content change, after the 12 ms prefilter.
+    Together that is a one-frame hitch on a preset switch; S5 shows the status line of §2.1 for it. On the copy:
+    - `cube env` is **cheaper** than the analytic studio: −0.4 / −0.6 ms framed (cage / SubD 1), −1.3 / −1.5 ms
+      close at 1024×768, −2.6 ms close at 1920×1080. S5's target in §2.5 holds with a margin.
+    - `cube dual env` (two lobes on the cube) still costs less than one analytic lobe. S3 uses the second lobe on the
+      environment too once S5 is in; before S5 the lights only (run 2).
+    - **`p3 all`** (shadow 1k × 9 + thickness + dual lobe + cube) is **1.69 / 2.29 ms GPU framed at 1024×768, 5 / 7 % of
+      33.3 ms**: about what the room costs today without any P3 effect. The total budget of §2.5 (≤ 9.5 ms) holds with a
+      wide margin. The open cost is the shadow drag (run 2).
+    - Order: the cube's saving pays for S1–S4's cost. The order of §3 stays, because the budget is not tight. If S1's
+      production drag cost is a problem, S5 can come right after S1.
 
 ### 11.2 After each slice
 
