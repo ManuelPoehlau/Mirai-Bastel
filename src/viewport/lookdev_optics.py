@@ -11,8 +11,8 @@ pattern (parity: `tests/test_gl_lookdev_parity.py`, `tests/test_lookdev_optics.p
   `Viewport.light_uniforms()`. `state` is a `LookdevState` (the session studio, `mirai.lookdev_presets`).
 - P3 (AD-039 §2.1): `LookdevEffects` (the effect switches, view state in `LookdevState.effects`), `effective` /
   `effect_reasons` (dependencies and missing features); S1 (§4): `shadow_frustum`, `shadow_view_projection`,
-  `shadow_spacing`, `pcf_visibility` and `ld_key_shadowed`, the twins of `lookdev_shaders.LD_SHADOW_SRC` and the
-  `SHADOW` block.
+  `shadow_resolution`, `pcf_visibility`, `terminator_fade` and `ld_key_shadowed`, the twins of
+  `lookdev_shaders.LD_SHADOW_SRC` and the `SHADOW` block.
 
 World frame as `light_rig` (Y up, the model faces +Z, azimuth from +Z toward +X). The studio's frame turns by
 `rotation` degrees about Y; with "Licht folgt Kamera" it is the camera's (`right`, `up`, `-forward`), as
@@ -28,7 +28,7 @@ import numpy as np
 
 from . import eye_optics as eo
 from .light_rig import kelvin_to_rgb
-from .lookdev_shaders import MAX_STUDIO, SHADOW_DEPTH_BIAS, TONE_CURVES
+from .lookdev_shaders import MAX_STUDIO, SHADOW_DEPTH_BIAS, SHADOW_TERMINATOR_FADE, TONE_CURVES
 
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 SH_DIRECTIONS = 4096
@@ -370,9 +370,12 @@ SHADOW_SIZE = 1024
 SHADOW_GRID = 3
 #: The caster bounds grow by this (AD-039 §4 "Frustum"), so a pose inside the margin does not move the map.
 SHADOW_MARGIN = 0.15
-#: The fetch spacing in texels: 1 + this x the key's size ("Weichheit", 0 .. 1) - PCF with a light-size radius.
-SHADOW_SOFTNESS_TEXELS = 8.0
-#: The normal offset of the lookup point, in texels of the map (world units = this x the texel's width).
+#: The key's size ("Weichheit", 0 .. 1) softens the edge through the map's effective resolution: the map renders into
+#: SHADOW_SIZE / (1 + this x size) texels (at least SHADOW_MIN_RESOLUTION) and the 3 x 3 fetches stay one texel apart,
+#: so the penumbra widens without gaps between the fetches (AD-039 §16.6; `PROVISIONAL`).
+SHADOW_SOFTNESS = 5.0
+SHADOW_MIN_RESOLUTION = 96
+#: The normal offset of the lookup point, in texels of the effective map (world units = this x the texel's width).
 SHADOW_NORMAL_OFFSET_TEXELS = 1.5
 #: The depth pass's slope-scaled polygon offset (factor, units), as LD-0.
 SHADOW_POLYGON_OFFSET = (2.0, 4.0)
@@ -423,16 +426,19 @@ def shadow_view_projection(key_dir, centre, radius: float) -> list[float]:
     return [float(v) for v in (proj @ view).T.reshape(-1)]
 
 
-def shadow_spacing(size: float, map_size: int = SHADOW_SIZE) -> float:
-    """The PCF fetch spacing in map UV units for the key's size ("Weichheit")."""
-    return (1.0 + SHADOW_SOFTNESS_TEXELS * max(0.0, float(size))) / float(map_size)
+def shadow_resolution(size: float, map_size: int = SHADOW_SIZE) -> int:
+    """The map's effective resolution for the key's size ("Weichheit"): the full map for a hard key, fewer texels (a
+    wider bilinear-compare ramp) for a soft one."""
+    return int(max(SHADOW_MIN_RESOLUTION, min(map_size, round(map_size / (1.0 + SHADOW_SOFTNESS * max(0.0, size))))))
 
 
 def shadow_uniforms(view_projection, radius: float, key_size: float, map_size: int = SHADOW_SIZE) -> dict:
     """The `LD_SHADOW_SRC` uniforms (the sampler's unit is set by the pass)."""
-    texel_world = 2.0 * radius / float(map_size)
+    resolution = shadow_resolution(key_size, map_size)
+    texel_world = 2.0 * radius / float(resolution)
     return {"u_ld_shadow_vp": tuple(float(v) for v in view_projection),
-            "u_ld_shadow_radius": shadow_spacing(key_size, map_size),
+            "u_ld_shadow_radius": 1.0 / float(map_size),
+            "u_ld_shadow_scale": resolution / float(map_size),
             "u_ld_shadow_offset": SHADOW_NORMAL_OFFSET_TEXELS * texel_world}
 
 
@@ -464,17 +470,28 @@ def compare_bilinear(depth: np.ndarray, uv, ref) -> np.ndarray:
             + (lit(x0, y0 + 1) * (1 - fx) + lit(x0 + 1, y0 + 1) * fx) * fy)
 
 
-def pcf_visibility(depth: np.ndarray, sp, spacing: float) -> np.ndarray:
-    """GLSL `ld_key_visibility` from the map point `sp` (..., 3): 3 x 3 bilinear-compare fetches `spacing` (UV) apart,
-    averaged; a point outside the map's box is lit."""
+def pcf_visibility(depth: np.ndarray, sp, scale: float = 1.0, slope=(0.0, 0.0)) -> np.ndarray:
+    """GLSL `ld_shadow_pcf` from the map point `sp` (..., 3): 3 x 3 bilinear-compare fetches one storage texel apart
+    over the rendered part `scale` of the map `depth` (storage, row 0 = v 0), each compared at the receiver plane's depth
+    (`slope` = d depth / d uv); averaged; a point outside the map's box is lit."""
     sp = np.asarray(sp, dtype=np.float64)
-    ref = sp[..., 2] - SHADOW_DEPTH_BIAS
+    slope = np.asarray(slope, dtype=np.float64)
+    step_uv = 1.0 / depth.shape[1] / scale
     total = 0.0
     for y in (-1, 0, 1):
         for x in (-1, 0, 1):
-            total = total + compare_bilinear(depth, sp[..., :2] + np.array([x, y]) * spacing, ref)
+            o = np.array([x, y], dtype=np.float64) * step_uv
+            # a fixed-point depth texture clamps the reference to [0, 1] before the compare (GL 3.3 §3.8.16)
+            ref = np.clip(sp[..., 2] - SHADOW_DEPTH_BIAS + np.sum(slope * o, axis=-1), 0.0, 1.0)
+            total = total + compare_bilinear(depth, (sp[..., :2] + o) * scale, ref)
     inside = np.all((sp >= 0.0) & (sp <= 1.0), axis=-1)
     return np.where(inside, total / 9.0, 1.0)
+
+
+def terminator_fade(ndl) -> np.ndarray:
+    """GLSL `ld_key_visibility`'s fade: the weight of the map's answer toward the terminator (smoothstep over n.l)."""
+    x = np.clip(np.asarray(ndl, dtype=np.float64) / SHADOW_TERMINATOR_FADE, 0.0, 1.0)
+    return x * x * (3.0 - 2.0 * x)
 
 
 def ld_key_shadowed(albedo, n, v, wrap, roughness, f0, values: dict, visibility) -> np.ndarray:

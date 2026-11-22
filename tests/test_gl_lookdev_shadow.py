@@ -252,13 +252,37 @@ def test_a_box_shadows_the_plane_under_it_and_nothing_else(gl_window):
     _release(viewport)
 
 
+def test_the_penumbra_widens_with_the_keys_softness(gl_window):
+    """AD-039 §16.6: the key's size ("Weichheit") widens the shadow's edge; the core stays dark and the lit plane lit."""
+    camera = OrbitCamera(target=(0.0, 0.2, 0.0), distance=5.5, yaw=0.3, pitch=0.75)
+    viewport = _viewport(gl_window, {"ground": _ground(), "box": _box(*BOX)}, camera)
+    viewport.set_shading("lookdev", _state(effects=OFF))
+    lit = _frame(gl_window, viewport).max(axis=-1)
+    origin, direction = _rays(viewport)
+    on_box, _ = _hits_box(origin, direction, *BOX)
+    t = -origin[..., 1] / direction[..., 1]
+    ground = (t > 0) & ~_grow(on_box, 2)
+    partial = []
+    for size in (0.0, 0.3, 1.0):
+        viewport.set_shading("lookdev", _state(size=size))
+        shaded = _frame(gl_window, viewport).max(axis=-1)
+        fraction = np.where(lit > 0, shaded / np.maximum(lit, 1), 1.0)
+        partial.append(int((ground & (fraction > 0.1) & (fraction < 0.9)).sum()))
+        assert (ground & (fraction <= 0.1)).sum() > 100  # a dark core stays
+    assert partial[0] < partial[1] < partial[2], partial
+    assert partial[2] > 3 * partial[0], partial
+    _release(viewport)
+
+
 # -- T1-2: no acne on a lit sphere ------------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("key_el", [60.0, 20.0])
-def test_a_lit_sphere_does_not_shadow_its_lit_half(gl_window, key_el):
+@pytest.mark.parametrize("key_el, size", [(60.0, 0.0), (20.0, 0.0), (60.0, 0.3), (20.0, 1.0)])
+def test_a_lit_sphere_does_not_shadow_its_lit_half(gl_window, key_el, size):
+    """No acne, also with a soft key (AD-039 §16.6: Manu 2026-11-22 „Weichheit wirkt noch sehr unsauber“ - the spread
+    fetches dipped under the curved surface)."""
     camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.0, yaw=0.5, pitch=0.3)
     viewport = _viewport(gl_window, {"sphere": _sphere()}, camera)
-    state = _state(key_az=30.0, key_el=key_el, effects=OFF)
+    state = _state(key_az=30.0, key_el=key_el, size=size, effects=OFF)
     viewport.set_shading("lookdev", state)
     without = _frame(gl_window, viewport)
     viewport.set_shading("lookdev", dataclasses.replace(state, effects=lo.LookdevEffects()))
@@ -294,17 +318,30 @@ def test_the_map_renders_once_and_not_for_the_camera_the_exposure_or_a_capture(g
     viewport.on_camera_changed(aspect=1.0)
     _frame(gl_window, viewport)
     viewport.set_shading("lookdev", dataclasses.replace(state, exposure=1.0, key=dataclasses.replace(
-        state.key, intensity=2.0, kelvin=4000.0, size=0.5)))
+        state.key, intensity=2.0, kelvin=4000.0)))
     _frame(gl_window, viewport)
     viewport.request_capture(lambda rgba: None)
     _frame(gl_window, viewport)  # two mesh draws in one frame
     assert shadow.renders == 1
-    viewport.set_shading("lookdev", dataclasses.replace(state, key=dataclasses.replace(state.key, azimuth=50.0)))
+    # the key's softness is the map's effective resolution: a size that keeps it renders nothing, one that moves it
+    # renders once
+    state = dataclasses.replace(state, key=dataclasses.replace(state.key, size=0.5))
+    viewport.set_shading("lookdev", state)
+    _frame(gl_window, viewport)
+    _frame(gl_window, viewport)
+    assert shadow.renders == 2 and shadow._resolution == lo.shadow_resolution(0.5)
+    tiny = 1e-4
+    assert lo.shadow_resolution(0.5 + tiny) == shadow._resolution
+    viewport.set_shading("lookdev", dataclasses.replace(state, key=dataclasses.replace(state.key, size=0.5 + tiny)))
     _frame(gl_window, viewport)
     assert shadow.renders == 2
-    viewport.set_shading("lookdev", dataclasses.replace(state, rotation=20.0))
+    viewport.set_shading("lookdev", state)
+    viewport.set_shading("lookdev", dataclasses.replace(state, key=dataclasses.replace(state.key, azimuth=50.0)))
     _frame(gl_window, viewport)
     assert shadow.renders == 3
+    viewport.set_shading("lookdev", dataclasses.replace(state, rotation=20.0))
+    _frame(gl_window, viewport)
+    assert shadow.renders == 4
     # a geometry change of a caster (a vertex moved, as a pose or morph step arrives: a content revision)
     box = viewport.object_entries["box"]
     mesh = box.mesh
@@ -313,7 +350,7 @@ def test_the_map_renders_once_and_not_for_the_camera_the_exposure_or_a_capture(g
     mesh.set_vertex_position(vertex, tuple(c * 1.01 for c in mesh.vertex_position(vertex)))
     box.mark_vertices_dirty({vertex})
     _frame(gl_window, viewport)
-    assert shadow.renders == 4
+    assert shadow.renders == 5
     assert shadow._sphere == sphere_before  # the frustum follows layouts, not every step (no swimming)
     _release(viewport)
 
@@ -381,14 +418,15 @@ def test_in_the_app_a_morph_weight_a_pose_step_and_the_key_re_render_and_the_cam
     _app_frame(gl_window, app)
     app.set_lookdev_studio(exposure=1.0)
     _app_frame(gl_window, app)
-    app.set_lookdev_light("key", intensity=2.0, size=0.4)
+    app.set_lookdev_light("key", intensity=2.0, kelvin=4000.0)
     _app_frame(gl_window, app)
     app.viewport.request_capture(lambda rgba: None)
     _app_frame(gl_window, app)
-    assert shadow.renders == count  # orbit, exposure, key intensity / size, capture: +0
+    assert shadow.renders == count  # orbit, exposure, key intensity / colour, capture: +0
     sphere = shadow._sphere
     for step, change in enumerate((lambda: app.set_morph_weight(60, app.lid), lambda: app.jaw(14.0),
                                    lambda: app.set_lookdev_light("key", azimuth=20.0),
+                                   lambda: app.set_lookdev_light("key", size=0.6),
                                    lambda: app.set_lookdev_studio(rotation=15.0)), start=1):
         change()
         _app_frame(gl_window, app)
@@ -567,15 +605,16 @@ void main() {
     if (i >= u_count) { out_value = vec4(0.0); return; }
     vec4 a = texelFetch(u_inputs, 2 * i);
     vec4 b = texelFetch(u_inputs, 2 * i + 1);
-    out_value = vec4(ld_key_visibility(a.xyz, b.xyz), 0.0, 0.0, 1.0);
+    out_value = vec4(ld_shadow_pcf(a.xyz, b.xy), 0.0, 0.0, 1.0);
 }
 """
 
 
-def test_ld_key_visibility_matches_pcf_visibility(gl_window):
-    """A random 64² depth map uploaded as the compare texture; `ld_key_visibility` at 4,096 points (the view-projection
-    the identity, so the map point is the world point mapped to [0, 1]) against the NumPy twin: inside, near the
-    border (lit outside) and outside the depth range."""
+@pytest.mark.parametrize("scale", [1.0, 0.5])
+def test_ld_shadow_pcf_matches_pcf_visibility(gl_window, scale):
+    """A random 64² depth map uploaded as the compare texture, `scale` of it the rendered part (a soft key's effective
+    resolution); `ld_shadow_pcf` at 4,096 map points with random receiver-plane slopes against the NumPy twin: inside,
+    near the border (lit outside) and outside the depth range."""
     from pyglet import gl
     from pyglet.graphics.shader import Shader, ShaderProgram
 
@@ -590,10 +629,8 @@ def test_ld_key_visibility_matches_pcf_visibility(gl_window):
     depth = rng.uniform(0.2, 0.9, (size, size)).astype(np.float32)
     sp = np.concatenate([rng.uniform(0.0, 1.0, (count - 96, 3)), rng.uniform(-0.05, 0.05, (32, 3)) + [0.0, 0.5, 0.5],
                          rng.uniform(0.98, 1.06, (32, 3)), rng.uniform(0.0, 1.0, (32, 3)) * [1, 1, 0] + [0, 0, 1.02]])
-    points = sp * 2.0 - 1.0
-    normals = np.tile([0.0, 0.0, 1.0], (count, 1))
-    spacing = lo.shadow_spacing(0.3, size)
-    expected = lo.pcf_visibility(depth.astype(np.float64), sp, spacing)
+    slopes = rng.uniform(-2.0, 2.0, (count, 2))
+    expected = lo.pcf_visibility(depth.astype(np.float64), sp, scale, slopes)
 
     def gen(fn) -> int:
         ident = gl.GLuint()
@@ -614,7 +651,7 @@ def test_ld_key_visibility_matches_pcf_visibility(gl_window):
         gl.glTexParameteri(gl.GL_TEXTURE_2D, name, value)
     gl.glTexParameterfv(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_BORDER_COLOR, (gl.GLfloat * 4)(1.0, 1.0, 1.0, 1.0))
     data = np.zeros((count, 2, 4), np.float32)
-    data[:, 0, :3], data[:, 1, :3] = points, normals
+    data[:, 0, :3], data[:, 1, :2] = sp, slopes
     gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, buffer)
     gl.glBufferData(gl.GL_TEXTURE_BUFFER, data.nbytes, data.ctypes.data_as(ctypes.c_void_p), gl.GL_STATIC_DRAW)
     gl.glActiveTexture(gl.GL_TEXTURE0 + 1)
@@ -634,9 +671,8 @@ def test_ld_key_visibility_matches_pcf_visibility(gl_window):
     program["u_width"] = width
     program["u_count"] = count
     program["u_ld_shadow"] = ls.SHADOW_UNIT
-    program["u_ld_shadow_vp"] = tuple(float(v) for v in np.identity(4).reshape(-1))
-    program["u_ld_shadow_radius"] = spacing
-    program["u_ld_shadow_offset"] = 0.0
+    program["u_ld_shadow_radius"] = 1.0 / size
+    program["u_ld_shadow_scale"] = scale
     gl.glViewport(0, 0, width, height)
     gl.glDisable(gl.GL_DEPTH_TEST)
     gl.glBindVertexArray(vao)

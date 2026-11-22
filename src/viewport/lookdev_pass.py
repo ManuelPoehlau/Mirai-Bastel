@@ -154,7 +154,7 @@ class LookdevPass:
             gl.glBindTexture(*texture)
             gl.glActiveTexture(gl.GL_TEXTURE0)
         if shadow is not None:
-            set_uniforms(program, shadow.uniforms(frame["u_ld_light_size"][0]), active)
+            set_uniforms(program, shadow.uniforms(), active)
             shadow.bind(SHADOW_UNIT)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthMask(gl.GL_TRUE)

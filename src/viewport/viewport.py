@@ -1294,7 +1294,7 @@ class Viewport:
             casters = [rm for rm, look, eye_key in skins
                        if eye_key is None and look is not None and getattr(rm.store, "alpha", 1.0) >= 1.0]
             shadow = passes.key_shadow()
-            shadow.update(casters, frame["u_ld_light_dir"][0])
+            shadow.update(casters, frame["u_ld_light_dir"][0], frame["u_ld_light_size"][0])
         passes.draw_background(*self.lookdev_state.background_colours())
         for rm, look, eye_key in skins:
             if eye_key is not None:

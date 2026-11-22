@@ -20,8 +20,9 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
   when the effect is off, so with every effect off the sources are M1's, character for character
   (`PINNED_SKIN_SOURCES_SHA256`, `tests/test_lookdev_shaders.py`). `LD_COMMON_SRC` does not change in P3 (the eye's
   LOOKDEV pin).
-- `LD_SHADOW_SRC` (S1, AD-039 §4): the key's shadow map and `ld_key_visibility(p, n)` (3 x 3 bilinear-compare fetches,
-  the spacing from the key's size, a normal offset; outside the map = lit); the `SHADOW` block subtracts the key's own
+- `LD_SHADOW_SRC` (S1, AD-039 §4 / §16.6): the key's shadow map and `ld_key_visibility(p, n, l)` (3 x 3
+  bilinear-compare fetches one texel apart with a receiver-plane bias, a normal offset, a fade toward the terminator;
+  outside the map = lit; the key's softness is the map's effective resolution, `u_ld_shadow_scale`); the `SHADOW` block subtracts the key's own
   diffuse and specular term times (1 - visibility). Twins: `lookdev_optics.pcf_visibility` / `ld_key_shadowed`.
   `SHADOW_DEPTH_SRC`: the depth pass's program (`viewport.lookdev_shadow.KeyShadow`).
 
@@ -53,6 +54,10 @@ SHADOW_UNIT = 6
 SKIN_EFFECTS = ("SHADOW",)
 #: The compare's depth bias in the map's [0, 1] depth (`PROVISIONAL`, AD-039 §4; twin `lookdev_optics.pcf_visibility`).
 SHADOW_DEPTH_BIAS = 0.0005
+#: The receiver-plane slope's limit (depth per UV, both in the map's units: 10 = 84° from the key).
+SHADOW_SLOPE_MAX = 10.0
+#: The map's answer fades out below this n.l toward the terminator (`PROVISIONAL`, AD-039 §16.6).
+SHADOW_TERMINATOR_FADE = 0.3
 
 
 def constant_src(name: str, library: str = es.EYE_LIB_SRC) -> str:
@@ -224,7 +229,7 @@ void main() {{
     vec3 colour = albedo * ld_diffuse(n, u_wrap) + ld_specular(n, v, rough, u_f0);
 #ifdef SHADOW
     // AD-039 §4: the key's own terms (ld_diffuse / ld_specular's i = 0) times (1 - visibility): the key in shadow
-    colour -= (1.0 - ld_key_visibility(v_world_pos, n)) * u_ld_light_color[0]
+    colour -= (1.0 - ld_key_visibility(v_world_pos, n, u_ld_light_dir[0])) * u_ld_light_color[0]
             * (albedo * ld_wrap(dot(n, u_ld_light_dir[0]), u_wrap)
                + direct_specular(n, v, u_ld_light_dir[0], ld_lobe(rough, u_ld_light_size[0]), u_f0));
 #endif
@@ -239,23 +244,46 @@ void main() {{
 
 
 LD_SHADOW_SRC = f"""
-// -- LookDev P3 S1 (AD-039 §4): the key's shadow map, 3 x 3 bilinear-compare fetches
+// -- LookDev P3 S1 (AD-039 §4, §16.6): the key's shadow map, 3 x 3 bilinear-compare fetches one texel apart
 uniform sampler2DShadow u_ld_shadow;
 uniform mat4 u_ld_shadow_vp;
-uniform float u_ld_shadow_radius;
-uniform float u_ld_shadow_offset;
+uniform float u_ld_shadow_radius;  // the fetch spacing: one texel of the map's storage, in its UV
+uniform float u_ld_shadow_scale;   // the rendered part of the map (effective / storage size: the key's softness)
+uniform float u_ld_shadow_offset;  // the normal offset, world units
 const float LD_SHADOW_BIAS = {SHADOW_DEPTH_BIAS!r};
-// the key's visibility at world point p with normal n: 1 lit, 0 in the key's shadow; outside the map = lit
-float ld_key_visibility(vec3 p, vec3 n) {{
+const float LD_SHADOW_SLOPE_MAX = {SHADOW_SLOPE_MAX!r};
+const float LD_SHADOW_FADE = {SHADOW_TERMINATOR_FADE!r};
+// the map point (u, v, depth in [0, 1]) of world point p, offset along its normal n
+vec3 ld_shadow_coord(vec3 p, vec3 n) {{
     vec4 lp = u_ld_shadow_vp * vec4(p + n * u_ld_shadow_offset, 1.0);
-    vec3 sp = lp.xyz / lp.w * 0.5 + 0.5;
-    float ref = sp.z - LD_SHADOW_BIAS;
+    return lp.xyz / lp.w * 0.5 + 0.5;
+}}
+// 3 x 3 fetches around the map point sp; each compares the depth of the receiver's plane at the fetch (slope = d depth
+// / d uv: the receiver-plane bias, so a fetch off the centre does not dip under a curved surface); outside = lit
+float ld_shadow_pcf(vec3 sp, vec2 slope) {{
+    float step_uv = u_ld_shadow_radius / u_ld_shadow_scale;
     float sum = 0.0;
     for (int y = -1; y <= 1; ++y)
-        for (int x = -1; x <= 1; ++x)
-            sum += texture(u_ld_shadow, vec3(sp.xy + vec2(float(x), float(y)) * u_ld_shadow_radius, ref));
+        for (int x = -1; x <= 1; ++x) {{
+            vec2 o = vec2(float(x), float(y)) * step_uv;
+            sum += texture(u_ld_shadow, vec3((sp.xy + o) * u_ld_shadow_scale,
+                                             sp.z - LD_SHADOW_BIAS + dot(slope, o)));
+        }}
     float inside = float(all(greaterThanEqual(sp, vec3(0.0))) && all(lessThanEqual(sp, vec3(1.0))));
     return mix(1.0, sum / 9.0, inside);
+}}
+// the key's visibility at world point p with normal n, the key toward l: 1 lit, 0 in its shadow. The receiver's slope
+// comes from the screen derivatives of the map point (call in uniform control flow); toward the terminator the map's
+// answer fades out (n.l -> 0), so a wrapped diffuse is not cut along the mesh's facets
+float ld_key_visibility(vec3 p, vec3 n, vec3 l) {{
+    float ndl = dot(n, l);
+    vec3 sp = ld_shadow_coord(p, n);
+    vec3 dx = dFdx(sp);
+    vec3 dy = dFdy(sp);
+    float det = dx.x * dy.y - dx.y * dy.x;
+    vec2 slope = abs(det) > 1e-14 ? vec2(dy.y * dx.z - dx.y * dy.z, dx.x * dy.z - dy.x * dx.z) / det : vec2(0.0);
+    slope = clamp(slope, -LD_SHADOW_SLOPE_MAX, LD_SHADOW_SLOPE_MAX);
+    return mix(1.0, ld_shadow_pcf(sp, slope), smoothstep(0.0, LD_SHADOW_FADE, ndl));
 }}
 """
 

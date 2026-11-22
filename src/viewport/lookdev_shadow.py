@@ -4,11 +4,14 @@ bounding sphere; the skin pass reads it through `lookdev_shaders.LD_SHADOW_SRC` 
 - **Fixed setting** (`PROVISIONAL`, P3-0 on the reference PC, Q-P3-3): 1024² DEPTH_COMPONENT24, `GL_LINEAR` with
   compare mode (3 x 3 hardware bilinear-compare fetches in the shader), `CLAMP_TO_BORDER` with border depth 1.0 (outside
   the map = lit), the depth pass with a slope-scaled polygon offset (2, 4); the lookup adds a normal offset of about one
-  texel and the fetch spacing grows with the key's size ("Weichheit").
+  texel; the fetches stay one texel apart with a receiver-plane bias. The key's size ("Weichheit") sets the map's
+  effective resolution (`lookdev_optics.shadow_resolution`: a soft key renders fewer texels, a wider smooth ramp;
+  AD-039 §16.6).
 - **Re-rendered only on a change** (`key`): for each caster `(id(rm), layout_revision, content_revision, model)` - the
   GPU picker's key - the key's world direction and the frustum. A pose step, a morph weight, a SubD re-evaluation, a
-  topology edit, Hide / Isolate, a placement, a studio rotation or a key azimuth / elevation re-render it; a camera orbit
-  (the studio is fixed to the world), a material, the exposure or a key intensity / colour / size do not. `renders`
+  topology edit, Hide / Isolate, a placement, a studio rotation, a key azimuth / elevation or a softness that changes the
+  effective resolution re-render it; a camera orbit (the studio is fixed to the world), a material, the exposure or a
+  key intensity / colour do not. `renders`
   counts the passes (T1-3).
 - **Frustum:** `lookdev_optics.shadow_frustum` over the casters' bounds, recomputed only when the caster set, a
   `layout_revision` or a placement changes - not per pose step, so the shadow does not swim during a drag. A pose that
@@ -65,6 +68,7 @@ class KeyShadow:
         self._frustum_key = None
         self._sphere = ((0.0, 0.0, 0.0), 1.0)
         self._vp = list(_IDENTITY_4)
+        self._resolution = self.size
 
     # -- the cache key ---------------------------------------------------------------------------------------------
 
@@ -89,18 +93,20 @@ class KeyShadow:
             self._frustum_key = key
         return self._sphere
 
-    def key(self, casters, key_dir) -> tuple:
-        """What the map shows: per caster the GPU picker's key, the key's direction, the frustum. O(casters), no GL."""
+    def key(self, casters, key_dir, key_size: float = 0.0) -> tuple:
+        """What the map shows: per caster the GPU picker's key, the key's direction, the frustum, the effective
+        resolution (the key's softness). O(casters), no GL."""
         sphere = self.frustum(casters)
         return (tuple((id(rm), rm.layout_revision, rm.content_revision, _model(rm)) for rm in casters),
-                tuple(float(c) for c in key_dir), sphere, self.size)
+                tuple(float(c) for c in key_dir), sphere, lo.shadow_resolution(key_size, self.size))
 
     # -- the pass --------------------------------------------------------------------------------------------------
 
-    def update(self, casters, key_dir) -> bool:
-        """Render the map if what it shows changed since the last pass. True = it rendered."""
+    def update(self, casters, key_dir, key_size: float = 0.0) -> bool:
+        """Render the map if what it shows changed since the last pass (`key_size`: the key's softness, the map's
+        effective resolution). True = it rendered."""
         casters = self._drawable(casters)
-        key = self.key(casters, key_dir)
+        key = self.key(casters, key_dir, key_size)
         if key == self._key and self._targets:
             return False
         if not self._ensure():
@@ -108,6 +114,7 @@ class KeyShadow:
         centre, radius = self._sphere
         self._vp = lo.shadow_view_projection(key_dir, centre, radius)
         target = (self._current + 1) % len(self._targets) if self._key is not None else self._current
+        self._resolution = key[3]
         self._render(casters, self._targets[target][1])
         self._current = target
         self._key = key
@@ -189,7 +196,7 @@ class KeyShadow:
                                                             gl.GL_CULL_FACE, gl.GL_POLYGON_OFFSET_FILL)}
         try:
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo)
-            gl.glViewport(0, 0, self.size, self.size)
+            gl.glViewport(0, 0, self._resolution, self._resolution)  # the clear below covers the whole map: lit
             for cap in (gl.GL_SCISSOR_TEST, gl.GL_BLEND, gl.GL_CULL_FACE):
                 gl.glDisable(cap)
             gl.glEnable(gl.GL_DEPTH_TEST)
@@ -225,9 +232,11 @@ class KeyShadow:
     def ready(self) -> bool:
         return self._key is not None and bool(self._targets)
 
-    def uniforms(self, key_size: float) -> dict:
+    def uniforms(self) -> dict:
         """`LD_SHADOW_SRC`'s uniforms for the current map (the sampler on `SHADOW_UNIT`)."""
-        values = lo.shadow_uniforms(self._vp, self._sphere[1], key_size, self.size)
+        values = lo.shadow_uniforms(self._vp, self._sphere[1], 0.0, self.size)
+        values["u_ld_shadow_scale"] = self._resolution / float(self.size)
+        values["u_ld_shadow_offset"] = lo.SHADOW_NORMAL_OFFSET_TEXELS * 2.0 * self._sphere[1] / self._resolution
         values["u_ld_shadow"] = SHADOW_UNIT
         return values
 

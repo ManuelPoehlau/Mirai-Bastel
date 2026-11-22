@@ -181,19 +181,37 @@ def test_shadow_frustum_holds_every_caster_vertex_and_a_pose_inside_its_margin()
     assert radius >= np.linalg.norm(hi_all - lo_all) / 2.0 * 1.15 - 1e-6
 
 
-def test_shadow_uniforms_spacing_grows_with_the_keys_softness():
+def test_the_keys_softness_is_the_maps_effective_resolution():
+    assert lo.shadow_resolution(0.0) == lo.SHADOW_SIZE
+    sizes = [lo.shadow_resolution(s) for s in (0.0, 0.1, 0.26, 0.5, 1.0)]
+    assert sizes == sorted(sizes, reverse=True) and sizes[-1] >= lo.SHADOW_MIN_RESOLUTION
+    assert lo.shadow_resolution(1.0) == round(lo.SHADOW_SIZE / (1.0 + lo.SHADOW_SOFTNESS))
     vp = lo.shadow_view_projection((0.0, 0.0, 1.0), (0.0, 0.0, 0.0), 20.0)
     sharp, soft = lo.shadow_uniforms(vp, 20.0, 0.0), lo.shadow_uniforms(vp, 20.0, 0.5)
-    assert sharp["u_ld_shadow_radius"] == pytest.approx(1.0 / lo.SHADOW_SIZE)
-    assert soft["u_ld_shadow_radius"] == pytest.approx((1.0 + lo.SHADOW_SOFTNESS_TEXELS * 0.5) / lo.SHADOW_SIZE)
+    assert sharp["u_ld_shadow_radius"] == soft["u_ld_shadow_radius"] == pytest.approx(1.0 / lo.SHADOW_SIZE)
+    assert sharp["u_ld_shadow_scale"] == 1.0
+    assert soft["u_ld_shadow_scale"] == pytest.approx(lo.shadow_resolution(0.5) / lo.SHADOW_SIZE)
     assert sharp["u_ld_shadow_offset"] == pytest.approx(lo.SHADOW_NORMAL_OFFSET_TEXELS * 40.0 / lo.SHADOW_SIZE)
+    assert soft["u_ld_shadow_offset"] == pytest.approx(lo.SHADOW_NORMAL_OFFSET_TEXELS * 40.0 / lo.shadow_resolution(0.5))
+
+
+def test_the_receiver_plane_bias_and_the_terminator_fade():
+    """A tilted receiver (slope 0.5 depth per uv) on the surface the map holds (with the depth pass's slope-scaled
+    polygon offset: one texel of slope): without the receiver-plane bias the fetches toward the light dip under the
+    stored depth (self-shadow), with it none does."""
+    sp = np.array([[0.5, 0.5, 0.5 - 0.0002]])
+    texel = 1.0 / 16
+    tilted = np.full((16, 16), 0.5) + 0.5 * ((np.arange(16)[None, :] + 0.5) * texel - 0.5) + 0.5 * texel
+    assert lo.pcf_visibility(tilted, sp, 1.0, (0.5, 0.0))[0] == 1.0
+    assert lo.pcf_visibility(tilted, sp, 1.0, (0.0, 0.0))[0] < 0.9
+    assert lo.terminator_fade(0.0) == 0.0 and lo.terminator_fade(1.0) == 1.0
+    assert lo.terminator_fade(lo.SHADOW_TERMINATOR_FADE / 2) == pytest.approx(0.5)
 
 
 def test_pcf_visibility_and_the_shadowed_key():
     depth = np.full((8, 8), 0.5)
     depth[:, :4] = 0.2  # the left half is occluded at 0.2
-    vis = lo.pcf_visibility(depth, np.array([[0.3, 0.5, 0.4], [0.8, 0.5, 0.4], [1.2, 0.5, 0.9], [0.9, 0.5, 0.45]]),
-                            1.0 / 8)
+    vis = lo.pcf_visibility(depth, np.array([[0.3, 0.5, 0.4], [0.8, 0.5, 0.4], [1.2, 0.5, 0.9], [0.9, 0.5, 0.45]]))
     assert vis[0] == 0.0 and vis[1] == 1.0 and vis[2] == 1.0 and vis[3] == 1.0  # occluded, lit, outside, lit
     values = lo.frame_uniforms(lo.LookdevState("x", lo.EYE_STUDIO, lo.StudioLight(True, 1.0, 20.0, 40.0),
                                                lo.StudioLight(True, 0.5, -60.0, 10.0), lo.StudioLight(False)))
