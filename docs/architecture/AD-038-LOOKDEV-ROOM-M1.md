@@ -567,7 +567,8 @@ GL tests run in their own process under xvfb (CLAUDE.md "Testing"); scope per AG
 4. **LD-2** (`SceneObject.look`, format v15, `view.lookdev`): only on Manu's go after the M1 verdict.
 5. **Keys:** none until a practical test and "Taste passt" (D-L9).
 6. **P3 before LD-3** (Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“; proposal §0.1):
-   - P3 is outside this AD: its own architecture AD comes before any `src/` change and fixes the order of the P3 items;
+   - P3 is outside this AD: its own architecture AD comes before any `src/` change and fixes the order of the P3 items
+     ([AD-039](AD-039-LOOKDEV-P3.md), PROPOSED 2026-11-22);
    - each P3 effect ships with one fixed setting measured on the reference PC against LD-D10 (§9), its own on/off in
      the panel, and the feature check it needs (cube FBO, depth texture), by feature, never by GPU name;
    - LD-3 follows P3 with the full knob set and takes over those checks; §9's levers stay manual until then;

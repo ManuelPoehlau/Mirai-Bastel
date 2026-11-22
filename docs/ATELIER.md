@@ -65,6 +65,7 @@ Bereichsdokumenten.
 | D1f | **Symmetrie + Soft Selection auf dem Körper**: über dem 8-ms-Wert ab 15 % Radius; ob die Viewport-Aufgabe vor J kommt | [AD-SYM-04, Addendum 2026-10-15](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#addendum-2026-10-15-reference-pc-run-d-4) |
 | D3 | **Messlauf Knochen auf deinem PC**: zeigt, ob das Drehen des Kiefers auf Kopf und Körper flüssig ist und ob ein GPU-Zeichenweg das nächste Thema wird | [AD-028, Praxistest Schritt 9](architecture/AD-028-SKELETON-AND-SKINNING.md#praxistest-für-manu-nach-dem-bau-deutsch-ca-20-minuten) |
 | B16 | **Inflate / Pinch** (2026-11-15): Tasten Shift+I / Shift+P / Alt+P bestätigen oder ändern; trifft „Loop“ (quer über die Loops auf die Linie) und „Ring“ (entlang der Loops) deine Absicht an Lippen/Lidern? | [AD-020, Soft Inflate / Pinch](architecture/AD-020-SOFT-SELECTION-APP-PATH.md#soft-inflate--pinch-2026-11-15-provisional) |
+| L3 | **LookDev P3**: AD-039 freigeben (Reihenfolge S1–S7, Fragen Q-P3-0 … Q-P3-9, darunter LD-D8 und der Mal-Kanal) und der Messlauf `probe_lookdev.py --p3` auf deinem PC (legt Schattenkarten-Größe und PCF fest) | [AD-039 §11–§13](architecture/AD-039-LOOKDEV-P3.md) |
 | D2 | **Priorität**: was als Nächstes (Abschnitt 3) | — |
 
 ### Bewusst geparkt (kein Handlungsbedarf, nur damit es nicht verloren geht)

@@ -5,6 +5,7 @@ production code, Core, scene format, render behaviour or GUI is changed, and no 
 LD-D15 and LD-D16 stay open (§0). Items still marked **[O]** in the body are those open ones or are settled by §0.
 **AD-038 accepted 2026-11-19 (Manu):** [AD-038](../architecture/AD-038-LOOKDEV-ROOM-M1.md) is the architecture for LD-0 / LD-1. Where it deviates from this proposal (after a code check at `89f61fc`), its §1.2 and §14 say so and the AD holds. **LD-1 (M1) built 2026-11-19:** AD-038 §17. **LD-2 built 2026-11-21** (Manu: „LookDev LD-2 umsetzen“): AD-038 §18.
 **Order changed 2026-11-21** (Manu: „LookDev P3 vor LD-3 vorziehen“): P3 comes before LD-3 (§0.1, §1.3, §13).
+**P3 architecture drafted 2026-11-22:** [AD-039](../architecture/AD-039-LOOKDEV-P3.md) (PROPOSED). Where it corrects this proposal after a code check (thickness from the key's depth needs no authoring, the cube prefilter on the GPU with a corner fix, the region path, the order S1 … S7), its §1.2 and §15 say so and the AD holds.
 **Date:** 2026-11-19.
 **State inspected:** `origin/main` @ `a3bfcc0` ("AD-037 §11.3: the reference PC's 4.2 s …"), working branch
 `claude/busy-brown-svigg5` at the same commit, clean tree. Changes of 2026-11-18/19 on `main` were read (AD-036 slices
