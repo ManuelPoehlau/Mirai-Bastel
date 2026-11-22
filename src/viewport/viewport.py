@@ -252,6 +252,8 @@ class Viewport:
         self._edit_look: LookDraw | None = None
         self._entry_looks: dict = {}
         self._lookdev_frame_cache = None  # (studio state, camera basis with "Licht folgt Kamera"), its frame dict
+        # AD-039 §2.1: the P3 effects the next LookDev frame draws (the room sets them before its programs compile).
+        self._lookdev_effects = None
         # Optional (None = headless/TraceStore: es entsteht kein GL-Objekt).
         self.point_overlay = (
             point_overlay_type() if point_overlay_type is not None else None
@@ -434,6 +436,40 @@ class Viewport:
             raise ValueError(f"shading: {shading!r}")
         self.shading = shading
         self.lookdev_state = state if shading == "lookdev" else None
+        if self.lookdev_state is not None:
+            self._lookdev_effects = self.lookdev_state.effects
+
+    def set_lookdev_effects(self, effects) -> None:
+        """AD-039 §2.1: the P3 effects (`lookdev_optics.LookdevEffects`) the next LookDev frame and `prepare_lookdev`
+        use - set by the room before a compile, so the frame before it still shows the previous state."""
+        self._lookdev_effects = effects
+
+    def lookdev_effects(self, wanted: bool = True):
+        """The effects in force: switched on, their feature present (`lookdev_features`, probed once per context the
+        first time an effect needs it), their dependency on (`lookdev_optics.effective`). `wanted` = the ones the room
+        set for the next compile (`set_lookdev_effects`); False = the ones of the drawn studio state (the frame)."""
+        from .lookdev_optics import EFFECT_FEATURE, LookdevEffects, effective
+
+        effects = self._lookdev_effects if wanted else None
+        if effects is None:
+            effects = self.lookdev_state.effects if self.lookdev_state is not None else LookdevEffects()
+        features = None
+        if any(getattr(effects, name) for name in EFFECT_FEATURE) and hasattr(self.render_mesh.store, "vertex_list"):
+            features = self.lookdev_pass.feature_report()
+        elif self._lookdev_pass is not None:
+            features = self._lookdev_pass.features
+        return effective(effects, features)
+
+    def lookdev_features(self):
+        """This context's P3 feature report, or None before an effect needed it (the panel's reasons)."""
+        return self._lookdev_pass.features if self._lookdev_pass is not None else None
+
+    def take_lookdev_notices(self) -> list[str]:
+        """The status lines of missing P3 features (AD-039 §2.2), each handed out once."""
+        if self._lookdev_pass is None or not self._lookdev_pass.notices:
+            return []
+        notices, self._lookdev_pass.notices = self._lookdev_pass.notices, []
+        return notices
 
     @property
     def lookdev_pass(self):
@@ -445,9 +481,11 @@ class Viewport:
         return self._lookdev_pass
 
     def _lookdev_programs(self) -> tuple[list, list]:
-        """The programs the next LookDev frame draws: ([skin (albedo map, env spec)], [eye program arguments])."""
+        """The programs the next LookDev frame draws: ([skin (albedo map, env spec, shadow)], [eye program
+        arguments])."""
         skin, eyes = [], []
         env_spec = self._lookdev_pass.env_spec if self._lookdev_pass is not None else True
+        shadow = self.lookdev_effects().shadow
         drawn = [(self.surface_render_mesh or self.render_mesh, self._edit_look)] if self.show_faces else []
         for key in self._entry_draw_order():
             eye = self._eye_entries.get(key) if self.eye_display.preview else None
@@ -458,7 +496,7 @@ class Viewport:
                           self._entry_looks.get(key)))
         for rm, look in drawn:
             if look is not None:
-                skin.append((look.albedo is not None and rm.mesh.has_face_uvs(), env_spec))
+                skin.append((look.albedo is not None and rm.mesh.has_face_uvs(), env_spec, shadow))
         return sorted(set(skin)), sorted(set(eyes))
 
     def lookdev_prepare_needed(self) -> bool:
@@ -480,8 +518,8 @@ class Viewport:
         skin, eyes = self._lookdev_programs()
         passes = self.lookdev_pass
         before = len(passes.programs) + len(self.eye_pass.programs)
-        for albedo_map, env_spec in skin:
-            passes.program(albedo_map, env_spec)
+        for albedo_map, env_spec, shadow in skin:
+            passes.program(albedo_map, env_spec, shadow)
         for level, fit, look, iris, sclera in eyes:
             self.eye_pass.program(self.eye_display, level, fit, look, iris, sclera, lookdev=True)
         return len(passes.programs) + len(self.eye_pass.programs) - before
@@ -1234,24 +1272,37 @@ class Viewport:
     def _render_lookdev(self, drawn: RenderMesh, light: dict) -> None:
         """AD-038 §3.1: `render()`'s loop and order with three steps changed - the background first, every mesh with a
         LookDraw through the LookDev pass, the eyes through the eye pass's LOOKDEV variant. Entries without a LookDraw
-        (References, LD-D15 open) keep the Worklight draw."""
+        (References, LD-D15 open) keep the Worklight draw. AD-039 S1: with the shadow on, the key's map is brought up
+        to date before the background (re-rendered only on a change, `KeyShadow.key`); skin and teeth cast and receive,
+        the eyes neither (S2 makes them receive)."""
         camera = self.render_mesh.camera
         frame = self.lookdev_frame()
         passes = self.lookdev_pass
-        passes.draw_background(*self.lookdev_state.background_colours())
+        skins = []  # in draw order: (drawn RenderMesh, its LookDraw, None) or (None, the EyeDraw, the eye entry key)
         if self.show_faces:
-            look = self._edit_look
-            if look is None or not passes.draw(drawn, look, frame):
-                drawn.render(camera)
+            skins.append((drawn, self._edit_look, None))
         eye_preview = self.eye_display.preview
         for key in self._entry_draw_order():
             eye = self._eye_entries.get(key) if eye_preview else None
             if eye is not None and key not in self.entry_surface_render_meshes:
-                if self.eye_pass.draw(self.object_entries[key], eye, light, self.eye_display, lighting=frame):
+                skins.append((None, eye, key))
+                continue
+            skins.append((self.entry_surface_render_meshes.get(key, self.object_entries[key]),
+                          self._entry_looks.get(key), None))
+        shadow = None
+        if self.lookdev_effects(wanted=False).shadow:
+            casters = [rm for rm, look, eye_key in skins
+                       if eye_key is None and look is not None and getattr(rm.store, "alpha", 1.0) >= 1.0]
+            shadow = passes.key_shadow()
+            shadow.update(casters, frame["u_ld_light_dir"][0])
+        passes.draw_background(*self.lookdev_state.background_colours())
+        for rm, look, eye_key in skins:
+            if eye_key is not None:
+                if self.eye_pass.draw(self.object_entries[eye_key], look, light, self.eye_display, lighting=frame):
                     continue
-            rm = self.entry_surface_render_meshes.get(key, self.object_entries[key])
-            look = self._entry_looks.get(key)
-            if look is None or not passes.draw(rm, look, frame):
+                rm = self.entry_surface_render_meshes.get(eye_key, self.object_entries[eye_key])
+                look = self._entry_looks.get(eye_key)
+            if look is None or not passes.draw(rm, look, frame, shadow):
                 rm.render(camera)
 
     def wire_drawn(self) -> bool:

@@ -4,7 +4,8 @@
 Q-P3-8, Q-P3-9 wie vorgeschlagen.“ LD-D8 and the paint channel (Q-P3-1, Q-P3-2) stay open until before S6 / S7;
 Q-P3-4, Q-P3-6 and Q-P3-7 belong to S2, S3 and S5 and are judged there. Proposed 2026-11-22 (Architecture Gate). The
 number AD-039 follows AD-038; AD-034 was never assigned (no file, no reference, no commit in the history). New class,
-file and panel names stay `PROVISIONAL` until built. **S1 in progress** (§16).
+file and panel names stay `PROVISIONAL` until built. **S1 built 2026-11-22** (§16): the reference-PC run (E16, the
+shadow's drag cost) and Manu's practical test (§16.5) are open; S2 next.
 **Why now:** Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“
 ([proposal §0.1](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md), [AD-038](AD-038-LOOKDEV-ROOM-M1.md)
 §13.6). P3 needs its own AD before any `src/` change and fixes the order of the P3 items.
@@ -129,7 +130,7 @@ region materials; roughness, normal and translucency maps.
 | V13 | The eye's parametric lid shadow (`u_lid_shadow`, `lid_shadow_weight` in the eye's rest frame) exists only under `LOOK`, in the iris and the sclera branch | `eye_shaders.py:366–369`, `:839–840`, `:913–914` |
 | V14 | `RenderMesh.layout_revision` / `content_revision`: +1 on a rebuild, a topology patch, a geometry sync (incl. the posed / morphed / SubD surfaces' table moves) and a Hide / Isolate change; **not** on a region tint or a material change | `viewport/render_mesh.py:356–359`, `:410`, `:542`, `:1178`, `:1266`, `:1273`; tints `:544–561` |
 | V15 | The GPU picker caches its FBO render by `(id(rm), content_revision, layout_revision, camera, model, size, occlusion)` and restores the viewport after its FBO pass | `viewport/gpu_picker.py:175`, `:198–250` |
-| V16 | `RenderMesh.bounds_min` / `bounds_max` (lazy) and `model_matrix` | `render_mesh.py:258–262`, `:322`, `:841` |
+| V16 | The bounds are `RenderMesh.derived.bounds_min` / `bounds_max` (`DerivedView`, lazy over `PackedGeometry.bounds`; corrected at S1, 2026-11-22: there is no `RenderMesh.bounds_min`) and `model_matrix` | `render_mesh.py:253–263` (`DerivedView`), `:398–402` (`derived`), `packed_geometry.py:301`; `render_mesh.py:322`, `:841` |
 | V17 | Region tints reach the drawn surface by face: `Viewport.set_face_tints` (the **edit mesh only**), the SubD surface through `face_parent` (`surface_face_tints`) | `viewport.py:898–903`, `:845–869`; `mirai/subdivision/preview.py:235–246` |
 | V18 | `LookMaterial` is frozen data; `from_dict` takes **exactly** the field names. `EyeLook.iris` is the precedent for an optional sub-object (absent = neutral, older files unchanged) | `core/scene.py:506–555`; `:276–290` |
 | V19 | Format by content: v15 only when an object has a look; a `"look"` below v15 refuses the file | `core/serialization.py:159–161`, `:273–279` |
@@ -150,6 +151,8 @@ region materials; roughness, normal and translucency maps.
 | C6 | §0.1 / AD-038 §16.1: "the unoptimised shadow stand-in adds 9–11.5 ms" | That stand-in rendered the 2048² depth pass **every frame** with the **eyes as casters** (14,976 eye triangles beside 5,469 / 22,153 skin triangles; `probe_lookdev.py` LD-0 `DepthTarget.render`) and 16 fetches. Its split between pass and lookup was never measured | P3-0 (§10.1) measures the pass alone and the lookup alone, skin-only casters. S1's eyes receive and do not cast (§4) |
 | C7 | §8.3: a cube "can never be prefiltered on a preset switch" (CPU 40 s) | The GPU prefilter takes 12 ms for 128² (64 samples) [M-RPC]; the lab's CPU corner equalization has a GPU form: a corner texel takes the cube corner's direction, so the three texels meeting there are equal by construction. P3-0 container: corner spread 0.000 at every level with it, up to 1.4 without [M-C] | S5 prefilters on the preset switch, in the frame, with no disk cache (option 1 of §8.3) |
 | C8 | §0.1: "the part of LD-3's capability detection that P3 uses (cube FBO completeness, a depth texture with compare mode)" | S4 also needs sampler objects (core 3.3); S7 needs a free unit count (32 fragment units on the reference PC, appendix B1) | §2.2 lists every P3 feature check |
+| C9 | (S1 code check, 2026-11-22) §2.4: unit 5 is "the Worklight's face corners", 6 / 7 free for the shadow map and its raw depth | The Worklight draw also binds the VertexList's position / normal buffers as buffer textures on **6 and 7** (O2, `gl_render_store.py` `_POSITIONS_UNIT` / `_NORMALS_UNIT`) and unbinds all of its face-data units after its draw (`_unbind_face_data`, `:872–880`) | No clash at a skin draw: the shadow map binds 6 only around the skin draw and unbinds it; T1-5 checks units 0–7 (2D, buffer, sampler) after a frame with Worklight-free entries and an eye |
+| C10 | (S1 code check) §2.1: `set_lookdev_effect` "refused like the studio setters while an interaction owns the input" | The studio setters (`set_lookdev_studio`, `set_lookdev_light`, `set_lookdev_studio_preset`) refuse nothing while an interaction runs; the panel only gets the mouse over itself (`input_gate`) | `set_lookdev_effect` follows the code: like the studio setters, no refusal |
 
 ---
 
@@ -806,3 +809,126 @@ final runs per AGENTS.md §8a. `src/core` slices (S6, S7) also run `tests/` full
 | P4 | GPU prefilter or a machine cache | GPU prefilter only, with the corner fix | C1, C7: 12 ms, no cache needed |
 | P5 | Region materials "need per-face data" (face data access decided later) | one per-triangle slot buffer via the tint path's hand-over | C4: no face-row exposure |
 | P6 | (not stated) | a skin source pin before S1; `LD_COMMON_SRC` frozen in P3 | effects off = M1, character for character; the eye pins stay |
+
+---
+
+## 16. Implementation note — S1 built (2026-11-22)
+
+**Kurzfassung (Deutsch):** Die Schattenkarte vom Key ist gebaut (Haut und Zähne werfen und empfangen, Augen weder noch).
+Sie wird nur bei Pose-, Form- oder Key-Änderung neu gerechnet. Panel-Block „Effekte“ mit „Schatten“; die Einstellung
+wird mit der Szene gespeichert. Schatten aus ist M1, Zeichen für Zeichen (neuer Haut-Pin) und Pixel für Pixel (alter
+gegen neuen Code am Gollum-Kopf geprüft). Die Kosten des Ziehens misst erst dein PC; die zwei Gegenmittel aus P3-0
+(Flush, zwei Karten) sind gebaut und abschaltbar, die Sonde misst alle drei Varianten in einem Lauf.
+
+### 16.1 What is built
+
+| Layer | Built |
+|---|---|
+| Pin | `PINNED_SKIN_SOURCES_SHA256` over the 4 M1 skin variants (12 sources), taken in its own commit before `lookdev_shaders.py` changed (`ae19de5`); `tests/test_lookdev_shaders.py` |
+| Effects | `lookdev_optics.LookdevEffects(shadow=True)`, `LookdevState.effects` (the frame cache key covers it), `effective` / `effect_reasons` (dependencies, missing features; the panel's reasons); `Application.set_lookdev_effect(name, on)`, `lookdev_effect_reasons()`; a studio preset switch keeps the effects |
+| Features | `viewport/lookdev_features.py`: `FeatureReport(depth_texture)`, `probe()` once per context (held by `LookdevPass.features`), `CHECKS` (a test stubs one); a missing feature turns the effect off and queues one status line „LookDev: Schatten aus – Tiefentextur nicht verfügbar“, shown by the app (`_lookdev_feature_status`), not retried |
+| Shaders | `LD_SHADOW_SRC` (`u_ld_shadow`, `u_ld_shadow_vp`, `u_ld_shadow_radius`, `u_ld_shadow_offset`, `ld_key_visibility(p, n)`), appended only with `SHADOW`; the `SKIN_BODY` block `#ifdef SHADOW` subtracts (1 − vis) × the key's own `ld_wrap` / `direct_specular` term; `skin_sources(..., shadow=False)` resolves the block with `eye_shaders._without` when off; `SHADOW_DEPTH_*` (the depth pass's own minimal program). `LD_COMMON_SRC` unchanged |
+| Map | `viewport/lookdev_shadow.py` `KeyShadow`: 1024² DEPTH_COMPONENT24, `GL_LINEAR` + compare `LEQUAL`, `CLAMP_TO_BORDER` (border 1.0), polygon offset (2, 4); the cache key per frame (per caster `(id, layout_revision, content_revision, model)`, key direction, frustum); the frustum (`lookdev_optics.shadow_frustum`, +15 %) only on a caster-set / layout / placement change; full GL save / restore; `renders`; options `flush` and `maps=2` (§16.4) |
+| Pass | `LookdevPass`: program key `(ALBEDO_MAP, ENV_SPEC, SHADOW)`, owns `KeyShadow` (`key_shadow()`, deleted in `release()`), binds the map on unit 6 for the draw and unbinds it |
+| Viewport | `_render_lookdev`: the casters (the edit surface and every entry with a `LookDraw`, Ghosts and eyes excluded) and `KeyShadow.update` before the background; `set_lookdev_effects` / `lookdev_effects(wanted)` / `lookdev_features` / `take_lookdev_notices`; `_lookdev_programs` / `prepare_lookdev` compile the variants of the wanted effects |
+| App | the I-10 path for a switch that compiles (the frame before stays in LookDev for those frames, `_apply_lookdev` leaves it; then `prepare_lookdev` and the switch); `view.lookdev.effects` (written always, read with `raw.get`, unknown names ignored, a bad value keeps the current effects and never skips the studio) |
+| GUI | panel block „Effekte“ under „Studio“: one checkbox per built effect, greyed with its reason as tooltip (`lookdev_model.EffectRow`) |
+| Probe | `probe_lookdev_room.py --effects <list>|none`; rows `lookdev` (effects off), `lookdev +shadow`, `lookdev +shadow drag` (+ `flush`, `pingpong`), `KeyShadow.renders` per row; the drag steps a probe morph target on the edit object each frame (in memory only) |
+
+Not touched: `src/core/`, `serialization.py`, the Worklight programs, `GLRenderStore.draw()`, `eye_shaders.py`,
+`eye_pass.py`, `main.py`, `config/keymap.json` (no keys). R-1 unchanged (`tests/test_room_rule.py`).
+
+### 16.2 Where the build differs from §2 / §4, and why
+
+| # | AD | Built | Why |
+|---|---|---|---|
+| S1-1 | §4 uniforms `u_ld_shadow`, `u_ld_shadow_vp`, `u_ld_shadow_radius` | plus `u_ld_shadow_offset` (the normal offset in world units = 1.5 texels of the map) | the offset needs the map's texel size in the world, which depends on the frustum |
+| S1-2 | §4 "the fetch spacing is scaled by the key's `size`" | spacing = (1 + 8 × size) texels (`SHADOW_SOFTNESS_TEXELS`, `PROVISIONAL`): Portrait 0.10 → 1.8 texels, Soft Studio 0.35 → 3.8, the slider's 1.0 → 9 | a soft key draws a softer edge; above ~9 texels 3 × 3 fetches would band. The practical test judges it |
+| S1-3 | §4 bias "polygon offset (2, 4) plus a normal offset of about one texel" | plus a constant compare bias of 0.0005 of the map's depth (2 r) | T1-2 (no acne on a lit sphere at a grazing 20° key) holds with it |
+| S1-4 | §4 frustum "recomputed only when the caster set or a layout_revision changes" | also on a placement change (a caster's model matrix) | a moved object must stay inside its map; a placement is not a pose step, so a drag does not swim |
+| S1-5 | §2.1 "refused like the studio setters while an interaction owns the input" | no refusal (C10) | the studio setters refuse nothing in the code |
+| S1-6 | (not stated) | pyglet 2.1 has no setter for `sampler2DShadow`: `lookdev_shadow.register_shadow_sampler_uniform` reuses the `sampler2D` entry | the `_register_sampler_buffer_uniform` pattern |
+| S1-7 | §2.1 "a switch that needs a program not compiled yet takes the I-10 path: one frame with the status line" | while it prepares, the room keeps drawing the **previous** LookDev state (not the Worklight, as on entering); other studio changes made meanwhile wait for the compile | a switch inside the room must not flash the Worklight |
+| S1-8 | §11.1 "if it holds, try the flush, then two maps" | both built as `KeyShadow` options, off by default; the room probe measures plain / flush / ping-pong in one run | the container cannot measure the reference PC's driver; Manu's run decides, then the default is set in one place |
+
+### 16.3 Tests (container, llvmpipe, 2026-11-22)
+
+New tests:
+
+| # | Test | Where |
+|---|---|---|
+| T1-1 | a box over a plane: the footprint (CPU ray cast through the key) is dark (> 99 % of its pixels darker by > 40/255, black with no fill / environment), the rest of the plane unchanged (> 99.9 % within 1/255), the box's lit top without acne | `tests/test_gl_lookdev_shadow.py` |
+| T1-2 | a lit sphere, key at 60° and 20°: ≤ 0.1 % of the pixels with n·l > 0.1 darkened | same |
+| T1-3 | `KeyShadow.renders`: viewport level (camera orbit, exposure / key intensity / colour / size, a capture frame +0; key azimuth, rotation, a caster vertex +1 each; the frustum unchanged by a geometry step) and in the app on the head (a morph weight, a jaw pose step, the key azimuth, the rotation +1 each, once; orbit, exposure, key intensity / size, capture +0; the frustum unchanged by morph and pose; „Licht folgt Kamera“ + orbit +1) | same |
+| T1-4 | `PINNED_SKIN_SOURCES_SHA256` holds with the shadow off; no `KeyShadow`, no probe; the frame equals one drawn with a program from the M1 call; with nothing between key and surface the shadow changes no pixel. One-off: old (`ae19de5`) vs new code on Gollum, pixel-identical (§16.4) | `tests/test_lookdev_shaders.py`, `tests/test_gl_lookdev_shadow.py` |
+| T1-5 | a frame that renders the map (with an eye, scissor on, a foreign polygon offset) leaves draw / read framebuffer, viewport, program, VAO, caps, depth mask / function, polygon offset, units 0–7 (2D, buffer, sampler) as found | `tests/test_gl_lookdev_shadow.py` |
+| T1-6 | `depth_texture` stubbed false: the frame equals the M1 frame, no map, the status line once, not retried; in the app the status line appears and the panel row is greyed „Tiefentextur fehlt“ | same |
+| T1-7 | `view.lookdev.effects` round trip; an LD-2 file without `effects` keeps its studio and the current effects; 5 bad values keep the effects and never skip the studio; an unknown name is ignored | `tests/test_lookdev_persistence.py` |
+| T1-8 | `shadow_frustum`: every caster vertex (model matrices, teeth) inside the map for 26 key directions; a jaw-like pose inside the margin stays inside; the light side is depth 0 | `tests/test_lookdev_optics.py` |
+| parity | `ld_key_visibility` (GPU, a random 64² map, 4,096 points incl. border and depth range) vs `pcf_visibility` (max ≤ 0.02, mean ≤ 0.003); the `SHADOW` block vs `ld_key_shadowed` in full shadow and full light (≤ 2.5/255) | `tests/test_gl_lookdev_shadow.py`, twins headless in `tests/test_lookdev_optics.py` |
+| app / panel | `set_lookdev_effect` (view state, no Undo, a preset keeps the effects, unknown name refused); a switch that compiles keeps the previous LookDev frame; the panel block | `tests/test_lookdev_room.py`, `tests/test_gui_lookdev_model.py` |
+| probe | `probe_lookdev_room.py --effects` arguments | `experiments/drag_cost/tests/test_probe_lookdev_room.py` |
+
+Runs (GL files each in their own process under xvfb):
+
+| Command | Result |
+|---|---|
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_shadow.py -q` | 12 passed |
+| `xvfb-run -a python -m pytest tests/test_gl_eye_pass.py -q` | 126 passed (all three eye pins incl. the Worklight pin unchanged) |
+| `xvfb-run -a python -m pytest tests/test_gl_face_data_layout.py` / `test_gl_shading.py` / `test_gl_texture.py` (E1) | 16 / 19 / 10 passed |
+| `xvfb-run -a python -m pytest tests/test_gl_gpu_picking.py` / `test_gl_morph_picking.py` (E15) | 37 / 16 passed |
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_pass.py` / `test_gl_lookdev_parity.py` | 13 / 7 passed (with the shadow on by default) |
+| `xvfb-run -a python -m pytest tests/test_gui_imgui_window.py` / `test_gui_lookdev_window.py` | 18 / 1 passed (the panel with „Effekte“ in the real window) |
+| `xvfb-run -a python -m pytest tests -q` | 7,920 passed, 8 skipped, 1 failed: `test_scene_menu_local_tmp.py::test_probe_menu_wiring` - **pre-existing**, fails identically at `ae19de5` (before S1; AD-038 §17.3) |
+| `xvfb-run -a python -m pytest experiments/morph_lab/tests -q` | 49 passed |
+| `xvfb-run -a python -m pytest experiments/drag_cost/tests -q` | 103 passed |
+| `xvfb-run -a python -m pytest experiments/lookdev_eye_lab/tests -q` | 206 passed (the frozen oracle) |
+
+Not run: `experiments/knife_oracle/tests` (no Knife or topology code touched).
+
+### 16.4 Measurement
+
+Container (llvmpipe, a function check only; its GPU ms are a CPU rasteriser's and say nothing about the reference PC):
+`python experiments/drag_cost/probe_lookdev_room.py --draws 3` ran all rows with `glGetError` 0; `KeyShadow.renders`
+is 0 in the still rows (`lookdev`, `lookdev +shadow`) and one per frame in the three drag rows (8 of 8). One-off
+check: the Gollum head (cage and SubD 1, Portrait, framed, eyes in) rendered with the code before S1 (`ae19de5`) and
+with S1 and the shadow off is **pixel-identical**; with the shadow on 1,065 / 443 px change (the nose, the ear).
+
+**Reference PC (E16 and S1, open):** NVIDIA "Maximale Leistung bevorzugen", repository root, `.venv312`:
+
+```
+python experiments\drag_cost\probe_lookdev_room.py | Tee-Object -FilePath lookdev_room_s1.txt
+python experiments\drag_cost\probe_lookdev.py --no-extras | Tee-Object -FilePath lookdev_ld0_after_s1.txt
+python experiments\drag_cost\probe_d3_acceptance.py | Tee-Object -FilePath d3_after_s1.txt
+```
+
+What the run decides:
+- `lookdev +shadow` against `lookdev`: S1's lookup target ≤ +2 ms (§2.5; P3-0: +1.1 / +1.8 ms).
+- `lookdev +shadow drag` against `lookdev +shadow`: the open drag cost of P3-0 (+7–10 ms in the stand-in although the
+  pass took 0.5 ms). If the production drag shows it too, `drag flush` and `drag pingpong` say which remedy helps; the
+  better one becomes `KeyShadow`'s default (one line), in the order flush → ping-pong. If neither helps, the drag still
+  holds ≥ 30 fps when the row stays under 33.3 ms wall; otherwise the levers of §2.5 apply.
+- `modelling` / `modelling after`, `probe_lookdev.py --no-extras` and `probe_d3_acceptance.py`: E16, within noise of
+  the last runs (the Modelling Room loses nothing).
+
+### 16.5 Practical test S1 (`scenes/Gollum_Head_05.mirai.json`, about 15 minutes)
+
+Open LookDev (SPACE row „LookDev öffnen“), view „¾“.
+1. **Schatten an / aus:** in „Effekte“ „Schatten“ aus- und einschalten. Erwartet: unter Nase, Brauen, Ohr und Kinn liegt
+   mit „Schatten“ der Schatten des Key; aus = genau das Bild von vorher. Wirkt der Schatten zu hart, zu weich, zu
+   dunkel, schwimmt oder flackert er?
+2. **Weichheit:** „Mehr“ einschalten, dann im Block „Licht“ in der Zeile **Key** „Weichheit“ von 0 bis 1 (nicht die
+   „Weichheit“ im Material). Erwartet: die Schattenkante wird weicher (und der Glanz
+   breiter). Ab wann sieht die Kante gestuft aus?
+3. **Die vier Studio-Vorlagen:** Neutral Inspection, Portrait, Soft Studio, Dramatic. Erwartet: der Schatten folgt dem
+   Key jeder Vorlage, „Schatten“ bleibt beim Wechsel wie eingestellt. Passt er in jeder Vorlage, besonders in Dramatic
+   (Key von der Seite)?
+4. **Pose und Morph ziehen:** einen Morph-Regler langsam ziehen und eine Pose (Kiefer) drehen. Erwartet: der Schatten
+   geht mit, ohne zu springen; das Ziehen bleibt flüssig. Wie fühlt es sich an gegenüber Schatten aus?
+5. **Zähne einblenden:** „tooth“, „tooth01“, „Zahn_1“, „Zahn_2“ im Outliner einblenden, Mund öffnen (Morph / Pose).
+   Erwartet: Lippen werfen Schatten auf die Zähne, die Zähne auf die Mundhöhle; die Augen werfen keinen Schatten und
+   liegen noch nicht im Schatten der Lider (das ist S2).
+6. **Bild speichern** mit Schatten: das PNG zeigt den Schatten wie der Viewport.
+
+Assumptions to correct in one sentence: the key's „Weichheit“ also softens the shadow (S1-2); the shadow is on by
+default; teeth are hidden in the file and shown only for this test.

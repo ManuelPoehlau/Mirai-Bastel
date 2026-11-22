@@ -15,6 +15,15 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
 - `SKIN_BODY` - the skin program's fragment body (AD-038 §3.2). Its vertex and geometry stages are the textured
   Worklight program's own (`skin_sources`), so transform, barycentrics and `gl_PrimitiveID` are those of the Worklight:
   the depth contract I-1 by construction.
+- P3 (AD-039 §2.3): one define per effect. Library text an effect needs is its own string, appended only when the effect
+  is on (`LD_SHADOW_SRC`); body text is an `#ifdef` block that `skin_sources` resolves with `eye_shaders._without`
+  when the effect is off, so with every effect off the sources are M1's, character for character
+  (`PINNED_SKIN_SOURCES_SHA256`, `tests/test_lookdev_shaders.py`). `LD_COMMON_SRC` does not change in P3 (the eye's
+  LOOKDEV pin).
+- `LD_SHADOW_SRC` (S1, AD-039 §4): the key's shadow map and `ld_key_visibility(p, n)` (3 x 3 bilinear-compare fetches,
+  the spacing from the key's size, a normal offset; outside the map = lit); the `SHADOW` block subtracts the key's own
+  diffuse and specular term times (1 - visibility). Twins: `lookdev_optics.pcf_visibility` / `ld_key_shadowed`.
+  `SHADOW_DEPTH_SRC`: the depth pass's program (`viewport.lookdev_shadow.KeyShadow`).
 
 Colour (AD-038 §5.5): every albedo is an sRGB artist value, decoded here; lights are linear; one `lookdev_output` per
 pixel. Directions are world space; `u_ld_env_rot` turns a world direction into the studio's frame (rotation, and the
@@ -35,9 +44,15 @@ MAX_STUDIO = 4
 TONE_CURVES = {"reinhard": 0, "clamp": 1}
 #: The skin's specular anti-aliasing: alpha² grows by this times the screen-space variance of the normal.
 SPEC_AA_K = 0.5
-#: Texture units of the skin pass (C1): the store's triangle UVs, the albedo. 0 stays pyglet's, 6 the P3 shadow map's.
+#: Texture units of the skin pass (C1): the store's triangle UVs, the albedo. 0 stays pyglet's (AD-039 §2.4).
 UV_UNIT = 3
 ALBEDO_UNIT = 4
+#: AD-039 §2.4: the key's shadow map (compare sampler), S1.
+SHADOW_UNIT = 6
+#: The P3 defines in their fixed order (the skin program key, AD-039 §2.3 point 4).
+SKIN_EFFECTS = ("SHADOW",)
+#: The compare's depth bias in the map's [0, 1] depth (`PROVISIONAL`, AD-039 §4; twin `lookdev_optics.pcf_visibility`).
+SHADOW_DEPTH_BIAS = 0.0005
 
 
 def constant_src(name: str, library: str = es.EYE_LIB_SRC) -> str:
@@ -207,6 +222,12 @@ void main() {{
 #endif
     albedo = srgb_decode(albedo);
     vec3 colour = albedo * ld_diffuse(n, u_wrap) + ld_specular(n, v, rough, u_f0);
+#ifdef SHADOW
+    // AD-039 §4: the key's own terms (ld_diffuse / ld_specular's i = 0) times (1 - visibility): the key in shadow
+    colour -= (1.0 - ld_key_visibility(v_world_pos, n)) * u_ld_light_color[0]
+            * (albedo * ld_wrap(dot(n, u_ld_light_dir[0]), u_wrap)
+               + direct_specular(n, v, u_ld_light_dir[0], ld_lobe(rough, u_ld_light_size[0]), u_f0));
+#endif
 #ifdef ENV_SPEC
     colour += ld_env_specular(reflect(-v, n), rough) * env_brdf_approx(u_f0, rough, nv);
 #endif
@@ -217,13 +238,58 @@ void main() {{
 """
 
 
-def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool) -> list[tuple[str, str]]:
+LD_SHADOW_SRC = f"""
+// -- LookDev P3 S1 (AD-039 §4): the key's shadow map, 3 x 3 bilinear-compare fetches
+uniform sampler2DShadow u_ld_shadow;
+uniform mat4 u_ld_shadow_vp;
+uniform float u_ld_shadow_radius;
+uniform float u_ld_shadow_offset;
+const float LD_SHADOW_BIAS = {SHADOW_DEPTH_BIAS!r};
+// the key's visibility at world point p with normal n: 1 lit, 0 in the key's shadow; outside the map = lit
+float ld_key_visibility(vec3 p, vec3 n) {{
+    vec4 lp = u_ld_shadow_vp * vec4(p + n * u_ld_shadow_offset, 1.0);
+    vec3 sp = lp.xyz / lp.w * 0.5 + 0.5;
+    float ref = sp.z - LD_SHADOW_BIAS;
+    float sum = 0.0;
+    for (int y = -1; y <= 1; ++y)
+        for (int x = -1; x <= 1; ++x)
+            sum += texture(u_ld_shadow, vec3(sp.xy + vec2(float(x), float(y)) * u_ld_shadow_radius, ref));
+    float inside = float(all(greaterThanEqual(sp, vec3(0.0))) && all(lessThanEqual(sp, vec3(1.0))));
+    return mix(1.0, sum / 9.0, inside);
+}}
+"""
+
+#: The depth pass from the key (`KeyShadow`): its own minimal program - the position at the store's location, the
+#: object's model matrix and the key's view-projection; an empty fragment stage (depth only).
+SHADOW_DEPTH_VERTEX_SRC = """#version 330 core
+layout(location = {position}) in vec3 position;
+uniform mat4 u_model;
+uniform mat4 u_ld_shadow_vp;
+void main() {{ gl_Position = u_ld_shadow_vp * u_model * vec4(position, 1.0); }}
+"""
+SHADOW_DEPTH_FRAGMENT_SRC = """#version 330 core
+void main() {}
+"""
+
+
+def shadow_depth_sources(locations: dict[str, int]) -> list[tuple[str, str]]:
+    return [(SHADOW_DEPTH_VERTEX_SRC.format(**locations), "vertex"), (SHADOW_DEPTH_FRAGMENT_SRC, "fragment")]
+
+
+def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, shadow: bool = False
+                 ) -> list[tuple[str, str]]:
     """The skin program (AD-038 §3.2): the textured Worklight program's vertex and geometry sources formatted with the
-    Worklight program's attribute locations, the LookDev fragment source. Variants: `ALBEDO_MAP`, `ENV_SPEC`."""
+    Worklight program's attribute locations, the LookDev fragment source. Variants: `ALBEDO_MAP`, `ENV_SPEC`; P3
+    (AD-039 §2.3): `SHADOW` (S1). An effect that is off leaves no text behind (its library string is not appended, its
+    body blocks are resolved away), so every effect off = M1's sources."""
+    from .eye_shaders import _without
     from .gl_render_store import TEXTURED_GEOMETRY_SRC, TEXTURED_VERTEX_SRC
 
-    defines = "".join(f"#define {name} 1\n" for name, on in (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec)) if on)
-    fragment = "#version 330 core\n" + defines + LD_BRDF_SRC + LD_COMMON_SRC + SKIN_BODY
+    flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow))
+    defines = "".join(f"#define {name} 1\n" for name, on in flags if on)
+    body = SKIN_BODY if shadow else _without(SKIN_BODY, "SHADOW")
+    library = LD_BRDF_SRC + LD_COMMON_SRC + (LD_SHADOW_SRC if shadow else "")
+    fragment = "#version 330 core\n" + defines + library + body
     return [(TEXTURED_VERTEX_SRC.format(**locations), "vertex"), (TEXTURED_GEOMETRY_SRC, "geometry"),
             (fragment, "fragment")]
 

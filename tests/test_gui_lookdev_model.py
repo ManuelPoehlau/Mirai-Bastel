@@ -122,3 +122,12 @@ def test_reset_removes_the_look(app):
     assert app.reset_lookdev_material() and app.scene.edit_object.look is None and len(app.history) == history + 1
     assert lm.state(app).material.preset == "Neutral"
     assert _undo(app) and app.scene.edit_object.look.preset == "Wet Skin"
+
+
+def test_the_effects_block(app):
+    """AD-039 §2.1: one row per built P3 effect, its switch and its reason when greyed."""
+    st = lm.state(app)
+    assert [(r.name, r.label, r.on, r.available) for r in st.effects] == [("shadow", "Schatten", True, True)]
+    assert lm.EFFECTS_TITLE == "Effekte" and st.effects[0].hint
+    app.set_lookdev_effect("shadow", False)
+    assert not lm.state(app).effects[0].on

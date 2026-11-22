@@ -2,8 +2,8 @@
 
 The panel reads the room's state (`state(app)`) and calls `Application` (`set_lookdev_studio_preset`,
 `set_lookdev_studio`, `set_lookdev_light`, `set_lookdev_material`, `set_lookdev_material_values`, `frame_lookdev`,
-`close_lookdev`, `preview_lookdev_material_values`, `reset_lookdev_material`, `save_lookdev_image`); it holds no document
-state. Since LD-2 (AD-038 §18) the material is document data (`SceneObject.look`, saved, one Undo step per change: a
+`close_lookdev`, `preview_lookdev_material_values`, `reset_lookdev_material`, `save_lookdev_image`,
+`set_lookdev_effect`); it holds no document state. Since LD-2 (AD-038 §18) the material is document data (`SceneObject.look`, saved, one Undo step per change: a
 held slider or colour previews, the release commits - `MaterialEdit`); the studio is view state saved in
 `view.lookdev` (no Undo). About 15 controls are visible; the rest sits under "Mehr". Labels German, every layout choice
 `PROVISIONAL` (proposal §3).
@@ -45,6 +45,28 @@ class LightRow:
     size: float
 
 
+#: AD-039 §2.1: the block „Effekte“ - one checkbox per built P3 effect, in slice order.
+EFFECTS_TITLE = "Effekte"
+EFFECT_LABELS = {"shadow": "Schatten"}
+EFFECT_HINTS = {"shadow": "Schatten des Key auf Haut und Zähnen (wird nur bei Pose-, Form- oder Key-Änderung neu "
+                          "gerechnet); „Weichheit“ des Key macht die Kante weicher"}
+
+
+@dataclass(frozen=True)
+class EffectRow:
+    """One P3 effect: switched on, and why it is greyed (None = available)."""
+
+    name: str
+    label: str
+    on: bool
+    reason: str | None
+    hint: str
+
+    @property
+    def available(self) -> bool:
+        return self.reason is None
+
+
 @dataclass(frozen=True)
 class MaterialRow:
     """The material section: the targets' names and the first target's material (None = no organic target)."""
@@ -83,6 +105,7 @@ class LookdevPanelState:
     wire: bool
     eye_preview: bool
     status: str
+    effects: tuple[EffectRow, ...] = ()
 
 
 def _albedo_label(app, obj) -> str:
@@ -105,6 +128,12 @@ def _material(app) -> MaterialRow | None:
                        eye_selected, any(obj.look is not None for obj in targets))
 
 
+def _effects(app, s) -> tuple[EffectRow, ...]:
+    reasons = app.lookdev_effect_reasons()
+    return tuple(EffectRow(name, EFFECT_LABELS.get(name, name), bool(on), reasons.get(name), EFFECT_HINTS.get(name, ""))
+                 for name, on in s.effects.as_dict().items())
+
+
 def state(app) -> LookdevPanelState:
     room = app.lookdev
     s = room.studio
@@ -116,7 +145,7 @@ def state(app) -> LookdevPanelState:
         background=s.background, background_gradient=s.background_gradient, lights=lights,
         material=_material(app) if app.lookdev_open else None, wire=app.display.wireframe_overlay,
         eye_preview=app.display.eye_preview,
-        status="Shader werden vorbereitet …" if room.preparing else SAVED,
+        status="Shader werden vorbereitet …" if room.preparing else SAVED, effects=_effects(app, s),
     )
 
 
@@ -175,7 +204,7 @@ def targets_label(row: MaterialRow) -> str:
     return names + (f"  ({EYE_NOTE})" if row.eye_selected else "")
 
 
-__all__ = ["EYE_NOTE", "LIGHTS", "LIGHT_LABELS", "MATERIAL_PRESETS", "MENU_CLOSE", "MENU_OPEN", "RESET", "RESET_HINT",
+__all__ = ["EFFECTS_TITLE", "EFFECT_HINTS", "EFFECT_LABELS", "EYE_NOTE", "EffectRow", "LIGHTS", "LIGHT_LABELS", "MATERIAL_PRESETS", "MENU_CLOSE", "MENU_OPEN", "RESET", "RESET_HINT",
            "SAVED", "SAVE_IMAGE", "SAVE_IMAGE_HINT", "STUDIO_PRESETS", "TITLE", "TONE_LABELS", "VIEWS", "LightRow",
            "LookdevPanelState", "MaterialEdit", "MaterialRow", "material_label", "menu_label", "preset_label", "state",
            "targets_label", "toggle"]

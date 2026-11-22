@@ -3,7 +3,7 @@
 Shading, Wireframe, Region-Farben, Symmetrie-Anzeige, Worklight, Glanz, Kamera (Ansicht, Fokus, Ortho),
 Referenz-Ghost, Texturen, die SubD-Vorschau, die Morph-Regler (Gewichte und aktuelles Ziel je Objekt, Manu
 2026-11-16) und das LookDev-Studio (Vorlage, Drehung, Helligkeit, Belichtung, Tonkurve, Key / Fill / Rim, Hintergrund;
-AD-038 §18 LD-2, Abschnitt `"lookdev"`) sollen beim Öffnen einer gespeicherten Szene nicht neu
+AD-038 §18 LD-2, Abschnitt `"lookdev"`; die P3-Effekte als `"effects"`, optional gelesen, AD-039 §2.1) sollen beim Öffnen einer gespeicherten Szene nicht neu
 eingestellt werden müssen. Der Zustand reist in der Szenendatei unter dem optionalen Schlüssel `"view"`
 (neben `objects`, `rig`, ...): `core.serialization` ignoriert unbekannte Schlüssel, das Core-Format
 (Version, Vertrag) bleibt unverändert, und ältere Builds lesen die Datei weiter (sie verlieren nur die Ansicht).
@@ -97,7 +97,28 @@ def _capture_lookdev(state) -> dict:
     out["background"] = [list(colour) for colour in state.background]
     for light in ("key", "fill", "rim"):
         out[light] = {name: getattr(getattr(state, light), name) for name in LOOKDEV_LIGHT_VALUES}
+    out["effects"] = state.effects.as_dict()  # AD-039 §2.1: the P3 effect switches
     return out
+
+
+def _lookdev_effects(raw, current):
+    """AD-039 §2.1: `view.lookdev.effects` (name -> bool), read optionally: a file from LD-2 has none (the effects stay
+    as they are), an unknown effect name is ignored, a bad value or shape keeps the current effects - it never skips
+    the studio."""
+    if raw is None:
+        return current
+    from viewport.lookdev_optics import LookdevEffects
+
+    if not isinstance(raw, dict):
+        return current
+    values = {}
+    for name, value in raw.items():
+        if name not in LookdevEffects.names():
+            continue
+        if not isinstance(value, bool):
+            return current
+        values[name] = value
+    return dataclasses.replace(current, **values)
 
 
 def _capture_morph(app) -> dict:
@@ -339,5 +360,6 @@ def _apply_lookdev(app, raw: dict) -> None:
                 raise ValueError(f"{light} {name} out of range: {number}")
             light_values[name] = number
         values[light] = StudioLight(**light_values)
+    values["effects"] = _lookdev_effects(raw.get("effects"), app._lookdev.studio.effects)
     state = dataclasses.replace(STUDIOS[preset], **values)  # an unknown tone curve raises ValueError here
     app._set_lookdev_studio_state(state)

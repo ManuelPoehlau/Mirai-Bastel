@@ -211,3 +211,47 @@ def test_an_older_build_drops_view_sections_it_does_not_know_but_never_the_mater
     saved = json.loads(again.read_text())
     assert "future" not in saved["view"] and "lookdev" in saved["view"]
     assert saved["version"] == LOOK_FORMAT_VERSION and saved["objects"][0]["look"]["preset"] == "Creature Skin"
+
+
+# -- AD-039 §2.1 (T1-7): `view.lookdev.effects` ------------------------------------------------------------------------
+
+def test_the_effects_survive_save_and_load(app, tmp_path):
+    app.set_lookdev_studio_preset("Soft Studio")
+    assert app.set_lookdev_effect("shadow", False)
+    path = tmp_path / "effects.mirai.json"
+    assert app.save_scene_file(path)
+    assert json.loads(path.read_text())["view"]["lookdev"]["effects"] == {"shadow": False}
+    fresh = _load(path)
+    assert fresh.lookdev.studio == app.lookdev.studio and not fresh.lookdev.studio.effects.shadow
+
+
+def test_an_ld2_file_without_effects_keeps_its_studio_and_the_current_effects(app):
+    """A file written before S1 has no `effects`: its studio is read (the section is not skipped), the effects stay."""
+    app.set_lookdev_studio_preset("Dramatic")
+    app.set_lookdev_light("key", azimuth=-20.0)
+    data = view_state.capture(app)
+    del data["lookdev"]["effects"]
+    other = _app()
+    other.set_lookdev_effect("shadow", False)
+    assert view_state.apply(other, data) == []
+    assert other.lookdev.studio.preset == "Dramatic" and other.lookdev.studio.key.azimuth == -20.0
+    assert not other.lookdev.studio.effects.shadow
+
+
+@pytest.mark.parametrize("effects", ["on", ["shadow"], {"shadow": 1}, {"shadow": "yes"}, {"shadow": None}])
+def test_a_bad_effects_value_skips_only_the_effects(app, effects):
+    app.set_lookdev_studio_preset("Neutral Inspection")
+    app.set_lookdev_studio(exposure=0.5)
+    data = view_state.capture(app)
+    data["lookdev"]["effects"] = effects
+    other = _app()
+    other.set_lookdev_effect("shadow", False)
+    assert view_state.apply(other, data) == []
+    assert other.lookdev.studio.preset == "Neutral Inspection" and other.lookdev.studio.exposure == 0.5
+    assert not other.lookdev.studio.effects.shadow  # the effects stay as they were
+
+
+def test_an_unknown_effect_name_is_ignored(app):
+    data = view_state.capture(app)
+    data["lookdev"]["effects"] = {"shadow": False, "raytracing": True}
+    assert view_state.apply(app, data) == [] and not app.lookdev.studio.effects.shadow

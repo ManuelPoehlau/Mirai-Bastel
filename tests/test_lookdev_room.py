@@ -235,3 +235,38 @@ def test_the_frame_dict_is_resolved_again_only_on_a_studio_change(app):
     assert followed is not frame and vp.lookdev_frame() is followed
     app.camera.set_view(0.9, 0.1)
     assert vp.lookdev_frame() is not followed  # "Licht folgt Kamera": a camera move resolves it again
+
+
+# -- AD-039 §2.1: the effect switches (view state of the room) ---------------------------------------------------------
+
+def test_set_lookdev_effect_is_view_state_and_a_preset_keeps_the_effects(app):
+    history = len(app.history)
+    assert app.lookdev.studio.effects.shadow  # S1 is built: on by default
+    assert app.set_lookdev_effect("shadow", False) and not app.lookdev.studio.effects.shadow
+    assert not app.set_lookdev_effect("shadow", False)  # unchanged
+    assert app.set_lookdev_studio_preset("Dramatic") and not app.lookdev.studio.effects.shadow
+    assert len(app.history) == history  # no Undo
+    assert not app.set_lookdev_effect("bloom", True) and "no effect 'bloom'" in app.status_message
+    app.open_lookdev()
+    app.update_viewport(1 / 60)
+    assert app.set_lookdev_effect("shadow", True) and app.viewport.lookdev_state.effects.shadow  # headless: at once
+    assert app.lookdev_effect_reasons() == {"shadow": None}
+
+
+def test_an_effect_that_needs_a_compile_keeps_the_frame_before(app, monkeypatch):
+    app.open_lookdev()
+    app.update_viewport(1 / 60)
+    assert app.viewport.shading == "lookdev"
+    shown = app.viewport.lookdev_state
+    compiled = []
+    monkeypatch.setattr(app.viewport, "lookdev_prepare_needed", lambda: True)
+    monkeypatch.setattr(app.viewport, "prepare_lookdev", lambda: compiled.append(1) or 1)
+    assert app.set_lookdev_effect("shadow", not shown.effects.shadow)
+    assert app.status_message == "LookDev: Shader werden vorbereitet …"
+    app.set_lookdev_studio(exposure=1.0)  # another change waits for the compile too
+    app.update_viewport(1 / 60)
+    assert not compiled and app.viewport.shading == "lookdev" and app.viewport.lookdev_state is shown
+    app.update_viewport(1 / 60)
+    assert compiled == [1] and app.viewport.lookdev_state == app.lookdev.studio
+    assert app.viewport.lookdev_state.effects.shadow != shown.effects.shadow
+    assert app.viewport.lookdev_state.exposure == 1.0

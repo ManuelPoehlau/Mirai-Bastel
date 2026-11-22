@@ -9,6 +9,10 @@ pattern (parity: `tests/test_gl_lookdev_parity.py`, `tests/test_lookdev_optics.p
 - `ld_diffuse` / `ld_specular`: the three lights (key, fill, rim) as the shader evaluates them.
 - `frame_uniforms(state, camera)`: one dict per frame for the skin pass and the eye's LOOKDEV variant, the pattern of
   `Viewport.light_uniforms()`. `state` is a `LookdevState` (the session studio, `mirai.lookdev_presets`).
+- P3 (AD-039 §2.1): `LookdevEffects` (the effect switches, view state in `LookdevState.effects`), `effective` /
+  `effect_reasons` (dependencies and missing features); S1 (§4): `shadow_frustum`, `shadow_view_projection`,
+  `shadow_spacing`, `pcf_visibility` and `ld_key_shadowed`, the twins of `lookdev_shaders.LD_SHADOW_SRC` and the
+  `SHADOW` block.
 
 World frame as `light_rig` (Y up, the model faces +Z, azimuth from +Z toward +X). The studio's frame turns by
 `rotation` degrees about Y; with "Licht folgt Kamera" it is the camera's (`right`, `up`, `-forward`), as
@@ -18,13 +22,13 @@ World frame as `light_rig` (Y up, the model faces +Z, azimuth from +Z toward +X)
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field, fields
 
 import numpy as np
 
 from . import eye_optics as eo
 from .light_rig import kelvin_to_rgb
-from .lookdev_shaders import MAX_STUDIO, TONE_CURVES
+from .lookdev_shaders import MAX_STUDIO, SHADOW_DEPTH_BIAS, TONE_CURVES
 
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 SH_DIRECTIONS = 4096
@@ -54,6 +58,55 @@ def tone(c, curve: str = "reinhard") -> np.ndarray:
 def lookdev_output(c, exposure: float = 1.0, curve: str = "reinhard") -> np.ndarray:
     """Linear rgb -> the display value: exposure (a factor, 2^EV), the tone curve, sRGB encode - once per pixel."""
     return srgb_encode(tone(np.maximum(np.asarray(c, dtype=np.float64), 0.0) * exposure, curve))
+
+
+# -- P3 effect switches (AD-039 §2.1) -----------------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class LookdevEffects:
+    """The P3 effects' on/off (view state, `view.lookdev.effects`, no Undo). A field joins with its slice, default on
+    once the slice is built (AD-039 §2.1). `shadow` (S1): the key's shadow map on skin and teeth."""
+
+    shadow: bool = True
+
+    @classmethod
+    def names(cls) -> tuple[str, ...]:
+        return tuple(f.name for f in fields(cls))
+
+    def as_dict(self) -> dict[str, bool]:
+        return {name: bool(getattr(self, name)) for name in self.names()}
+
+
+#: The feature each effect needs (`viewport.lookdev_features`), and the effect it depends on (AD-039 §2.1 / §2.2).
+EFFECT_FEATURE = {"shadow": "depth_texture"}
+EFFECT_NEEDS: dict[str, str] = {}
+#: The panel's reasons for a greyed effect (German, the panel's language).
+FEATURE_REASON = {"depth_texture": "Tiefentextur fehlt", "sampler_objects": "Sampler-Objekte fehlen",
+                  "cube_rgba16f": "Cube-Ziel fehlt", "texture_units": "zu wenige Textureinheiten"}
+EFFECT_LABEL = {"shadow": "Schatten"}
+
+
+def effect_reasons(effects: LookdevEffects, features=None) -> dict[str, str | None]:
+    """Why each effect is not available (None = it is): a missing feature (`features` a `FeatureReport` or None before
+    the check ran: nothing known missing yet), or the effect it needs being off ("braucht Schatten")."""
+    out: dict[str, str | None] = {}
+    for name in LookdevEffects.names():
+        feature = EFFECT_FEATURE.get(name)
+        reason = None
+        if feature is not None and features is not None and not getattr(features, feature, True):
+            reason = FEATURE_REASON.get(feature, feature)
+        needed = EFFECT_NEEDS.get(name)
+        if reason is None and needed is not None and (not getattr(effects, needed) or out.get(needed)):
+            reason = f"braucht {EFFECT_LABEL.get(needed, needed)}"
+        out[name] = reason
+    return out
+
+
+def effective(effects: LookdevEffects, features=None) -> LookdevEffects:
+    """The effects a frame draws: switched on, their feature present, the effect they need effective too."""
+    reasons = effect_reasons(effects, features)
+    return LookdevEffects(**{name: bool(getattr(effects, name)) and reasons[name] is None
+                             for name in LookdevEffects.names()})
 
 
 # -- the parametric studio ---------------------------------------------------------------------------------------------
@@ -196,8 +249,8 @@ class StudioLight:
 @dataclass(frozen=True)
 class LookdevState:
     """The session studio (AD-038 §6): preset name, rotation (degrees about the vertical), environment intensity,
-    exposure (EV), tone curve, the three lights, "Licht folgt Kamera", the studio content and the background (display
-    values as picked: solid = bottom == top)."""
+    exposure (EV), tone curve, the three lights, "Licht folgt Kamera", the studio content, the background (display
+    values as picked: solid = bottom == top) and the P3 effect switches (AD-039 §2.1)."""
 
     preset: str
     studio: Studio
@@ -211,6 +264,8 @@ class LookdevState:
     follow_camera: bool = False
     background: tuple[tuple[float, float, float], tuple[float, float, float]] = ((0.1, 0.1, 0.11), (0.1, 0.1, 0.11))
     background_gradient: bool = False
+    #: AD-039 §2.1: the P3 effect switches (part of the state, so the frame cache key covers them).
+    effects: LookdevEffects = field(default_factory=LookdevEffects)
 
     def __post_init__(self) -> None:
         if self.tone_curve not in TONE_CURVES:
@@ -305,6 +360,132 @@ def ld_specular(n, v, roughness, f0, values: dict) -> np.ndarray:
     for d, c, s in zip(values["u_ld_light_dir"], values["u_ld_light_color"], values["u_ld_light_size"]):
         out = out + np.asarray(c) * direct_specular(n, v, d, ld_lobe(roughness, s), f0)[..., None]
     return out
+
+
+# -- S1: the key shadow map (AD-039 §4) --------------------------------------------------------------------------------
+
+#: `PROVISIONAL` fixed setting (AD-039 §4, Q-P3-3; P3-0 run 2 on the reference PC): 1024² DEPTH_COMPONENT24, 3 x 3
+#: bilinear-compare fetches. LD-3's knobs later.
+SHADOW_SIZE = 1024
+SHADOW_GRID = 3
+#: The caster bounds grow by this (AD-039 §4 "Frustum"), so a pose inside the margin does not move the map.
+SHADOW_MARGIN = 0.15
+#: The fetch spacing in texels: 1 + this x the key's size ("Weichheit", 0 .. 1) - PCF with a light-size radius.
+SHADOW_SOFTNESS_TEXELS = 8.0
+#: The normal offset of the lookup point, in texels of the map (world units = this x the texel's width).
+SHADOW_NORMAL_OFFSET_TEXELS = 1.5
+#: The depth pass's slope-scaled polygon offset (factor, units), as LD-0.
+SHADOW_POLYGON_OFFSET = (2.0, 4.0)
+
+
+def _box_corners(lo, hi) -> np.ndarray:
+    lo, hi = np.asarray(lo, dtype=np.float64), np.asarray(hi, dtype=np.float64)
+    return np.array([[(lo, hi)[i][0], (lo, hi)[j][1], (lo, hi)[k][2]] for i in (0, 1) for j in (0, 1) for k in (0, 1)])
+
+
+def shadow_frustum(boxes, margin: float = SHADOW_MARGIN) -> tuple[tuple[float, float, float], float]:
+    """(centre, radius) of the sphere the key's orthographic map covers: the union of the casters' world bounds, grown
+    by `margin`. `boxes` = [(object min, object max, model 4x4 column-major or None)]; each box's 8 corners go through
+    its model matrix. Recomputed only when the caster set or a layout changes (not per pose step), so a drag does not
+    move the map."""
+    corners = []
+    for lo, hi, model in boxes:
+        c = _box_corners(lo, hi)
+        if model is not None and len(model) == 16:
+            m = np.asarray(model, dtype=np.float64).reshape(4, 4).T  # column-major -> row-major
+            c = c @ m[:3, :3].T + m[:3, 3]
+        corners.append(c)
+    if not corners:
+        return (0.0, 0.0, 0.0), 1.0
+    points = np.concatenate(corners)
+    lo, hi = points.min(axis=0), points.max(axis=0)
+    centre = (lo + hi) / 2.0
+    radius = float(np.linalg.norm(hi - lo)) / 2.0 * (1.0 + margin)
+    return tuple(float(v) for v in centre), max(radius, 1e-6)
+
+
+def shadow_view_projection(key_dir, centre, radius: float) -> list[float]:
+    """Column-major 4x4: the key's orthographic view-projection over the sphere (`centre`, `radius`): looking along
+    -`key_dir` from `centre + radius * key_dir`, the box ±radius wide and 2 radius deep (depth 0 at the sphere's
+    light side). The light frame is `key_frame` (the key's own area frame)."""
+    k = np.asarray(key_dir, dtype=np.float64)
+    k = k / np.linalg.norm(k)
+    up, right = key_frame(k)
+    eye = np.asarray(centre, dtype=np.float64) + k * radius
+    view = np.identity(4)
+    view[0, :3], view[1, :3], view[2, :3] = right, up, k  # the camera looks along -k
+    view[:3, 3] = -view[:3, :3] @ eye
+    near, far = 0.0, 2.0 * radius
+    proj = np.identity(4)
+    proj[0, 0] = proj[1, 1] = 1.0 / radius
+    proj[2, 2] = -2.0 / (far - near)
+    proj[2, 3] = -(far + near) / (far - near)
+    return [float(v) for v in (proj @ view).T.reshape(-1)]
+
+
+def shadow_spacing(size: float, map_size: int = SHADOW_SIZE) -> float:
+    """The PCF fetch spacing in map UV units for the key's size ("Weichheit")."""
+    return (1.0 + SHADOW_SOFTNESS_TEXELS * max(0.0, float(size))) / float(map_size)
+
+
+def shadow_uniforms(view_projection, radius: float, key_size: float, map_size: int = SHADOW_SIZE) -> dict:
+    """The `LD_SHADOW_SRC` uniforms (the sampler's unit is set by the pass)."""
+    texel_world = 2.0 * radius / float(map_size)
+    return {"u_ld_shadow_vp": tuple(float(v) for v in view_projection),
+            "u_ld_shadow_radius": shadow_spacing(key_size, map_size),
+            "u_ld_shadow_offset": SHADOW_NORMAL_OFFSET_TEXELS * texel_world}
+
+
+def shadow_coords(p, n, view_projection, offset: float) -> np.ndarray:
+    """GLSL `ld_key_visibility`'s map point (..., 3): (u, v, depth) in [0, 1] of the normal-offset world point."""
+    p = np.asarray(p, dtype=np.float64) + np.asarray(n, dtype=np.float64) * offset
+    m = np.asarray(view_projection, dtype=np.float64).reshape(4, 4).T
+    clip = p @ m[:3, :3].T + m[:3, 3]
+    return clip * 0.5 + 0.5  # orthographic: w = 1
+
+
+def compare_bilinear(depth: np.ndarray, uv, ref) -> np.ndarray:
+    """A `sampler2DShadow` fetch with GL_LINEAR, CLAMP_TO_BORDER (border depth 1.0) and LEQUAL: the four nearest
+    texels compared (ref <= stored) and blended bilinearly. `depth` (h, w) row 0 = v 0."""
+    uv = np.asarray(uv, dtype=np.float64)
+    h, w = depth.shape
+    x = uv[..., 0] * w - 0.5
+    y = uv[..., 1] * h - 0.5
+    x0, y0 = np.floor(x).astype(int), np.floor(y).astype(int)
+    fx, fy = x - x0, y - y0
+    ref = np.asarray(ref, dtype=np.float64)
+
+    def lit(ix, iy):
+        inside = (ix >= 0) & (ix < w) & (iy >= 0) & (iy < h)
+        stored = np.where(inside, depth[np.clip(iy, 0, h - 1), np.clip(ix, 0, w - 1)], 1.0)
+        return (ref <= stored).astype(np.float64)
+
+    return ((lit(x0, y0) * (1 - fx) + lit(x0 + 1, y0) * fx) * (1 - fy)
+            + (lit(x0, y0 + 1) * (1 - fx) + lit(x0 + 1, y0 + 1) * fx) * fy)
+
+
+def pcf_visibility(depth: np.ndarray, sp, spacing: float) -> np.ndarray:
+    """GLSL `ld_key_visibility` from the map point `sp` (..., 3): 3 x 3 bilinear-compare fetches `spacing` (UV) apart,
+    averaged; a point outside the map's box is lit."""
+    sp = np.asarray(sp, dtype=np.float64)
+    ref = sp[..., 2] - SHADOW_DEPTH_BIAS
+    total = 0.0
+    for y in (-1, 0, 1):
+        for x in (-1, 0, 1):
+            total = total + compare_bilinear(depth, sp[..., :2] + np.array([x, y]) * spacing, ref)
+    inside = np.all((sp >= 0.0) & (sp <= 1.0), axis=-1)
+    return np.where(inside, total / 9.0, 1.0)
+
+
+def ld_key_shadowed(albedo, n, v, wrap, roughness, f0, values: dict, visibility) -> np.ndarray:
+    """The skin's light with the `SHADOW` block (AD-039 §4): albedo x `ld_diffuse` + `ld_specular`, minus
+    (1 - visibility) x the key's own diffuse and specular term - the key scaled by its visibility."""
+    albedo = np.asarray(albedo, dtype=np.float64)
+    colour = albedo * ld_diffuse(n, wrap, values) + ld_specular(n, v, roughness, f0, values)
+    d, c, s = values["u_ld_light_dir"][0], values["u_ld_light_color"][0], values["u_ld_light_size"][0]
+    key = np.asarray(c) * (albedo * ld_wrap(np.sum(np.asarray(n) * np.asarray(d), -1), wrap)
+                           + direct_specular(n, v, d, ld_lobe(roughness, s), f0)[..., None])
+    return colour - (1.0 - np.asarray(visibility, dtype=np.float64))[..., None] * key
 
 
 # -- the frame dict ----------------------------------------------------------------------------------------------------

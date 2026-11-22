@@ -1,4 +1,4 @@
-"""The LookDev panel (AD-038 §7, proposal §3): Studio, Licht, Material, Ansicht, Status.
+"""The LookDev panel (AD-038 §7, proposal §3): Studio, Effekte (AD-039 §2.1), Licht, Material, Ansicht, Status.
 
 Drawn while `app.lookdev_open` (like the Paint Room's window); the logic is `gui.lookdev_model` (headless). Every value
 goes through `Application`. Studio and lights are view state (saved in `view.lookdev`, no Undo): a held slider changes
@@ -61,6 +61,16 @@ class LookdevPanel:
             changed, colour = imgui.color_edit3("oben", list(top), imgui.ColorEditFlags_.no_inputs)
             if changed:
                 app.set_lookdev_studio(background=(bottom, tuple(colour)))
+        # -- Effekte (AD-039 §2.1): one checkbox per built P3 effect; a greyed one says why in its tooltip
+        imgui.separator_text(lm.EFFECTS_TITLE)
+        for effect in st.effects:
+            imgui.begin_disabled(not effect.available)
+            changed, on = imgui.checkbox(effect.label, effect.on and effect.available)
+            imgui.end_disabled()
+            if changed:
+                app.set_lookdev_effect(effect.name, on)
+            if imgui.is_item_hovered(imgui.HoveredFlags_.allow_when_disabled):
+                imgui.set_tooltip(effect.hint if effect.available else effect.reason)
         # -- Licht
         imgui.separator_text("Licht")
         for row in st.lights:

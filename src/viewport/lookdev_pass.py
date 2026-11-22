@@ -6,7 +6,11 @@
   `GLRenderStore.bind_triangle_uvs` (unit 3, C1) and the albedo through `GLRenderStore.texture_binding` (unit 4). No
   other face data, no store buffer is written (I-10).
 - Programs: `lookdev_shaders.skin_sources` (the textured Worklight VS + GS, so the depth contract I-1 holds by
-  construction), compiled lazily, cached by `(ALBEDO_MAP, ENV_SPEC)` - at most 4.
+  construction), compiled lazily, cached by the tuple of their defines in a fixed order `(ALBEDO_MAP, ENV_SPEC,
+  SHADOW)` (AD-039 §2.3 point 4).
+- P3 (AD-039): the pass owns the effects' resources - S1's `KeyShadow` (created on the first frame with the shadow on,
+  deleted in `release()`) - and the context's `FeatureReport` (`lookdev_features.probe`, once, the first time an effect
+  needs it). With the shadow the map is bound on unit 6 for the draw and unbound after it.
 - GL state as `EyePass`: during the draw depth test and write on, blend off, back faces culled, polygon offset (1, 1)
   when `store.polygon_offset`; afterwards offset, cull and depth test off, units 3 / 4 unbound, unit 0 active, program
   stopped. No FBO, no float target (the RGBA8 default framebuffer).
@@ -21,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .lookdev_shaders import ALBEDO_UNIT, UV_UNIT, background_sources, skin_sources
+from .lookdev_shaders import ALBEDO_UNIT, SHADOW_UNIT, UV_UNIT, background_sources, skin_sources
 
 _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
@@ -75,25 +79,52 @@ class LookdevPass:
         self.env_spec = True
         #: Test hook / probe: how many objects the last frames drew.
         self.draws = 0
+        #: AD-039 §2.2: this context's P3 features (None until an effect first needs them).
+        self.features = None
+        #: The status lines of missing features not yet shown (the viewport hands them to the app once).
+        self.notices: list[str] = []
+        #: AD-039 §4: the key's shadow map (S1), created on the first frame with the shadow on.
+        self.shadow = None
 
-    def program(self, albedo_map: bool, env_spec: bool):
+    def feature_report(self):
+        """The context's P3 features, probed once (AD-039 §2.2); a missing one queues its status line once."""
+        if self.features is None:
+            from . import lookdev_features
+
+            self.features = lookdev_features.probe()
+            self.notices.extend(self.features.status_lines())
+        return self.features
+
+    def key_shadow(self):
+        """S1's map (AD-039 §4), created on first use."""
+        if self.shadow is None:
+            from .lookdev_shadow import KeyShadow
+
+            self.shadow = KeyShadow()
+        return self.shadow
+
+    def program(self, albedo_map: bool, env_spec: bool, shadow: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore, _register_sampler_buffer_uniform
 
-        key = (bool(albedo_map), bool(env_spec))
+        key = (bool(albedo_map), bool(env_spec), bool(shadow))
         program = self.programs.get(key)
         if program is None:
             _register_sampler_buffer_uniform()
+            if shadow:
+                from .lookdev_shadow import register_shadow_sampler_uniform
+
+                register_shadow_sampler_uniform()
             attributes = GLRenderStore.program().attributes
             locations = {"position": attributes["position"]["location"], "normal": attributes["normal"]["location"]}
             program = ShaderProgram(*(Shader(src, kind) for src, kind in skin_sources(locations, *key)))
             self.programs[key] = program
         return program
 
-    def draw(self, render_mesh, look: LookDraw, frame: dict) -> bool:
+    def draw(self, render_mesh, look: LookDraw, frame: dict, shadow=None) -> bool:
         """Draw one object. False = nothing drawn (no VertexList / camera yet, or a Ghost): the caller draws it with the
-        Worklight."""
+        Worklight. `shadow` (AD-039 S1): a rendered `KeyShadow` the object receives (the `SHADOW` variant), else None."""
         from pyglet import gl
 
         from .gl_render_store import GLRenderStore
@@ -108,7 +139,8 @@ class LookdevPass:
         if uvs and texture is None:
             GLRenderStore.unbind_triangle_uvs(UV_UNIT)
             uvs = False
-        program = self.program(texture is not None, self.env_spec)
+        shadow = shadow if shadow is not None and shadow.ready else None
+        program = self.program(texture is not None, self.env_spec, shadow is not None)
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw
         model = store.uniform_data("model_uniforms")
@@ -121,6 +153,9 @@ class LookdevPass:
             gl.glActiveTexture(gl.GL_TEXTURE0 + ALBEDO_UNIT)
             gl.glBindTexture(*texture)
             gl.glActiveTexture(gl.GL_TEXTURE0)
+        if shadow is not None:
+            set_uniforms(program, shadow.uniforms(frame["u_ld_light_size"][0]), active)
+            shadow.bind(SHADOW_UNIT)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthMask(gl.GL_TRUE)
         gl.glDisable(gl.GL_BLEND)
@@ -141,6 +176,8 @@ class LookdevPass:
             gl.glActiveTexture(gl.GL_TEXTURE0)
         if uvs:
             GLRenderStore.unbind_triangle_uvs(UV_UNIT)
+        if shadow is not None:
+            shadow.unbind(SHADOW_UNIT)
         program.stop()
         self.draws += 1
         return True
@@ -180,6 +217,9 @@ class LookdevPass:
         for program in self.programs.values():
             program.delete()
         self.programs.clear()
+        if self.shadow is not None:
+            self.shadow.release()
+            self.shadow = None
         if self._background is not None:
             import ctypes
 

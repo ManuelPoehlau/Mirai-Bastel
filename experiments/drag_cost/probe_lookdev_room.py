@@ -1,9 +1,11 @@
-"""LookDev room probe (AD-038 LD-1, 2026-11-19): what the built room costs in the real app frame.
+"""LookDev room probe (AD-038 LD-1, 2026-11-19; AD-039 P3 rows since S1, 2026-11-22): what the built room costs in the
+real app frame.
 
 Usage (from the repo root; opens a hidden pyglet window):
     python experiments/drag_cost/probe_lookdev_room.py                 # 1024x768, 30 rounds
     python experiments/drag_cost/probe_lookdev_room.py --draws 5       # container: a function check
     python experiments/drag_cost/probe_lookdev_room.py --size 1920 1080
+    python experiments/drag_cost/probe_lookdev_room.py --effects none  # the LD-1 rows only
 
 Set the NVIDIA driver to "prefer maximum performance" first (as for `probe_lookdev.py`). The scene is
 `scenes/Gollum_Head_05.mirai.json` as saved (the painted head is the edit object, two eyes; teeth and the older head
@@ -16,6 +18,17 @@ unmeasured rounds:
 - `lookdev`    the room open (`Application.open_lookdev`, Portrait, every object Neutral): background, the LookDev
                skin pass with the paint composite, the eyes' LOOKDEV variant in the "full" tier;
 - `modelling after`  the room closed again: the Worklight frame must be what it was (LookDev leaves nothing behind).
+
+P3 rows (AD-039 §4 / §11.2; `--effects` names the built effects to measure, default all, `none` = no P3 row). The room
+is entered with the effects of `--effects` on; then every row switches the effects it needs (a switch that compiles
+runs its preparation frames first, unmeasured):
+- `lookdev`                every P3 effect off: the M1 frame (compare with the LD-1 room run);
+- `lookdev +shadow`        S1, a still pose: the key's map renders once, the lookup every frame;
+- `lookdev +shadow drag`   S1 with a morph weight step on the head every frame (the map re-renders each frame: a slow
+                           morph or pose drag). The edit object gets a probe target in memory (the file is not touched);
+- `... drag flush`         the same with `KeyShadow.flush` (a `glFlush` after the depth pass, before the background);
+- `... drag pingpong`      the same with two maps used alternately (`KeyShadow(maps=2)`);
+each with `KeyShadow.renders` over the row's frames (warm-up included: every frame for a drag, 0 for a still pose).
 
 Entering (first in the process, then once more):
 - `open_lookdev` wall ms (display values, sync_views, the LookDraws);
@@ -56,10 +69,23 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--size", type=int, nargs=2, default=(1024, 768), metavar=("W", "H"))
     parser.add_argument("--draws", type=int, default=DEFAULT_DRAWS)
     parser.add_argument("--surfaces", default=",".join(SURFACES))
+    parser.add_argument("--effects", default=None,
+                        help="AD-039: the P3 effects to measure, comma separated, or 'none' (default: every built one)")
     args = parser.parse_args(argv)
     args.surfaces = tuple(s for s in args.surfaces.split(",") if s)
     if args.draws < 1 or not set(args.surfaces) <= set(SURFACES):
         parser.error("--draws >= 1, --surfaces from cage,subd1")
+    from viewport.lookdev_optics import LookdevEffects
+
+    built = LookdevEffects.names()
+    if args.effects is None:
+        args.effects = built
+    elif args.effects == "none":
+        args.effects = ()
+    else:
+        args.effects = tuple(e for e in args.effects.split(",") if e)
+        if not set(args.effects) <= set(built):
+            parser.error(f"--effects from {','.join(built)} or none")
     return args
 
 
@@ -74,9 +100,12 @@ def frame(window, size, query, app) -> tuple[float, float]:
     return timed_frame(window, size, query, app.viewport.render)
 
 
-def rounds(window, size, query, app, draws: int) -> tuple[list[float], list[float]]:
+def rounds(window, size, query, app, draws: int, step=None) -> tuple[list[float], list[float]]:
+    """`draws` measured frames after `WARMUP_ROUNDS`; `step(i)` (a drag) runs before each frame's tick."""
     gpu, wall = [], []
     for i in range(WARMUP_ROUNDS + draws):
+        if step is not None:
+            step(i)
         app.update_viewport(0.0)
         g, w = frame(window, size, query, app)
         if i >= WARMUP_ROUNDS:
@@ -87,11 +116,86 @@ def rounds(window, size, query, app, draws: int) -> tuple[list[float], list[floa
 
 def row(name: str, gpu, wall, floor: float | None = None) -> str:
     p50, lo, hi = summary(gpu)
-    text = (f"  {name:<16} GPU p50 {p50:7.2f} ms (min {lo:6.2f}, max {hi:6.2f})  {100.0 * p50 / FRAME_BUDGET_MS:5.1f} % "
+    text = (f"  {name:<29} GPU p50 {p50:7.2f} ms (min {lo:6.2f}, max {hi:6.2f})  {100.0 * p50 / FRAME_BUDGET_MS:5.1f} % "
             f"of 33.3 ms   CPU p50 {statistics.median(wall):7.2f} ms")
     if floor is not None:
         text += f"   vs modelling {p50 - floor:+6.2f} ms"
     return text
+
+
+# -- AD-039 P3 rows -------------------------------------------------------------------------------------------------
+
+def set_effects(window, size, query, app, names) -> None:
+    """Switch the P3 effects to exactly `names`; a switch that compiles runs its preparation frames (not measured)."""
+    from viewport.lookdev_optics import LookdevEffects
+
+    for name in LookdevEffects.names():
+        app.set_lookdev_effect(name, name in names)
+    for _ in range(10):
+        if not app.lookdev.preparing:
+            break
+        app.update_viewport(0.0)
+        frame(window, size, query, app)
+    assert not app.lookdev.preparing and app.viewport.lookdev_state.effects == app.lookdev.studio.effects
+
+
+def shadow_renders(app) -> int:
+    passes = app.viewport._lookdev_pass
+    shadow = passes.shadow if passes is not None else None
+    return shadow.renders if shadow is not None else 0
+
+
+def probe_target(app):
+    """A morph target on the edit object, in memory only: the lower half drops and comes forward (a jaw); the drag rows
+    step its weight every frame."""
+    from core import PointLayerInfo
+
+    mesh = app.scene.edit_object.mesh
+    lid = mesh.add_point_layer(PointLayerInfo("probe drag (AD-039 S1)"))
+    ys = [mesh.vertex_position(v)[1] for v in mesh.all_vertex_ids()]
+    low, high = min(ys), max(ys)
+    mid = (low + high) / 2.0
+    for v in mesh.all_vertex_ids():
+        y = mesh.vertex_position(v)[1]
+        if y < mid:
+            s = (mid - y) / (mid - low)
+            mesh.set_layer_value(lid, v, (0.0, -0.08 * s * (high - low), 0.05 * s * (high - low)))
+    return lid
+
+
+def p3_rows(window, size, query, app, draws: int, effects, floor: float, lid) -> list[str]:
+    """AD-039 §11.2: `lookdev` (every effect off), one row per effect, the shadow's drag rows."""
+    from viewport.lookdev_shadow import KeyShadow
+
+    lines = []
+
+    def measured(name, names, step=None, shadow=None):
+        set_effects(window, size, query, app, names)
+        passes = app.viewport.lookdev_pass
+        if shadow is not None:
+            if passes.shadow is not None:
+                passes.shadow.release()
+            passes.shadow = shadow
+        before = shadow_renders(app)
+        gpu, wall = rounds(window, size, query, app, draws, step)
+        lines.append(row(name, gpu, wall, floor) + f"   KeyShadow.renders {shadow_renders(app) - before} in "
+                     f"{WARMUP_ROUNDS + draws} frames")
+
+    measured("lookdev", ())
+    for name in effects:
+        measured(f"lookdev +{name}", (name,))
+    if "shadow" in effects:
+        def step(i):
+            app.set_morph_weight(20 + (i % 2) * 20 + (i // 2) % 3, lid, quiet=True)
+
+        for suffix, shadow in (("", KeyShadow()), (" flush", KeyShadow(flush=True)),
+                               (" pingpong", KeyShadow(maps=2))):
+            measured(f"lookdev +shadow drag{suffix}", ("shadow",), step, shadow)
+        app.set_morph_weight(0, lid, quiet=True)
+        app.viewport.lookdev_pass.shadow.release()
+        app.viewport.lookdev_pass.shadow = None
+    set_effects(window, size, query, app, tuple(effects))
+    return lines
 
 
 def enter(window, size, query, app, label: str) -> list[str]:
@@ -141,12 +245,20 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     window, app = build_app(tuple(args.size))
     size = window.get_framebuffer_size()
-    print(f"LookDev room probe (AD-038 LD-1, 2026-11-19), {size[0]}x{size[1]}, {args.draws} rounds after "
+    print(f"LookDev room probe (AD-038 LD-1, 2026-11-19; AD-039 S1), {size[0]}x{size[1]}, {args.draws} rounds after "
           f"{WARMUP_ROUNDS}")
     for line in machine_info(gl.gl_info.get_version_string(), gl.gl_info.get_renderer()):
         print(line)
     print(f"Source: {source_state()}")
     print(f"Scene: {SCENE.name}, edit object {app.scene.edit_object.name!r}, view framed (3/4)")
+    print(f"P3 effects (AD-039): {', '.join(args.effects) or 'none'}")
+    lid = probe_target(app) if "shadow" in args.effects else None
+    for name in args.effects:  # the room opens with these on; every other built effect off
+        app.set_lookdev_effect(name, True)
+    from viewport.lookdev_optics import LookdevEffects
+
+    for name in set(LookdevEffects.names()) - set(args.effects):
+        app.set_lookdev_effect(name, False)
     query = gl.GLuint()
     gl.glGenQueries(1, ctypes.byref(query))
     first = True
@@ -164,7 +276,9 @@ def main(argv=None) -> int:
         entry = enter(window, size, query, app, "entry (first in this process)" if first else "entry")
         first = False
         gpu, wall = rounds(window, size, query, app, args.draws)
-        lines.append(row("lookdev", gpu, wall, floor))
+        lines.append(row("lookdev (as entered)" if args.effects else "lookdev", gpu, wall, floor))
+        if args.effects:
+            lines += p3_rows(window, size, query, app, args.draws, args.effects, floor, lid)
         app.close_lookdev()
         gpu, wall = rounds(window, size, query, app, args.draws)
         lines.append(row("modelling after", gpu, wall, floor))

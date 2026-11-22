@@ -1211,12 +1211,15 @@ class Application:
         self._objects.sync_views()  # the LookDraws, no selection tint (LD-D3)
         self._set_hovered(None)
         viewport = self.viewport
+        if viewport is not None:
+            viewport.set_lookdev_effects(self._lookdev.studio.effects)  # AD-039: the effects its programs need
         if viewport is not None and viewport.lookdev_prepare_needed():
             self._lookdev.preparing = self.LOOKDEV_PREPARE_FRAMES
             self._set_status("LookDev: Shader werden vorbereitet …")
         else:
             self._apply_lookdev()
             self._set_status(self.lookdev_status())
+            self._lookdev_feature_status()
         return True
 
     def _prepare_lookdev_step(self) -> None:
@@ -1228,10 +1231,19 @@ class Application:
         if room.preparing > 0:
             return
         start = time.perf_counter()
+        if self.viewport is not None:
+            self.viewport.set_lookdev_effects(room.studio.effects)
         count = self.viewport.prepare_lookdev() if self.viewport is not None else 0
         seconds = time.perf_counter() - start
         self._apply_lookdev()
         self._set_status(f"{self.lookdev_status()} ({count} Shader in {seconds:.1f} s vorbereitet)")
+        self._lookdev_feature_status()
+
+    def _lookdev_feature_status(self) -> None:
+        """AD-039 §2.2: a P3 feature this GL context lacks turns its effect off; its status line is shown once."""
+        notices = self.viewport.take_lookdev_notices() if self.viewport is not None else []
+        if notices:
+            self._set_status(" · ".join(notices))
 
     def close_lookdev(self, status: str | None = "LookDev closed") -> bool:
         """Close the room: the display values as they were when it opened, the Worklight again. The session studio and
@@ -1261,6 +1273,8 @@ class Application:
         room = self._lookdev
         if room.open and not room.preparing:
             viewport.set_shading("lookdev", room.studio)
+        elif room.open and viewport.shading == "lookdev":
+            pass  # AD-039 §2.1: an effect's programs compile behind the status line; the frame before stays until then
         elif viewport.shading != "worklight":
             viewport.set_shading("worklight")
 
@@ -1272,7 +1286,10 @@ class Application:
         self._apply_lookdev()
 
     def set_lookdev_studio_preset(self, name: str) -> bool:
-        """Pick a studio preset (`mirai.lookdev_presets`): lights, environment, exposure, background. True = changed."""
+        """Pick a studio preset (`mirai.lookdev_presets`): lights, environment, exposure, background; the P3 effect
+        switches stay. True = changed."""
+        import dataclasses
+
         from . import lookdev_presets
 
         try:
@@ -1280,6 +1297,8 @@ class Application:
         except ValueError as exc:
             self._set_status(str(exc))
             return False
+        # AD-039 §2.1: the effect switches are the room's, not the preset's - a preset switch keeps them
+        state = dataclasses.replace(state, effects=self._lookdev.studio.effects)
         if state == self._lookdev.studio:
             return False
         self._set_lookdev_studio_state(state)
@@ -1346,6 +1365,43 @@ class Application:
             return False
         self._set_lookdev_studio_state(dataclasses.replace(state, **{which: light}))
         return True
+
+    def set_lookdev_effect(self, name: str, on: bool) -> bool:
+        """AD-039 §2.1: switch one P3 effect (`viewport.lookdev_optics.LookdevEffects`: `shadow`). View state like the
+        studio (no Undo, saved in `view.lookdev.effects`); the panel's block „Effekte“. A switch whose programs are not
+        compiled yet takes the I-10 path (AD-038 §17.2): the frame before stays one frame with the status line, then
+        the compile. True = changed."""
+        import dataclasses
+
+        from viewport.lookdev_optics import LookdevEffects
+
+        if name not in LookdevEffects.names():
+            self._set_status(f"LookDev: no effect {name!r} ({', '.join(LookdevEffects.names())})")
+            return False
+        room = self._lookdev
+        state = room.studio
+        wanted = dataclasses.replace(state, effects=dataclasses.replace(state.effects, **{name: bool(on)}))
+        if wanted == state:
+            return False
+        room.studio = wanted
+        viewport = self.viewport
+        if room.open and not room.preparing and viewport is not None:
+            viewport.set_lookdev_effects(wanted.effects)
+            if viewport.lookdev_prepare_needed():
+                room.preparing = self.LOOKDEV_PREPARE_FRAMES
+                self._set_status("LookDev: Shader werden vorbereitet …")
+                return True
+        self._apply_lookdev()
+        self._lookdev_feature_status()
+        return True
+
+    def lookdev_effect_reasons(self) -> dict:
+        """Why each P3 effect is greyed in the panel (None = available): a feature this context lacks, or the effect
+        it needs being off (`lookdev_optics.effect_reasons`)."""
+        from viewport.lookdev_optics import effect_reasons
+
+        features = self.viewport.lookdev_features() if self.viewport is not None else None
+        return effect_reasons(self._lookdev.studio.effects, features)
 
     def lookdev_material_targets(self) -> list:
         """The objects a material change applies to: the selected objects in mode `4` (eyes and References left out -
