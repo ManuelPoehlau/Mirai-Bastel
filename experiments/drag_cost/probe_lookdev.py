@@ -95,7 +95,10 @@ SHADOW_SIZE = 2048
 CUBE_SIZE = 128
 CUBE_SAMPLES = (64, 256)
 # P3-0 (`--p3`, AD-039): the candidates for the P3 fixed settings, measured before any `src/` change.
-CUBE_UNIT = 5         # the P3 environment cube (not a unit the skin pass or the store's face data use while it draws)
+# The P3 environment cube. Not 5: the stand-in UV binding (`bind_triangle_uvs` -> `_flush_face_data`) binds the
+# store's face corners there as a buffer texture, and a cube on the same unit failed on the reference PC with
+# GL_OUT_OF_MEMORY at the draw (run 2, 2026-11-22, with 270 MiB VRAM free). 8 is bound by nothing else.
+CUBE_UNIT = 8
 SHADOW_RAW_UNIT = 7   # the shadow map's raw depth (a second sampler object, no compare) for the thickness
 P3_DEPTH_SIZES = (512, 1024, 2048)
 P3_SHADOW = ((1024, 2), (1024, 3), (1024, 4), (2048, 3), (2048, 4))   # (map size, PCF grid: grid^2 fetches)

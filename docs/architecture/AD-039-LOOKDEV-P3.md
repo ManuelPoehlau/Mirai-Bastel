@@ -235,13 +235,18 @@ region materials; roughness, normal and translucency maps.
 | 1–2 | — | iris, noise (V11) |
 | 3 | triangle UVs (V5) | key table |
 | 4 | albedo (V5) | sclera map |
-| 5 | environment cube (S5) | — |
+| 5 | — (the Worklight's face corners; kept free, see below) | — |
 | 6 | key shadow map, compare sampler (S1) | key shadow map (S2) |
 | 7 | key shadow map, raw depth through a sampler object (S4) | — |
-| 8 | triangle material slots (S6) | — |
+| 8 | environment cube (S5) | — |
 | 9–11 | roughness, normal, translucency maps (S7) | — |
+| 12 | triangle material slots (S6) | — |
 
   Every pass unbinds what it bound, including sampler objects (`glBindSampler(unit, 0)`), and leaves unit 0 active.
+  **No unit carries two texture targets at a draw.** P3-0 run 2 [M-RPC]: the stand-in's cube on unit 5, where the
+  stand-in UV binding (`_flush_face_data`) had bound the face corners as a buffer texture, failed every draw with
+  `GL_OUT_OF_MEMORY` while 270 MiB were free. That is why the cube is on 8 [H: the two targets on one unit; run 3
+  checks it]. The production `bind_triangle_uvs` binds unit 3 only, but the rule holds for every slice.
 
 - **Off-screen passes:** the shadow depth pass and the cube prefilter render through their own FBO **inside**
   `_render_lookdev`. They save and restore what `EyePass.iris_table` saves (V12): draw / read framebuffer, viewport,
@@ -264,7 +269,7 @@ wall 11.6 / 12.6 ms (AD-038 §17.4).
 
 | Slice | Per-frame GPU target, framed 1024×768 | Event cost (not per frame) |
 |---|---|---|
-| S1 shadow lookup | ≤ +1.5 ms | depth pass ≤ 3 ms at SubD 1 (a pose, morph or key change) |
+| S1 shadow lookup | ≤ +2 ms (P3-0 run 2: +1.1 / +1.8 ms) | depth pass ≤ 3 ms at SubD 1 (a pose, morph or key change) |
 | S2 eye shadow | ≤ +0.5 ms | — |
 | S3 dual lobe | ≤ +0.5 ms | — |
 | S4 thickness | ≤ +0.5 ms | — |
@@ -653,7 +658,36 @@ python experiments\drag_cost\probe_lookdev.py --p3 | Tee-Object -FilePath lookde
   (`GL_NVX_gpu_memory_info`), drops a failing row and continues, and creates only the maps the chosen rows need.
 - **(p3a) the depth pass alone is about 1 ms** (0.7–1.2 ms p50) at 512² to 2048², with or without the eyes, cage and
   SubD 1. This is far under S1's 3 ms target. LD-0's 9–11.5 ms were not the pass (C6).
-- Run 2 is open.
+- **Run 2 (Manu, 2026-11-22) [M-RPC]:** complete except the cube rows (`cube env`, `cube dual env`, `p3 all`): they
+  failed with `GL_OUT_OF_MEMORY` at every draw while 270 MiB VRAM were free. The cause is a stand-in unit clash (§2.4),
+  not memory; the probe's cube moved to unit 8. GPU ms over `ld frame`, framed 1024×768 unless named:
+
+| Row | cage | SubD 1 | close, SubD 1 |
+|---|---:|---:|---:|
+| depth pass alone, 1024², skin (absolute) | 0.51 | 0.49 | — |
+| `shadow 1k x4` | +0.76 | +1.04 | +1.76 |
+| `shadow 1k x9` | +1.11 | +1.78 | +2.76 |
+| `shadow 1k x16` | +1.17 | +1.94 | +3.08 |
+| `shadow 2k x9` | +1.09 | +1.81 | +2.78 |
+| `drag 1k x9` (map every frame) | +7.35 | +9.86 | +10.75 |
+| `thick 1k x9` | +0.50 | +0.85 | +1.35 |
+| `dual direct` | +0.21 | +0.06 | +0.16 |
+| `dual env` | +0.91 | +1.35 | +2.52 |
+
+  What it decides:
+  - **S1's fixed setting: 1024², 3 × 3 fetches (Q-P3-3 as proposed).** The lookup does not depend on the map size
+    (1k = 2k), so 2048² only costs memory (16 MiB instead of 4). The framed head with the shadow takes 2.8 / 4.0 ms
+    GPU, 8 / 12 % of 33.3 ms. S1's lookup target in §2.5 becomes ≤ +2 ms (SubD 1 measured +1.78 ms).
+  - **The drag is the open cost.** Re-rendering the map every frame costs 7–10 ms more than the lookup, although the
+    pass alone takes 0.5 ms [H: the driver waits when the depth texture is written and then sampled in the same frame].
+    The frame stays at 9–12 ms GPU and 24–26 ms wall, under 33.3 ms, but tight. S1 measures it in production
+    (`lookdev +shadow drag`) and, if it holds, tries in this order: render the map first in the frame with a flush
+    before the background; then two maps used alternately (ping-pong).
+  - **S3: the second lobe on the lights only** (+0.06–0.29 ms). On the analytic studio a second lobe costs +0.9–4 ms,
+    so the environment keeps one lobe until S5's cube is measured (`cube dual env`).
+  - **S4 is cheap:** `thick 1k x9` costs less than the shadow row alone (+0.50 against +1.11), a compiler difference
+    between the two variants [H]. S4's production row decides.
+  - **Run 3** measures only the cube rows: `--p3 --p3-no-depth --p3-rows "cube env,cube dual env,p3 all"`.
 
 ### 11.2 After each slice
 
