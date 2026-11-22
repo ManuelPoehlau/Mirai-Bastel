@@ -646,6 +646,15 @@ python experiments\drag_cost\probe_lookdev.py --p3 | Tee-Object -FilePath lookde
 - The results go into `experiments/drag_cost/RESULTS_LOOKDEV_P3_REFERENCE_PC_<date>.md`.
 - The agent fills the AD's table from the text Manu hands over.
 
+**Reference PC, run 1 (Manu, 2026-11-22) [M-RPC]:**
+[`RESULTS_LOOKDEV_P3_REFERENCE_PC_2026-11-22.md`](../../experiments/drag_cost/RESULTS_LOOKDEV_P3_REFERENCE_PC_2026-11-22.md).
+- **Aborted after (p3a):** `GL_OUT_OF_MEMORY` at the first frame rows, in both processes. The failing row is unknown,
+  because the probe printed sections only at their end. The probe now prints each line at once, shows the free VRAM
+  (`GL_NVX_gpu_memory_info`), drops a failing row and continues, and creates only the maps the chosen rows need.
+- **(p3a) the depth pass alone is about 1 ms** (0.7–1.2 ms p50) at 512² to 2048², with or without the eyes, cage and
+  SubD 1. This is far under S1's 3 ms target. LD-0's 9–11.5 ms were not the pass (C6).
+- Run 2 is open.
+
 ### 11.2 After each slice
 
 `probe_lookdev_room.py` gains `--effects <list>` (S1) and one row per built effect: `lookdev` (all off), `lookdev

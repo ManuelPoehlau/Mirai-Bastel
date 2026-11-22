@@ -156,3 +156,11 @@ def test_p3_variants_add_their_defines_and_only_those():
         probe.skin_sources(locations, True, True, False, thickness=True)
     with pytest.raises(ValueError):
         probe.skin_sources(locations, True, True, True, dual=3)
+
+
+def test_p3_row_filter_and_depth_switch():
+    args = probe.parse_args(["--p3", "--p3-rows", "shadow 1k x9, cube env", "--p3-no-depth"])
+    assert args.p3_rows == ["shadow 1k x9", "cube env"] and args.p3_no_depth is True
+    assert probe.parse_args([]).p3_rows == [] and probe.parse_args([]).p3_no_depth is False
+    with pytest.raises(SystemExit):
+        probe.parse_args(["--p3", "--p3-rows", "no such row"])

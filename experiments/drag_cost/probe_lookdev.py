@@ -506,6 +506,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--p3", action="store_true",
                    help="P3-0 only (AD-039): the depth pass alone and the P3 frame rows (shadow sizes / PCF, thickness, "
                         "dual lobe, environment cube) instead of the LD-0 rows and extras")
+    p.add_argument("--p3-rows", default="", help="with --p3: only these frame rows (comma separated names of "
+                   "`p3_rows()`, e.g. 'shadow 1k x9,cube env'; `ld frame` always runs)")
+    p.add_argument("--p3-no-depth", action="store_true", help="with --p3: skip the depth-pass-alone section")
     return p
 
 
@@ -519,6 +522,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     args.surfaces = [s.strip() for s in args.surfaces.split(",") if s.strip()]
     args.views = [s.strip() for s in args.views.split(",") if s.strip()]
     args.skip = {s.strip() for s in args.skip.split(",") if s.strip()}
+    args.p3_rows = [r.strip() for r in args.p3_rows.split(",") if r.strip()]
+    if set(args.p3_rows) - {name for name, _o in p3_rows()}:
+        parser.error(f"--p3-rows: from {', '.join(name for name, _o in p3_rows())}")
     if not args.sizes or not args.surfaces or any(s not in SURFACES for s in args.surfaces):
         parser.error(f"--surfaces: from {', '.join(SURFACES)}")
     if not args.views or any(v not in VIEWS for v in args.views):
@@ -1167,8 +1173,10 @@ def timed_frame(window, size, query, draw) -> tuple[float, float]:
     gl.glFinish()
     start = time.perf_counter()
     gl.glBeginQuery(gl.GL_TIME_ELAPSED, query)
-    draw()
-    gl.glEndQuery(gl.GL_TIME_ELAPSED)
+    try:
+        draw()
+    finally:
+        gl.glEndQuery(gl.GL_TIME_ELAPSED)  # also when the draw raised: the next row's query must be able to begin
     gl.glFinish()
     wall = (time.perf_counter() - start) * 1e3
     value = ctypes.c_uint64()
@@ -1595,7 +1603,7 @@ def measure_depth_passes(window, app, frames: "Frames", args, size) -> list[str]
 
     query = gl.GLuint()
     gl.glGenQueries(1, ctypes.byref(query))
-    lines = ["(p3) depth pass alone (re-rendered only on a pose / geometry / key change; a drag pays it per frame), "
+    lines = [f"(p3) {vram_free()} at the start", "(p3) depth pass alone (re-rendered only on a pose / geometry / key change; a drag pays it per frame), "
              f"GL_TIME_ELAPSED ms, {args.draws} rounds after {WARMUP_ROUNDS}"]
     lines.append(f"      {'surface':<8} {'map':>6} {'casters':<12} {'GPU p50':>9} {'min':>8} {'max':>8}")
     key = frames.values["u_light_dir"][0]
@@ -1622,30 +1630,65 @@ def measure_depth_passes(window, app, frames: "Frames", args, size) -> list[str]
     return lines
 
 
-def measure_p3(window, app, frames: "Frames", args, size) -> list[str]:
-    """P3-0 (AD-039): the P3 frame rows (`p3_rows`) per surface and view, against `ld frame`."""
+def vram_free() -> str:
+    """Free video memory as the driver reports it (`GL_NVX_gpu_memory_info`, NVIDIA; diagnostics only), else a note."""
     from pyglet import gl
 
+    try:
+        if not gl.gl_info.have_extension("GL_NVX_gpu_memory_info"):
+            return "VRAM free: not reported by the driver"
+        free, total = gl.GLint(), gl.GLint()
+        gl.glGetIntegerv(0x9049, ctypes.byref(free))   # GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX (KiB)
+        gl.glGetIntegerv(0x9047, ctypes.byref(total))  # GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX (KiB)
+        return f"VRAM free {free.value / 1024:.0f} of {total.value / 1024:.0f} MiB"
+    except Exception as exc:  # a diagnostic must never end the run
+        return f"VRAM free: query failed ({exc})"
+
+
+def drain_gl_errors() -> list[int]:
+    """Read every pending GL error (raw call, no pyglet errcheck) - after a failed row the next row starts clean."""
+    from pyglet import gl
+
+    errors = []
+    for _ in range(16):
+        code = gl.glGetError()
+        if not code:
+            break
+        errors.append(int(code))
+    return errors
+
+
+def measure_p3(window, app, frames: "Frames", args, size):
+    """P3-0 (AD-039): the P3 frame rows (`p3_rows`) per surface and view, against `ld frame`. A generator: every line
+    is printed as soon as it exists, so a failure late in the run keeps what came before. A row that raises a GL error
+    (e.g. out of memory) is reported with the free VRAM and dropped for the rest of the run; the others continue."""
+    from pyglet import gl
+    from pyglet.gl.lib import GLException
+
     window.switch_to()
-    lines: list[str] = []
+    yield f"(p3) before the cube: {vram_free()}"
     raw_tex, levels, raw_ms = build_env_cube(corner_fix=False)
     raw_spread = corner_spread(raw_tex, levels)
     gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(raw_tex)))
     cube_tex, levels, cube_ms = build_env_cube(corner_fix=True)
     fixed_spread = corner_spread(cube_tex, levels)
-    lines.append(f"(p3) environment cube {CUBE_SIZE}^2 RGBA16F, mips to 2^2, the analytic studio prefiltered on the "
-                 f"GPU ({P3_CUBE_SAMPLES} samples): {cube_ms:.2f} ms with the corner fix, {raw_ms:.2f} ms without")
-    lines.append("      corner spread per level (largest relative difference of the 3 texels at a cube corner), "
-                 "without / with the fix: " + ", ".join(f"L{i} {a:.3f}/{b:.3f}"
-                                                          for i, (a, b) in enumerate(zip(raw_spread, fixed_spread))))
-    lines.append("")
-    targets = {s: DepthTarget(frames.locations, s) for s in sorted({s for s, _g in P3_SHADOW})}
-    rows = p3_rows()
+    yield (f"(p3) environment cube {CUBE_SIZE}^2 RGBA16F, mips to 2^2, the analytic studio prefiltered on the "
+           f"GPU ({P3_CUBE_SAMPLES} samples): {cube_ms:.2f} ms with the corner fix, {raw_ms:.2f} ms without")
+    yield ("      corner spread per level (largest relative difference of the 3 texels at a cube corner), "
+           "without / with the fix: " + ", ".join(f"L{i} {a:.3f}/{b:.3f}"
+                                                    for i, (a, b) in enumerate(zip(raw_spread, fixed_spread))))
+    rows = [(name, options) for name, options in p3_rows() if not args.p3_rows or name in args.p3_rows
+            or name == "ld frame"]
+    sizes = sorted({options["shadow_size"] for _name, options in rows if options.get("shadow")})
+    targets = {s: DepthTarget(frames.locations, s) for s in sizes}  # only the maps the chosen rows read
+    yield f"      after the cube and the shadow maps ({', '.join(f'{s}^2' for s in targets) or 'none'}): {vram_free()}"
+    yield ""
+    failed: dict[str, str] = {}
     query = gl.GLuint()
     gl.glGenQueries(1, ctypes.byref(query))
-    lines.append(f"(p3) frame rows, {size[0]}x{size[1]}, {args.draws} rounds after {WARMUP_ROUNDS}; GL_TIME_ELAPSED ms; "
-                 "'vs ld' = minus `ld frame` (the effect's own cost); shadow rows read a map rendered once (a still "
-                 "pose), `drag` renders it every frame; casters: skin only (the eyes receive, AD-039 S2)")
+    yield (f"(p3) frame rows, {size[0]}x{size[1]}, {args.draws} rounds after {WARMUP_ROUNDS}; GL_TIME_ELAPSED ms; "
+           "'vs ld' = minus `ld frame` (the effect's own cost); shadow rows read a map rendered once (a still "
+           "pose), `drag` renders it every frame; casters: skin only (the eyes receive, AD-039 S2)")
     verdict = []
     key = frames.values["u_light_dir"][0]
 
@@ -1662,53 +1705,92 @@ def measure_p3(window, app, frames: "Frames", args, size) -> list[str]:
 
     for surface in args.surfaces:
         if not set_surface(app, surface):
-            lines.append(f"  [{surface}] not available (SubD refused): skipped")
+            yield f"  [{surface}] not available (SubD refused): skipped"
             continue
         for view in args.views:
             set_view(app, view)
             for target in targets.values():
                 target.render(frames.drawn(), key, app, eyes=False)
+            yield f"  [{surface} / {view}] {vram_free()}"
             gpu = {name: [] for name, _o in rows}
             cpu = {name: [] for name, _o in rows}
             images = {}
             for round_ in range(WARMUP_ROUNDS + args.draws):
                 for name, options in rows:
-                    ms, wall = timed_frame(window, size, query.value, lambda: draw(options))
+                    if name in failed:
+                        continue
+                    try:
+                        ms, wall = timed_frame(window, size, query.value, lambda: draw(options))
+                    except GLException as exc:
+                        errors = drain_gl_errors()
+                        frames_reset()
+                        failed[name] = f"{exc}".strip()
+                        yield (f"      {name}: GL error in round {round_} ({failed[name]}; then pending "
+                               f"{[hex(e) for e in errors]}); {vram_free()}; the row is dropped")
+                        continue
                     if round_ >= WARMUP_ROUNDS:
                         gpu[name].append(ms)
                         cpu[name].append(wall)
                     if round_ == WARMUP_ROUNDS + args.draws - 1 and name in ("ld frame", rows[1][0], "p3 all"):
                         images[name] = read_rgb(size)
-            lines.append(f"  [{surface} / {view}]")
-            lines.append(f"      {'row':<13} {'GPU p50':>9} {'min':>8} {'max':>8} {'vs ld':>9} {'CPU p50':>9}")
-            floor = statistics.median(gpu["ld frame"])
+            yield f"      {'row':<13} {'GPU p50':>9} {'min':>8} {'max':>8} {'vs ld':>9} {'CPU p50':>9}"
+            floor = statistics.median(gpu["ld frame"]) if gpu["ld frame"] else None
             for name, _o in rows:
-                lines.append(format_row(name, gpu[name], cpu[name], None if name == "ld frame" else floor))
-            base = images["ld frame"].astype(int).sum(axis=2)
-            for name in (rows[1][0], "p3 all"):
-                diff = base - images[name].astype(int).sum(axis=2)
-                lines.append(f"      {name}: {int((diff > 24).sum())} px darker, {int((diff < -24).sum())} px brighter "
-                             f"than `ld frame` (of {size[0] * size[1]})")
-            if size == (1024, 768) and view == "framed":
+                if not gpu[name]:
+                    yield f"      {name:<13} failed: {failed.get(name, 'no rounds')}"
+                    continue
+                yield format_row(name, gpu[name], cpu[name], None if name == "ld frame" else floor)
+            if "ld frame" in images:
+                base = images["ld frame"].astype(int).sum(axis=2)
+                for name in (rows[1][0], "p3 all"):
+                    if name in images and name != "ld frame":
+                        diff = base - images[name].astype(int).sum(axis=2)
+                        yield (f"      {name}: {int((diff > 24).sum())} px darker, {int((diff < -24).sum())} px "
+                               f"brighter than `ld frame` (of {size[0] * size[1]})")
+            if size == (1024, 768) and view == "framed" and gpu.get("p3 all"):
                 total = statistics.median(gpu["p3 all"])
                 verdict.append(f"  LD-D10 [{surface} / framed / 1024x768]: `p3 all` {total:.2f} ms GPU = "
-                               f"{100.0 * total / FRAME_BUDGET_MS:.0f} % of the 33.3 ms frame; `ld frame` {floor:.2f} ms")
+                               f"{100.0 * total / FRAME_BUDGET_MS:.0f} % of the 33.3 ms frame; `ld frame` "
+                               f"{floor:.2f} ms")
             if args.png:
                 for name, rgb in images.items():
                     write_png(args.png, f"p3_{name.replace(' ', '_')}_{surface}_{view}_{size[0]}x{size[1]}", rgb)
     gl.glDeleteQueries(1, ctypes.byref(query))
     states = ", ".join(f"{s}^2 {'complete' if t.complete else f'INCOMPLETE 0x{t.status:04X}'}"
                        for s, t in targets.items())
-    lines.append(f"  depth FBOs: {states}; the raw-depth sampler object for `thick`")
+    yield f"  depth FBOs: {states}; the raw-depth sampler object for `thick`"
+    if failed:
+        yield "  failed rows: " + "; ".join(f"{name} ({why})" for name, why in failed.items())
     for target in targets.values():
         target.release()
     gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(cube_tex)))
     if verdict:
-        lines.append("")
-        lines.extend(verdict)
-        lines.append("  (stand-ins: the production effects follow AD-039; the reference PC decides each slice's fixed "
-                     "setting)")
-    return lines
+        yield ""
+        yield from verdict
+        yield ("  (stand-ins: the production effects follow AD-039; the reference PC decides each slice's fixed "
+               "setting)")
+
+
+def frames_reset() -> None:
+    """After a draw raised mid-frame: the state a row may have left (program, units 0-7 incl. sampler objects, cube
+    seamless filtering, the timer query ended by `timed_frame`)."""
+    from pyglet import gl
+
+    drain_gl_errors()
+    gl.glUseProgram(0)
+    gl.glBindVertexArray(0)
+    for unit in range(8):
+        gl.glBindSampler(unit, 0)
+        gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
+        for target in (gl.GL_TEXTURE_2D, gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_BUFFER):
+            gl.glBindTexture(target, 0)
+    gl.glActiveTexture(gl.GL_TEXTURE0)
+    for cap in (gl.GL_TEXTURE_CUBE_MAP_SEAMLESS, gl.GL_DEPTH_TEST, gl.GL_CULL_FACE, gl.GL_POLYGON_OFFSET_FILL,
+                gl.GL_BLEND):
+        gl.glDisable(cap)
+    gl.glDepthMask(gl.GL_TRUE)
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)
+    drain_gl_errors()
 
 
 def measure_compile(app, locations) -> list[str]:
@@ -1794,11 +1876,11 @@ def run_single(args) -> int:
     print()
     if args.p3:
         frames = Frames(window, app, values, depth=False)
-        for line in measure_depth_passes(window, app, frames, args, size):
-            print(line)
+        for line in ([] if args.p3_no_depth else measure_depth_passes(window, app, frames, args, size)):
+            print(line, flush=True)
         print()
         for line in measure_p3(window, app, frames, args, size):
-            print(line)
+            print(line, flush=True)
         return _finish(window)
     extras = set() if args.no_extras else set(EXTRAS) - args.skip
     frames = Frames(window, app, values, depth="depth" in extras)
@@ -1846,6 +1928,10 @@ def main(argv: list[str] | None = None) -> int:
             command += ["--png", args.png]
         if args.p3:
             command.append("--p3")
+            if args.p3_rows:
+                command += ["--p3-rows", ",".join(args.p3_rows)]
+            if args.p3_no_depth:
+                command.append("--p3-no-depth")
         sys.stdout.flush()
         status = max(status, subprocess.call(command))
         print(flush=True)
