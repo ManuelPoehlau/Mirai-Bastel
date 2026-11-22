@@ -844,7 +844,7 @@ Not touched: `src/core/`, `serialization.py`, the Worklight programs, `GLRenderS
 |---|---|---|---|
 | S1-1 | §4 uniforms `u_ld_shadow`, `u_ld_shadow_vp`, `u_ld_shadow_radius` | plus `u_ld_shadow_offset` (the normal offset in world units = 1.5 texels of the effective map) and `u_ld_shadow_scale` (the rendered part of the map, §16.6); `ld_key_visibility(p, n, l)` is split into `ld_shadow_coord` and `ld_shadow_pcf` (the parity test reads the latter) | the offset needs the map's texel size in the world, which depends on the frustum and the softness |
 | S1-2 | §4 "the fetch spacing is scaled by the key's `size`" | **revised 2026-11-22 (§16.6):** the fetches stay one texel apart; the key's size sets the map's **effective resolution** (`shadow_resolution`: 1024 / (1 + 5 × size), at least 96 texels; Portrait 0.10 → 683, 0.26 → 445, Soft Studio 0.35 → 372, 1.0 → 171), rendered into that corner of the 1024² map | spreading 9 fetches up to 9 texels apart dipped under curved skin and drew stepped copies of the edge (Manu's practical test) |
-| S1-3 | §4 bias "polygon offset (2, 4) plus a normal offset of about one texel" | plus a constant compare bias of 0.0005 of the map's depth (2 r), a **receiver-plane bias** per fetch (the depth slope from the screen derivatives of the map point, clamped at 10) and a **fade toward the terminator** (the map's answer weighted by smoothstep(0, 0.3, n·l)); the normal offset is 1.5 texels of the effective map | T1-2 (no acne, also with a soft key at a grazing 20°) holds with them; the fade keeps a wrapped diffuse from being cut along the cage's facets (§16.6) |
+| S1-3 | §4 bias "polygon offset (2, 4) plus a normal offset of about one texel" | plus a constant compare bias of 0.0005 of the map's depth (2 r) and a **receiver-plane bias** per fetch (the depth slope from the screen derivatives of the map point, clamped at 10); the normal offset (1.5 texels of the effective map) is the normal **projected off the key** (sideways only); the key's **wrap excess** looks the map up at the point lifted 4 offsets out along the normal (a second 3 × 3 lookup) | T1-2 (no acne, also with a soft key at a grazing 20°); the lifted wrap lookup keeps a convex surface's wrap past the terminator while a crease's cast shadow stays dark (§16.6, §16.7) |
 | S1-4 | §4 frustum "recomputed only when the caster set or a layout_revision changes" | also on a placement change (a caster's model matrix) | a moved object must stay inside its map; a placement is not a pose step, so a drag does not swim |
 | S1-5 | §2.1 "refused like the studio setters while an interaction owns the input" | no refusal (C10) | the studio setters refuse nothing in the code |
 | S1-6 | (not stated) | pyglet 2.1 has no setter for `sampler2DShadow`: `lookdev_shadow.register_shadow_sampler_uniform` reuses the `sampler2D` entry | the `_register_sampler_buffer_uniform` pattern |
@@ -858,7 +858,7 @@ New tests:
 | # | Test | Where |
 |---|---|---|
 | T1-1 | a box over a plane: the footprint (CPU ray cast through the key) is dark (> 99 % of its pixels darker by > 40/255, black with no fill / environment), the rest of the plane unchanged (> 99.9 % within 1/255), the box's lit top without acne | `tests/test_gl_lookdev_shadow.py` |
-| T1-2 | a lit sphere, key at 60° and 20°, hard and soft (size 0 / 0.3 / 1.0): ≤ 0.1 % of the pixels with n·l > 0.1 darkened; the penumbra widens with the size while a dark core stays | same |
+| T1-2 | a lit sphere, key at 60° and 20°, hard and soft (size 0 / 0.3 / 1.0): ≤ 0.1 % of the pixels with n·l > 0.1 darkened; the penumbra widens with the size while a dark core stays; §16.7: a cast shadow under a 15° key with a wide wrap is black (99th percentile ≤ 2/255; fails on `af4fe14` with 17), the wrap past a sphere's terminator is kept (median ≥ 95 %) | same |
 | T1-3 | `KeyShadow.renders`: viewport level (camera orbit, exposure / key intensity / colour / size, a capture frame +0; key azimuth, rotation, a caster vertex +1 each; the frustum unchanged by a geometry step) and in the app on the head (a morph weight, a jaw pose step, the key azimuth, the rotation +1 each, once; orbit, exposure, key intensity / size, capture +0; the frustum unchanged by morph and pose; „Licht folgt Kamera“ + orbit +1) | same |
 | T1-4 | `PINNED_SKIN_SOURCES_SHA256` holds with the shadow off; no `KeyShadow`, no probe; the frame equals one drawn with a program from the M1 call; with nothing between key and surface the shadow changes no pixel. One-off: old (`ae19de5`) vs new code on Gollum, pixel-identical (§16.4) | `tests/test_lookdev_shaders.py`, `tests/test_gl_lookdev_shadow.py` |
 | T1-5 | a frame that renders the map (with an eye, scissor on, a foreign polygon offset) leaves draw / read framebuffer, viewport, program, VAO, caps, depth mask / function, polygon offset, units 0–7 (2D, buffer, sampler) as found | `tests/test_gl_lookdev_shadow.py` |
@@ -873,7 +873,7 @@ Runs (GL files each in their own process under xvfb):
 
 | Command | Result |
 |---|---|
-| `xvfb-run -a python -m pytest tests/test_gl_lookdev_shadow.py -q` | 12 passed; 16 after §16.6 |
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_shadow.py -q` | 12 passed; 16 after §16.6; 18 after §16.7 |
 | `xvfb-run -a python -m pytest tests/test_gl_eye_pass.py -q` | 126 passed (all three eye pins incl. the Worklight pin unchanged) |
 | `xvfb-run -a python -m pytest tests/test_gl_face_data_layout.py` / `test_gl_shading.py` / `test_gl_texture.py` (E1) | 16 / 19 / 10 passed |
 | `xvfb-run -a python -m pytest tests/test_gl_gpu_picking.py` / `test_gl_morph_picking.py` (E15) | 37 / 16 passed |
@@ -956,7 +956,31 @@ Fixed with the established techniques, without more fetches:
   model's falloff decides, not the facets. Tried and rejected: a normal offset growing toward grazing light (×4 and ×10
   of 1.5 texels) – it leaked light in streaks into real cast shadows (the nasolabial fold).
 
-Result (container, Dramatic, Creature Skin, framed): SubD 1 clean at 0 / 0.26 / 1.0 (hard, soft, very soft); on the
+(The terminator fade described here was replaced in §16.7.) Result (container, Dramatic, Creature Skin, framed): SubD 1 clean at 0 / 0.26 / 1.0 (hard, soft, very soft); on the
 cage a few thin lines remain along the coarse facets at the neck and the inner eye corner – the cage's own polygons,
 which SubD smooths. Pixel cost: unchanged 9 fetches plus two screen derivatives; a soft key's depth pass is cheaper
 (fewer texels). Tests: T1-2 with soft keys, a penumbra test, the parity with slopes and a half-rendered map (§16.3).
+
+### 16.7 Revision 2 (2026-11-22): „in der Nase und um die Mundwinkel entstehen sehr helle Ränder um die Schatten herum“
+
+Manu's screenshot: Dramatic, Creature Skin, key „Weichheit“ 0.03, the face from the front. Reproduced; a CPU ray cast
+against the drawn SubD surface sorted the cause out (`probe`-style script in the session, not committed):
+- The rims are **not** a bias leak: with every bias at 0 they stay, and no pixel gets brighter than without the shadow.
+- The rim pixels lie in real cast shadows (175 of 175 occluded, the occluder a median 17 texels ≈ 7 mm away: the far
+  wall of the nostril, the lip at the mouth corner), mostly at n·l < 0.3.
+- §16.6's terminator fade lifted the map's answer there for the key's **whole** term - its Lambert part, its wrap and
+  its highlight (strong at grazing light through Fresnel). Creature Skin's wide wrap made the rim bright.
+
+Fix: the fade is gone. The key's Lambert part and highlight take the map's answer as it is. Only the **wrap's excess**
+past Lambert (the light the organic presets carry past the terminator) looks the map up at a point lifted
+`SHADOW_WRAP_LIFT` = 4 normal offsets (≈ 6 texels) out along the normal: on a convex surface that point leaves the
+surface's own shadow just past the terminator (the cage-facet problem §16.6 solved with the fade), in a crease it stays
+in the far wall's shadow. The normal offset is also projected off the key (sideways only), so a surface facing the key
+right behind an occluder's edge is not moved toward the light. Cost: a second 3 × 3 lookup (18 compare fetches per
+pixel; P3-0 measured 9 → 16 fetches at +0.06–0.3 ms on the reference PC) - the room probe's `lookdev +shadow` row
+measures it. Result: nostrils and mouth corners without rims; the nose now also shadows the cheek's wrap (the fade had
+cancelled that cast shadow); the cage at softness 0.26 as clean as with the fade, the neck calmer.
+
+Tests: `test_a_cast_shadow_at_a_grazing_key_keeps_the_wrap_and_the_highlight_dark` (fails on `af4fe14`),
+`test_the_wrap_past_a_convex_terminator_is_not_cut`, the twins (`shadow_coords(..., key_dir, lift)`,
+`ld_key_shadowed(..., wrap_visibility)`).

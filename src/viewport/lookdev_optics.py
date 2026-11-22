@@ -11,7 +11,7 @@ pattern (parity: `tests/test_gl_lookdev_parity.py`, `tests/test_lookdev_optics.p
   `Viewport.light_uniforms()`. `state` is a `LookdevState` (the session studio, `mirai.lookdev_presets`).
 - P3 (AD-039 §2.1): `LookdevEffects` (the effect switches, view state in `LookdevState.effects`), `effective` /
   `effect_reasons` (dependencies and missing features); S1 (§4): `shadow_frustum`, `shadow_view_projection`,
-  `shadow_resolution`, `pcf_visibility`, `terminator_fade` and `ld_key_shadowed`, the twins of
+  `shadow_resolution`, `shadow_coords`, `pcf_visibility` and `ld_key_shadowed`, the twins of
   `lookdev_shaders.LD_SHADOW_SRC` and the `SHADOW` block.
 
 World frame as `light_rig` (Y up, the model faces +Z, azimuth from +Z toward +X). The studio's frame turns by
@@ -28,7 +28,7 @@ import numpy as np
 
 from . import eye_optics as eo
 from .light_rig import kelvin_to_rgb
-from .lookdev_shaders import MAX_STUDIO, SHADOW_DEPTH_BIAS, SHADOW_TERMINATOR_FADE, TONE_CURVES
+from .lookdev_shaders import MAX_STUDIO, SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT, TONE_CURVES
 
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 SH_DIRECTIONS = 4096
@@ -442,9 +442,16 @@ def shadow_uniforms(view_projection, radius: float, key_size: float, map_size: i
             "u_ld_shadow_offset": SHADOW_NORMAL_OFFSET_TEXELS * texel_world}
 
 
-def shadow_coords(p, n, view_projection, offset: float) -> np.ndarray:
-    """GLSL `ld_key_visibility`'s map point (..., 3): (u, v, depth) in [0, 1] of the normal-offset world point."""
-    p = np.asarray(p, dtype=np.float64) + np.asarray(n, dtype=np.float64) * offset
+def shadow_coords(p, n, view_projection, offset: float, key_dir=None, lift: float = 0.0) -> np.ndarray:
+    """GLSL `ld_shadow_coord` / `ld_shadow_coord_lifted` (..., 3): (u, v, depth) in [0, 1] of the world point offset
+    along its normal projected off the key direction (`key_dir`; None = the plain normal), plus `lift` offsets along
+    the normal itself."""
+    n = np.asarray(n, dtype=np.float64)
+    side = n
+    if key_dir is not None:
+        k = np.asarray(key_dir, dtype=np.float64)
+        side = n - k * np.sum(n * k, axis=-1, keepdims=True)
+    p = np.asarray(p, dtype=np.float64) + (side + n * lift) * offset
     m = np.asarray(view_projection, dtype=np.float64).reshape(4, 4).T
     clip = p @ m[:3, :3].T + m[:3, 3]
     return clip * 0.5 + 0.5  # orthographic: w = 1
@@ -488,21 +495,22 @@ def pcf_visibility(depth: np.ndarray, sp, scale: float = 1.0, slope=(0.0, 0.0)) 
     return np.where(inside, total / 9.0, 1.0)
 
 
-def terminator_fade(ndl) -> np.ndarray:
-    """GLSL `ld_key_visibility`'s fade: the weight of the map's answer toward the terminator (smoothstep over n.l)."""
-    x = np.clip(np.asarray(ndl, dtype=np.float64) / SHADOW_TERMINATOR_FADE, 0.0, 1.0)
-    return x * x * (3.0 - 2.0 * x)
-
-
-def ld_key_shadowed(albedo, n, v, wrap, roughness, f0, values: dict, visibility) -> np.ndarray:
-    """The skin's light with the `SHADOW` block (AD-039 §4): albedo x `ld_diffuse` + `ld_specular`, minus
-    (1 - visibility) x the key's own diffuse and specular term - the key scaled by its visibility."""
+def ld_key_shadowed(albedo, n, v, wrap, roughness, f0, values: dict, visibility, wrap_visibility=None) -> np.ndarray:
+    """The skin's light with the `SHADOW` block (AD-039 §4 / §16.7): albedo x `ld_diffuse` + `ld_specular`, minus the
+    key's own term in shadow - its Lambert part and highlight times (1 - visibility), the wrap's excess past Lambert
+    times (1 - wrap_visibility), the map's answer at the point lifted out along the normal (`shadow_coords(...,
+    lift=SHADOW_WRAP_LIFT)`; None = `visibility`)."""
     albedo = np.asarray(albedo, dtype=np.float64)
+    n = np.asarray(n, dtype=np.float64)
+    vis = np.asarray(visibility, dtype=np.float64)[..., None]
+    vis_wrap = vis if wrap_visibility is None else np.asarray(wrap_visibility, dtype=np.float64)[..., None]
     colour = albedo * ld_diffuse(n, wrap, values) + ld_specular(n, v, roughness, f0, values)
     d, c, s = values["u_ld_light_dir"][0], values["u_ld_light_color"][0], values["u_ld_light_size"][0]
-    key = np.asarray(c) * (albedo * ld_wrap(np.sum(np.asarray(n) * np.asarray(d), -1), wrap)
-                           + direct_specular(n, v, d, ld_lobe(roughness, s), f0)[..., None])
-    return colour - (1.0 - np.asarray(visibility, dtype=np.float64))[..., None] * key
+    ndl = np.sum(n * np.asarray(d), -1)
+    lambert = np.maximum(ndl, 0.0)[..., None]
+    key = np.asarray(c) * (albedo * ((1.0 - vis) * lambert + (1.0 - vis_wrap) * (ld_wrap(ndl, wrap) - lambert))
+                           + (1.0 - vis) * direct_specular(n, v, d, ld_lobe(roughness, s), f0)[..., None])
+    return colour - key
 
 
 # -- the frame dict ----------------------------------------------------------------------------------------------------

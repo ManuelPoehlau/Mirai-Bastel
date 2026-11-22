@@ -21,8 +21,8 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
   (`PINNED_SKIN_SOURCES_SHA256`, `tests/test_lookdev_shaders.py`). `LD_COMMON_SRC` does not change in P3 (the eye's
   LOOKDEV pin).
 - `LD_SHADOW_SRC` (S1, AD-039 §4 / §16.6): the key's shadow map and `ld_key_visibility(p, n, l)` (3 x 3
-  bilinear-compare fetches one texel apart with a receiver-plane bias, a normal offset, a fade toward the terminator;
-  outside the map = lit; the key's softness is the map's effective resolution, `u_ld_shadow_scale`); the `SHADOW` block subtracts the key's own
+  bilinear-compare fetches one texel apart with a receiver-plane bias and a normal offset sideways to the key; outside the map = lit; the
+  key's softness is the map's effective resolution, `u_ld_shadow_scale`); the `SHADOW` block subtracts the key's own
   diffuse and specular term times (1 - visibility). Twins: `lookdev_optics.pcf_visibility` / `ld_key_shadowed`.
   `SHADOW_DEPTH_SRC`: the depth pass's program (`viewport.lookdev_shadow.KeyShadow`).
 
@@ -56,8 +56,9 @@ SKIN_EFFECTS = ("SHADOW",)
 SHADOW_DEPTH_BIAS = 0.0005
 #: The receiver-plane slope's limit (depth per UV, both in the map's units: 10 = 84° from the key).
 SHADOW_SLOPE_MAX = 10.0
-#: The map's answer fades out below this n.l toward the terminator (`PROVISIONAL`, AD-039 §16.6).
-SHADOW_TERMINATOR_FADE = 0.3
+#: The wrap's excess looks the map up this many normal offsets further out along the normal (`PROVISIONAL`, AD-039
+#: §16.7): past a convex surface's own shadow at the terminator, still inside a crease's cast shadow.
+SHADOW_WRAP_LIFT = 4.0
 
 
 def constant_src(name: str, library: str = es.EYE_LIB_SRC) -> str:
@@ -228,10 +229,19 @@ void main() {{
     albedo = srgb_decode(albedo);
     vec3 colour = albedo * ld_diffuse(n, u_wrap) + ld_specular(n, v, rough, u_f0);
 #ifdef SHADOW
-    // AD-039 §4: the key's own terms (ld_diffuse / ld_specular's i = 0) times (1 - visibility): the key in shadow
-    colour -= (1.0 - ld_key_visibility(v_world_pos, n, u_ld_light_dir[0])) * u_ld_light_color[0]
-            * (albedo * ld_wrap(dot(n, u_ld_light_dir[0]), u_wrap)
-               + direct_specular(n, v, u_ld_light_dir[0], ld_lobe(rough, u_ld_light_size[0]), u_f0));
+    // AD-039 §4 / §16.7: the key's own terms (ld_diffuse / ld_specular's i = 0) times (1 - visibility): the key in
+    // shadow. Its Lambert part and its highlight take the map's answer at the surface; the wrap's excess past Lambert
+    // (light the organic presets carry past the terminator) takes it at the point lifted out along the normal, so a
+    // convex surface's own facets do not cut the wrap while a cast shadow in a crease keeps it dark
+    {{
+        float ndl = dot(n, u_ld_light_dir[0]);
+        float vis = ld_key_visibility(v_world_pos, n, u_ld_light_dir[0]);
+        float vis_wrap = ld_key_visibility_lifted(v_world_pos, n, u_ld_light_dir[0]);
+        vec3 lambert = vec3(max(ndl, 0.0));
+        colour -= u_ld_light_color[0]
+                * (albedo * ((1.0 - vis) * lambert + (1.0 - vis_wrap) * (ld_wrap(ndl, u_wrap) - lambert))
+                   + (1.0 - vis) * direct_specular(n, v, u_ld_light_dir[0], ld_lobe(rough, u_ld_light_size[0]), u_f0));
+    }}
 #endif
 #ifdef ENV_SPEC
     colour += ld_env_specular(reflect(-v, n), rough) * env_brdf_approx(u_f0, rough, nv);
@@ -252,10 +262,17 @@ uniform float u_ld_shadow_scale;   // the rendered part of the map (effective / 
 uniform float u_ld_shadow_offset;  // the normal offset, world units
 const float LD_SHADOW_BIAS = {SHADOW_DEPTH_BIAS!r};
 const float LD_SHADOW_SLOPE_MAX = {SHADOW_SLOPE_MAX!r};
-const float LD_SHADOW_FADE = {SHADOW_TERMINATOR_FADE!r};
-// the map point (u, v, depth in [0, 1]) of world point p, offset along its normal n
-vec3 ld_shadow_coord(vec3 p, vec3 n) {{
-    vec4 lp = u_ld_shadow_vp * vec4(p + n * u_ld_shadow_offset, 1.0);
+const float LD_SHADOW_WRAP_LIFT = {SHADOW_WRAP_LIFT!r};
+// the map point (u, v, depth in [0, 1]) of world point p, offset along its normal n projected off the key direction
+// l: sideways in the map (against acne at grazing light), never toward the light (a surface facing the key right
+// behind an occluder's edge - inside a nostril - would leak)
+vec3 ld_shadow_coord(vec3 p, vec3 n, vec3 l) {{
+    vec4 lp = u_ld_shadow_vp * vec4(p + (n - l * dot(n, l)) * u_ld_shadow_offset, 1.0);
+    return lp.xyz / lp.w * 0.5 + 0.5;
+}}
+// the map point of p lifted `lift` normal offsets out along n (the wrap's lookup, see the SHADOW block)
+vec3 ld_shadow_coord_lifted(vec3 p, vec3 n, vec3 l, float lift) {{
+    vec4 lp = u_ld_shadow_vp * vec4(p + ((n - l * dot(n, l)) + n * lift) * u_ld_shadow_offset, 1.0);
     return lp.xyz / lp.w * 0.5 + 0.5;
 }}
 // 3 x 3 fetches around the map point sp; each compares the depth of the receiver's plane at the fetch (slope = d depth
@@ -272,18 +289,24 @@ float ld_shadow_pcf(vec3 sp, vec2 slope) {{
     float inside = float(all(greaterThanEqual(sp, vec3(0.0))) && all(lessThanEqual(sp, vec3(1.0))));
     return mix(1.0, sum / 9.0, inside);
 }}
-// the key's visibility at world point p with normal n, the key toward l: 1 lit, 0 in its shadow. The receiver's slope
-// comes from the screen derivatives of the map point (call in uniform control flow); toward the terminator the map's
-// answer fades out (n.l -> 0), so a wrapped diffuse is not cut along the mesh's facets
-float ld_key_visibility(vec3 p, vec3 n, vec3 l) {{
-    float ndl = dot(n, l);
-    vec3 sp = ld_shadow_coord(p, n);
+// the receiver's slope (d depth / d uv) from the screen derivatives of its map point (call in uniform control flow)
+vec2 ld_shadow_slope(vec3 sp) {{
     vec3 dx = dFdx(sp);
     vec3 dy = dFdy(sp);
     float det = dx.x * dy.y - dx.y * dy.x;
     vec2 slope = abs(det) > 1e-14 ? vec2(dy.y * dx.z - dx.y * dy.z, dx.x * dy.z - dy.x * dx.z) / det : vec2(0.0);
-    slope = clamp(slope, -LD_SHADOW_SLOPE_MAX, LD_SHADOW_SLOPE_MAX);
-    return mix(1.0, ld_shadow_pcf(sp, slope), smoothstep(0.0, LD_SHADOW_FADE, ndl));
+    return clamp(slope, -LD_SHADOW_SLOPE_MAX, LD_SHADOW_SLOPE_MAX);
+}}
+// the key's visibility at world point p with normal n, the key toward l: 1 lit, 0 in its shadow
+float ld_key_visibility(vec3 p, vec3 n, vec3 l) {{
+    vec3 sp = ld_shadow_coord(p, n, l);
+    return ld_shadow_pcf(sp, ld_shadow_slope(sp));
+}}
+// the same at p lifted out along n: a convex surface's own shadow just past the terminator is left behind, a crease's
+// cast shadow (the far wall of a nostril, a mouth corner) is not
+float ld_key_visibility_lifted(vec3 p, vec3 n, vec3 l) {{
+    vec3 sp = ld_shadow_coord_lifted(p, n, l, LD_SHADOW_WRAP_LIFT);
+    return ld_shadow_pcf(sp, ld_shadow_slope(sp));
 }}
 """
 

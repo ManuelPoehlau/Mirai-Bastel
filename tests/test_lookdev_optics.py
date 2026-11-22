@@ -195,7 +195,7 @@ def test_the_keys_softness_is_the_maps_effective_resolution():
     assert soft["u_ld_shadow_offset"] == pytest.approx(lo.SHADOW_NORMAL_OFFSET_TEXELS * 40.0 / lo.shadow_resolution(0.5))
 
 
-def test_the_receiver_plane_bias_and_the_terminator_fade():
+def test_the_receiver_plane_bias():
     """A tilted receiver (slope 0.5 depth per uv) on the surface the map holds (with the depth pass's slope-scaled
     polygon offset: one texel of slope): without the receiver-plane bias the fetches toward the light dip under the
     stored depth (self-shadow), with it none does."""
@@ -204,8 +204,20 @@ def test_the_receiver_plane_bias_and_the_terminator_fade():
     tilted = np.full((16, 16), 0.5) + 0.5 * ((np.arange(16)[None, :] + 0.5) * texel - 0.5) + 0.5 * texel
     assert lo.pcf_visibility(tilted, sp, 1.0, (0.5, 0.0))[0] == 1.0
     assert lo.pcf_visibility(tilted, sp, 1.0, (0.0, 0.0))[0] < 0.9
-    assert lo.terminator_fade(0.0) == 0.0 and lo.terminator_fade(1.0) == 1.0
-    assert lo.terminator_fade(lo.SHADOW_TERMINATOR_FADE / 2) == pytest.approx(0.5)
+
+
+def test_the_normal_offset_goes_sideways_and_the_wrap_lookup_is_lifted_out():
+    """AD-039 §16.7: the normal offset is the normal projected off the key (a surface facing the key is not moved toward
+    it); the wrap's lookup point is lifted `SHADOW_WRAP_LIFT` offsets out along the normal."""
+    vp = lo.shadow_view_projection((0.0, 0.0, 1.0), (0.0, 0.0, 0.0), 1.0)
+    p = np.array([0.1, 0.2, 0.3])
+    facing = lo.shadow_coords(p, (0.0, 0.0, 1.0), vp, 0.01, key_dir=(0.0, 0.0, 1.0))
+    assert np.allclose(facing, lo.shadow_coords(p, (0.0, 0.0, 1.0), vp, 0.0))  # facing the key: not moved
+    grazing = lo.shadow_coords(p, (1.0, 0.0, 0.0), vp, 0.01, key_dir=(0.0, 0.0, 1.0))
+    assert grazing[0] > facing[0] and grazing[2] == pytest.approx(facing[2])  # sideways only
+    lifted = lo.shadow_coords(p, (0.0, 0.0, 1.0), vp, 0.01, key_dir=(0.0, 0.0, 1.0), lift=lo.SHADOW_WRAP_LIFT)
+    assert lifted[2] < facing[2]  # out along the normal: toward the key here
+    assert lo.SHADOW_WRAP_LIFT > 1.0
 
 
 def test_pcf_visibility_and_the_shadowed_key():

@@ -302,6 +302,65 @@ def test_a_lit_sphere_does_not_shadow_its_lit_half(gl_window, key_el, size):
     _release(viewport)
 
 
+# -- AD-039 §16.7: the wrap in a cast shadow and past a convex terminator --------------------------------------------
+
+WRAPPED = LookDraw((0.5, 0.5, 0.5), roughness=0.5, specular=0.5, wrap_rgb=(0.5, 0.3, 0.2))
+
+
+def test_a_cast_shadow_at_a_grazing_key_keeps_the_wrap_and_the_highlight_dark(gl_window):
+    """Manu, 2026-11-22: „in der Nase und um die Mundwinkel entstehen sehr helle Ränder um die Schatten“ - a cast
+    shadow on a surface the key grazes (n.l < 0.3) let the wrap and the highlight through. The box's footprint on the
+    plane under a 15° key is black (no fill, no environment)."""
+    camera = OrbitCamera(target=(0.0, 0.2, 0.0), distance=5.5, yaw=0.3, pitch=0.75)
+    viewport = _viewport(gl_window, {"ground": _ground(), "box": _box(*BOX)}, camera)
+    for key in ("ground", "box"):
+        viewport.set_object_entry(key, viewport.object_entries[key].mesh, (0.5, 0.5, 0.5), look=WRAPPED)
+    state = _state(key_el=15.0)
+    viewport.set_shading("lookdev", state)
+    pixels = _frame(gl_window, viewport).max(axis=-1)
+    origin, direction = _rays(viewport)
+    on_box, _ = _hits_box(origin, direction, *BOX)
+    t = -origin[..., 1] / direction[..., 1]
+    point = origin + direction * t[..., None]
+    key = _key_dir(state)
+    shaded, _ = _hits_box(point, np.broadcast_to(key, point.shape), *BOX)
+    band = np.zeros_like(shaded)
+    for dx, dz in BAND * 0.05:
+        moved, _ = _hits_box(point + np.array([dx, 0.0, dz]), np.broadcast_to(key, point.shape), *BOX)
+        band |= moved != shaded
+    ground = (t > 0) & ~_grow(on_box, 2) & (np.abs(point[..., 0]) < 1.9) & (np.abs(point[..., 2]) < 1.9)
+    inside, outside = ground & shaded & ~band, ground & ~shaded & ~band
+    assert inside.sum() > 150 and outside.sum() > 3000
+    assert np.percentile(pixels[inside], 99) <= 2, np.percentile(pixels[inside], 99)
+    assert np.median(pixels[outside]) > 60  # the plane outside is lit (Lambert 0.26 + the wrap)
+    _release(viewport)
+
+
+def test_the_wrap_past_a_convex_terminator_is_not_cut(gl_window):
+    """A sphere with a wide wrap: past the terminator (n.l in [-0.2, 0]) the wrap's light stays as without the shadow
+    (the convex surface's own shadow is left behind by the lifted lookup), while the lit half is untouched."""
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.0, yaw=1.2, pitch=0.2)
+    viewport = _viewport(gl_window, {"sphere": _sphere()}, camera)
+    viewport.set_object_entry("sphere", viewport.object_entries["sphere"].mesh, (0.5, 0.5, 0.5), look=WRAPPED)
+    state = _state(key_az=30.0, key_el=20.0, effects=OFF)
+    viewport.set_shading("lookdev", state)
+    without = _frame(gl_window, viewport).astype(float)
+    viewport.set_shading("lookdev", dataclasses.replace(state, effects=lo.LookdevEffects()))
+    with_shadow = _frame(gl_window, viewport).astype(float)
+    origin, direction = _rays(viewport)
+    b = np.sum(origin * direction, -1)
+    c = np.sum(origin * origin, -1) - 0.8 ** 2
+    hit = b * b - c > 0
+    t = -b - np.sqrt(np.maximum(b * b - c, 0.0))
+    ndl = np.sum((origin + direction * t[..., None]) / 0.8 * _key_dir(state), -1)
+    past = _grow(~hit, 2)
+    past = hit & ~past & (ndl > -0.2) & (ndl < 0.0)
+    assert past.sum() > 150 and (without[past].max(-1) > 20).mean() > 0.9  # the wrap lights it
+    kept = with_shadow[past].sum(-1) / np.maximum(without[past].sum(-1), 1.0)
+    assert np.median(kept) > 0.95 and (kept > 0.8).mean() > 0.97, (np.median(kept), (kept > 0.8).mean())
+    _release(viewport)
+
+
 # -- T1-3: re-rendered only on a change ---------------------------------------------------------------------------
 
 def test_the_map_renders_once_and_not_for_the_camera_the_exposure_or_a_capture(gl_window):
