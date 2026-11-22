@@ -1687,13 +1687,17 @@ def measure_p3(window, app, frames: "Frames", args, size):
     raw_tex, levels, raw_ms = build_env_cube(corner_fix=False)
     raw_spread = corner_spread(raw_tex, levels)
     gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(raw_tex)))
-    cube_tex, levels, cube_ms = build_env_cube(corner_fix=True)
-    fixed_spread = corner_spread(cube_tex, levels)
+    rendered_tex, levels, cube_ms = build_env_cube(corner_fix=True)
+    fixed_spread = corner_spread(rendered_tex, levels)
+    # run 4: a rendered cube fails after its first use on the reference PC; the rows sample a CPU copy of it
+    cube_tex, copy_ms = cube_via_cpu(rendered_tex, levels)
+    gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(rendered_tex)))
     yield (f"(p3) environment cube {CUBE_SIZE}^2 RGBA16F, mips to 2^2, the analytic studio prefiltered on the "
            f"GPU ({P3_CUBE_SAMPLES} samples): {cube_ms:.2f} ms with the corner fix, {raw_ms:.2f} ms without")
     yield ("      corner spread per level (largest relative difference of the 3 texels at a cube corner), "
            "without / with the fix: " + ", ".join(f"L{i} {a:.3f}/{b:.3f}"
                                                     for i, (a, b) in enumerate(zip(raw_spread, fixed_spread))))
+    yield f"      the rows sample a CPU copy of the chain (read back + uploaded: {copy_ms:.1f} ms wall, once)"
     rows = [(name, options) for name, options in p3_rows() if not args.p3_rows or name in args.p3_rows
             or name == "ld frame"]
     sizes = sorted({options["shadow_size"] for _name, options in rows if options.get("shadow")})
@@ -1814,6 +1818,38 @@ def upload_cube(internal: str, levels: int, value: float = 0.2) -> int:
     return texture.value
 
 
+def cube_via_cpu(texture: int, levels: int) -> tuple[int, float]:
+    """A fresh cube holding the same texels as `texture`, read back (`glGetTexImage`, RGBA float) and uploaded from the
+    CPU: (new texture, wall ms). Run 4 on the reference PC: a cube *rendered* through an FBO samples once and then fails
+    every draw with GL_OUT_OF_MEMORY, an *uploaded* cube always works."""
+    import numpy as np
+    from pyglet import gl
+
+    start = time.perf_counter()
+    copy = gl.GLuint()
+    gl.glGenTextures(1, ctypes.byref(copy))
+    for level in range(levels):
+        side = CUBE_SIZE >> level
+        for face in range(6):
+            data = np.empty((side, side, 4), np.float32)
+            gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, texture)
+            gl.glGetTexImage(gl.GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, level, gl.GL_RGBA, gl.GL_FLOAT,
+                             data.ctypes.data_as(ctypes.c_void_p))
+            gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, copy.value)
+            gl.glTexImage2D(gl.GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, level, gl.GL_RGBA16F, side, side, 0, gl.GL_RGBA,
+                            gl.GL_FLOAT, data.ctypes.data_as(ctypes.c_void_p))
+    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, copy.value)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_BASE_LEVEL, 0)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MAX_LEVEL, levels - 1)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR_MIPMAP_LINEAR)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+    for wrap in (gl.GL_TEXTURE_WRAP_S, gl.GL_TEXTURE_WRAP_T, gl.GL_TEXTURE_WRAP_R):
+        gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, wrap, gl.GL_CLAMP_TO_EDGE)
+    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, 0)
+    gl.glFinish()
+    return copy.value, (time.perf_counter() - start) * 1e3
+
+
 def cube_check_cases() -> list[tuple[str, str, dict]]:
     """(label, cube kind, `Frames.lookdev` keywords): each case changes one thing against the failing `cube env` row
     (the GPU-rendered RGBA16F cube with mips, `textureLod`, seamless filtering on)."""
@@ -1829,6 +1865,10 @@ def cube_check_cases() -> list[tuple[str, str, dict]]:
         ("I uploaded RGBA8, mips", "upload8", {"cube_env": True, "seamless": False}),
         ("J no ALBEDO_MAP, cube env", "rendered", {"cube_env": True, "seamless": False, "albedo_map": False}),
         ("K no eyes, cube env", "rendered", {"cube_env": True, "seamless": False, "eyes": False}),
+        # run 4: the rendered cube sampled once, then failed; an uploaded cube always worked. Each case below is used
+        # in 5 frames on a fresh cube.
+        ("L fresh rendered, 5 frames", "fresh_rendered", {"cube_env": True, "seamless": True, "frames": 5}),
+        ("M rendered + CPU copy, 5 fr.", "fresh_copied", {"cube_env": True, "seamless": True, "frames": 5}),
     ]
 
 
@@ -1851,7 +1891,16 @@ def measure_cube_check(window, app, frames: "Frames", args, size):
         options = dict(options)
         try:
             if kind not in cubes:
-                if kind == "rendered0":
+                if kind == "fresh_rendered":
+                    tex, count, _ms = build_env_cube()
+                    cubes[kind] = (tex, count)
+                elif kind == "fresh_copied":
+                    tex, count, _ms = build_env_cube()
+                    copied, copy_ms = cube_via_cpu(tex, count)
+                    gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(tex)))
+                    cubes[kind] = (copied, count)
+                    yield f"      (the CPU copy of the 128^2 chain took {copy_ms:.1f} ms wall)"
+                elif kind == "rendered0":
                     tex, _l, _ms = build_env_cube()
                     gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, tex)
                     gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MAX_LEVEL, 0)
@@ -1866,14 +1915,21 @@ def measure_cube_check(window, app, frames: "Frames", args, size):
             eyes = options.pop("eyes", True)
             bind = options.pop("bind_cube", None)
             seamless = options.pop("seamless", True)
-            ms, _wall = timed_frame(window, size, query.value, lambda: frames.lookdev(
-                background=True, eyes=eyes, albedo_map=albedo, env_spec=True, shadow=False, cube=cubes[kind],
-                bind_cube=bind, seamless=seamless, **options))
-            yield f"      {label:<28} ok      {ms:6.2f} ms GPU"
+            count = options.pop("frames", 1)
+            times = []
+            for _ in range(count):
+                ms, _wall = timed_frame(window, size, query.value, lambda: frames.lookdev(
+                    background=True, eyes=eyes, albedo_map=albedo, env_spec=True, shadow=False, cube=cubes[kind],
+                    bind_cube=bind, seamless=seamless, **options))
+                times.append(ms)
+            yield f"      {label:<28} ok      {' / '.join(f'{t:.2f}' for t in times)} ms GPU"
         except GLException as exc:
             errors = drain_gl_errors()
             frames_reset()
-            yield f"      {label:<28} FAILED  {str(exc).strip()[:60]} (pending {[hex(e) for e in errors]}); {vram_free()}"
+            done = len(times) if "times" in locals() else 0
+            yield (f"      {label:<28} FAILED  after {done} good frame(s): {str(exc).strip()[:40]} (pending "
+                   f"{[hex(e) for e in errors]}); {vram_free()}")
+        times = []
     gl.glDeleteQueries(1, ctypes.byref(query))
     for tex in [rendered, *made]:
         gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(tex)))

@@ -692,6 +692,13 @@ python experiments\drag_cost\probe_lookdev.py --p3 | Tee-Object -FilePath lookde
     The GPU prefilter works (12.1 ms); sampling the cube in the skin stand-in fails. **S5 stays blocked on this until
     run 4** (`--p3 --p3-cube-check --size 1024 768`) shows which part fails. If the cube cannot be sampled in the skin
     pass on this card, S5 falls back to the analytic studio and moves behind S6 / S7, and the rest of P3 is unaffected.
+  - **Run 4 (`--p3-cube-check`):** a cube **rendered** through an FBO samples once and then fails every later draw; a
+    cube **uploaded** from the CPU always works (RGBA16F with mips, level 0 only, RGBA8). Seamless filtering, `textureLod`,
+    the program, the albedo map and the eyes are not the cause [H: a driver defect with FBO-rendered float cubes on this
+    card]. **S5's design changes accordingly [P]:** prefilter on the GPU (12 ms), then read the chain back and upload
+    it into the sampled cube once per studio content change (container ≈ 2 ms for 128²; the reference PC measures it).
+    This is a workaround for an observed defect, so it is gated: S5 keeps a test that a rendered-then-copied cube
+    samples over many frames. Run 5 confirms it on the reference PC (cases L, M and the cube rows).
 
 ### 11.2 After each slice
 

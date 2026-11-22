@@ -99,10 +99,39 @@ Changed for run 4 (commit after `4391e64`):
   uploaded from the CPU (RGBA16F with and without mips, RGBA8), without the albedo map, without the eyes. Each case
   reports `ok` or its GL error with the free VRAM.
 
+## Run 4 (commit `c05434f`, `--p3-cube-check`, 1024×768, cage framed) [M-RPC]
+
+316 MiB VRAM free at the start, 292–314 MiB at each failure.
+
+| Case | Cube | Result |
+|---|---|---|
+| A bound only, seamless off / B on | rendered | ok / ok |
+| C cube env, seamless off | rendered | **ok** (first lookup of this cube) |
+| D cube env, seamless on | rendered | FAILED |
+| E `texture()`, seamless off | rendered | FAILED |
+| F level 0 only | a second rendered cube | **ok** (its first lookup) |
+| G / H uploaded RGBA16F, mips / level 0 | uploaded | ok / ok |
+| I uploaded RGBA8, mips | uploaded | ok |
+| J no albedo map | rendered (the first one) | FAILED |
+| K no eyes | rendered (the first one) | FAILED (same program as C) |
+
+Reading: neither the seamless flag, nor `textureLod`, nor the program, the albedo map or the eyes decide it.
+**A cube rendered through an FBO samples once and then fails every later draw; a cube uploaded from the CPU always
+works.** That fits every run: runs 2–3 built the rendered cube, read it back (`corner_spread`), and their first cube
+draw already failed [H: a driver defect of this old card with FBO-rendered float cube textures]. The macro change of
+run 3 → 4 did not matter (C passes, K fails with the same program).
+
+Changed for run 5:
+- `cube_via_cpu`: the rendered chain read back and uploaded into a fresh cube (container: about 2 ms wall for 128²,
+  1.3 MiB); the frame rows now sample that copy;
+- the check adds L (a fresh rendered cube, 5 frames: expected to fail after the first) and M (rendered + CPU copy,
+  5 frames: expected to work).
+
 ## Next
 
-Run 4, the cube diagnosis (one size is enough):
+Run 5: the check (L, M) and the cube rows on the copy:
 
 ```
-python experiments\drag_cost\probe_lookdev.py --p3 --p3-cube-check --size 1024 768 | Tee-Object -FilePath lookdev_p3_0_run4.txt
+python experiments\drag_cost\probe_lookdev.py --p3 --p3-cube-check --size 1024 768 | Tee-Object -FilePath lookdev_p3_0_run5a.txt
+python experiments\drag_cost\probe_lookdev.py --p3 --p3-no-depth --p3-rows "cube env,cube dual env,p3 all" | Tee-Object -FilePath lookdev_p3_0_run5b.txt
 ```
