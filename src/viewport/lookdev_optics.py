@@ -65,9 +65,11 @@ def lookdev_output(c, exposure: float = 1.0, curve: str = "reinhard") -> np.ndar
 @dataclass(frozen=True)
 class LookdevEffects:
     """The P3 effects' on/off (view state, `view.lookdev.effects`, no Undo). A field joins with its slice, default on
-    once the slice is built (AD-039 §2.1). `shadow` (S1): the key's shadow map on skin and teeth."""
+    once the slice is built (AD-039 §2.1). `shadow` (S1): the key's shadow map on skin and teeth; `eye_shadow` (S2): the
+    eyes receive it (the lids' shadow from the geometry), needs `shadow`."""
 
     shadow: bool = True
+    eye_shadow: bool = True
 
     @classmethod
     def names(cls) -> tuple[str, ...]:
@@ -79,11 +81,11 @@ class LookdevEffects:
 
 #: The feature each effect needs (`viewport.lookdev_features`), and the effect it depends on (AD-039 §2.1 / §2.2).
 EFFECT_FEATURE = {"shadow": "depth_texture"}
-EFFECT_NEEDS: dict[str, str] = {}
+EFFECT_NEEDS: dict[str, str] = {"eye_shadow": "shadow"}
 #: The panel's reasons for a greyed effect (German, the panel's language).
 FEATURE_REASON = {"depth_texture": "Tiefentextur fehlt", "sampler_objects": "Sampler-Objekte fehlen",
                   "cube_rgba16f": "Cube-Ziel fehlt", "texture_units": "zu wenige Textureinheiten"}
-EFFECT_LABEL = {"shadow": "Schatten"}
+EFFECT_LABEL = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten"}
 
 
 def effect_reasons(effects: LookdevEffects, features=None) -> dict[str, str | None]:
@@ -511,6 +513,34 @@ def ld_key_shadowed(albedo, n, v, wrap, roughness, f0, values: dict, visibility,
     key = np.asarray(c) * (albedo * ((1.0 - vis) * lambert + (1.0 - vis_wrap) * (ld_wrap(ndl, wrap) - lambert))
                            + (1.0 - vis) * direct_specular(n, v, d, ld_lobe(roughness, s), f0)[..., None])
     return colour - key
+
+
+# -- S2: the eye in the key's shadow (AD-039 §5) -----------------------------------------------------------------------
+
+def eye_key_dimmed(values: dict, visibility: float) -> dict:
+    """The eye's `LD_SHADOW` blocks as a frame dict: the eye's LOOKDEV variant with the key's visibility `visibility`
+    draws as the same variant without the blocks under a key of `visibility` x its colour - every key term (`lit`,
+    `iris_lit` with its key table, the GGX highlight, the key's reflection on cornea and film, point and soft) scales
+    with the key's colour, and nothing else does (ambient = SH9, fill, rim and the studio's reflection stay)."""
+    out = dict(values)
+    vis = float(visibility)
+    out["u_key_color"] = tuple(vis * c for c in values["u_key_color"])
+    colours = values["u_ld_light_color"]
+    out["u_ld_light_color"] = [tuple(vis * c for c in colours[0])] + list(colours[1:])
+    return out
+
+
+def eye_sclera_shadowed(albedo, n, v, roughness, f0, values: dict, visibility) -> np.ndarray:
+    """The plain sclera's light in the eye's LOOKDEV variant with `LD_SHADOW` (no look: `lit` + the GGX highlight,
+    AD-038 B1 / B6, Lambert: wrap 0, I-6): the key's diffuse and highlight times the key's visibility."""
+    albedo = srgb_decode(albedo)
+    n = np.asarray(n, dtype=np.float64)
+    vis = np.asarray(visibility, dtype=np.float64)[..., None]
+    d, c, s = values["u_ld_light_dir"][0], values["u_ld_light_color"][0], values["u_ld_light_size"][0]
+    lambert = np.maximum(np.sum(n * np.asarray(d), -1), 0.0)[..., None]
+    diffuse = ld_diffuse(n, 0.0, values) - (1.0 - vis) * np.asarray(c) * lambert
+    key = np.asarray(c) * direct_specular(n, v, d, ld_lobe(roughness, s), f0)[..., None]
+    return albedo * diffuse + ld_specular(n, v, roughness, f0, values) - (1.0 - vis) * key
 
 
 # -- the frame dict ----------------------------------------------------------------------------------------------------

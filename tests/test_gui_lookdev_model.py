@@ -127,7 +127,15 @@ def test_reset_removes_the_look(app):
 def test_the_effects_block(app):
     """AD-039 §2.1: one row per built P3 effect, its switch and its reason when greyed."""
     st = lm.state(app)
-    assert [(r.name, r.label, r.on, r.available) for r in st.effects] == [("shadow", "Schatten", True, True)]
-    assert lm.EFFECTS_TITLE == "Effekte" and st.effects[0].hint
+    assert [(r.name, r.label, r.on, r.available) for r in st.effects] == [("shadow", "Schatten", True, True),
+                                                                          ("eye_shadow", "Augen-Schatten", True, True)]
+    assert lm.EFFECTS_TITLE == "Effekte" and all(r.hint for r in st.effects)
     app.set_lookdev_effect("shadow", False)
-    assert not lm.state(app).effects[0].on
+    rows = lm.state(app).effects
+    assert not rows[0].on
+    # AD-039 §5: the eye shadow needs the shadow - greyed with the reason, its own switch kept
+    assert rows[1].on and not rows[1].available and rows[1].reason == "braucht Schatten"
+    app.set_lookdev_effect("shadow", True)
+    app.set_lookdev_effect("eye_shadow", False)
+    rows = lm.state(app).effects
+    assert rows[0].on and not rows[1].on and rows[1].available

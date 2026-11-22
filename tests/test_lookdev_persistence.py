@@ -220,7 +220,7 @@ def test_the_effects_survive_save_and_load(app, tmp_path):
     assert app.set_lookdev_effect("shadow", False)
     path = tmp_path / "effects.mirai.json"
     assert app.save_scene_file(path)
-    assert json.loads(path.read_text())["view"]["lookdev"]["effects"] == {"shadow": False}
+    assert json.loads(path.read_text())["view"]["lookdev"]["effects"] == {"shadow": False, "eye_shadow": True}
     fresh = _load(path)
     assert fresh.lookdev.studio == app.lookdev.studio and not fresh.lookdev.studio.effects.shadow
 
@@ -255,3 +255,23 @@ def test_an_unknown_effect_name_is_ignored(app):
     data = view_state.capture(app)
     data["lookdev"]["effects"] = {"shadow": False, "raytracing": True}
     assert view_state.apply(app, data) == [] and not app.lookdev.studio.effects.shadow
+
+
+def test_an_s1_file_without_eye_shadow_keeps_its_settings(app):
+    """AD-039 §5: a file written by S1 has `effects` without `eye_shadow` - its shadow switch is read, the eye shadow
+    stays as it is (on by default)."""
+    data = view_state.capture(app)
+    data["lookdev"]["effects"] = {"shadow": False}
+    other = _app()
+    assert view_state.apply(other, data) == []
+    assert other.lookdev.studio.effects == lo_effects(shadow=False, eye_shadow=True)
+    other.set_lookdev_effect("eye_shadow", False)
+    data["lookdev"]["effects"] = {"shadow": True}
+    assert view_state.apply(other, data) == []
+    assert other.lookdev.studio.effects == lo_effects(shadow=True, eye_shadow=False)
+
+
+def lo_effects(**kw):
+    from viewport.lookdev_optics import LookdevEffects
+
+    return LookdevEffects(**kw)

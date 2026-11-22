@@ -128,17 +128,17 @@ def test_ld_diffuse_and_specular_twins():
 def test_effects_default_on_and_dependencies_and_features():
     from viewport.lookdev_features import FeatureReport
 
-    assert lo.LookdevEffects().shadow and lo.LookdevEffects.names() == ("shadow",)
+    assert lo.LookdevEffects().shadow and lo.LookdevEffects.names() == ("shadow", "eye_shadow")
     assert lo.LookdevState("x", lo.EYE_STUDIO, lo.StudioLight(), lo.StudioLight(), lo.StudioLight()).effects \
         == lo.LookdevEffects()
     on = lo.LookdevEffects(shadow=True)
-    assert lo.effective(on) == on and lo.effect_reasons(on) == {"shadow": None}  # nothing probed: nothing missing
+    assert lo.effective(on) == on and lo.effect_reasons(on) == {"shadow": None, "eye_shadow": None}  # nothing probed
     assert lo.effective(on, FeatureReport(depth_texture=True)) == on
     missing = FeatureReport(depth_texture=False)
-    assert lo.effective(on, missing) == lo.LookdevEffects(shadow=False)
-    assert lo.effect_reasons(on, missing) == {"shadow": "Tiefentextur fehlt"}
+    assert lo.effective(on, missing) == lo.LookdevEffects(shadow=False, eye_shadow=False)
+    assert lo.effect_reasons(on, missing) == {"shadow": "Tiefentextur fehlt", "eye_shadow": "braucht Schatten"}
     assert missing.status_lines() == ("LookDev: Schatten aus – Tiefentextur nicht verfügbar",)
-    assert lo.effective(lo.LookdevEffects(shadow=False)) == lo.LookdevEffects(shadow=False)
+    assert lo.effective(lo.LookdevEffects(shadow=False)) == lo.LookdevEffects(shadow=False, eye_shadow=False)
 
 
 def _head_like(rng, n=400):
