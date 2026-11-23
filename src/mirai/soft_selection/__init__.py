@@ -28,7 +28,7 @@ from .gl_shading import GLSoftShadingOverlay
 from .flow import LOOP, RING, flow_families, flow_families_within, has_flow_direction
 from .influence import CURVES, METRICS, compute_influence, custom_curve, primary_pivot
 from .ops import SoftMoveOperation, SoftRotateOperation, SoftScaleOperation
-from .symmetric import SoftSymmetryRefusal, SymmetricInfluence, symmetric_influence
+from .symmetric import SoftSymmetryRefusal, SymmetricInfluence, soft_weights, symmetric_influence
 from .shading import shading_color
 from .settings import (
     CUSTOM_SHAPE_STEPS,
@@ -76,6 +76,7 @@ __all__ = [
     "has_flow_direction",
     "primary_pivot",
     "shading_color",
+    "soft_weights",
     "symmetric_influence",
     "world_radius_for",
 ]

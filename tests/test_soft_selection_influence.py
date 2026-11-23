@@ -104,6 +104,46 @@ def test_geodesic_never_exceeds_euclidean_on_a_real_asset():
     assert all(geo[v] <= euclid[v] + 1e-12 for v in geo)
 
 
+def _geodesic_whole_mesh_reference(mesh, seeds, radius):
+    """The field's distances as computed until 2026-11-23: one neighbour map over all edges, then the same Dijkstra."""
+    import heapq
+
+    neighbours = {}
+    for eid in mesh.all_edge_ids():
+        a, b = mesh.edge_vertices(eid)
+        neighbours.setdefault(a, []).append(b)
+        neighbours.setdefault(b, []).append(a)
+    dist = {s: 0.0 for s in seeds}
+    heap = [(0.0, s) for s in seeds]
+    heapq.heapify(heap)
+    done = set()
+    while heap:
+        d, vid = heapq.heappop(heap)
+        if vid in done:
+            continue
+        done.add(vid)
+        p = mesh.vertex_position(vid)
+        for other in neighbours.get(vid, ()):
+            if other in done:
+                continue
+            q = mesh.vertex_position(other)
+            nd = d + math.sqrt((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2)
+            if nd < radius and nd < dist.get(other, math.inf):
+                dist[other] = nd
+                heapq.heappush(heap, (nd, other))
+    return dist
+
+
+@pytest.mark.parametrize("radius", [0.05, 0.3, 1.0])
+def test_geodesic_distances_equal_the_whole_mesh_reference_bit_for_bit(radius):
+    """Brush research phase 1: the field reads neighbours from the indexed `vertex_edges` instead of a whole-mesh map
+    per call; preview == op (F9) and every 'bit for bit' test downstream rely on identical distances."""
+    mesh = head()
+    ids = mesh.all_vertex_ids()
+    for seeds in ({ids[0]}, {ids[len(ids) // 2], ids[len(ids) // 3]}):
+        assert METRICS["geodesic"](mesh, seeds, radius) == _geodesic_whole_mesh_reference(mesh, seeds, radius)
+
+
 # -- the lip case: close in space, far on the surface -------------------------------
 
 

@@ -89,3 +89,39 @@ def test_border_points_stay_fixed():
     assert plan.movable == {p[(1, 1)]}
     with pytest.raises(SmoothRefused, match="border"):
         plan_smooth(mesh, [p[(0, 0)], p[(0, 1)]], relax=False)
+
+
+def test_a_handed_in_symmetry_index_plans_exactly_as_the_plan_builds_it():
+    """Brush research phase 1: a press / stroke builds its `SymmetryPairing` once and hands the index in."""
+    from tests.test_symmetric_ops import make_app
+    from mirai.soft_selection import soft_weights
+    from mirai.soft_selection.settings import SoftSettings
+    from mirai.symmetry_coordination import symmetry_pairing
+
+    mesh = make_app("head_basemesh").scene.mesh
+    seeds = [v for v in mesh.all_vertex_ids() if mesh.vertex_position(v)[0] > 0.05][:3]
+    pairing = symmetry_pairing(mesh)
+    soft = SoftSettings(world_radius=0.4)
+    weights = soft_weights(mesh, seeds, soft)
+    assert soft_weights(mesh, seeds, soft, pairing.correspondence) == weights
+    for relax in (False, True):
+        own = plan_smooth(mesh, seeds, relax=relax, weights=weights)
+        handed = plan_smooth(mesh, seeds, relax=relax, weights=weights, index=pairing.index)
+        assert handed == own
+        assert handed.positions(1.5) == own.positions(1.5)
+
+
+def test_a_stroke_dab_accumulates_from_the_current_state():
+    """`smooth_stroke.dab`: each dab starts where the last one left the mesh (a dial starts from the press state)."""
+    from mirai.soft_selection.settings import SoftSettings
+    from mirai.topology.smooth_stroke import dab
+
+    mesh, p = _grid(6, jitter={(3, 3): (0.0, 0.0, 1.0)})
+    centre = p[(3, 3)]
+    soft = SoftSettings(world_radius=1.5)
+    heights = [mesh.vertex_position(centre)[2]]
+    for _ in range(3):
+        moved = dab(mesh, [centre], soft, relax=False)
+        assert centre in moved and p[(0, 0)] not in moved  # the border stays
+        heights.append(mesh.vertex_position(centre)[2])
+    assert heights[0] > heights[1] > heights[2] > heights[3] > 0.0

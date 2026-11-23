@@ -1,7 +1,8 @@
 # Brush System — Feasibility and Architecture Research (2026-11-18)
 
 **Status:** research and recommendation, English with a German summary. **No decision, no production code changed, no
-keybinding changed, no dependency added.** First-pass record (AGENTS.md §6: later changes go into dated addenda).
+keybinding changed, no dependency added.** *2026-11-23: O-1..O-8 decided, phases 1-2 built — see the addendum at the
+end.* First-pass record (AGENTS.md §6: later changes go into dated addenda).
 **State audited:** `76759e2` on `claude/upbeat-albattani-tv3oiw` (clean working tree; the last relevant commits are
 `662b1f6` Inflate / Pinch, `393e8ab` Surface Slide phase 3, `6d02450` picking on the posed surface).
 **Question:** should Mirai get a unified, lightweight viewport brush system, and if so, how small can it be and where does
@@ -420,6 +421,29 @@ Never: detail brushes (Draw / Crease / Polish → GoZ), topology strokes, a Scul
   with the existing tests.
 - How a world radius should read as a screen circle in perspective near silhouettes.
 - No test suite was run: no code changed (AGENTS.md §8a).
+
+## Addendum 2026-11-23 — decided and built (phases 1 and 2)
+
+**Manu, 2026-11-23:** "stroke/brush-artiges Verhalten war geplant" → **O-1 = yes**; **O-2..O-8 as proposed in §10**.
+Three input points this report had not seen, answered by Manu the same day:
+
+- **Alt+S + LMB collides with the keymap** (Alt+LMB drag = Orbit, Alt+LMB click = SelectToggle; §2.3 missed it) →
+  the Relax stroke takes Alt+LMB, only while Alt+S is held.
+- **The key let go during a stroke** → the stroke runs to the LMB release (the Working Pivot's `dragging` rule).
+- **A click with S held** (it selected before) → one dab; the selection stays.
+
+Agent rules (no Artist question): an LMB press after the dial began **drops** the dial's writes (§6.3 proposed
+"ignore"; in practice any motion between the key and the LMB starts the dial, which would block the stroke); after a
+stroke the motion is no dial and the release no tap; Undo / Redo stay refused while the key is held after a stroke (the
+stroke's symmetry pairing would outlive an undone topology step). Phase 1 needed no stroke-scoped adjacency: the stale
+premise of §4.1 (`vertex_edges` an O(E) scan) was the whole cost, the field now reads the index directly — bit for bit
+the old distances (test against the old algorithm). The correspondence and the `SymmetryIndex` are built once per press
+(`SymmetryPairing`) for Smooth / Relax / Inflate / Pinch and reused by every dab.
+
+Contract and status: [AD-020 "Smooth / Relax stroke"](../architecture/AD-020-SOFT-SELECTION-APP-PATH.md#smooth--relax-stroke-2026-11-23-provisional);
+container figures [`RESULTS_SOFT_FIELD_CONTAINER_2026-11-23.md`](../../experiments/drag_cost/RESULTS_SOFT_FIELD_CONTAINER_2026-11-23.md)
+(field 9-11 → 0.02-2 ms on 20k, 43-51 → 0.07-11 ms on 87.5k; a 5 % dab 0.4 / 1.1 ms). Open: Manu's practical test
+(ATELIER B17), the reference-PC run including the per-dab pick (§11), phase 3 (Inflate / Pinch dabs).
 
 ## Sources (code)
 

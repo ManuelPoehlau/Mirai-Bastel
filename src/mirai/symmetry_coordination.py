@@ -19,7 +19,7 @@ from typing import Iterable, Mapping
 from core.ids import EdgeId, FaceId, VertexId
 from core.mesh import Mesh, Position, SymmetryDefinition
 
-from .symmetry import CorrespondenceState, vertex_correspondence
+from .symmetry import CorrespondenceState, VertexCorrespondence, vertex_correspondence
 
 
 def is_exact_plane(definition: SymmetryDefinition) -> bool:
@@ -45,11 +45,14 @@ class SymmetryIndex:
     (unpaired or ambiguous vertices, or an image that is no element) resolve to `None`.
     """
 
-    def __init__(self, mesh: Mesh) -> None:
+    def __init__(self, mesh: Mesh, correspondence: Mapping[VertexId, VertexCorrespondence] | None = None) -> None:
+        """`correspondence`: `vertex_correspondence(mesh)` of this mesh state when the caller already holds it (one
+        whole-mesh pairing per press or stroke instead of one per plan)."""
         self.mesh = mesh
         self.definition = mesh.symmetry_definition
         self._vertex_partner: dict[VertexId, VertexId | None] = {}
-        for vid, corr in vertex_correspondence(mesh).items():
+        pairing = vertex_correspondence(mesh) if correspondence is None else correspondence
+        for vid, corr in pairing.items():
             if corr.state is CorrespondenceState.SEAM:
                 self._vertex_partner[vid] = vid
             elif corr.state is CorrespondenceState.PAIRED:
@@ -89,6 +92,25 @@ class SymmetryIndex:
 
 def build_index(mesh: Mesh) -> SymmetryIndex:
     return SymmetryIndex(mesh)
+
+
+@dataclass(frozen=True)
+class SymmetryPairing:
+    """One whole-mesh pairing for a press or a stroke: the correspondence (for the symmetric Soft field) and the index
+    built from it (for the plans). Valid while the topology is unchanged and every write keeps the pairs exact - true
+    for the position gestures (Smooth / Relax, Inflate / Pinch and their strokes), which write each partner as the
+    mirror of its driver."""
+
+    correspondence: Mapping[VertexId, VertexCorrespondence]
+    index: SymmetryIndex
+
+
+def symmetry_pairing(mesh: Mesh) -> SymmetryPairing | None:
+    """The pairing of `mesh` now, or None without a symmetry definition."""
+    if mesh.symmetry_definition is None:
+        return None
+    correspondence = vertex_correspondence(mesh)
+    return SymmetryPairing(correspondence, SymmetryIndex(mesh, correspondence))
 
 
 # ---------------------------------------------------------------------------------------------
