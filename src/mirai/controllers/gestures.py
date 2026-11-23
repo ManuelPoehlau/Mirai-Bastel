@@ -40,32 +40,36 @@ from ..interaction.session import (
     PASS,
     SILENT,
     Command,
+    Drag,
     KeyRelease,
     Modifiers,
     Motion,
     Outcome,
+    Press,
     Refusal,
+    Release,
     RunContext,
 )
 from ..interaction.tools import resolve_selection_vertices
+from ..mesh_geometry import circle_segments, mesh_center_and_radius
 from ..mask import unblocked
 from ..morph_targets import MORPH_COMMANDS
 from ..soft_selection import (
     RADIUS_STEPS_PERCENT,
     SoftSettings,
     SoftSymmetryRefusal,
-    compute_influence,
-    symmetric_influence,
+    soft_weights,
 )
 from ..surface_slide import (FLAG_BARRIER, FLAG_BOUNDARY, FLAG_CHAIN_END, SURFACE_SLIDE_LABEL, SlidePlan as SurfacePlan,
                              SlideSession, SlideStep, SurfaceSlideRefused, plan_surface_slide)
 from ..symmetric_offset import SymmetricOffset
-from ..symmetry import vertex_correspondence
+from ..symmetry import mirror_position
+from ..symmetry_coordination import SymmetryIndex, SymmetryPairing, symmetry_pairing
 from ..symmetric_ops import SymmetryRefusal
 from ..topology.bevel import BEVEL_LABEL, BevelRefused, build_bevel, plan_bevel
 from ..topology.connect_per_face import TopologyToolError
 from ..topology.inset import INSET_LABEL, InsetRefused, build_inset, plan_inset
-from ..topology.offset_build import OffsetBuild, OffsetRefused
+from ..topology.offset_build import OffsetBuild, OffsetRefused, face_normal
 from ..topology.inflate_pinch import (
     INFLATE_LABEL,
     PINCH_DIRECTIONS,
@@ -79,6 +83,7 @@ from ..topology.inflate_pinch import (
 )
 from ..topology.smooth import PX_PER_STEP as SMOOTH_PX_PER_STEP, TAP_AMOUNT as SMOOTH_TAP_AMOUNT
 from ..topology.smooth import RELAX_LABEL, SMOOTH_LABEL, SmoothPlan, SmoothRefused, plan_smooth
+from ..topology.smooth_stroke import MAX_DABS_PER_EVENT, MIN_SPACING_PX, SPACING as STROKE_SPACING, dab as stroke_dab
 from ..topology.loop_slide import LOOP_SLIDE_LABEL, LoopSlideRefused, SlidePlan, plan_loop_slide, slide_positions
 from ..topology.vertex_slide import (
     VERTEX_SLIDE_LABEL,
@@ -88,7 +93,9 @@ from ..topology.vertex_slide import (
     plan_vertex_slide,
     vertex_slide_positions,
 )
+from ..viewport.picking import face_hit_position
 from .services import AppServices
+from viewport.overlay import TOOL_MIRROR_DIM_LAYER, TOOL_PREVIEW_LAYER
 
 #: WP-06 B4 (E28): the hold-key gestures. Values: (label, verb, participle) for the status lines (E34, `PROVISIONAL`).
 TRANSFORM_COMMANDS: dict[str, tuple[str, str, str]] = {
@@ -117,6 +124,9 @@ OFFSET_COMMANDS = (commands.INSET, commands.BEVEL)
 SMOOTH_COMMANDS = (commands.SMOOTH, commands.RELAX)
 #: Inflate / Pinch (`mirai.topology.inflate_pinch`): the Smooth gesture with a signed amount (`DeformGesture`).
 DEFORM_COMMANDS = (commands.INFLATE, commands.PINCH)
+#: The stroke (LMB while S / Alt+S is held; Manu 2026-11-23): the modifiers its press may carry. Alt+S's Relax stroke
+#: takes Alt+LMB, which is Orbit / SelectToggle otherwise - only while Alt+S is held (Manu's choice, 2026-11-23).
+STROKE_PRESS_MODIFIERS = {commands.SMOOTH: frozenset(), commands.RELAX: frozenset({"alt"})}
 #: The transforms the gizmo drag (and the hold-key Tweak) can use (`Application.tweak_command`).
 TWEAK_TRANSFORMS = (commands.MOVE, commands.ROTATE, commands.SCALE)
 
@@ -953,12 +963,33 @@ class SurfaceSlideGesture(_SlideGesture):
         self.show_weights(surface_slide_weights(plan))
 
 
+@dataclasses.dataclass
+class _Stroke:
+    """One LMB stroke of a held Smooth / Relax: its journal from the press (None = refused at the press: a shown morph
+    mix; its drags and release are still the gesture's, nothing is written), the last dab's screen point, what moved."""
+
+    before: MeshChange | None
+    selection_before: tuple | None
+    last: tuple[float, float] | None = None
+    moved: set = dataclasses.field(default_factory=set)
+    dabs: int = 0
+    skipped: str | None = None
+
+
 class SmoothGesture(GestureSession):
     """Smooth / Relax (WP Toolbox Gaps C2, hold S / Alt+S): the plan on the press selection (`seeds`), the strength
     in steps (`amount`); every motion recomputes the positions from the press state (no drift), right = more, left =
     fewer, down to the start. A tap (no motion) is one fixed step at the release. Journal from the first motion (as
     Loop Slide). With Soft on the plan carries the influence weights, and the wheel steps its radius live, as for a
-    Soft W/E/R. Esc ends it with "cancelled" also before it began (instead of the tap step)."""
+    Soft W/E/R. Esc ends it with "cancelled" also before it began (instead of the tap step).
+
+    The stroke (Brush research 2026-11-18 §6–§7, Manu 2026-11-23, `PROVISIONAL`): while the key is held, LMB (Relax:
+    also Alt+LMB) and drag = dabs at the surface point under the cursor (`topology.smooth_stroke`), one History entry
+    per stroke, Esc rolls the running stroke back. A press is the first dab (a click = one dab, the selection stays).
+    Radius = the Soft radius (also with Soft off), spacing a quarter of it on screen, a ring at the cursor. An LMB press
+    after the dial began drops the dial's writes (the press says "stroke"); after a stroke the motion is no dial and the
+    release no tap. The key let go during a stroke: the stroke runs on to the LMB release, then the gesture ends.
+    Refused with a shown morph mix (O-5: N to 0 %, or Tab to edit the target)."""
 
     cancel_unbegun = True
 
@@ -969,6 +1000,15 @@ class SmoothGesture(GestureSession):
         self.amount = 0.0
         self.before: MeshChange | None = None
         self.selection_before: tuple | None = None
+        #: The running LMB stroke, `stroked` = an LMB stroke was pressed in this hold (the dial is over), `key_up` = the
+        #: key went up during a stroke (the gesture ends at its LMB release), `ring` = the cursor ring is shown.
+        self.stroke: _Stroke | None = None
+        self.stroked = False
+        self.key_up = False
+        self.ring = False
+        #: The press's symmetry pairing (None without a definition): valid for the whole gesture, the topology is fixed
+        #: and every write keeps the pairs exact.
+        self.pairing: SymmetryPairing | None = None
 
     def _write(self, amount: float) -> set[VertexId]:
         positions = self.plan.positions(amount)
@@ -980,7 +1020,7 @@ class SmoothGesture(GestureSession):
     def step(self, dx: float, dy: float) -> bool:
         services = self.services
         plan = self.plan
-        if plan is None or dx == 0:
+        if plan is None or dx == 0 or self.stroked:
             return False
         if not self.begun:
             self.before = services.scene.mesh.begin_change()
@@ -1016,7 +1056,9 @@ class SmoothGesture(GestureSession):
         services.status(f"{plan.label}: one step" if changed else f"{plan.label}: no change")
 
     def _replan(self, mesh, weights, mask):
-        return plan_smooth(mesh, self.seeds, relax=self.plan.relax, weights=weights, mask=mask)
+        return plan_smooth(
+            mesh, self.seeds, relax=self.plan.relax, weights=weights, mask=mask, index=_index(self.pairing)
+        )
 
     def release(self) -> None:
         """A drag commits its journal as one entry; a tap (no motion) is one fixed step (`TAP_AMOUNT`) through the
@@ -1026,6 +1068,8 @@ class SmoothGesture(GestureSession):
         if plan is None:
             return
         mesh = services.scene.mesh
+        if self.stroked:
+            return  # every stroke committed itself at its LMB release
         if not self.begun:
             self._tap()
             return
@@ -1040,6 +1084,13 @@ class SmoothGesture(GestureSession):
         services.status(self._committed_text())
 
     def abort(self) -> None:
+        stroke, self.stroke = self.stroke, None
+        if stroke is not None:
+            if stroke.before is not None:  # Esc in a stroke: that stroke goes, the earlier ones of the hold stay
+                self.services.scene.mesh.rollback_change(stroke.before)
+                self.services.invalidate_picks()
+                self.services.notify_vertices_moved(stroke.moved)
+            return
         before, self.before = self.before, None
         if before is None or self.plan is None:
             return
@@ -1048,13 +1099,20 @@ class SmoothGesture(GestureSession):
         self.services.notify_vertices_moved(set(self.plan.movable))
 
     def cleanup(self) -> None:
+        mesh = self.services.scene.mesh
         if self.before is not None:
-            self.services.scene.mesh.release_change(self.before)
+            mesh.release_change(self.before)
             self.before = None
+        stroke, self.stroke = self.stroke, None
+        if stroke is not None and stroke.before is not None:
+            mesh.release_change(stroke.before)  # an interrupted stroke keeps what it wrote, as every gesture
+        self._clear_ring()
 
     def soft_live(self) -> bool:
-        """With Soft on (armed or dragging) the wheel steps its radius."""
-        return self.plan is not None and self.plan.weights is not None and self.soft is not None
+        """With Soft on (armed or dragging) the wheel steps its radius - not once a stroke was pressed (a stroke reads
+        the sticky Soft radius at every dab, so the wheel steps that one)."""
+        return (self.plan is not None and self.plan.weights is not None and self.soft is not None
+                and not self.stroked)
 
     def reweight(self, settings: SoftSettings) -> None:
         """New radius / flow: back to the press geometry (only the movable vertices were written), the influence and
@@ -1067,7 +1125,7 @@ class SmoothGesture(GestureSession):
             for vid in old.movable:
                 mesh.set_vertex_position(vid, old.start[vid])
         try:
-            weights = self._controller.smooth_soft_weights(self.seeds, settings)
+            weights = self._controller.smooth_soft_weights(self.seeds, settings, self.pairing)
             plan = self._replan(mesh, weights, services.mask_values(self.seeds))
         except self.replan_refusals:
             plan = old  # the seeds did not change: keep the field it had
@@ -1078,6 +1136,199 @@ class SmoothGesture(GestureSession):
         services.invalidate_picks()
         services.notify_vertices_moved(set(old.movable) | set(plan.movable))
         self.show_weights(self.plan.weights)
+
+    # -- the stroke ------------------------------------------------------------------------------------------------
+
+    def grabs(self, event) -> bool:
+        if self.command not in SMOOTH_COMMANDS:
+            return False  # Inflate / Pinch: no stroke yet (research §9 phase 3)
+        if isinstance(event, Press):
+            pressed = event.input
+            return (self.stroke is None and pressed.kind == "mouse" and pressed.value == "LEFT"
+                    and pressed.modifiers <= STROKE_PRESS_MODIFIERS[self.command])
+        if isinstance(event, Drag):
+            return event.command is None and self.stroke is not None
+        if isinstance(event, Release):
+            return event.raw and event.button == "LEFT" and self.stroke is not None
+        return False
+
+    def allows(self, command: str, ctx: RunContext) -> Optional[Refusal]:
+        refusal = super().allows(command, ctx)
+        if refusal is None and self.stroked and command in BEGUN_GESTURE_REFUSES:
+            return SILENT  # Undo while held after a stroke would leave the stroke's symmetry pairing behind
+        return refusal
+
+    def handle(self, event) -> Outcome:
+        if self.grabs(event):
+            services = self.services
+            if isinstance(event, Press):
+                cursor = (event.x, event.y) if event.x is not None else services.cursor
+                self._stroke_begin(cursor)
+            elif isinstance(event, Drag):
+                if services.cursor is not None:
+                    self._stroke_step(*services.cursor)
+            else:
+                self._stroke_end()
+            return True
+        if self.stroke is not None and isinstance(event, KeyRelease) and event.input.value == self.key:
+            self.key_up = True  # the stroke runs on to the LMB release (Manu 2026-11-23)
+            return True
+        if self.stroked and isinstance(event, Motion):
+            self._show_ring(event.x, event.y)  # between strokes the motion is no dial
+            return True
+        return super().handle(event)
+
+    def _stroke_label(self) -> str:
+        return f"{RELAX_LABEL if self.command == commands.RELAX else SMOOTH_LABEL} stroke"
+
+    def _stroke_begin(self, cursor) -> None:
+        services = self.services
+        mesh = services.scene.mesh
+        self.stroked = True
+        if services.query_mesh is not mesh:  # O-5: the drawn shape is not the one a dab would smooth
+            self.stroke = _Stroke(None, None)
+            services.status(f"{self._stroke_label()}: refused - a morph target is dialled in; set it to 0 % (N) or "
+                            "edit the target (Tab)")
+            return
+        if self.begun:  # the dial had begun: the press says "stroke", the dial's writes go
+            self.abort()
+            self.begun = False
+            self.amount = 0.0
+        if self.soft_op_running:
+            self.show_weights(None)
+        self.stroke = stroke = _Stroke(mesh.begin_change(), services.selection_snapshot())
+        if cursor is None:
+            return
+        stroke.last = cursor
+        hit = self._stroke_hit(*cursor)
+        if hit is not None:
+            self._stroke_dab(hit[0])
+        self._show_ring(*cursor)
+
+    def _stroke_step(self, x: float, y: float) -> None:
+        """Dabs every `SPACING` x the radius on screen along the way from the last dab (Paint Room's rule)."""
+        stroke = self.stroke
+        if stroke.before is None:
+            return
+        if stroke.last is None:
+            stroke.last = (x, y)
+            return
+        lx, ly = stroke.last
+        distance = math.hypot(x - lx, y - ly)
+        hit = self._stroke_hit(x, y)
+        spacing = max(MIN_SPACING_PX, STROKE_SPACING * self._screen_radius(hit[1])) if hit else 4.0 * MIN_SPACING_PX
+        count = int(distance // spacing)
+        if count > 0:
+            capped = count > MAX_DABS_PER_EVENT
+            count = min(count, MAX_DABS_PER_EVENT)
+            for i in range(1, count + 1):
+                t = i / count if capped else i * spacing / distance
+                sx, sy = lx + (x - lx) * t, ly + (y - ly) * t
+                sample = self._stroke_hit(sx, sy)
+                if sample is not None:
+                    self._stroke_dab(sample[0])
+                stroke.last = (sx, sy)
+            if capped:
+                stroke.last = (x, y)
+        self._show_ring(x, y)
+
+    def _stroke_end(self) -> None:
+        services = self.services
+        stroke, self.stroke = self.stroke, None
+        label = self._stroke_label()
+        if stroke is not None and stroke.before is not None:
+            mesh = services.scene.mesh
+            delta = mesh.end_change(stroke.before)
+            if delta.empty:
+                services.status(stroke.skipped or f"{label}: no change")
+            else:
+                services.history.push(MeshDeltaCommand(mesh=mesh, delta=delta, description=label))
+                services.record_selection_history(stroke.selection_before)
+                note = f" - skipped where {stroke.skipped}" if stroke.skipped else ""
+                services.status(f"{label} committed ({stroke.dabs} dabs){note}")
+        if self.key_up:
+            self.end()
+            services.refresh_hover()
+
+    def _stroke_settings(self) -> SoftSettings:
+        """The Soft settings a dab uses: the sticky ones (radius, curve, metric, flow), also with Soft off (O-3)."""
+        soft = self.services.soft_settings
+        if soft.world_radius <= 0.0:
+            _, bounding = mesh_center_and_radius(self.services.scene.mesh)
+            soft = soft.with_bounding_radius(bounding)
+        return soft
+
+    def _stroke_hit(self, x: float, y: float):
+        """`(face, point)` under the screen point on the drawn surface, or None."""
+        services = self.services
+        face = services.pick_face(x, y)
+        if face is None:
+            return None
+        width, height = services.viewport_size
+        point = face_hit_position(services.edit_camera, services.query_mesh, face, x, y, width, height)
+        return None if point is None else (face, point)
+
+    def _stroke_dab(self, face) -> None:
+        services = self.services
+        stroke = self.stroke
+        mesh = services.scene.mesh
+        seeds = mesh.face_vertices(face)
+        try:
+            moved = stroke_dab(mesh, seeds, self._stroke_settings(), relax=self.command == commands.RELAX,
+                               pairing=self.pairing, mask=services.mask_values(seeds))
+        except (SmoothRefused, SoftSymmetryRefusal) as exc:
+            if stroke.skipped is None:
+                stroke.skipped = str(exc)
+                services.status(f"{self._stroke_label()}: dab skipped - {exc}")
+            return
+        stroke.dabs += 1
+        stroke.moved |= moved
+        services.invalidate_picks()
+        services.notify_vertices_moved(moved)
+
+    def _screen_radius(self, point) -> float:
+        """The brush radius in pixels at `point` (object space): the spacing's unit."""
+        services = self.services
+        camera = services.edit_camera
+        width, height = services.viewport_size
+        _, right, _ = camera.basis()
+        radius = self._stroke_settings().world_radius
+        a = camera.project_to_screen(tuple(point), width, height)
+        b = camera.project_to_screen(tuple(p + radius * r for p, r in zip(point, right)), width, height)
+        if a is None or b is None:
+            return 8.0
+        return max(1.0, math.hypot(b[0] - a[0], b[1] - a[1]))
+
+    def _show_ring(self, x: float, y: float) -> None:
+        """The brush ring at the drawn surface under the cursor (and its mirror under symmetry), else none."""
+        viewport = self.services.viewport
+        if viewport is None:
+            return
+        hit = self._stroke_hit(x, y)
+        if hit is None:
+            self._clear_ring()
+            return
+        face, point = hit
+        shown = self.services.query_mesh
+        normal = face_normal(shown, face)
+        radius = self._stroke_settings().world_radius
+        segments = {TOOL_PREVIEW_LAYER: circle_segments(point, normal, radius)}
+        definition = self.services.scene.mesh.symmetry_definition
+        if definition is not None:
+            origin = (0.0, 0.0, 0.0)
+            mirrored = mirror_position(normal, origin, definition.plane_normal)
+            segments[TOOL_MIRROR_DIM_LAYER] = circle_segments(
+                mirror_position(point, definition.plane_point, definition.plane_normal), mirrored, radius
+            )
+        viewport.set_tool_overlay(segments=segments)
+        self.ring = True
+
+    def _clear_ring(self) -> None:
+        if self.ring:
+            self.ring = False
+            viewport = self.services.viewport
+            if viewport is not None:
+                viewport.set_tool_overlay()
 
 
 class DeformGesture(SmoothGesture):
@@ -1111,9 +1362,14 @@ class DeformGesture(SmoothGesture):
         self.services.status(f"{self.plan.label}: drag right / left to {verb} - no change")
 
     def _replan(self, mesh, weights, mask):
+        index = _index(self.pairing)
         if self.command == commands.INFLATE:
-            return plan_inflate(mesh, self.seeds, weights=weights, mask=mask)
-        return plan_pinch(mesh, self.seeds, self.direction, weights=weights, mask=mask)
+            return plan_inflate(mesh, self.seeds, weights=weights, mask=mask, index=index)
+        return plan_pinch(mesh, self.seeds, self.direction, weights=weights, mask=mask, index=index)
+
+
+def _index(pairing: SymmetryPairing | None) -> SymmetryIndex | None:
+    return None if pairing is None else pairing.index
 
 
 def world_per_px(services, vertices) -> float:
@@ -1449,15 +1705,19 @@ class GestureController:
             target = element_vertices(mesh, selection.hovered)
         soft_settings = services.soft_settings
         soft = soft_settings if soft_settings.enabled else None
+        pairing = symmetry_pairing(mesh)
         try:
-            weights = None if soft is None or not target else self.smooth_soft_weights(target, soft)
-            plan = plan_smooth(mesh, target, relax=relax, weights=weights, mask=services.mask_values(target))
+            weights = None if soft is None or not target else self.smooth_soft_weights(target, soft, pairing)
+            plan = plan_smooth(
+                mesh, target, relax=relax, weights=weights, mask=services.mask_values(target), index=_index(pairing)
+            )
         except (SmoothRefused, SoftSymmetryRefusal) as exc:
             label = RELAX_LABEL if relax else SMOOTH_LABEL
             text = str(exc)
             services.status(text if text.startswith(label) else f"{label}: refused — {text}")
             return False
         gesture = SmoothGesture(self, command, key, plan, target, origin)
+        gesture.pairing = pairing
         services.interaction.start(gesture)
         services.set_hovered(None)
         if soft is not None:
@@ -1468,7 +1728,7 @@ class GestureController:
         soft_note = " (Soft: wheel = radius)" if soft is not None else ""
         services.status(
             f"{plan.label}: {len(plan.movable)} points{soft_note} - tap for one step, or drag right/left for"
-            f" more/less, release {key.upper()} to commit"
+            f" more/less, release {key.upper()} to commit; LMB on the surface = stroke"
         )
         return True
 
@@ -1487,19 +1747,21 @@ class GestureController:
         inflate = command == commands.INFLATE
         direction = None if inflate else self.pinch_direction
         label = INFLATE_LABEL if inflate else pinch_label(direction)
+        pairing = symmetry_pairing(mesh)
         try:
-            weights = None if soft is None or not target else self.smooth_soft_weights(target, soft)
+            weights = None if soft is None or not target else self.smooth_soft_weights(target, soft, pairing)
             mask = services.mask_values(target)
             if inflate:
-                plan = plan_inflate(mesh, target, weights=weights, mask=mask)
+                plan = plan_inflate(mesh, target, weights=weights, mask=mask, index=_index(pairing))
             else:
-                plan = plan_pinch(mesh, target, direction, weights=weights, mask=mask)
+                plan = plan_pinch(mesh, target, direction, weights=weights, mask=mask, index=_index(pairing))
         except (DeformRefused, SoftSymmetryRefusal) as exc:
             text = str(exc)
             services.status(text if text.startswith(label) else f"{label}: refused — {text}")
             return False
         per_px = world_per_px(services, target) if inflate else 1.0 / PINCH_PX_PER_UNIT
         gesture = DeformGesture(self, command, key, plan, target, origin, per_px, direction)
+        gesture.pairing = pairing
         services.interaction.start(gesture)
         services.set_hovered(None)
         if soft is not None:
@@ -1651,20 +1913,13 @@ class GestureController:
         )
         services.set_hovered(None)
 
-    def smooth_soft_weights(self, seeds, soft: SoftSettings) -> dict[VertexId, float]:
+    def smooth_soft_weights(
+        self, seeds, soft: SoftSettings, pairing: SymmetryPairing | None = None
+    ) -> dict[VertexId, float]:
         """The influence of `seeds` by the same function and arguments as a Soft W/E/R (plain field, or under a
-        definition the symmetric field; raises `SoftSymmetryRefusal` like W/E/R at `begin()`)."""
-        mesh = self.services.scene.mesh
-        if mesh.symmetry_definition is None:
-            return compute_influence(
-                mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve,
-                curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
-            )
-        return symmetric_influence(
-            mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve,
-            curve_power=soft.curve_power, correspondence=vertex_correspondence(mesh),
-            flow_ratio=soft.flow_ratio,
-        ).weights
+        definition the symmetric field; raises `SoftSymmetryRefusal` like W/E/R at `begin()`). `pairing`: the press's
+        (or stroke's) `symmetry_pairing`, else the pairing is derived here."""
+        return soft_weights(self.services.scene.mesh, seeds, soft, None if pairing is None else pairing.correspondence)
 
     def topology_changed(self) -> None:
         """After a topology gesture's begin / commit / cancel: caches, viewport and a dead-ID sweep (B6 lesson: a

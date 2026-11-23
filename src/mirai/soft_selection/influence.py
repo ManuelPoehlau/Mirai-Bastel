@@ -121,13 +121,10 @@ def _geodesic_distances(
 ) -> dict[VertexId, float]:
     """Multi-source Dijkstra over the edge graph. A path is a chain of mesh edges,
     so this is an upper bound of the true surface distance (see FINDINGS)."""
-    # One pass over all edges instead of `Mesh.vertex_edges()` per visited vertex:
-    # that query is an O(E) scan in Core V1, which made this ~5x slower (FINDINGS).
-    neighbours: dict[VertexId, list[VertexId]] = {}
-    for eid in mesh.all_edge_ids():
-        a, b = mesh.edge_vertices(eid)
-        neighbours.setdefault(a, []).append(b)
-        neighbours.setdefault(b, []).append(a)
+    # Neighbours of the visited vertices only, from the indexed `Mesh.vertex_edges` (ascending EdgeId, the order the
+    # former whole-mesh edge pass produced; the Dijkstra minimum does not depend on it anyway). The whole-mesh pass was
+    # 95-99 % of a field's cost (Brush research 2026-11-18 §4.1) back when `vertex_edges` was an O(E) scan.
+    vertex_edges, edge_vertices = mesh.vertex_edges, mesh.edge_vertices
     dist: dict[VertexId, float] = {s: 0.0 for s in seeds}
     heap: list[tuple[float, VertexId]] = [(0.0, s) for s in seeds]
     heapq.heapify(heap)
@@ -138,7 +135,9 @@ def _geodesic_distances(
             continue
         done.add(vid)
         p = mesh.vertex_position(vid)
-        for other in neighbours.get(vid, ()):
+        for eid in vertex_edges(vid):
+            a, b = edge_vertices(eid)
+            other = b if a == vid else a
             if other in done:
                 continue
             nd = d + math.sqrt(_dist_sq(p, mesh.vertex_position(other)))

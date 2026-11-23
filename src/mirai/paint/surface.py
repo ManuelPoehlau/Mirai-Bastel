@@ -29,6 +29,7 @@ import numpy as np
 
 from core import FaceId, Mesh, VertexId
 
+from ..mesh_geometry import circle_segments
 from .texel_map import TexelMap
 
 #: Footprint triangles must face the hit's way: cosine of the largest angle between their normals (`PROVISIONAL`).
@@ -289,18 +290,8 @@ class PaintSurface:
         return self.map.texel_at(uv[0], uv[1])
 
     def circle(self, centre, normal, radius: float, segments: int = 48) -> list[tuple]:
-        """The cursor circle: `segments` line segments of a circle of `radius` around `centre` in the plane normal to
-        `normal` (object space)."""
-        n = np.asarray(normal, dtype=np.float64)
-        helper = np.array([1.0, 0.0, 0.0]) if abs(n[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
-        a = np.cross(n, helper)
-        a /= np.linalg.norm(a)
-        b = np.cross(n, a)
-        angles = np.linspace(0.0, 2.0 * np.pi, segments + 1)
-        ring = np.asarray(centre, dtype=np.float64)[None, :] + radius * (np.cos(angles)[:, None] * a
-                                                                          + np.sin(angles)[:, None] * b)
-        points = [tuple(float(x) for x in p) for p in ring]
-        return [(points[i], points[i + 1]) for i in range(segments)]
+        """The cursor circle (`mesh_geometry.circle_segments`, object space)."""
+        return circle_segments(centre, normal, radius, segments)
 
 
 #: Triangles per cluster of the culling step (`_Clusters`; `PROVISIONAL`, agent-set).

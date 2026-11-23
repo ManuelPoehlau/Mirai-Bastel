@@ -13,6 +13,7 @@ flipped as listed in AD-SYM-05 §5.3; `scale_formula`/`"power"` left `src`. Non-
 **Live radius (2026-10-22, see "Live radius during a running gesture" below):** the wheel changes the radius of a running Soft Move/Rotate/Scale; the gesture is re-evaluated from its start geometry. Narrows the §4.3 per-gesture rule for the radius only; `PROVISIONAL`, Artist test open (ATELIER B12).
 **Smooth / Relax (2026-10-24, see "Soft Smooth / Relax" below):** with Soft on, the held S / Alt+S smooths the whole influence field, each point's step scaled by its weight; same field, display and live wheel as W/E/R. `PROVISIONAL`.
 **Inflate / Pinch (2026-11-15, see "Soft Inflate / Pinch" below):** two deformations in the Smooth family (hold Shift+I / Shift+P): along the press normals, and towards the selection - radial, or across / along the Loop / Ring families of the flow; same field, symmetry, display and live wheel. `PROVISIONAL`, keys and Loop / Ring meaning open for Manu.
+**Smooth / Relax stroke (2026-11-23, see "Smooth / Relax stroke" below):** while S / Alt+S is held, LMB and drag dabs Smooth / Relax at the surface under the cursor with the Soft radius; one History entry per stroke. `PROVISIONAL`, Artist test open (ATELIER B17).
 **Loop / Ring flow (2026-10-22, see "Loop / Ring flow" below):** a topology-oriented anisotropic geodesic field - the reach along the seeds' edge loops vs. across their edge rings is adjustable (Ctrl+Shift+wheel), sticky and live in a running gesture like the radius; neutral = the isotropic field bit for bit. `PROVISIONAL`, Artist test open (ATELIER B15).
 **Finer radius steps and display look (2026-10-22, see "Finer radius steps and display look" below):** about 10-15 % per wheel notch; the influence display has three looks (`mono` default, `tint`, `color`) on Ctrl+Shift+O; `PROVISIONAL`, Artist test open (ATELIER B12).
 **Soft + symmetry runs (2026-10-14, AD-SYM-04 slice SS2, [note](AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#implementation-note-2026-10-14-slice-ss2)):** §8 items 1 and 2 (the `Application` refusal and the op backstop) are superseded; what still refuses is listed there.
@@ -387,6 +388,42 @@ the Smooth / Relax family; the module docstring of `src/mirai/topology/inflate_p
   nothing, gates (held W, mode `4`, nothing selected), the direction cycle, live radius == a gesture begun at that
   radius, symmetric gestures on both paired assets, layers bit-identical. **Not Artist-validated:** the feel, the step
   sizes, the keys, whether Loop / Ring match the intent on a face.
+
+## Smooth / Relax stroke (2026-11-23, `PROVISIONAL`)
+
+Manu, 2026-11-23: "stroke/brush-artiges Verhalten war geplant" - O-1 of the
+[Brush research](../research/BRUSH_SYSTEM_FEASIBILITY_AND_ARCHITECTURE_RESEARCH_2026-11-18.md) is **yes**, O-2..O-8 as
+proposed there (§10). Built as a mode of the held S / Alt+S gesture, not as a brush system or a sculpt mode; the
+contract is the docstring of `src/mirai/topology/smooth_stroke.py` and of `SmoothGesture` (`controllers/gestures.py`).
+
+- **Input (O-2):** hold S (Alt+S) as today; LMB (Relax: also Alt+LMB) on the surface and drag = a stroke. **Alt+S takes
+  Alt+LMB** away from Orbit / SelectToggle only while Alt+S is held (Manu 2026-11-23). A click = one dab, the selection
+  stays (Manu 2026-11-23). The key let go during a stroke: the stroke runs to the LMB release, then the gesture ends
+  (Manu 2026-11-23, the Working Pivot's rule). No `config/keymap.json` entry before Manu's "Taste passt".
+- **Dab:** the points of the hit face on the drawn surface are the seeds; their Soft field (one function with W/E/R,
+  `soft_weights`) with the **sticky Soft settings, also while Soft is off** (O-3: brush radius = Soft radius; Shift+wheel
+  steps it between dabs); `plan_smooth` from the *current* state at `DAB_AMOUNT` = 0.5 steps (O-4, fixed); spacing a
+  quarter of the radius on screen, at most 24 dabs per pointer event. Mask holds points; the selection does not limit a
+  stroke (O-6). A ring at the cursor (and its mirror), shared geometry with the Paint Room (`circle_segments`).
+- **History / Esc:** one journal per stroke = one History entry ("Smooth stroke" / "Relax stroke"); several strokes per
+  hold = several entries; Esc rolls the running stroke back exactly (the earlier ones stay); Undo / Redo are refused
+  while the key is still held after a stroke. An LMB press after the dial began drops the dial's writes (agent rule:
+  the press says "stroke"); after a stroke the motion is no dial and the release no tap.
+- **Symmetry (O-7):** one `SymmetryPairing` per press (correspondence + `SymmetryIndex`), valid for every stroke of the
+  hold - the topology is fixed and the plan writes each partner as its driver's mirror. A dab whose seed has no partner
+  is skipped and named once in the status line.
+- **Morph (O-5):** with a target dialled in (> 0 %) the stroke is refused ("set it to 0 % (N) or edit the target (Tab)");
+  the editing view (Tab) works like every position tool. Pose: refused as every position edit (the key does not arm).
+- **Not in this step:** Inflate / Pinch strokes (research §9 phase 3), strength settings, pressure, lazy mouse.
+- **Phase 1 (field cost, same commit):** the geodesic field reads neighbours from the indexed `Mesh.vertex_edges` instead
+  of building a whole-mesh neighbour map per call (bit for bit the same distances, a test against the old algorithm);
+  Smooth / Relax / Inflate / Pinch build one pairing per press instead of two to three. Container figures in
+  [`RESULTS_SOFT_FIELD_CONTAINER_2026-11-23.md`](../../experiments/drag_cost/RESULTS_SOFT_FIELD_CONTAINER_2026-11-23.md):
+  field 9-11 ms -> 0.02-2 ms (20k), 43-51 ms -> 0.07-11 ms (87.5k); one dab 0.4 ms (20k) / 1.1 ms (87.5k) at 5 %.
+- **Tests:** `tests/test_application_smooth_stroke.py` (along the way, off the way bit for bit, one entry, Undo / Redo
+  exact, click, Esc, key up mid-stroke, Alt+S without orbit, dial dropped, mask, morph refusal, symmetric pairs, no
+  stroke for Inflate), `test_smooth.py` (handed-in index, accumulating dab), `test_soft_selection_influence.py` (field ==
+  whole-mesh reference). **Not Artist-validated:** the strength, the spacing, the ring, the keys.
 
 ## Loop / Ring flow (2026-10-22, `PROVISIONAL`)
 

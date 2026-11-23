@@ -75,3 +75,21 @@ def mesh_debug_report(name: str, mesh: Mesh) -> str:
         f"  Bounds   : X {min_x:.3f}..{max_x:.3f} | "
         f"Y {min_y:.3f}..{max_y:.3f} | Z {min_z:.3f}..{max_z:.3f}\n"
     )
+
+
+def circle_segments(centre: Position, normal: Position, radius: float, segments: int = 48) -> list[tuple]:
+    """A brush cursor ring: `segments` line segments of a circle of `radius` around `centre` in the plane normal to
+    `normal` (object space). Shared by the Paint Room and the Smooth / Relax stroke."""
+    length = math.sqrt(sum(c * c for c in normal)) or 1.0
+    n = tuple(c / length for c in normal)
+    helper = (1.0, 0.0, 0.0) if abs(n[0]) < 0.9 else (0.0, 1.0, 0.0)
+    a = (n[1] * helper[2] - n[2] * helper[1], n[2] * helper[0] - n[0] * helper[2], n[0] * helper[1] - n[1] * helper[0])
+    la = math.sqrt(sum(c * c for c in a))
+    a = tuple(c / la for c in a)
+    b = (n[1] * a[2] - n[2] * a[1], n[2] * a[0] - n[0] * a[2], n[0] * a[1] - n[1] * a[0])
+    points = []
+    for i in range(segments + 1):
+        angle = 2.0 * math.pi * i / segments
+        c, s = math.cos(angle) * radius, math.sin(angle) * radius
+        points.append(tuple(float(centre[k] + c * a[k] + s * b[k]) for k in range(3)))
+    return [(points[i], points[i + 1]) for i in range(segments)]

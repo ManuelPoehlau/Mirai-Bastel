@@ -147,17 +147,19 @@ class _Region:
         return sorted((v for v in self.movable if v not in self.mirrors), key=int)
 
 
-def _region(mesh: Mesh, vertex_ids, label: str, weights, mask) -> _Region:
+def _region(mesh: Mesh, vertex_ids, label: str, weights, mask, index=None) -> _Region:
     seeds = {v for v in vertex_ids if mesh.is_valid_vertex(v)}
     if not seeds:
         raise DeformRefused(f"{label}: nothing selected")
     definition = mesh.symmetry_definition
-    index = None
     partners: set[VertexId] = set()
-    if definition is not None:
+    if definition is None:
+        index = None
+    else:
         if not is_exact_plane(definition):
             raise DeformRefused(f"{label}: symmetry plane is not an exact axis plane")
-        index = SymmetryIndex(mesh)
+        if index is None:
+            index = SymmetryIndex(mesh)
         for v in seeds:
             partner = index.vertex_partner(v)
             if partner is None:
@@ -274,10 +276,10 @@ class _Normals:
 # --- Inflate ------------------------------------------------------------------------------------------------
 
 
-def plan_inflate(mesh: Mesh, vertex_ids, *, weights=None, mask=None) -> DeformPlan:
+def plan_inflate(mesh: Mesh, vertex_ids, *, weights=None, mask=None, index=None) -> DeformPlan:
     """`vertex_ids` = the selection (the Soft seeds); `weights` / `mask` as `plan_smooth`. Amount = world units
     along the press normals (module docstring)."""
-    region = _region(mesh, vertex_ids, INFLATE_LABEL, weights, mask)
+    region = _region(mesh, vertex_ids, INFLATE_LABEL, weights, mask, index)
     normals = _Normals(mesh)
     offsets: dict[VertexId, Vec3] = {}
     for v in region.driving:
@@ -293,7 +295,9 @@ def pinch_label(direction: str) -> str:
     return f"{PINCH_LABEL} ({direction})"
 
 
-def plan_pinch(mesh: Mesh, vertex_ids, direction: str = PINCH_RADIAL, *, weights=None, mask=None) -> DeformPlan:
+def plan_pinch(
+    mesh: Mesh, vertex_ids, direction: str = PINCH_RADIAL, *, weights=None, mask=None, index=None
+) -> DeformPlan:
     """`direction` one of `PINCH_DIRECTIONS`; `vertex_ids` / `weights` / `mask` as `plan_inflate`. Amount = the
     share of the way to the target, clamped to [`PINCH_MIN`, `PINCH_MAX`] (module docstring)."""
     if direction not in PINCH_DIRECTIONS:
@@ -303,7 +307,7 @@ def plan_pinch(mesh: Mesh, vertex_ids, direction: str = PINCH_RADIAL, *, weights
         raise DeformRefused(
             f"{label}: switch Soft Selection on (O) - the selection is the line the falloff is pulled onto"
         )
-    region = _region(mesh, vertex_ids, label, weights, mask)
+    region = _region(mesh, vertex_ids, label, weights, mask, index)
     normals = _Normals(mesh)
     if direction == PINCH_RADIAL:
         offsets = _radial_offsets(mesh, region, normals)

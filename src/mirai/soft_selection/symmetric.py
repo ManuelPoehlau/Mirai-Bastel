@@ -50,7 +50,7 @@ from typing import Any, Iterable, Mapping
 from core import Mesh, VertexId
 
 from ..symmetry import CorrespondenceState, VertexCorrespondence, vertex_correspondence
-from .influence import checked_radius, curve_shape, distance_function
+from .influence import checked_radius, compute_influence, curve_shape, distance_function
 
 
 class SoftSymmetryRefusal(ValueError):
@@ -190,3 +190,24 @@ def symmetric_influence(
         falloff_seam_vertex_ids=frozenset(falloff_seam),
         in_plane_only=in_plane_only,
     )
+
+
+def soft_weights(
+    mesh: Mesh,
+    seeds: Iterable[VertexId],
+    soft: Any,
+    correspondence: Mapping[VertexId, VertexCorrespondence] | None = None,
+) -> dict[VertexId, float]:
+    """The influence of `seeds` with the settings `soft` (`SoftSettings`) as every Soft gesture computes it: the plain
+    field, or under a symmetry definition the symmetric field (raises `SoftSymmetryRefusal` like W/E/R at `begin()`).
+    `correspondence`: the press's / stroke's pairing when the caller holds it, else derived here."""
+    if mesh.symmetry_definition is None:
+        return compute_influence(
+            mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve,
+            curve_power=soft.curve_power, flow_ratio=soft.flow_ratio,
+        )
+    return symmetric_influence(
+        mesh, set(seeds), soft.world_radius, metric=soft.metric, curve=soft.curve, curve_power=soft.curve_power,
+        correspondence=vertex_correspondence(mesh) if correspondence is None else correspondence,
+        flow_ratio=soft.flow_ratio,
+    ).weights

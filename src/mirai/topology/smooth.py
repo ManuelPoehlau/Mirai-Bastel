@@ -86,22 +86,25 @@ def _is_boundary(mesh: Mesh, vid: VertexId) -> bool:
     return not edges or any(len(mesh.edge_faces(e)) < 2 for e in edges)
 
 
-def plan_smooth(mesh: Mesh, vertex_ids, *, relax: bool, weights=None, mask=None) -> SmoothPlan:
+def plan_smooth(mesh: Mesh, vertex_ids, *, relax: bool, weights=None, mask=None, index=None) -> SmoothPlan:
     """`vertex_ids` = the selection (the Soft seeds). `weights` (Soft on) = the influence of the seeds,
     computed by the caller with the same function as W/E/R (plain or symmetric field): every vertex with a
     weight > 0 smooths, scaled by it; the field is already both-sided under symmetry. `mask` (Mask Geometry,
-    `mirai.mask.effective_mask`): fully masked vertices stay fixed, a partial mask scales the weight."""
+    `mirai.mask.effective_mask`): fully masked vertices stay fixed, a partial mask scales the weight. `index`: a
+    `SymmetryIndex` of this mesh's topology and pairing the caller already holds (a stroke builds one per stroke)."""
     label = RELAX_LABEL if relax else SMOOTH_LABEL
     selected = set(vertex_ids)
     if not selected:
         raise SmoothRefused(f"{label}: nothing selected")
 
     definition = mesh.symmetry_definition
-    index = None
-    if definition is not None:
+    if definition is None:
+        index = None
+    else:
         if not is_exact_plane(definition):
             raise SmoothRefused(f"{label}: symmetry plane is not an exact axis plane")
-        index = SymmetryIndex(mesh)
+        if index is None:
+            index = SymmetryIndex(mesh)
         partners = {}
         for v in selected:
             partner = index.vertex_partner(v)
