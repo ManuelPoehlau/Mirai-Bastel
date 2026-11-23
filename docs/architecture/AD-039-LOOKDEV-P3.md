@@ -1345,6 +1345,7 @@ Runs (GL files each in their own process under xvfb):
 | `xvfb-run -a python -m pytest tests/test_gl_lookdev_shadow.py -q` | 25 passed |
 | `… tests/test_gl_lookdev_pass.py` / `test_gl_lookdev_parity.py` / `test_gl_eye_pass.py` | 13 / 8 / 135 passed |
 | `xvfb-run -a python -m pytest tests -k "lookdev or look or view_state or main_wiring" -q` | 419 passed |
+| `xvfb-run -a python -m pytest tests -q` (at `e2b2ba4`, S3 + S4) | 7,960 passed, 8 skipped, 1 failed: `test_scene_menu_local_tmp.py::test_probe_menu_wiring` - **pre-existing** (fails identically before S1, §16.3) |
 
 ### 19.4 Measurement
 
