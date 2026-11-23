@@ -26,6 +26,10 @@ eye pass's LOOKDEV + LD_SHADOW variant does (the eyes receive, they never cast).
   pass; `maps = 2` renders into the map the last frame did not sample (ping-pong). Both off by default; the room probe
   measures them (`probe_lookdev_room.py`, rows `lookdev +shadow drag ...`).
 
+S4 (AD-039 §7): `bind_raw` binds the same map on `SHADOW_RAW_UNIT` (7) through a sampler object without compare mode
+(GL_LINEAR, CLAMP_TO_EDGE; created on first use, deleted in `release()`), so the skin pass reads its raw depth for the
+thickness; `unbind_raw` unbinds texture and sampler.
+
 Owned by `LookdevPass` (created on the first LookDev frame with the shadow on, deleted in its `release()`); nothing here
 exists with `shading == "worklight"` (G4).
 """
@@ -33,7 +37,7 @@ exists with `shading == "worklight"` (G4).
 from __future__ import annotations
 
 from . import lookdev_optics as lo
-from .lookdev_shaders import SHADOW_UNIT, shadow_depth_sources
+from .lookdev_shaders import SHADOW_RAW_UNIT, SHADOW_UNIT, shadow_depth_sources
 
 _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
@@ -70,6 +74,7 @@ class KeyShadow:
         self._sphere = ((0.0, 0.0, 0.0), 1.0)
         self._vp = list(_IDENTITY_4)
         self._resolution = self.size
+        self._raw_sampler = 0  # S4's sampler object, created on the first `bind_raw`
 
     # -- the cache key ---------------------------------------------------------------------------------------------
 
@@ -239,6 +244,8 @@ class KeyShadow:
         values["u_ld_shadow_scale"] = self._resolution / float(self.size)
         values["u_ld_shadow_offset"] = lo.SHADOW_NORMAL_OFFSET_TEXELS * 2.0 * self._sphere[1] / self._resolution
         values["u_ld_shadow"] = SHADOW_UNIT
+        values["u_ld_shadow_depth"] = SHADOW_RAW_UNIT  # S4: the raw depth
+        values["u_ld_shadow_range"] = 2.0 * self._sphere[1]  # the map's depth [0, 1] spans the frustum's 2 radius
         return values
 
     def bind(self, unit: int = SHADOW_UNIT) -> None:
@@ -252,6 +259,34 @@ class KeyShadow:
     def unbind(unit: int = SHADOW_UNIT) -> None:
         from pyglet import gl
 
+        gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+        gl.glActiveTexture(gl.GL_TEXTURE0)
+
+    def bind_raw(self, unit: int = SHADOW_RAW_UNIT) -> None:
+        """S4: the current map on `unit` through the sampler object without compare mode (the raw depth)."""
+        import ctypes
+
+        from pyglet import gl
+
+        if not self._raw_sampler:
+            ident = gl.GLuint()
+            gl.glGenSamplers(1, ctypes.byref(ident))
+            for name, value in ((gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR), (gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR),
+                                (gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP_TO_EDGE), (gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP_TO_EDGE),
+                                (gl.GL_TEXTURE_COMPARE_MODE, gl.GL_NONE)):
+                gl.glSamplerParameteri(ident.value, name, value)
+            self._raw_sampler = ident.value
+        gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
+        gl.glBindTexture(gl.GL_TEXTURE_2D, self._targets[self._current][0])
+        gl.glBindSampler(unit, self._raw_sampler)
+        gl.glActiveTexture(gl.GL_TEXTURE0)
+
+    @staticmethod
+    def unbind_raw(unit: int = SHADOW_RAW_UNIT) -> None:
+        from pyglet import gl
+
+        gl.glBindSampler(unit, 0)
         gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
         gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
         gl.glActiveTexture(gl.GL_TEXTURE0)
@@ -270,3 +305,6 @@ class KeyShadow:
         if not keep_program and self._program is not None:
             self._program.delete()
             self._program = None
+        if not keep_program and self._raw_sampler:
+            gl.glDeleteSamplers(1, ctypes.byref(gl.GLuint(self._raw_sampler)))
+            self._raw_sampler = 0

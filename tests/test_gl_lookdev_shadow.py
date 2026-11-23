@@ -34,7 +34,7 @@ from viewport.viewport import Viewport  # noqa: E402
 SIZE = 192
 GREY = LookDraw((0.5, 0.5, 0.5), roughness=1.0, specular=0.0)
 FLAT = lo.Studio((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-OFF = lo.LookdevEffects(shadow=False, dual_lobe=False)  # every P3 effect off: M1
+OFF = lo.LookdevEffects(shadow=False, dual_lobe=False, thickness=False)  # every P3 effect off: M1
 
 
 @pytest.fixture(scope="module")
@@ -515,15 +515,15 @@ def test_the_shadow_off_draws_m1_and_creates_nothing(gl_window):
     off = _frame(gl_window, viewport)
     passes = viewport.lookdev_pass
     assert passes.shadow is None and passes.features is None  # nothing made, nothing probed
-    assert set(passes.programs) == {(False, True, False, False)}
+    assert set(passes.programs) == {(False, True, False, False, False)}
     # the program is M1's: built from the pinned sources (the M1 call without the new argument)
     locations = {"position": GLRenderStore.program().attributes["position"]["location"],
                  "normal": GLRenderStore.program().attributes["normal"]["location"]}
     from pyglet.graphics.shader import Shader, ShaderProgram
 
     m1 = ShaderProgram(*(Shader(src, kind) for src, kind in ls.skin_sources(locations, False, True)))
-    passes.programs[(False, True, False, False)].delete()
-    passes.programs[(False, True, False, False)] = m1
+    passes.programs[(False, True, False, False, False)].delete()
+    passes.programs[(False, True, False, False, False)] = m1
     assert np.array_equal(_frame(gl_window, viewport), off)
     # with the shadow on and nothing between the key and the surfaces, the shadow changes no pixel
     viewport.set_shading("lookdev", _state(key_az=0.0, key_el=89.0, effects=lo.LookdevEffects()))
@@ -544,17 +544,17 @@ def test_the_dual_lobe_off_draws_s1_and_on_changes_the_highlight(gl_window):
 
     camera = OrbitCamera(target=(0.0, 0.2, 0.0), distance=5.5, yaw=0.3, pitch=0.75)
     viewport = _viewport(gl_window, {"ground": _ground(), "box": _box(*BOX)}, camera)
-    s1 = lo.LookdevEffects(dual_lobe=False)
+    s1 = lo.LookdevEffects(dual_lobe=False, thickness=False)
     state = _state(key_az=120.0, key_el=40.0, size=0.1, effects=s1)
     viewport.set_shading("lookdev", state)
     plain_off = _frame(gl_window, viewport)  # GREY: specular 0
     passes = viewport.lookdev_pass
-    assert set(passes.programs) == {(False, True, True, False)}
+    assert set(passes.programs) == {(False, True, True, False, False)}
     locations = {"position": GLRenderStore.program().attributes["position"]["location"],
                  "normal": GLRenderStore.program().attributes["normal"]["location"]}
     s1_program = ShaderProgram(*(Shader(src, kind) for src, kind in ls.skin_sources(locations, False, True, True)))
-    passes.programs[(False, True, True, False)].delete()
-    passes.programs[(False, True, True, False)] = s1_program
+    passes.programs[(False, True, True, False, False)].delete()
+    passes.programs[(False, True, True, False, False)] = s1_program
     assert np.array_equal(_frame(gl_window, viewport), plain_off)
     _release(viewport)
     viewport = _viewport(gl_window, {"sphere": _sphere()}, OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.0))
@@ -562,11 +562,135 @@ def test_the_dual_lobe_off_draws_s1_and_on_changes_the_highlight(gl_window):
     viewport.set_object_entry("sphere", viewport.object_entries["sphere"].mesh, (0.5, 0.5, 0.5), look=glossy)
     viewport.set_shading("lookdev", _state(key_az=30.0, key_el=30.0, effects=s1))
     off = _frame(gl_window, viewport)
-    viewport.set_shading("lookdev", _state(key_az=30.0, key_el=30.0, effects=lo.LookdevEffects()))
+    viewport.set_shading("lookdev", _state(key_az=30.0, key_el=30.0, effects=lo.LookdevEffects(thickness=False)))
     on = _frame(gl_window, viewport)
-    assert (False, True, True, True) in viewport.lookdev_pass.programs
+    assert (False, True, True, True, False) in viewport.lookdev_pass.programs
     changed = np.abs(on - off).max(axis=-1) > 2
     assert changed.sum() > 50, changed.sum()
+    _release(viewport)
+
+
+# -- AD-039 S4: the key's light through thin parts --------------------------------------------------------------------
+
+SLAB = ((-1.1, -0.5, -0.01), (-0.1, 0.5, 0.01))   # 0.02 thick along the key
+BLOCK = ((0.1, -0.5, -0.4), (1.1, 0.5, 0.4))      # 0.8 thick
+BACKLIT = LookDraw((0.7, 0.6, 0.5), roughness=0.6, specular=0.0, backscatter=1.0, backscatter_color=(1.0, 1.0, 1.0))
+
+
+def _flat_box(lo_corner, hi_corner) -> Mesh:
+    """A box of six separate quads (4 vertices each): every face keeps its own normal - `_box` shares its 8 corners,
+    so its vertex normals bend toward the corners."""
+    mesh = Mesh()
+    lo_c, hi_c = np.asarray(lo_corner, float), np.asarray(hi_corner, float)
+    for axis in range(3):
+        for side in (0, 1):
+            quad = []
+            for a, b in ((0, 0), (0, 1), (1, 1), (1, 0)):
+                index = [0, 0, 0]
+                index[axis] = side
+                index[(axis + 1) % 3], index[(axis + 2) % 3] = a, b
+                quad.append(mesh.add_vertex(tuple(float(v) for v in np.where(index, hi_c, lo_c))))
+            outward = np.zeros(3)
+            outward[axis] = 1.0 if side else -1.0
+            _face(mesh, quad, outward)
+    return mesh
+
+
+def _backlit(gl_window, effects):
+    """A thin slab and a thick block side by side, seen face-on from +Z, the key straight behind them (azimuth 180°):
+    their visible faces get no direct key light, only the backscatter."""
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=4.5, yaw=0.0, pitch=0.0)
+    viewport = _viewport(gl_window, {"slab": _flat_box(*SLAB), "block": _flat_box(*BLOCK)}, camera)
+    for key in ("slab", "block"):
+        viewport.set_object_entry(key, viewport.object_entries[key].mesh, (0.5, 0.5, 0.5), look=BACKLIT)
+    viewport.set_shading("lookdev", _state(key_az=180.0, key_el=0.0, effects=effects))
+    return viewport
+
+
+def _front_pixels(viewport, lo_c, hi_c):
+    """The pixels whose ray hits the box's front face (z = hi) well inside its rectangle."""
+    origin, direction = _rays(viewport)
+    t = (hi_c[2] - origin[..., 2]) / direction[..., 2]
+    point = origin + direction * t[..., None]
+    inner = ((point[..., 0] > lo_c[0] + 0.1) & (point[..., 0] < hi_c[0] - 0.1)
+             & (point[..., 1] > lo_c[1] + 0.1) & (point[..., 1] < hi_c[1] - 0.1) & (t > 0))
+    return np.nonzero(inner)
+
+
+def test_the_thickness_lets_a_thin_slab_through_and_not_a_thick_block(gl_window):
+    """AD-039 §7 (T4-1): the key straight behind - the slab's front face (0.02 behind the map's nearest surface)
+    transmits `exp(-0.02 / THICKNESS_SCALE)`, the block's (0.8 behind) nothing; the pixels equal the twin
+    `lookdev_output(ld_backscatter(..., transmission))`. With the thickness off both faces show M1's view-rim proxy,
+    which is 0 face-on."""
+    viewport = _backlit(gl_window, lo.LookdevEffects())
+    pixels = _frame(gl_window, viewport)
+    assert (False, True, True, True, True) in viewport.lookdev_pass.programs
+    frame = viewport.lookdev_frame()
+    n = np.array([0.0, 0.0, 1.0])
+    albedo = lo.srgb_decode(BACKLIT.base_color)
+    for box, thickness in ((SLAB, 0.02), (BLOCK, 0.8)):
+        ys, xs = _front_pixels(viewport, *box)
+        assert len(ys) > 200, len(ys)
+        transmission = np.full(len(ys), math.exp(-thickness / lo.THICKNESS_SCALE))
+        linear = lo.ld_backscatter(albedo, np.broadcast_to(n, (len(ys), 3)), np.broadcast_to(n, (len(ys), 3)), frame,
+                                   BACKLIT.backscatter, BACKLIT.backscatter_color, transmission)
+        expected = lo.lookdev_output(linear) * 255
+        assert np.abs(pixels[ys, xs] - expected).max() <= 2.5, (thickness, np.abs(pixels[ys, xs] - expected).max())
+    slab_ys, slab_xs = _front_pixels(viewport, *SLAB)
+    block_ys, block_xs = _front_pixels(viewport, *BLOCK)
+    assert pixels[slab_ys, slab_xs].mean() > 60 and pixels[block_ys, block_xs].max() <= 2
+    viewport.set_shading("lookdev", _state(key_az=180.0, key_el=0.0, effects=lo.LookdevEffects(thickness=False)))
+    off = _frame(gl_window, viewport)
+    assert off[slab_ys, slab_xs].max() <= 2  # the proxy: (1 - n.v)^3 = 0 face-on
+    _release(viewport)
+
+
+def test_the_thickness_off_draws_s3_and_binds_nothing_on_unit_7(gl_window):
+    """AD-039 §7 (T4-2): with the thickness off the program built by S3's call (`skin_sources(..., shadow,
+    dual_lobe)`) draws the same pixels; the key in front of the faces leaves the thickness nothing to change; after the
+    draw unit 7 has neither texture nor sampler."""
+    from pyglet import gl
+    from pyglet.graphics.shader import Shader, ShaderProgram
+
+    viewport = _backlit(gl_window, lo.LookdevEffects(thickness=False))
+    viewport.set_shading("lookdev", _state(key_az=150.0, key_el=20.0, effects=lo.LookdevEffects(thickness=False)))
+    s3 = _frame(gl_window, viewport)
+    passes = viewport.lookdev_pass
+    key = (False, True, True, True, False)
+    locations = {"position": GLRenderStore.program().attributes["position"]["location"],
+                 "normal": GLRenderStore.program().attributes["normal"]["location"]}
+    passes.programs[key].delete()
+    passes.programs[key] = ShaderProgram(*(Shader(src, kind)
+                                           for src, kind in ls.skin_sources(locations, False, True, True, True)))
+    assert np.array_equal(_frame(gl_window, viewport), s3)
+    # the key straight in front: no face the camera sees faces away from it - the thickness changes nothing
+    viewport.set_shading("lookdev", _state(key_az=0.0, key_el=0.0, effects=lo.LookdevEffects(thickness=False)))
+    front_off = _frame(gl_window, viewport)
+    viewport.set_shading("lookdev", _state(key_az=0.0, key_el=0.0, effects=lo.LookdevEffects()))
+    assert np.array_equal(_frame(gl_window, viewport), front_off)
+    gl.glActiveTexture(gl.GL_TEXTURE0 + ls.SHADOW_RAW_UNIT)
+    bound, sampler = gl.GLint(), gl.GLint()
+    gl.glGetIntegerv(gl.GL_TEXTURE_BINDING_2D, ctypes.byref(bound))
+    gl.glGetIntegerv(gl.GL_SAMPLER_BINDING, ctypes.byref(sampler))
+    gl.glActiveTexture(gl.GL_TEXTURE0)
+    assert (bound.value, sampler.value) == (0, 0)
+    assert passes.shadow._raw_sampler != 0  # made by the thickness frame, kept for the next
+    _release(viewport)
+
+
+def test_without_sampler_objects_the_thickness_is_off_with_a_status_line(gl_window, monkeypatch):
+    """AD-039 §2.2 / §7 (T4-3): `sampler_objects` stubbed false - the frame equals the thickness-off frame, the status
+    line once, the shadow stays on."""
+    reference = _backlit(gl_window, lo.LookdevEffects(thickness=False))
+    want = _frame(gl_window, reference)
+    _release(reference)
+    monkeypatch.setitem(lookdev_features.CHECKS, "sampler_objects", lambda: False)
+    viewport = _backlit(gl_window, lo.LookdevEffects())
+    assert np.array_equal(_frame(gl_window, viewport), want)
+    effects = viewport.lookdev_effects()
+    assert effects.shadow and not effects.thickness
+    assert viewport.take_lookdev_notices() == ["LookDev: Durchleuchtung aus – Sampler-Objekte nicht verfügbar"]
+    assert viewport.take_lookdev_notices() == []
     _release(viewport)
 
 
@@ -840,3 +964,123 @@ def test_the_shadow_block_matches_ld_key_shadowed(gl_window, dual):
         expected = lo.lookdev_output(linear) * 255
         assert np.abs(pixels[ys, xs] - expected).max() <= 2.5, (want, np.abs(pixels[ys, xs] - expected).max())
     _release(viewport)
+
+
+_IDENTITY = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
+
+THICKNESS_PARITY_BODY = """
+uniform samplerBuffer u_inputs;
+uniform int u_width;
+uniform int u_count;
+layout(location = 0) out vec4 out_value;
+void main() {
+    int i = int(gl_FragCoord.y) * u_width + int(gl_FragCoord.x);
+    if (i >= u_count) { out_value = vec4(0.0); return; }
+    vec3 sp = texelFetch(u_inputs, i).xyz;
+    // the identity map matrix and no offset: ld_shadow_coord(p) = p * 0.5 + 0.5
+    out_value = vec4(ld_key_transmission(sp * 2.0 - 1.0, vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0)), 0.0, 0.0, 1.0);
+}
+"""
+
+
+@pytest.mark.parametrize("scale", [1.0, 0.5])
+def test_ld_key_transmission_matches_key_transmission(gl_window, scale):
+    """AD-039 §7 (twin): a smooth random 64² depth map uploaded as the shadow's compare texture and read raw on unit 7
+    through `KeyShadow`'s sampler object (the production binding); `ld_key_transmission` at 4,096 map points against
+    `lookdev_optics.key_transmission`: inside, in front of the surface (all of it), outside the map (none)."""
+    from pyglet import gl
+    from pyglet.graphics.shader import Shader, ShaderProgram
+
+    from viewport.gl_render_store import _register_sampler_buffer_uniform
+    from viewport.lookdev_shadow import KeyShadow, register_shadow_sampler_uniform
+
+    gl_window.switch_to()
+    _register_sampler_buffer_uniform()
+    register_shadow_sampler_uniform()
+    rng = np.random.default_rng(11)
+    size, width, count, depth_range = 64, 64, 4096, 0.3
+    coarse = rng.uniform(0.3, 0.7, (9, 9))  # smooth: a 9 x 9 grid interpolated up to 64 x 64
+    grid = np.linspace(0, 8, size)
+    rows = np.array([np.interp(grid, np.arange(9), coarse[j]) for j in range(9)])
+    depth = np.ascontiguousarray(np.array([np.interp(grid, np.arange(9), rows[:, i]) for i in range(size)]).T,
+                                 dtype=np.float32)  # C order: the upload reads rows
+    sp = rng.uniform(0.0, 1.0, (count, 3))
+    sp[:, 2] = rng.uniform(0.25, 0.95, count)  # around the stored depths: in front of and behind the surface
+    sp[-64:, 0] = rng.uniform(1.01, 1.2, 64)  # outside the map's box
+    expected = lo.key_transmission(depth.astype(np.float64), sp, depth_range, scale)
+
+    def gen(fn) -> int:
+        ident = gl.GLuint()
+        fn(1, ctypes.byref(ident))
+        return ident.value
+
+    texture, buffer, buf_tex, fbo, rbo, vao = (gen(gl.glGenTextures), gen(gl.glGenBuffers), gen(gl.glGenTextures),
+                                               gen(gl.glGenFramebuffers), gen(gl.glGenRenderbuffers),
+                                               gen(gl.glGenVertexArrays))
+    gl.glActiveTexture(gl.GL_TEXTURE0 + ls.SHADOW_UNIT)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, texture)
+    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_DEPTH_COMPONENT24, size, size, 0, gl.GL_DEPTH_COMPONENT, gl.GL_FLOAT,
+                    depth.ctypes.data_as(ctypes.c_void_p))
+    for name, value in ((gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR), (gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR),
+                        (gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP_TO_BORDER), (gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP_TO_BORDER),
+                        (gl.GL_TEXTURE_COMPARE_MODE, gl.GL_COMPARE_REF_TO_TEXTURE),
+                        (gl.GL_TEXTURE_COMPARE_FUNC, gl.GL_LEQUAL)):
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, name, value)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+    shadow = KeyShadow(size=size)
+    shadow._targets = [(texture, 0)]  # the uploaded map stands in for a rendered one (bind_raw reads only this)
+    shadow.bind_raw(ls.SHADOW_RAW_UNIT)
+    data = np.zeros((count, 4), np.float32)
+    data[:, :3] = sp
+    gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, buffer)
+    gl.glBufferData(gl.GL_TEXTURE_BUFFER, data.nbytes, data.ctypes.data_as(ctypes.c_void_p), gl.GL_STATIC_DRAW)
+    gl.glActiveTexture(gl.GL_TEXTURE0 + 1)
+    gl.glBindTexture(gl.GL_TEXTURE_BUFFER, buf_tex)
+    gl.glTexBuffer(gl.GL_TEXTURE_BUFFER, gl.GL_RGBA32F, buffer)
+    gl.glActiveTexture(gl.GL_TEXTURE0)
+    height = count // width
+    gl.glBindRenderbuffer(gl.GL_RENDERBUFFER, rbo)
+    gl.glRenderbufferStorage(gl.GL_RENDERBUFFER, gl.GL_RGBA32F, width, height)
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo)
+    gl.glFramebufferRenderbuffer(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0, gl.GL_RENDERBUFFER, rbo)
+    assert gl.glCheckFramebufferStatus(gl.GL_FRAMEBUFFER) == gl.GL_FRAMEBUFFER_COMPLETE
+    fragment = "#version 330 core\n" + ls.LD_SHADOW_SRC + ls.LD_THICKNESS_SRC + THICKNESS_PARITY_BODY
+    program = ShaderProgram(Shader(ls.FULLSCREEN_VERTEX_SRC, "vertex"), Shader(fragment, "fragment"))
+    program.use()
+    active = program.uniforms
+    values = {"u_inputs": 1, "u_width": width, "u_count": count, "u_ld_shadow_depth": ls.SHADOW_RAW_UNIT,
+              "u_ld_shadow_vp": _IDENTITY, "u_ld_shadow_offset": 0.0, "u_ld_shadow_scale": scale,
+              "u_ld_shadow_range": depth_range}
+    for name, value in values.items():
+        if name in active:
+            program[name] = value
+    gl.glViewport(0, 0, width, height)
+    gl.glDisable(gl.GL_DEPTH_TEST)
+    gl.glBindVertexArray(vao)
+    gl.glDrawArrays(gl.GL_TRIANGLES, 0, 3)
+    out = np.zeros((height, width, 4), np.float32)
+    gl.glReadPixels(0, 0, width, height, gl.GL_RGBA, gl.GL_FLOAT, out.ctypes.data_as(ctypes.c_void_p))
+    gl.glBindVertexArray(0)
+    program.stop()
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)
+    gl.glViewport(0, 0, SIZE, SIZE)
+    KeyShadow.unbind_raw(ls.SHADOW_RAW_UNIT)
+    gl.glActiveTexture(gl.GL_TEXTURE0 + 1)
+    gl.glBindTexture(gl.GL_TEXTURE_BUFFER, 0)
+    gl.glActiveTexture(gl.GL_TEXTURE0)
+    got = out.reshape(-1, 4)[:count, 0]
+    for ident, fn in ((fbo, gl.glDeleteFramebuffers), (rbo, gl.glDeleteRenderbuffers), (vao, gl.glDeleteVertexArrays),
+                      (buffer, gl.glDeleteBuffers)):
+        fn(1, ctypes.byref(gl.GLuint(ident)))
+    shadow._targets = []
+    shadow.release()
+    for ident in (texture, buf_tex):
+        gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(ident)))
+    program.delete()
+    assert gl.glGetError() == gl.GL_NO_ERROR
+    # the raw read ignores the texture's compare mode (the sampler object's NONE wins): else every value would be 0 or 1
+    assert ((got > 0.05) & (got < 0.95)).sum() > 200
+    # the hardware's bilinear weights carry a few bits of sub-texel precision (8 in the GL spec's minimum)
+    assert np.abs(got - expected).max() <= 0.03, np.abs(got - expected).max()
+    assert np.abs(got - expected).mean() <= 0.003
+    assert (got[-64:] == 0.0).all()  # outside the map's box: no light passes

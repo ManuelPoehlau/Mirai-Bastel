@@ -47,13 +47,16 @@ class LightRow:
 
 #: AD-039 §2.1: the block „Effekte“ - one checkbox per built P3 effect, in slice order.
 EFFECTS_TITLE = "Effekte"
-EFFECT_LABELS = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz"}
+EFFECT_LABELS = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz",
+                 "thickness": "Durchleuchtung"}
 EFFECT_HINTS = {"shadow": "Schatten des Key auf Haut und Zähnen (wird nur bei Pose-, Form- oder Key-Änderung neu "
                           "gerechnet); „Weichheit“ des Key macht die Kante weicher",
                 "eye_shadow": "Lider, Brauen und Nase werfen den Schatten des Key auf die Augen (braucht "
                               "„Schatten“); die Lid-Abdunklung im Panel „Auge“ bleibt",
                 "dual_lobe": "Glanz der Haut aus zwei Anteilen: eine schärfere Spitze und ein weicher Saum (Lichter "
-                             "Key, Fill, Rim; die Studio-Spiegelung bleibt einfach)"}
+                             "Key, Fill, Rim; die Studio-Spiegelung bleibt einfach)",
+                "thickness": "Licht des Key scheint durch dünne Stellen (Ohren, Nasenflügel), wenn der Key von hinten "
+                             "kommt; Stärke und Farbe aus „Backscatter“ des Materials (braucht „Schatten“)"}
 
 
 @dataclass(frozen=True)

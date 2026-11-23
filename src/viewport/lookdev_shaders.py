@@ -31,6 +31,11 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
   size); the `DUAL_LOBE` blocks call them for the three lights, the `SHADOW` block's key term included. The studio's
   reflection keeps one lobe (P3-0 run 2: a second analytic lobe costs +0.9 to +4 ms; S5's cube takes it). Twins:
   `lookdev_optics.ld_direct_dual` / `ld_specular_dual`.
+- `LD_THICKNESS_SRC` (S4, AD-039 §7 / §19): the key's map read a second time as raw depth (`u_ld_shadow_depth` on unit 7,
+  a sampler object without compare mode) at the same map point as the shadow; `ld_key_thickness` is the distance the
+  key light travels inside the mesh to the fragment, `ld_key_transmission` its `exp(-thickness / scale)` (0 outside the
+  map). The `THICKNESS` block replaces M1's view-rim backscatter proxy with it. Needs `LD_SHADOW_SRC` (the effect needs
+  the shadow). Twins: `lookdev_optics.bilinear_depth` / `key_transmission` / `ld_backscatter`.
 
 Colour (AD-038 §5.5): every albedo is an sRGB artist value, decoded here; lights are linear; one `lookdev_output` per
 pixel. Directions are world space; `u_ld_env_rot` turns a world direction into the studio's frame (rotation, and the
@@ -56,8 +61,10 @@ UV_UNIT = 3
 ALBEDO_UNIT = 4
 #: AD-039 §2.4: the key's shadow map (compare sampler), S1.
 SHADOW_UNIT = 6
+#: AD-039 §2.4: the same map's raw depth through a sampler object without compare mode, S4.
+SHADOW_RAW_UNIT = 7
 #: The P3 defines in their fixed order (the skin program key, AD-039 §2.3 point 4).
-SKIN_EFFECTS = ("SHADOW", "DUAL_LOBE")
+SKIN_EFFECTS = ("SHADOW", "DUAL_LOBE", "THICKNESS")
 #: The compare's depth bias in the map's [0, 1] depth (`PROVISIONAL`, AD-039 §4; twin `lookdev_optics.pcf_visibility`).
 SHADOW_DEPTH_BIAS = 0.0005
 #: The receiver-plane slope's limit (depth per UV, both in the map's units: 10 = 84° from the key).
@@ -69,6 +76,10 @@ SHADOW_WRAP_LIFT = 4.0
 #: share (`PROVISIONAL`, the common real-time skin default; twin `lookdev_optics.ld_specular_dual`).
 DUAL_LOBE_SCALES = (0.75, 1.3)
 DUAL_LOBE_MIX = 0.85
+#: S4 (AD-039 §7 / §19.2): the key light's path inside the mesh over which the transmission falls to 1/e, in world
+#: units (`PROVISIONAL`, tuned on `Gollum_Head_05`'s ears; the AD's "0.6 cm" assumed 1 unit = 1 cm, which that scene does
+#: not follow).
+THICKNESS_SCALE = 0.05
 
 
 def constant_src(name: str, library: str = es.EYE_LIB_SRC) -> str:
@@ -267,7 +278,13 @@ void main() {{
 #ifdef ENV_SPEC
     colour += ld_env_specular(reflect(-v, n), rough) * env_brdf_approx(u_f0, rough, nv);
 #endif
+#ifdef THICKNESS
+    // AD-039 §7: the key's light through thin parts (ears, nostril wings) - how far it travelled inside the mesh, from
+    // the key's depth map - in place of M1's view-rim proxy
+    float back = ld_key_transmission(v_world_pos, n, u_ld_light_dir[0]) * max(-dot(n, u_ld_light_dir[0]), 0.0);
+#else
     float back = (1.0 - nv) * (1.0 - nv) * (1.0 - nv) * max(-dot(n, u_ld_light_dir[0]), 0.0);
+#endif
     colour += u_backscatter * back * srgb_decode(u_backscatter_color) * albedo * u_ld_light_color[0];
     out_color = vec4(lookdev_output(colour), 1.0);
 }}
@@ -348,6 +365,26 @@ vec3 ld_specular_dual(vec3 n, vec3 v, float roughness, float f0) {{
 }}
 """
 
+LD_THICKNESS_SRC = f"""
+// -- LookDev P3 S4 (AD-039 §7): the key's map as raw depth (a sampler object without compare) - the thickness
+uniform sampler2D u_ld_shadow_depth;
+uniform float u_ld_shadow_range;  // world units per unit of the map's depth
+const float LD_THICKNESS_SCALE = {THICKNESS_SCALE!r};
+// the distance (world units) the key light travels inside the mesh before it reaches p: p's depth from the key past
+// the nearest surface in the map, at the shadow's map point; a negative value outside the map
+float ld_key_thickness(vec3 p, vec3 n, vec3 l) {{
+    vec3 sp = ld_shadow_coord(p, n, l);
+    float stored = texture(u_ld_shadow_depth, sp.xy * u_ld_shadow_scale).r;
+    float inside = float(all(greaterThanEqual(sp, vec3(0.0))) && all(lessThanEqual(sp, vec3(1.0))));
+    return mix(-1.0, max(sp.z - stored, 0.0) * u_ld_shadow_range, inside);
+}}
+// the share of the key's light that comes through: exp(-thickness / scale); outside the map none
+float ld_key_transmission(vec3 p, vec3 n, vec3 l) {{
+    float t = ld_key_thickness(p, n, l);
+    return t < 0.0 ? 0.0 : exp(-t / LD_THICKNESS_SCALE);
+}}
+"""
+
 #: The depth pass from the key (`KeyShadow`): its own minimal program - the position at the store's location, the
 #: object's model matrix and the key's view-projection; an empty fragment stage (depth only).
 SHADOW_DEPTH_VERTEX_SRC = """#version 330 core
@@ -366,22 +403,25 @@ def shadow_depth_sources(locations: dict[str, int]) -> list[tuple[str, str]]:
 
 
 def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, shadow: bool = False,
-                 dual_lobe: bool = False) -> list[tuple[str, str]]:
+                 dual_lobe: bool = False, thickness: bool = False) -> list[tuple[str, str]]:
     """The skin program (AD-038 §3.2): the textured Worklight program's vertex and geometry sources formatted with the
     Worklight program's attribute locations, the LookDev fragment source. Variants: `ALBEDO_MAP`, `ENV_SPEC`; P3
-    (AD-039 §2.3): `SHADOW` (S1), `DUAL_LOBE` (S3). An effect that is off leaves no text behind (its library string is not appended, its
+    (AD-039 §2.3): `SHADOW` (S1), `DUAL_LOBE` (S3), `THICKNESS` (S4, needs `shadow`). An effect that is off leaves no text behind (its library string is not appended, its
     body blocks are resolved away), so every effect off = M1's sources."""
     from .eye_shaders import _without
     from .gl_render_store import TEXTURED_GEOMETRY_SRC, TEXTURED_VERTEX_SRC
 
-    flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow), ("DUAL_LOBE", dual_lobe))
+    if thickness and not shadow:
+        raise ValueError("THICKNESS reads the key's map: it needs SHADOW (AD-039 §2.1)")
+    flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow), ("DUAL_LOBE", dual_lobe),
+             ("THICKNESS", thickness))
     defines = "".join(f"#define {name} 1\n" for name, on in flags if on)
     body = SKIN_BODY
     for name, on in flags[2:]:
         if not on:
             body = _without(body, name)
     library = (LD_BRDF_SRC + LD_COMMON_SRC + (LD_SHADOW_SRC if shadow else "")
-               + (LD_DUAL_LOBE_SRC if dual_lobe else ""))
+               + (LD_DUAL_LOBE_SRC if dual_lobe else "") + (LD_THICKNESS_SRC if thickness else ""))
     fragment = "#version 330 core\n" + defines + library + body
     return [(TEXTURED_VERTEX_SRC.format(**locations), "vertex"), (TEXTURED_GEOMETRY_SRC, "geometry"),
             (fragment, "fragment")]

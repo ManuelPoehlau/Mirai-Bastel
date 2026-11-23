@@ -129,7 +129,8 @@ def test_the_effects_block(app):
     st = lm.state(app)
     assert [(r.name, r.label, r.on, r.available) for r in st.effects] == [("shadow", "Schatten", True, True),
                                                                           ("eye_shadow", "Augen-Schatten", True, True),
-                                                                          ("dual_lobe", "Doppel-Glanz", True, True)]
+                                                                          ("dual_lobe", "Doppel-Glanz", True, True),
+                                                                          ("thickness", "Durchleuchtung", True, True)]
     assert lm.EFFECTS_TITLE == "Effekte" and all(r.hint for r in st.effects)
     app.set_lookdev_effect("shadow", False)
     rows = lm.state(app).effects
@@ -145,5 +146,7 @@ def test_the_effects_block(app):
     app.set_lookdev_effect("dual_lobe", False)
     rows = lm.state(app).effects
     assert not rows[2].on and rows[2].available and rows[2].reason is None
+    # AD-039 §7: the thickness needs the shadow (greyed with the reason, its own switch kept)
+    assert rows[3].on and not rows[3].available and rows[3].reason == "braucht Schatten"
     app.set_lookdev_effect("dual_lobe", True)
     assert lm.state(app).effects[2].on and lm.state(app).effects[2].available

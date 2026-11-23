@@ -7,10 +7,11 @@
   other face data, no store buffer is written (I-10).
 - Programs: `lookdev_shaders.skin_sources` (the textured Worklight VS + GS, so the depth contract I-1 holds by
   construction), compiled lazily, cached by the tuple of their defines in a fixed order `(ALBEDO_MAP, ENV_SPEC,
-  SHADOW, DUAL_LOBE)` (AD-039 §2.3 point 4).
+  SHADOW, DUAL_LOBE, THICKNESS)` (AD-039 §2.3 point 4).
 - P3 (AD-039): the pass owns the effects' resources - S1's `KeyShadow` (created on the first frame with the shadow on,
   deleted in `release()`) - and the context's `FeatureReport` (`lookdev_features.probe`, once, the first time an effect
-  needs it). With the shadow the map is bound on unit 6 for the draw and unbound after it.
+  needs it). With the shadow the map is bound on unit 6 for the draw and unbound after it; with the thickness (S4) also
+  on unit 7 through its raw-depth sampler object, unbound (texture and sampler) after it.
 - GL state as `EyePass`: during the draw depth test and write on, blend off, back faces culled, polygon offset (1, 1)
   when `store.polygon_offset`; afterwards offset, cull and depth test off, units 3 / 4 unbound, unit 0 active, program
   stopped. No FBO, no float target (the RGBA8 default framebuffer).
@@ -25,7 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .lookdev_shaders import ALBEDO_UNIT, SHADOW_UNIT, UV_UNIT, background_sources, skin_sources
+from .lookdev_shaders import ALBEDO_UNIT, SHADOW_RAW_UNIT, SHADOW_UNIT, UV_UNIT, background_sources, skin_sources
 
 _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
@@ -103,12 +104,13 @@ class LookdevPass:
             self.shadow = KeyShadow()
         return self.shadow
 
-    def program(self, albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False):
+    def program(self, albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
+                thickness: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore, _register_sampler_buffer_uniform
 
-        key = (bool(albedo_map), bool(env_spec), bool(shadow), bool(dual_lobe))
+        key = (bool(albedo_map), bool(env_spec), bool(shadow), bool(dual_lobe), bool(thickness) and bool(shadow))
         program = self.programs.get(key)
         if program is None:
             _register_sampler_buffer_uniform()
@@ -122,10 +124,11 @@ class LookdevPass:
             self.programs[key] = program
         return program
 
-    def draw(self, render_mesh, look: LookDraw, frame: dict, shadow=None, dual_lobe: bool = False) -> bool:
+    def draw(self, render_mesh, look: LookDraw, frame: dict, shadow=None, dual_lobe: bool = False,
+             thickness: bool = False) -> bool:
         """Draw one object. False = nothing drawn (no VertexList / camera yet, or a Ghost): the caller draws it with the
         Worklight. `shadow` (AD-039 S1): a rendered `KeyShadow` the object receives (the `SHADOW` variant), else None;
-        `dual_lobe` (S3): the `DUAL_LOBE` variant."""
+        `dual_lobe` (S3): the `DUAL_LOBE` variant; `thickness` (S4): the `THICKNESS` variant, only with a shadow."""
         from pyglet import gl
 
         from .gl_render_store import GLRenderStore
@@ -141,7 +144,8 @@ class LookdevPass:
             GLRenderStore.unbind_triangle_uvs(UV_UNIT)
             uvs = False
         shadow = shadow if shadow is not None and shadow.ready else None
-        program = self.program(texture is not None, self.env_spec, shadow is not None, dual_lobe)
+        thickness = bool(thickness) and shadow is not None
+        program = self.program(texture is not None, self.env_spec, shadow is not None, dual_lobe, thickness)
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw
         model = store.uniform_data("model_uniforms")
@@ -157,6 +161,8 @@ class LookdevPass:
         if shadow is not None:
             set_uniforms(program, shadow.uniforms(), active)
             shadow.bind(SHADOW_UNIT)
+            if thickness:
+                shadow.bind_raw(SHADOW_RAW_UNIT)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthMask(gl.GL_TRUE)
         gl.glDisable(gl.GL_BLEND)
@@ -179,6 +185,8 @@ class LookdevPass:
             GLRenderStore.unbind_triangle_uvs(UV_UNIT)
         if shadow is not None:
             shadow.unbind(SHADOW_UNIT)
+            if thickness:
+                shadow.unbind_raw(SHADOW_RAW_UNIT)
         program.stop()
         self.draws += 1
         return True

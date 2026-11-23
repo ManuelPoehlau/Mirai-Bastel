@@ -13,7 +13,9 @@ pattern (parity: `tests/test_gl_lookdev_parity.py`, `tests/test_lookdev_optics.p
   `effect_reasons` (dependencies and missing features); S1 (§4): `shadow_frustum`, `shadow_view_projection`,
   `shadow_resolution`, `shadow_coords`, `pcf_visibility` and `ld_key_shadowed`, the twins of
   `lookdev_shaders.LD_SHADOW_SRC` and the `SHADOW` block; S3 (§6): `ld_direct_dual` / `ld_specular_dual`, the twins of
-  `lookdev_shaders.LD_DUAL_LOBE_SRC` (`ld_key_shadowed(..., dual=True)` for the `SHADOW` block with `DUAL_LOBE`).
+  `lookdev_shaders.LD_DUAL_LOBE_SRC` (`ld_key_shadowed(..., dual=True)` for the `SHADOW` block with `DUAL_LOBE`);
+  S4 (§7): `bilinear_depth`, `key_transmission` and `ld_backscatter`, the twins of `lookdev_shaders.LD_THICKNESS_SRC`
+  and the `THICKNESS` block.
 
 World frame as `light_rig` (Y up, the model faces +Z, azimuth from +Z toward +X). The studio's frame turns by
 `rotation` degrees about Y; with "Licht folgt Kamera" it is the camera's (`right`, `up`, `-forward`), as
@@ -30,7 +32,7 @@ import numpy as np
 from . import eye_optics as eo
 from .light_rig import kelvin_to_rgb
 from .lookdev_shaders import (DUAL_LOBE_MIX, DUAL_LOBE_SCALES, MAX_STUDIO, SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT,
-                              TONE_CURVES)
+                              THICKNESS_SCALE, TONE_CURVES)
 
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 SH_DIRECTIONS = 4096
@@ -69,11 +71,12 @@ class LookdevEffects:
     """The P3 effects' on/off (view state, `view.lookdev.effects`, no Undo). A field joins with its slice, default on
     once the slice is built (AD-039 §2.1). `shadow` (S1): the key's shadow map on skin and teeth; `eye_shadow` (S2): the
     eyes receive it (the lids' shadow from the geometry), needs `shadow`; `dual_lobe` (S3): the skin's highlight from the
-    three lights as two lobes."""
+    three lights as two lobes; `thickness` (S4): the key's light through thin parts, from the key's map, needs `shadow`."""
 
     shadow: bool = True
     eye_shadow: bool = True
     dual_lobe: bool = True
+    thickness: bool = True
 
     @classmethod
     def names(cls) -> tuple[str, ...]:
@@ -84,12 +87,13 @@ class LookdevEffects:
 
 
 #: The feature each effect needs (`viewport.lookdev_features`), and the effect it depends on (AD-039 §2.1 / §2.2).
-EFFECT_FEATURE = {"shadow": "depth_texture"}
-EFFECT_NEEDS: dict[str, str] = {"eye_shadow": "shadow"}
+EFFECT_FEATURE = {"shadow": "depth_texture", "thickness": "sampler_objects"}
+EFFECT_NEEDS: dict[str, str] = {"eye_shadow": "shadow", "thickness": "shadow"}
 #: The panel's reasons for a greyed effect (German, the panel's language).
 FEATURE_REASON = {"depth_texture": "Tiefentextur fehlt", "sampler_objects": "Sampler-Objekte fehlen",
                   "cube_rgba16f": "Cube-Ziel fehlt", "texture_units": "zu wenige Textureinheiten"}
-EFFECT_LABEL = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz"}
+EFFECT_LABEL = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz",
+                "thickness": "Durchleuchtung"}
 
 
 def effect_reasons(effects: LookdevEffects, features=None) -> dict[str, str | None]:
@@ -538,6 +542,52 @@ def ld_key_shadowed(albedo, n, v, wrap, roughness, f0, values: dict, visibility,
     key = np.asarray(c) * (albedo * ((1.0 - vis) * lambert + (1.0 - vis_wrap) * (ld_wrap(ndl, wrap) - lambert))
                            + (1.0 - vis) * key_specular[..., None])
     return colour - key
+
+
+# -- S4: the key's light through thin parts (AD-039 §7) ---------------------------------------------------------------
+
+def bilinear_depth(depth: np.ndarray, uv) -> np.ndarray:
+    """A raw `sampler2D` fetch of the depth map with GL_LINEAR and CLAMP_TO_EDGE (the S4 sampler object): the four
+    nearest texels blended bilinearly. `depth` (h, w) row 0 = v 0."""
+    uv = np.asarray(uv, dtype=np.float64)
+    h, w = depth.shape
+    x = uv[..., 0] * w - 0.5
+    y = uv[..., 1] * h - 0.5
+    x0, y0 = np.floor(x).astype(int), np.floor(y).astype(int)
+    fx, fy = x - x0, y - y0
+
+    def at(ix, iy):
+        return depth[np.clip(iy, 0, h - 1), np.clip(ix, 0, w - 1)]
+
+    return ((at(x0, y0) * (1 - fx) + at(x0 + 1, y0) * fx) * (1 - fy)
+            + (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy)
+
+
+def key_transmission(depth: np.ndarray, sp, depth_range: float, scale: float = 1.0,
+                     thickness_scale: float = THICKNESS_SCALE) -> np.ndarray:
+    """GLSL `ld_key_transmission` from the map point `sp` (..., 3): the thickness `max(z - stored, 0) x depth_range`
+    (world units, the stored depth read raw over the rendered part `scale` of the map), `exp(-thickness / scale)`;
+    0 outside the map's box."""
+    sp = np.asarray(sp, dtype=np.float64)
+    stored = bilinear_depth(depth, sp[..., :2] * scale)
+    thickness = np.maximum(sp[..., 2] - stored, 0.0) * depth_range
+    inside = np.all((sp >= 0.0) & (sp <= 1.0), axis=-1)
+    return np.where(inside, np.exp(-thickness / thickness_scale), 0.0)
+
+
+def ld_backscatter(albedo, n, v, values: dict, backscatter: float, backscatter_color, transmission=None) -> np.ndarray:
+    """The skin's backscatter term (linear rgb): M1's view-rim proxy `(1 - n.v)^3 x max(-n.l_key, 0)`, or with the
+    `THICKNESS` block (`transmission` given) `transmission x max(-n.l_key, 0)`; times the backscatter, its colour
+    (sRGB, decoded), the albedo (linear) and the key's colour."""
+    n = np.asarray(n, dtype=np.float64)
+    d, c = np.asarray(values["u_ld_light_dir"][0]), np.asarray(values["u_ld_light_color"][0])
+    behind = np.maximum(-np.sum(n * d, -1), 0.0)
+    if transmission is None:
+        nv = np.maximum(np.sum(n * np.asarray(v, dtype=np.float64), -1), 1e-4)
+        back = (1.0 - nv) ** 3 * behind
+    else:
+        back = np.asarray(transmission, dtype=np.float64) * behind
+    return backscatter * back[..., None] * srgb_decode(backscatter_color) * np.asarray(albedo) * c
 
 
 # -- S2: the eye in the key's shadow (AD-039 §5) -----------------------------------------------------------------------

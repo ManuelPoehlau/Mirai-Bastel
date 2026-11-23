@@ -128,20 +128,27 @@ def test_ld_diffuse_and_specular_twins():
 def test_effects_default_on_and_dependencies_and_features():
     from viewport.lookdev_features import FeatureReport
 
-    assert lo.LookdevEffects().shadow and lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe")
+    assert lo.LookdevEffects().shadow and lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness")
     assert lo.LookdevState("x", lo.EYE_STUDIO, lo.StudioLight(), lo.StudioLight(), lo.StudioLight()).effects \
         == lo.LookdevEffects()
     on = lo.LookdevEffects(shadow=True)
     assert lo.effective(on) == on  # nothing probed: nothing missing
-    assert lo.effect_reasons(on) == {"shadow": None, "eye_shadow": None, "dual_lobe": None}
+    assert lo.effect_reasons(on) == {"shadow": None, "eye_shadow": None, "dual_lobe": None, "thickness": None}
     assert lo.effective(on, FeatureReport(depth_texture=True)) == on
     missing = FeatureReport(depth_texture=False)
     # S3 needs no feature and no other effect: it stays on without a depth texture
-    assert lo.effective(on, missing) == lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=True)
+    assert lo.effective(on, missing) == lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=True,
+                                                          thickness=False)
     assert lo.effect_reasons(on, missing) == {"shadow": "Tiefentextur fehlt", "eye_shadow": "braucht Schatten",
-                                              "dual_lobe": None}
+                                              "dual_lobe": None, "thickness": "braucht Schatten"}
     assert missing.status_lines() == ("LookDev: Schatten aus – Tiefentextur nicht verfügbar",)
-    assert lo.effective(lo.LookdevEffects(shadow=False)) == lo.LookdevEffects(shadow=False, eye_shadow=False)
+    assert lo.effective(lo.LookdevEffects(shadow=False)) == lo.LookdevEffects(shadow=False, eye_shadow=False,
+                                                                               thickness=False)
+    # S4 needs sampler objects: without them only the thickness is off, with its feature's reason
+    no_samplers = FeatureReport(sampler_objects=False)
+    assert lo.effective(on, no_samplers) == lo.LookdevEffects(thickness=False)
+    assert lo.effect_reasons(on, no_samplers)["thickness"] == "Sampler-Objekte fehlen"
+    assert no_samplers.status_lines() == ("LookDev: Durchleuchtung aus – Sampler-Objekte nicht verfügbar",)
     assert lo.effective(lo.LookdevEffects(dual_lobe=False)) == lo.LookdevEffects(dual_lobe=False)
 
 
@@ -305,3 +312,52 @@ def test_pcf_visibility_and_the_shadowed_key():
     no_key = dict(values, u_ld_light_color=[(0.0, 0.0, 0.0)] + list(values["u_ld_light_color"][1:]))
     assert np.allclose(dark, albedo * lo.ld_diffuse(n, (0.2, 0.1, 0.0), no_key)
                        + lo.ld_specular(n, v, 0.5, 0.04, no_key))
+
+
+# -- AD-039 S4: the key's light through thin parts ------------------------------------------------------------------
+
+def test_bilinear_depth_reads_texel_centres_and_blends_between_them():
+    depth = np.arange(16, dtype=np.float64).reshape(4, 4) / 16.0  # row 0 = v 0
+    centre = lambda ix, iy: ((ix + 0.5) / 4.0, (iy + 0.5) / 4.0)  # noqa: E731
+    assert np.isclose(lo.bilinear_depth(depth, centre(1, 2)), depth[2, 1])
+    mid = ((1.5 + 0.5) / 4.0, (2 + 0.5) / 4.0)  # halfway between texels (1, 2) and (2, 2)
+    assert np.isclose(lo.bilinear_depth(depth, mid), (depth[2, 1] + depth[2, 2]) / 2)
+    assert np.isclose(lo.bilinear_depth(depth, (0.0, 0.0)), depth[0, 0])  # clamp to edge
+    assert np.isclose(lo.bilinear_depth(depth, (1.0, 1.0)), depth[3, 3])
+
+
+def test_key_transmission_falls_with_the_path_inside_the_mesh():
+    """AD-039 §7: a fragment `t` world units behind the map's nearest surface transmits exp(-t / scale); in front of it
+    (the lit surface itself) all of it; outside the map's box none (the AD's named limit)."""
+    depth = np.full((8, 8), 0.25)
+    depth_range = 2.0  # world units per unit of map depth
+    scale = lo.THICKNESS_SCALE
+    sp = np.array([[0.5, 0.5, 0.25 + t / depth_range] for t in (0.0, 0.5 * scale, scale, 4 * scale)])
+    got = lo.key_transmission(depth, sp, depth_range)
+    assert np.allclose(got, np.exp(-np.array([0.0, 0.5, 1.0, 4.0])), atol=1e-9)
+    assert lo.key_transmission(depth, [0.5, 0.5, 0.1], depth_range) == 1.0  # in front of the surface: no path
+    assert lo.key_transmission(depth, [1.2, 0.5, 0.3], depth_range) == 0.0
+    assert lo.key_transmission(depth, [0.5, 0.5, 1.1], depth_range) == 0.0
+    # the rendered part of the map (a soft key's effective resolution): the lookup scales the UV
+    half = np.full((8, 8), 1.0)
+    half[:4, :4] = 0.25
+    assert np.isclose(lo.key_transmission(half, [0.6, 0.6, 0.25 + scale / depth_range], depth_range, scale=0.5),
+                      math.exp(-1.0))
+
+
+def test_ld_backscatter_proxy_and_transmission():
+    """AD-039 §7: with the thickness the transmission replaces M1's view-rim proxy (1 - n.v)^3; both only on the side
+    facing away from the key, times the backscatter, its colour, the albedo and the key's colour."""
+    values = lo.frame_uniforms(_state())
+    key = np.asarray(values["u_ld_light_dir"][0])
+    colour = np.asarray(values["u_ld_light_color"][0])
+    albedo, bcol = np.array([0.5, 0.4, 0.3]), (1.0, 0.45, 0.3)
+    n = -key[None]
+    v = eo.normalize(np.array([[0.3, 0.2, 1.0]]))
+    nv = max(float(n[0] @ v[0]), 1e-4)  # as the shader's nv
+    proxy = lo.ld_backscatter(albedo, n, v, values, 0.15, bcol)
+    want = 0.15 * (1.0 - nv) ** 3 * lo.srgb_decode(bcol) * albedo * colour
+    assert np.allclose(proxy[0], want)
+    thick = lo.ld_backscatter(albedo, n, v, values, 0.15, bcol, transmission=np.array([0.5]))
+    assert np.allclose(thick[0], 0.15 * 0.5 * lo.srgb_decode(bcol) * albedo * colour)
+    assert np.allclose(lo.ld_backscatter(albedo, key[None], v, values, 0.15, bcol, np.array([1.0])), 0.0)

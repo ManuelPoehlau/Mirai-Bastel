@@ -6,8 +6,8 @@ GPU name (`GL_RENDERER`).
 one status line; the check does not retry in the session. The report is a plain value, so LD-3 can read it later.
 
 S1 adds `depth_texture`: a DEPTH_COMPONENT24 texture with `GL_COMPARE_REF_TO_TEXTURE` attached to an FBO -
-`glCheckFramebufferStatus == COMPLETE` and `glGetError` 0. The later slices add theirs here (`sampler_objects`,
-`cube_rgba16f`, `texture_units`).
+`glCheckFramebufferStatus == COMPLETE` and `glGetError` 0. S4 adds `sampler_objects`: `glGenSamplers` succeeds and
+`glGetError` stays 0. The later slices add theirs here (`cube_rgba16f`, `texture_units`).
 """
 
 from __future__ import annotations
@@ -15,7 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 
 #: The status line of a feature that is missing (German, the app's status language).
-FEATURE_STATUS = {"depth_texture": "LookDev: Schatten aus – Tiefentextur nicht verfügbar"}
+FEATURE_STATUS = {"depth_texture": "LookDev: Schatten aus – Tiefentextur nicht verfügbar",
+                  "sampler_objects": "LookDev: Durchleuchtung aus – Sampler-Objekte nicht verfügbar"}
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,7 @@ class FeatureReport:
     """One GL context's P3 features (True = present)."""
 
     depth_texture: bool = True
+    sampler_objects: bool = True
 
     def missing(self) -> tuple[str, ...]:
         return tuple(f.name for f in fields(self) if not getattr(self, f.name))
@@ -69,8 +71,25 @@ def _depth_texture() -> bool:
     return complete and gl.glGetError() == gl.GL_NO_ERROR
 
 
+def _sampler_objects() -> bool:
+    """A sampler object (GL 3.3 core): generated with a non-zero name, a parameter set, deleted; no GL error."""
+    import ctypes
+
+    from pyglet import gl
+
+    while gl.glGetError() != gl.GL_NO_ERROR:  # an earlier error must not fail this check
+        pass
+    ident = gl.GLuint()
+    gl.glGenSamplers(1, ctypes.byref(ident))
+    made = ident.value != 0
+    if made:
+        gl.glSamplerParameteri(ident.value, gl.GL_TEXTURE_COMPARE_MODE, gl.GL_NONE)
+        gl.glDeleteSamplers(1, ctypes.byref(ident))
+    return made and gl.glGetError() == gl.GL_NO_ERROR
+
+
 #: The checks, by feature (a test replaces one with a stub to force its failure, AD-039 §2.2).
-CHECKS = {"depth_texture": _depth_texture}
+CHECKS = {"depth_texture": _depth_texture, "sampler_objects": _sampler_objects}
 
 
 def probe() -> FeatureReport:

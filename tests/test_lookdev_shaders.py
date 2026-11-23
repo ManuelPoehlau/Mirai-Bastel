@@ -102,8 +102,42 @@ def test_the_dual_lobe_variant_calls_the_dual_twins_for_the_lights_and_the_shado
         assert "ld_env_specular(reflect(-v, n), rough)" in body  # one lobe on the studio
         assert ("ld_direct_dual(n, v, u_ld_light_dir[0], rough, u_ld_light_size[0], u_f0)" in body) == shadow
     assert "ld_specular_dual" not in ls.LD_COMMON_SRC and "DUAL" not in ls.LD_COMMON_SRC
-    assert ls.SKIN_EFFECTS == ("SHADOW", "DUAL_LOBE")
+    assert ls.SKIN_EFFECTS[:2] == ("SHADOW", "DUAL_LOBE")
     # without DUAL_LOBE no call to the dual twins is left
     for shadow in (False, True):
         fs = ls.skin_sources(locations, True, True, shadow, False)[2][0]
         assert "ld_specular_dual" not in fs and "ld_direct_dual" not in fs and "DUAL_LOBE" not in fs
+
+
+#: AD-039 §7 / §19 (S4): the 4 S3 skin variants with the shadow (`shadow=True, dual_lobe=True`), taken from the code before
+#: S4 changed `lookdev_shaders.py` (`eadb291`). With the thickness off, the frame's programs stay exactly S3's.
+PINNED_S3_SKIN_SOURCES_SHA256 = "23271b8cb690c9c3eb992ff57b74d0746c54ef6dd175856320e3de7f12105188"
+
+
+def test_the_thickness_off_keeps_the_m1_s1_and_s3_sources():
+    """AD-039 §7: `thickness=False` = the sources before, character for character."""
+    assert skin_sources_digest(thickness=False) == (12, PINNED_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, thickness=False) == (12, PINNED_S1_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True) == (12, PINNED_S3_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, thickness=False) == (12, PINNED_S3_SKIN_SOURCES_SHA256)
+
+
+def test_the_thickness_variant_replaces_the_rim_proxy_and_needs_the_shadow():
+    """AD-039 §7: `THICKNESS` defined once, its library once after `LD_SHADOW_SRC` (it uses `ld_shadow_coord` and the
+    map's scale); the backscatter's view-rim proxy replaced by the transmission; refused without the shadow."""
+    import pytest
+
+    locations = {"position": 0, "normal": 1}
+    for dual in (False, True):
+        fs = ls.skin_sources(locations, True, True, True, dual, True)[2][0]
+        assert fs.count("#define THICKNESS 1\n") == 1 and fs.count(ls.LD_THICKNESS_SRC) == 1
+        assert fs.index(ls.LD_SHADOW_SRC) < fs.index(ls.LD_THICKNESS_SRC)
+        body = fs[fs.index("void main()"):]
+        assert "ld_key_transmission(v_world_pos, n, u_ld_light_dir[0])" in body
+        assert "(1.0 - nv) * (1.0 - nv) * (1.0 - nv)" in body  # the #else part (resolved by the preprocessor)
+    assert ls.SKIN_EFFECTS == ("SHADOW", "DUAL_LOBE", "THICKNESS")
+    assert ls.SHADOW_RAW_UNIT == 7 and ls.SHADOW_UNIT == 6
+    fs = ls.skin_sources(locations, True, True, True, True, False)[2][0]
+    assert "THICKNESS" not in fs and "ld_key_transmission" not in fs and "u_ld_shadow_depth" not in fs
+    with pytest.raises(ValueError):
+        ls.skin_sources(locations, True, True, False, True, True)

@@ -221,7 +221,7 @@ def test_the_effects_survive_save_and_load(app, tmp_path):
     path = tmp_path / "effects.mirai.json"
     assert app.save_scene_file(path)
     assert json.loads(path.read_text())["view"]["lookdev"]["effects"] == {"shadow": False, "eye_shadow": True,
-                                                                            "dual_lobe": True}
+                                                                            "dual_lobe": True, "thickness": True}
     fresh = _load(path)
     assert fresh.lookdev.studio == app.lookdev.studio and not fresh.lookdev.studio.effects.shadow
 
@@ -283,6 +283,18 @@ def test_an_s2_file_without_dual_lobe_keeps_its_settings(app):
     other.set_lookdev_effect("dual_lobe", False)
     assert view_state.apply(other, data) == []
     assert other.lookdev.studio.effects == lo_effects(shadow=False, eye_shadow=False, dual_lobe=False)
+
+
+def test_an_s3_file_without_thickness_keeps_its_settings(app):
+    """AD-039 §7: a file written by S3 has `effects` without `thickness` - it stays as it is (on by default)."""
+    data = view_state.capture(app)
+    data["lookdev"]["effects"] = {"shadow": True, "eye_shadow": True, "dual_lobe": False}
+    other = _app()
+    assert view_state.apply(other, data) == []
+    assert other.lookdev.studio.effects == lo_effects(dual_lobe=False, thickness=True)
+    other.set_lookdev_effect("thickness", False)
+    assert view_state.apply(other, data) == []
+    assert other.lookdev.studio.effects == lo_effects(dual_lobe=False, thickness=False)
 
 
 def lo_effects(**kw):

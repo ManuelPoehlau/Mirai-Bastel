@@ -29,6 +29,8 @@ runs its preparation frames first, unmeasured):
                            against `lookdev +shadow`, §2.5);
 - `lookdev +dual`          S3 (AD-039 §6): the skin's highlight from the three lights as two lobes, every other effect
                            off (target <= +0.5 ms against `lookdev`, §2.5);
+- `lookdev +shadow +thick` S4 (AD-039 §7): the shadow with the thickness (the map's raw depth, a second fetch; target
+                           <= +0.5 ms against `lookdev +shadow`, §2.5);
 - `lookdev +shadow drag`   S1 with a morph weight step on the head every frame (the map re-renders each frame: a slow
                            morph or pose drag). The edit object gets a probe target in memory (the file is not touched);
 - `... drag flush`         the same with `KeyShadow.flush` (a `glFlush` after the depth pass, before the background);
@@ -70,7 +72,8 @@ FRAME_BUDGET_MS = 1000.0 / 30.0
 #: A P3 effect's row: its label and the effects it switches on (an effect that needs another one switches both).
 EFFECT_ROWS = {"shadow": ("lookdev +shadow", ("shadow",)),
                "eye_shadow": ("lookdev +shadow +eyes", ("shadow", "eye_shadow")),
-               "dual_lobe": ("lookdev +dual", ("dual_lobe",))}
+               "dual_lobe": ("lookdev +dual", ("dual_lobe",)),
+               "thickness": ("lookdev +shadow +thick", ("shadow", "thickness"))}
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -256,7 +259,7 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     window, app = build_app(tuple(args.size))
     size = window.get_framebuffer_size()
-    print(f"LookDev room probe (AD-038 LD-1, 2026-11-19; AD-039 S1-S3), {size[0]}x{size[1]}, {args.draws} rounds "
+    print(f"LookDev room probe (AD-038 LD-1, 2026-11-19; AD-039 S1-S4), {size[0]}x{size[1]}, {args.draws} rounds "
           f"after {WARMUP_ROUNDS}")
     for line in machine_info(gl.gl_info.get_version_string(), gl.gl_info.get_renderer()):
         print(line)

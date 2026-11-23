@@ -8,7 +8,9 @@ file and panel names stay `PROVISIONAL` until built. **S1 built 2026-11-22** (§
 shadow's drag cost) and Manu's practical test (§16.5) are open. **S2 built 2026-11-22** (§17: the eyes in the key's
 shadow, „Augen-Schatten“; eye shadow off = S1 by pin and pixels): its reference-PC row and practical test (§17.4–§17.5)
 are open. **S3 built 2026-11-23** (§18: dual-lobe specular on the lights, „Doppel-Glanz“; dual lobe off = S1 / S2 by
-pins; the §6 energy claim corrected, §18.2): its reference-PC row and practical test (§18.4–§18.5) are open; S4 next.
+pins; the §6 energy claim corrected, §18.2): its reference-PC row and practical test (§18.4–§18.5) are open. **S4 built
+2026-11-23** (§19: the key's light through thin parts, „Durchleuchtung“; thickness off = S3 by pins; the scale in world
+units, the unit question open, §19.2 S4-1): its reference-PC row and practical test (§19.4–§19.5) are open; S5 next.
 **Why now:** Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“
 ([proposal §0.1](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md), [AD-038](AD-038-LOOKDEV-ROOM-M1.md)
 §13.6). P3 needs its own AD before any `src/` change and fixes the order of the P3 items.
@@ -489,6 +491,8 @@ key.
   - Effect off = the S3 frame.
   - Sampler binding restored (unit 7 has sampler 0 after the pass).
 - **Measurement:** room probe row `lookdev +thick`; P3-0 row `thick 1k x9`.
+- **Built 2026-11-23 (§19).** The scale is 0.05 world units, not 0.6: `Gollum_Head_05` is not at 1 unit = 1 cm (§19.2,
+  S4-1, open for Manu). The probe row is `lookdev +shadow +thick`.
 
 ---
 
@@ -1267,3 +1271,101 @@ Open LookDev, SubD 1, view „¾“, then the face from the front.
 
 Assumptions to correct in one sentence: the dual lobe is on by default; it needs nothing; the studio's reflection keeps
 one lobe until S5; the values are fixed (not per material).
+
+---
+
+## 19. Implementation note — S4 built (2026-11-23)
+
+**Kurzfassung (Deutsch):** Der Key scheint jetzt durch dünne Stellen: Die Haut liest die Schattenkarte des Key ein
+zweites Mal als rohe Tiefe und weiß damit, wie weit das Licht im Mesh bis zu diesem Punkt gelaufen ist. Der Anteil, der
+durchkommt, ist `exp(−Dicke / 0,05)`, mal Backscatter, Backscatter-Farbe, Albedo und Key-Farbe des Materials, nur auf
+der vom Key abgewandten Seite. Ein dünnes Ohr oder ein Nasenflügel vor einem Key von hinten leuchtet, der dicke Kopf
+nicht. Der Rand-Schimmer aus M1 (der Ersatz ohne Dicke) fällt dafür weg, wie die AD es vorsah; auf der Schattenseite
+des Kopfes wird es dadurch etwas weniger rosa. Neuer Schalter „Durchleuchtung“ (Standard an, braucht „Schatten“ und
+Sampler-Objekte). Durchleuchtung aus = S3, Zeichen für Zeichen. **Einheit:** Die AD rechnete mit „0,6 cm“ und 1
+Einheit = 1 cm (AD-033). `Gollum_Head_05` ist aber 1,2 Einheiten breit (ein Kopf von etwa 15 cm). Der Wert ist deshalb
+in Welteinheiten gesetzt: 0,05, also 0,6 cm bei dieser Kopfgröße. Eine Szene im 1-cm-Maßstab bräuchte etwa 0,6.
+Offene Frage an dich (§19.2, S4-1).
+
+### 19.1 What is built
+
+| Layer | Built |
+|---|---|
+| Effects | `LookdevEffects.thickness` (default on, the fourth field); `EFFECT_FEATURE["thickness"] = "sampler_objects"`, `EFFECT_NEEDS["thickness"] = "shadow"` (reasons „Sampler-Objekte fehlen“ / „braucht Schatten“); `EFFECT_LABEL` „Durchleuchtung“; `view.lookdev.effects` reads it optionally (an S3 file keeps its settings) |
+| Features | `lookdev_features.FeatureReport.sampler_objects`, `_sampler_objects()` (`glGenSamplers` gives a name, a parameter set, deleted, `glGetError` 0); status line „LookDev: Durchleuchtung aus – Sampler-Objekte nicht verfügbar“ |
+| Shaders | `lookdev_shaders.SHADOW_RAW_UNIT = 7`, `THICKNESS_SCALE = 0.05` (`PROVISIONAL`, world units); `LD_THICKNESS_SRC` (`u_ld_shadow_depth`, `u_ld_shadow_range`; `ld_key_thickness(p, n, l)`: at `ld_shadow_coord`'s map point, `max(z − stored, 0) × range`, −1 outside the map; `ld_key_transmission`: `exp(−t / scale)`, 0 outside), appended after `LD_SHADOW_SRC` only with the effect; `SKIN_EFFECTS = (SHADOW, DUAL_LOBE, THICKNESS)`; `skin_sources(..., thickness=False)` refuses `thickness` without `shadow` |
+| Body block (1) | `#ifdef THICKNESS … #else … #endif` around the backscatter's `back`: `ld_key_transmission(v_world_pos, n, l_key) × max(−n·l_key, 0)` in place of M1's `(1 − n·v)³ × max(−n·l_key, 0)`; the `#else` part is M1's line |
+| Map | `KeyShadow.bind_raw(unit)` / `unbind_raw(unit)`: the current map on unit 7 through a sampler object (GL_LINEAR, CLAMP_TO_EDGE, compare mode NONE; created on first use, deleted in `release()`); `uniforms()` adds `u_ld_shadow_depth = 7` and `u_ld_shadow_range = 2 × the frustum radius` (the map's depth [0, 1] spans the orthographic box's 2 r) |
+| Pass | program key 5 values `(ALBEDO_MAP, ENV_SPEC, SHADOW, DUAL_LOBE, THICKNESS)`, `THICKNESS` only with `SHADOW`; `draw(..., thickness=False)` binds the raw map on unit 7 with the shadow on 6 and unbinds texture and sampler after the draw; a frame whose map is not ready draws without both |
+| Viewport | `_lookdev_programs` adds `effects.thickness` to the skin key (so `prepare_lookdev` compiles it behind the status line); `_render_lookdev` hands it to every skin draw. Eyes untouched |
+| Twins | `lookdev_optics.bilinear_depth` (a raw GL_LINEAR / CLAMP_TO_EDGE fetch), `key_transmission(depth, sp, range, scale)`, `ld_backscatter(albedo, n, v, values, backscatter, colour, transmission=None)` (the proxy without `transmission`) |
+| GUI | `lookdev_model`: the row „Durchleuchtung“ with its hint |
+| Probe | `probe_lookdev_room.py`: `EFFECT_ROWS["thickness"] = ("lookdev +shadow +thick", ("shadow", "thickness"))` against `lookdev +shadow` |
+
+Not touched: `src/core/`, `serialization.py`, `LD_COMMON_SRC`, `LD_SHADOW_SRC`, the depth pass and its program,
+`eye_shaders.py`, `eye_pass.py`, `main.py`, `config/keymap.json`, `LookMaterial` (the backscatter values are the
+materials' own, V7).
+
+### 19.2 Where the build differs from §2 / §7, and why
+
+| # | AD | Built | Why |
+|---|---|---|---|
+| S4-1 | §7 "the scale is 0.6 cm" | `THICKNESS_SCALE = 0.05` world units | the AD assumed 1 unit = 1 cm (AD-033 Q-E6). `Gollum_Head_05` does not follow it: its head's bounding radius is 0.60 units (1.2 across; the eyes ≈ 0.1 radius, §17.3), about 12 cm per unit for a ~15 cm head. 0.05 is 0.6 cm at that head's size. **[O] for Manu:** which unit should LookDev assume - the scene as it is (this value), or the 1 cm convention (then 0.6, and Gollum should be scaled up)? A per-material value would be a `LookMaterial` field (a format version) and is not built |
+| S4-2 | §7 "a sampler object without compare mode" | GL_LINEAR, CLAMP_TO_EDGE | the P3-0 stand-in used GL_NEAREST; a linear raw fetch gives a smooth thickness across the map's texels at the same cost (one fetch). CLAMP_TO_EDGE because outside the map is masked in the shader (the texture's own border depth 1.0 would read as "no path" = full light) |
+| S4-3 | §7 "outside the map it reads as no light passing" | built so (`inside` mask) | as the AD; named here because the border's depth alone would give the opposite |
+| S4-4 | (not stated) | the GL test's boxes are built from six separate quads (`_flat_box`) | `_box` shares its 8 corners, so its vertex normals bend toward the corners and the face-on transmission read 0.45 instead of 0.67: a test-geometry effect, not the shader (found while building, §19.3) |
+
+**What changes in the picture (Gollum, key from behind at 160° / 15°, Creature Skin, SubD 1):** with the thickness on,
+21,000–34,000 px change by more than 2/255 (scale 0.02 / 0.05 / 0.1), between +24 and −26/255. The plus is the
+light through thin parts (ears, the neck's open rim); the minus is M1's view-rim proxy that no longer glows on the thick
+head's shadowed side. With Creature Skin's backscatter 0.15 the ears' gain is subtle; Mundinneres has 0.3, Neutral
+and Organisch have none (the effect does nothing there).
+
+**Limits, named (§7):** the thickness is along the key only, from the map's nearest surface - a fold in front of a thin
+part reads thick, and an ear behind the head (relative to the key) gets the head's thickness plus the air between.
+Outside the map no light passes.
+
+### 19.3 Tests (container, llvmpipe, 2026-11-23)
+
+| # | Test |
+|---|---|
+| sources | `test_lookdev_shaders.py`: `test_the_thickness_off_keeps_the_m1_s1_and_s3_sources` (new `PINNED_S3_SKIN_SOURCES_SHA256` over the 4 `shadow + dual_lobe` variants, taken from `eadb291` before the change; M1 and S1 pins unchanged); `test_the_thickness_variant_replaces_the_rim_proxy_and_needs_the_shadow` (define and library once, after `LD_SHADOW_SRC`; refused without the shadow; nothing left with it off) |
+| twins | `test_lookdev_optics.py`: `test_bilinear_depth_reads_texel_centres_and_blends_between_them`, `test_key_transmission_falls_with_the_path_inside_the_mesh` (exp(−t/s), in front = 1, outside = 0, the rendered part), `test_ld_backscatter_proxy_and_transmission`; the dependency and feature reasons in `test_effects_default_on_and_dependencies_and_features` |
+| GPU parity | `test_gl_lookdev_shadow.py::test_ld_key_transmission_matches_key_transmission[1.0 / 0.5]`: a smooth 64² map as the compare texture, read raw on unit 7 through `KeyShadow`'s sampler object (the production binding), 4,096 points against the twin (max ≤ 0.03, mean ≤ 0.003; values strictly between 0 and 1 prove the compare mode is off; outside = 0) |
+| T4-1 | `test_the_thickness_lets_a_thin_slab_through_and_not_a_thick_block`: the key straight behind a 0.02 slab and a 0.8 block - the slab's face equals `lookdev_output(ld_backscatter(…, exp(−0.02 / scale)))`, the block's 0 (≤ 2.5/255); with the thickness off both show the proxy (0 face-on) |
+| T4-2 | `test_the_thickness_off_draws_s3_and_binds_nothing_on_unit_7`: the program built by S3's call draws the same pixels; the key in front changes nothing; unit 7 has neither texture nor sampler after the frame |
+| T4-3 | `test_without_sampler_objects_the_thickness_is_off_with_a_status_line`: the stub - the frame equals the thickness-off frame, the shadow stays, the status line once |
+| GL state | S1's `test_a_frame_that_renders_the_map_leaves_the_gl_state_as_found` now runs with the thickness on (its state snapshot covers units 0–7 with the sampler binding) |
+| headless | persistence (`test_an_s3_file_without_thickness_keeps_its_settings`; the round trip writes four names), room (reasons), panel model (the row, greyed „braucht Schatten“), `test_probe_lookdev_room.py` (`lookdev +shadow +thick`) |
+
+Runs (GL files each in their own process under xvfb):
+
+| Command | Result |
+|---|---|
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_shadow.py -q` | 25 passed |
+| `… tests/test_gl_lookdev_pass.py` / `test_gl_lookdev_parity.py` / `test_gl_eye_pass.py` | 13 / 8 / 135 passed |
+| `xvfb-run -a python -m pytest tests -k "lookdev or look or view_state or main_wiring" -q` | 419 passed |
+
+### 19.4 Measurement
+
+Container (llvmpipe, a function check only): `probe_lookdev_room.py --effects shadow,thickness --draws 3 --surfaces
+cage` ran `lookdev`, `lookdev +shadow`, `lookdev +shadow +thick` and the drag rows with `glGetError` 0.
+
+**Reference PC (S4, with S1–S3's open run):** the same single command as §18.4 (`probe_lookdev_room.py`, every built row).
+What it decides for S4: `lookdev +shadow +thick` against `lookdev +shadow` ≤ +0.5 ms (§2.5; P3-0's `thick 1k x9`
+measured +0.50 against +1.11 for the shadow alone).
+
+### 19.5 Practical test S4 (`scenes/Gollum_Head_05.mirai.json`, about 10 minutes)
+
+Open LookDev, SubD 1, material **Creature Skin** (or **Mundinneres** for a stronger effect), view „¾“ and from the side.
+1. **Key von hinten:** in „Licht“ den Key auf Richtung ~160° und Höhe ~15° drehen. Erwartet: die Ohren (und der
+   Halsrand) leuchten warm durch, der Kopf selbst nicht. Zu stark, zu schwach, falsche Stelle?
+2. **„Durchleuchtung“ an / aus:** aus = das Bild von vorher. Erwartet: an verschwindet der schwache rosa Rand-Schimmer
+   auf der Schattenseite des Kopfes (der Ersatz aus M1); fehlt er dir?
+3. **Nasenflügel:** Key seitlich-hinten (z. B. 120°, 0°), Blick auf die Nase von vorn: leuchten die Nasenflügel durch?
+4. **Key drehen und „Weichheit“:** flackert oder springt das Durchscheinen? (Die Karte wird nur bei einer Änderung neu
+   gerechnet.)
+5. **Die Einheit (S4-1):** wirkt die Dicke, durch die Licht kommt, für Gollums Kopfgröße plausibel?
+
+Assumptions to correct in one sentence: the thickness is on by default; it needs the shadow; it only changes materials
+with a backscatter; the value is in this scene's world units (0.05).
