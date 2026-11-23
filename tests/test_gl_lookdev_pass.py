@@ -254,7 +254,8 @@ def test_the_albedo_map_reaches_the_lookdev_pass(gl_window, tmp_path):
 
 def test_grey_card_skin_matches_a_sclera_of_the_same_albedo_and_roughness(gl_window):
     """AD-038 §5.5 (E7): a Neutral grey card (albedo 0.5) on the skin pass and a sclera of the same albedo, roughness
-    and F0, lit by the same key at normal incidence (no environment), match within 2/255."""
+    and F0, lit by the same key at normal incidence (no environment), match within 2/255. Every P3 effect off: the M1
+    BRDF both passes share (AD-039 S3's dual lobe is the skin's own; the eye keeps one lobe)."""
     import dataclasses
     import math
 
@@ -265,7 +266,8 @@ def test_grey_card_skin_matches_a_sclera_of_the_same_albedo_and_roughness(gl_win
 
     roughness = 0.5
     state = _ld_state(background_gradient=False, background=((0.0, 0.0, 0.0),) * 2,
-                      key=lo.StudioLight(True, 1.5, 0.0, 0.0, 6500.0, 0.0))
+                      key=lo.StudioLight(True, 1.5, 0.0, 0.0, 6500.0, 0.0),
+                      effects=lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=False))
     card = _plane_viewport(gl_window)
     card.set_object_entry("plane", card.object_entries["plane"].mesh, (0.5, 0.5, 0.5),
                           look=LookDraw((0.5, 0.5, 0.5), roughness=roughness, specular=eo.CORNEA_F0 / 0.08))

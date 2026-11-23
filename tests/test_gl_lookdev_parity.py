@@ -1,5 +1,5 @@
 """GPU parity of `lookdev_shaders` against `lookdev_optics` (AD-038 §6, E5): decode, tone curves and output, `sh9`,
-`ld_studio`, `ld_diffuse`, GGX (`direct_specular`, `ld_specular`), one fragment per input into an RGBA32F target.
+`ld_studio`, `ld_diffuse`, GGX (`direct_specular`, `ld_specular`; AD-039 S3: `ld_direct_dual`, `ld_specular_dual`), one fragment per input into an RGBA32F target.
 
 Needs a real GL context, in its own process: `xvfb-run -a python -m pytest tests/test_gl_lookdev_parity.py -q`."""
 
@@ -19,7 +19,8 @@ from viewport import lookdev_optics as lo  # noqa: E402
 from viewport import lookdev_shaders as ls  # noqa: E402
 
 N = 2048
-FUNCS = {"decode": 0, "output": 1, "sh9": 2, "studio": 3, "diffuse": 4, "direct": 5, "specular": 6}
+FUNCS = {"decode": 0, "output": 1, "sh9": 2, "studio": 3, "diffuse": 4, "direct": 5, "specular": 6, "direct_dual": 7,
+         "specular_dual": 8}
 
 BODY = """
 uniform samplerBuffer u_inputs;
@@ -41,6 +42,8 @@ void main() {
     else if (u_func == 4) o = ld_diffuse(a.xyz, b.xyz);
     else if (u_func == 5) o = vec3(direct_specular(a.xyz, b.xyz, c.xyz, a.w, b.w));
     else if (u_func == 6) o = ld_specular(a.xyz, b.xyz, c.x, c.y);
+    else if (u_func == 7) o = vec3(ld_direct_dual(a.xyz, b.xyz, c.xyz, a.w, c.w, b.w));
+    else if (u_func == 8) o = ld_specular_dual(a.xyz, b.xyz, c.x, c.y);
     out_value = vec4(o, 1.0);
 }
 """
@@ -70,7 +73,7 @@ class _Parity:
 
         _register_sampler_buffer_uniform()
         self.gl = gl
-        fragment = "#version 330 core\n" + ls.LD_BRDF_SRC + ls.LD_COMMON_SRC + BODY
+        fragment = "#version 330 core\n" + ls.LD_BRDF_SRC + ls.LD_COMMON_SRC + ls.LD_DUAL_LOBE_SRC + BODY
         self.program = ShaderProgram(Shader(es.FULLSCREEN_VERTEX_SRC, "vertex"), Shader(fragment, "fragment"))
 
         def gen(fn) -> int:
@@ -210,3 +213,24 @@ def test_ggx(parity):
     got = parity.run("specular", _pack(np.c_[n, zero], np.c_[v, zero], np.c_[rough, f0]), values)
     ref = lo.ld_specular(_f32(n), _f32(v), _f32(rough), _f32(f0), values)
     assert np.abs(got - ref).max() < 1e-3 * max(1.0, float(ref.max()))
+
+
+def test_dual_lobe(parity):
+    """AD-039 §6 (S3): `ld_direct_dual` with random light sizes and `ld_specular_dual` with the frame's three lights
+    against their NumPy twins."""
+    rng = np.random.default_rng(7)
+    values = lo.frame_uniforms(_state())
+    n = _unit(N, 8)
+    v = lo.eo.normalize(n + rng.normal(scale=0.6, size=(N, 3)))
+    l = lo.eo.normalize(n + rng.normal(scale=0.8, size=(N, 3)))
+    rough, f0, size = rng.uniform(0.1, 1.0, N), rng.uniform(0.02, 0.08, N), rng.uniform(0.0, 0.3, N)
+    got = parity.run("direct_dual", _pack(np.c_[n, rough], np.c_[v, f0], np.c_[l, size]), values)[:, 0]
+    ref = lo.ld_direct_dual(_f32(n), _f32(v), _f32(l), _f32(rough), _f32(size), _f32(f0))
+    assert np.abs(got - ref).max() < 1e-3 * max(1.0, float(ref.max()))
+    zero = np.zeros(N)
+    got = parity.run("specular_dual", _pack(np.c_[n, zero], np.c_[v, zero], np.c_[rough, f0]), values)
+    ref = lo.ld_specular_dual(_f32(n), _f32(v), _f32(rough), _f32(f0), values)
+    assert np.abs(got - ref).max() < 1e-3 * max(1.0, float(ref.max()))
+    # the dual lobe is not the single one (a sharper peak, a broader tail)
+    single = lo.ld_specular(_f32(n), _f32(v), _f32(rough), _f32(f0), values)
+    assert np.abs(ref - single).max() > 1e-3

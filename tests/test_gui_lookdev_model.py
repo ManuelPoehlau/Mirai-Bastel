@@ -128,7 +128,8 @@ def test_the_effects_block(app):
     """AD-039 §2.1: one row per built P3 effect, its switch and its reason when greyed."""
     st = lm.state(app)
     assert [(r.name, r.label, r.on, r.available) for r in st.effects] == [("shadow", "Schatten", True, True),
-                                                                          ("eye_shadow", "Augen-Schatten", True, True)]
+                                                                          ("eye_shadow", "Augen-Schatten", True, True),
+                                                                          ("dual_lobe", "Doppel-Glanz", True, True)]
     assert lm.EFFECTS_TITLE == "Effekte" and all(r.hint for r in st.effects)
     app.set_lookdev_effect("shadow", False)
     rows = lm.state(app).effects
@@ -139,3 +140,10 @@ def test_the_effects_block(app):
     app.set_lookdev_effect("eye_shadow", False)
     rows = lm.state(app).effects
     assert rows[0].on and not rows[1].on and rows[1].available
+    # AD-039 §6: the dual lobe needs neither the shadow nor a feature
+    app.set_lookdev_effect("shadow", False)
+    app.set_lookdev_effect("dual_lobe", False)
+    rows = lm.state(app).effects
+    assert not rows[2].on and rows[2].available and rows[2].reason is None
+    app.set_lookdev_effect("dual_lobe", True)
+    assert lm.state(app).effects[2].on and lm.state(app).effects[2].available

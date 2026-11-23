@@ -7,7 +7,7 @@
   other face data, no store buffer is written (I-10).
 - Programs: `lookdev_shaders.skin_sources` (the textured Worklight VS + GS, so the depth contract I-1 holds by
   construction), compiled lazily, cached by the tuple of their defines in a fixed order `(ALBEDO_MAP, ENV_SPEC,
-  SHADOW)` (AD-039 §2.3 point 4).
+  SHADOW, DUAL_LOBE)` (AD-039 §2.3 point 4).
 - P3 (AD-039): the pass owns the effects' resources - S1's `KeyShadow` (created on the first frame with the shadow on,
   deleted in `release()`) - and the context's `FeatureReport` (`lookdev_features.probe`, once, the first time an effect
   needs it). With the shadow the map is bound on unit 6 for the draw and unbound after it.
@@ -103,12 +103,12 @@ class LookdevPass:
             self.shadow = KeyShadow()
         return self.shadow
 
-    def program(self, albedo_map: bool, env_spec: bool, shadow: bool = False):
+    def program(self, albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore, _register_sampler_buffer_uniform
 
-        key = (bool(albedo_map), bool(env_spec), bool(shadow))
+        key = (bool(albedo_map), bool(env_spec), bool(shadow), bool(dual_lobe))
         program = self.programs.get(key)
         if program is None:
             _register_sampler_buffer_uniform()
@@ -122,9 +122,10 @@ class LookdevPass:
             self.programs[key] = program
         return program
 
-    def draw(self, render_mesh, look: LookDraw, frame: dict, shadow=None) -> bool:
+    def draw(self, render_mesh, look: LookDraw, frame: dict, shadow=None, dual_lobe: bool = False) -> bool:
         """Draw one object. False = nothing drawn (no VertexList / camera yet, or a Ghost): the caller draws it with the
-        Worklight. `shadow` (AD-039 S1): a rendered `KeyShadow` the object receives (the `SHADOW` variant), else None."""
+        Worklight. `shadow` (AD-039 S1): a rendered `KeyShadow` the object receives (the `SHADOW` variant), else None;
+        `dual_lobe` (S3): the `DUAL_LOBE` variant."""
         from pyglet import gl
 
         from .gl_render_store import GLRenderStore
@@ -140,7 +141,7 @@ class LookdevPass:
             GLRenderStore.unbind_triangle_uvs(UV_UNIT)
             uvs = False
         shadow = shadow if shadow is not None and shadow.ready else None
-        program = self.program(texture is not None, self.env_spec, shadow is not None)
+        program = self.program(texture is not None, self.env_spec, shadow is not None, dual_lobe)
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw
         model = store.uniform_data("model_uniforms")

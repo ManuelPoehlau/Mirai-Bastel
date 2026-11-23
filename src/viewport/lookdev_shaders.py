@@ -26,6 +26,11 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
   diffuse and specular term times (1 - visibility). Twins: `lookdev_optics.pcf_visibility` / `ld_key_shadowed`.
   S2 (AD-039 §5): the eye's `LD_SHADOW` variant appends the same string (`eye_shaders.shell_sources`).
   `SHADOW_DEPTH_SRC`: the depth pass's program (`viewport.lookdev_shadow.KeyShadow`).
+- `LD_DUAL_LOBE_SRC` (S3, AD-039 §6 / §18): `ld_direct_dual` and `ld_specular_dual`, the skin's two-lobe twins of
+  `direct_specular` / `ld_specular` (roughness x 0.75 and x 1.3, mixed 0.85 / 0.15, each lobe widened by the light's
+  size); the `DUAL_LOBE` blocks call them for the three lights, the `SHADOW` block's key term included. The studio's
+  reflection keeps one lobe (P3-0 run 2: a second analytic lobe costs +0.9 to +4 ms; S5's cube takes it). Twins:
+  `lookdev_optics.ld_direct_dual` / `ld_specular_dual`.
 
 Colour (AD-038 §5.5): every albedo is an sRGB artist value, decoded here; lights are linear; one `lookdev_output` per
 pixel. Directions are world space; `u_ld_env_rot` turns a world direction into the studio's frame (rotation, and the
@@ -52,7 +57,7 @@ ALBEDO_UNIT = 4
 #: AD-039 §2.4: the key's shadow map (compare sampler), S1.
 SHADOW_UNIT = 6
 #: The P3 defines in their fixed order (the skin program key, AD-039 §2.3 point 4).
-SKIN_EFFECTS = ("SHADOW",)
+SKIN_EFFECTS = ("SHADOW", "DUAL_LOBE")
 #: The compare's depth bias in the map's [0, 1] depth (`PROVISIONAL`, AD-039 §4; twin `lookdev_optics.pcf_visibility`).
 SHADOW_DEPTH_BIAS = 0.0005
 #: The receiver-plane slope's limit (depth per UV, both in the map's units: 10 = 84° from the key).
@@ -60,6 +65,10 @@ SHADOW_SLOPE_MAX = 10.0
 #: The wrap's excess looks the map up this many normal offsets further out along the normal (`PROVISIONAL`, AD-039
 #: §16.7): past a convex surface's own shadow at the terminator, still inside a crease's cast shadow.
 SHADOW_WRAP_LIFT = 4.0
+#: S3 (AD-039 §6, Q-P3-7 fixed): the two lobes' perceptual roughness as factors of the material's, and the first lobe's
+#: share (`PROVISIONAL`, the common real-time skin default; twin `lookdev_optics.ld_specular_dual`).
+DUAL_LOBE_SCALES = (0.75, 1.3)
+DUAL_LOBE_MIX = 0.85
 
 
 def constant_src(name: str, library: str = es.EYE_LIB_SRC) -> str:
@@ -228,7 +237,12 @@ void main() {{
     }}
 #endif
     albedo = srgb_decode(albedo);
+#ifdef DUAL_LOBE
+    // AD-039 §6: the lights' highlight as two lobes, a sharp one and a broad tail
+    vec3 colour = albedo * ld_diffuse(n, u_wrap) + ld_specular_dual(n, v, rough, u_f0);
+#else
     vec3 colour = albedo * ld_diffuse(n, u_wrap) + ld_specular(n, v, rough, u_f0);
+#endif
 #ifdef SHADOW
     // AD-039 §4 / §16.7: the key's own terms (ld_diffuse / ld_specular's i = 0) times (1 - visibility): the key in
     // shadow. Its Lambert part and its highlight take the map's answer at the surface; the wrap's excess past Lambert
@@ -239,9 +253,15 @@ void main() {{
         float vis = ld_key_visibility(v_world_pos, n, u_ld_light_dir[0]);
         float vis_wrap = ld_key_visibility_lifted(v_world_pos, n, u_ld_light_dir[0]);
         vec3 lambert = vec3(max(ndl, 0.0));
+#ifdef DUAL_LOBE
+        colour -= u_ld_light_color[0]
+                * (albedo * ((1.0 - vis) * lambert + (1.0 - vis_wrap) * (ld_wrap(ndl, u_wrap) - lambert))
+                   + (1.0 - vis) * ld_direct_dual(n, v, u_ld_light_dir[0], rough, u_ld_light_size[0], u_f0));
+#else
         colour -= u_ld_light_color[0]
                 * (albedo * ((1.0 - vis) * lambert + (1.0 - vis_wrap) * (ld_wrap(ndl, u_wrap) - lambert))
                    + (1.0 - vis) * direct_specular(n, v, u_ld_light_dir[0], ld_lobe(rough, u_ld_light_size[0]), u_f0));
+#endif
     }}
 #endif
 #ifdef ENV_SPEC
@@ -311,6 +331,23 @@ float ld_key_visibility_lifted(vec3 p, vec3 n, vec3 l) {{
 }}
 """
 
+LD_DUAL_LOBE_SRC = f"""
+// -- LookDev P3 S3 (AD-039 §6): dual-lobe specular on skin - roughness x {DUAL_LOBE_SCALES[0]!r} and x {DUAL_LOBE_SCALES[1]!r}, mixed
+// {DUAL_LOBE_MIX!r} / {1.0 - DUAL_LOBE_MIX:.2f}; each lobe is widened by the light's size as ld_lobe
+const vec2 LD_DUAL_SCALES = vec2({DUAL_LOBE_SCALES[0]!r}, {DUAL_LOBE_SCALES[1]!r});
+const float LD_DUAL_MIX = {DUAL_LOBE_MIX!r};
+float ld_direct_dual(vec3 n, vec3 v, vec3 l, float roughness, float size, float f0) {{
+    return mix(direct_specular(n, v, l, ld_lobe(roughness * LD_DUAL_SCALES.y, size), f0),
+               direct_specular(n, v, l, ld_lobe(roughness * LD_DUAL_SCALES.x, size), f0), LD_DUAL_MIX);
+}}
+vec3 ld_specular_dual(vec3 n, vec3 v, float roughness, float f0) {{
+    vec3 c = vec3(0.0);
+    for (int i = 0; i < LD_LIGHTS; ++i)
+        c += u_ld_light_color[i] * ld_direct_dual(n, v, u_ld_light_dir[i], roughness, u_ld_light_size[i], f0);
+    return c;
+}}
+"""
+
 #: The depth pass from the key (`KeyShadow`): its own minimal program - the position at the store's location, the
 #: object's model matrix and the key's view-projection; an empty fragment stage (depth only).
 SHADOW_DEPTH_VERTEX_SRC = """#version 330 core
@@ -328,19 +365,23 @@ def shadow_depth_sources(locations: dict[str, int]) -> list[tuple[str, str]]:
     return [(SHADOW_DEPTH_VERTEX_SRC.format(**locations), "vertex"), (SHADOW_DEPTH_FRAGMENT_SRC, "fragment")]
 
 
-def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, shadow: bool = False
-                 ) -> list[tuple[str, str]]:
+def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, shadow: bool = False,
+                 dual_lobe: bool = False) -> list[tuple[str, str]]:
     """The skin program (AD-038 §3.2): the textured Worklight program's vertex and geometry sources formatted with the
     Worklight program's attribute locations, the LookDev fragment source. Variants: `ALBEDO_MAP`, `ENV_SPEC`; P3
-    (AD-039 §2.3): `SHADOW` (S1). An effect that is off leaves no text behind (its library string is not appended, its
+    (AD-039 §2.3): `SHADOW` (S1), `DUAL_LOBE` (S3). An effect that is off leaves no text behind (its library string is not appended, its
     body blocks are resolved away), so every effect off = M1's sources."""
     from .eye_shaders import _without
     from .gl_render_store import TEXTURED_GEOMETRY_SRC, TEXTURED_VERTEX_SRC
 
-    flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow))
+    flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow), ("DUAL_LOBE", dual_lobe))
     defines = "".join(f"#define {name} 1\n" for name, on in flags if on)
-    body = SKIN_BODY if shadow else _without(SKIN_BODY, "SHADOW")
-    library = LD_BRDF_SRC + LD_COMMON_SRC + (LD_SHADOW_SRC if shadow else "")
+    body = SKIN_BODY
+    for name, on in flags[2:]:
+        if not on:
+            body = _without(body, name)
+    library = (LD_BRDF_SRC + LD_COMMON_SRC + (LD_SHADOW_SRC if shadow else "")
+               + (LD_DUAL_LOBE_SRC if dual_lobe else ""))
     fragment = "#version 330 core\n" + defines + library + body
     return [(TEXTURED_VERTEX_SRC.format(**locations), "vertex"), (TEXTURED_GEOMETRY_SRC, "geometry"),
             (fragment, "fragment")]

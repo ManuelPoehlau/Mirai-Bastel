@@ -250,12 +250,15 @@ def test_set_lookdev_effect_is_view_state_and_a_preset_keeps_the_effects(app):
     app.open_lookdev()
     app.update_viewport(1 / 60)
     assert app.set_lookdev_effect("shadow", True) and app.viewport.lookdev_state.effects.shadow  # headless: at once
-    assert app.lookdev_effect_reasons() == {"shadow": None, "eye_shadow": None}
+    assert app.lookdev_effect_reasons() == {"shadow": None, "eye_shadow": None, "dual_lobe": None}
     # AD-039 §5: the eye shadow is its own switch (on by default) and needs the shadow
     assert app.lookdev.studio.effects.eye_shadow and app.set_lookdev_effect("eye_shadow", False)
     assert not app.viewport.lookdev_state.effects.eye_shadow and len(app.history) == history
     assert app.set_lookdev_effect("eye_shadow", True) and app.set_lookdev_effect("shadow", False)
-    assert app.lookdev_effect_reasons() == {"shadow": None, "eye_shadow": "braucht Schatten"}
+    assert app.lookdev_effect_reasons() == {"shadow": None, "eye_shadow": "braucht Schatten", "dual_lobe": None}
+    # AD-039 §6: the dual lobe is its own switch (on by default), view state without Undo
+    assert app.lookdev.studio.effects.dual_lobe and app.set_lookdev_effect("dual_lobe", False)
+    assert not app.viewport.lookdev_state.effects.dual_lobe and len(app.history) == history
 
 
 def test_an_effect_that_needs_a_compile_keeps_the_frame_before(app, monkeypatch):

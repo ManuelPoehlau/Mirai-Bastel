@@ -7,7 +7,8 @@ number AD-039 follows AD-038; AD-034 was never assigned (no file, no reference, 
 file and panel names stay `PROVISIONAL` until built. **S1 built 2026-11-22** (§16): the reference-PC run (E16, the
 shadow's drag cost) and Manu's practical test (§16.5) are open. **S2 built 2026-11-22** (§17: the eyes in the key's
 shadow, „Augen-Schatten“; eye shadow off = S1 by pin and pixels): its reference-PC row and practical test (§17.4–§17.5)
-are open; S3 next.
+are open. **S3 built 2026-11-23** (§18: dual-lobe specular on the lights, „Doppel-Glanz“; dual lobe off = S1 / S2 by
+pins; the §6 energy claim corrected, §18.2): its reference-PC row and practical test (§18.4–§18.5) are open; S4 next.
 **Why now:** Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“
 ([proposal §0.1](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md), [AD-038](AD-038-LOOKDEV-ROOM-M1.md)
 §13.6). P3 needs its own AD before any `src/` change and fixes the order of the P3 items.
@@ -457,6 +458,9 @@ widens each lobe (`ld_lobe`). The environment specular follows the P3-0 decision
   - effect off = the S1 frame (pixels, skin pin);
   - GL state.
 - **Measurement:** room probe row `lookdev +dual`; P3-0 rows `dual direct` / `dual env` decide the environment variant.
+- **Built 2026-11-23 (§18).** The energy test above does not hold for these values above r ≈ 0.4: the mix reflects up to
+  a third more than the single lobe at r = 0.8, while staying ≤ 1. The test was replaced, and the numbers are recorded
+  (§18.2, S3-1).
 
 ---
 
@@ -1139,3 +1143,127 @@ Open LookDev, SubD 1, view „¾“ and front; zoom close to one eye for points 
 
 Assumptions to correct in one sentence: the eye shadow is on by default; it needs the skin shadow; the eyes still cast
 no shadow (Q-P3-5); `EyeLook.lid_shadow` is unchanged.
+
+---
+
+## 18. Implementation note — S3 built (2026-11-23)
+
+**Kurzfassung (Deutsch):** Der Glanz der Haut aus den drei Lichtern (Key, Fill, Rim) besteht jetzt aus zwei Anteilen:
+85 % bei Rauheit × 0,75 (eine schärfere Spitze) und 15 % bei × 1,3 (ein weicher Saum), mit deinen freigegebenen Werten
+(Q-P3-7, fest). Die Studio-Spiegelung bleibt einfach, bis der Cube kommt (P3-0 Lauf 2: ein zweiter Anteil auf dem
+analytischen Studio kostet +0,9 bis +4 ms). Neuer Schalter „Doppel-Glanz“ im Block „Effekte“ (Standard an, braucht
+nichts), mit der Szene gespeichert; eine S2-Datei behält ihre Einstellungen. Doppel-Glanz aus = S1/S2, Zeichen für
+Zeichen (Pins). Die Augen bleiben unverändert. **Abweichung:** Die AD versprach „gleiche Energie wie ein Lobe, ±2 %“.
+Das stimmt mit diesen Werten nur bis Rauheit 0,4; darüber reflektiert der Doppel-Glanz mehr (bei Creature Skin 0,5 etwa
++3 bis +6 %, bei Neutral 0,6 etwa +8 bis +10 %), weil der schärfere Hauptanteil weniger durch Selbstabschattung verliert.
+Er erzeugt keine Energie (≤ 1). Am Gollum-Kopf werden die Glanzlichter dadurch sichtbar heller (bis +24 bis +36/255 im
+Spitzenwert). Dein Praxistest entscheidet, ob das so bleibt (§18.5).
+
+### 18.1 What is built
+
+| Layer | Built |
+|---|---|
+| Effects | `LookdevEffects.dual_lobe` (default on, the third field), no `EFFECT_FEATURE` and no `EFFECT_NEEDS` entry (it needs neither a feature nor another effect), `EFFECT_LABEL` „Doppel-Glanz“; `view.lookdev.effects` reads it optionally (S1's reader: an S2 file without `dual_lobe` keeps the current switch) |
+| Shaders | `lookdev_shaders.DUAL_LOBE_SCALES = (0.75, 1.3)`, `DUAL_LOBE_MIX = 0.85` (`PROVISIONAL`, Q-P3-7 fixed); `LD_DUAL_LOBE_SRC` (`ld_direct_dual`: `mix(broad, sharp, 0.85)`, each lobe `direct_specular` at `ld_lobe(roughness × scale, size)`; `ld_specular_dual`: the three lights), appended after `LD_COMMON_SRC` only with the effect; `SKIN_EFFECTS = ("SHADOW", "DUAL_LOBE")`; `skin_sources(..., shadow=False, dual_lobe=False)` resolves every effect that is off with `_without` |
+| Body blocks (2) | `#ifdef DUAL_LOBE … #else … #endif` around the `colour` line (`ld_specular_dual` / `ld_specular`) and, nested inside the `SHADOW` block, around the key's subtracted term (`ld_direct_dual` / `direct_specular`), so the key's shadow takes away exactly the highlight it drew. The `#else` parts are the S1 text, character for character. `ENV_SPEC` is untouched: the studio's reflection keeps one lobe |
+| Pass | `LookdevPass.program(albedo_map, env_spec, shadow=False, dual_lobe=False)`: the key is 4 values `(ALBEDO_MAP, ENV_SPEC, SHADOW, DUAL_LOBE)` (§2.3 point 4's fixed order); `draw(..., shadow=None, dual_lobe=False)` |
+| Viewport | `_lookdev_programs` adds `effects.dual_lobe` to every skin variant (so `prepare_lookdev` compiles it behind the status line and `lookdev_prepare_needed` sees a switch); `_render_lookdev` hands it to every skin draw. Eyes and Worklight untouched |
+| Twins | `lookdev_optics.ld_direct_dual`, `ld_specular_dual`; `ld_key_shadowed(..., dual=False)` for the `SHADOW` block with `DUAL_LOBE` |
+| GUI | `lookdev_model.EFFECT_LABELS` / `EFFECT_HINTS`: the row „Doppel-Glanz“ |
+| Probe | `probe_lookdev_room.py`: `EFFECT_ROWS["dual_lobe"] = ("lookdev +dual", ("dual_lobe",))`, the dual lobe alone against `lookdev` (every effect off) |
+
+Not touched: `src/core/`, `serialization.py`, `LD_COMMON_SRC` (the eye's LOOKDEV pin), `LD_SHADOW_SRC`, `eye_shaders.py`,
+`eye_pass.py`, `KeyShadow`, `main.py`, `config/keymap.json` (no keys), `LookMaterial` (no per-material values, Q-P3-7).
+
+### 18.2 Where the build differs from §2 / §6, and why
+
+| # | AD | Built | Why |
+|---|---|---|---|
+| S3-1 | §6 test "the mix of the two normalised lobes integrates to the single lobe's albedo within 2 % for r ∈ [0.2, 0.8]" | `test_the_dual_lobe_keeps_energy`: each lobe's NDF is normalised (∫ D cos θ dω = 1 within 2 %); the mix's directional albedo (F0 = 1) is ≤ 1 and ≥ the single lobe's (− 0.01); within 5 % of it for r ≤ 0.4 | the claim is false for the accepted values. Measured (F0 = 1, light size 0, the single lobe's albedo → the mix's): see the table below. Single-scatter GGX loses energy to Smith masking as the roughness grows; the mix's main lobe is sharper (× 0.75), so it loses less. The mix stays energy-conserving; against the single lobe it is brighter |
+| S3-2 | §6 "`LD_SKIN_SRC` gets `ld_specular_dual`" | a separate string `LD_DUAL_LOBE_SRC`, appended only with the effect | there is no `LD_SKIN_SRC`; the code's pattern is one library string per effect (`LD_SHADOW_SRC`, §2.3 point 2), and an appended string keeps every effect-off source pinned |
+| S3-3 | §6 (not stated) | the `SHADOW` block subtracts the key's **dual** highlight when both are on | otherwise the key's shadow would leave the difference between the two highlights behind in the shadow (light where the key is blocked) |
+| S3-4 | §14 / E7 (grey card skin = sclera, `test_gl_lookdev_pass.py`) | E7 runs with every P3 effect off (it set none before and so ran with the defaults, the shadow on) | E7 checks that both passes share the M1 BRDF; the dual lobe is the skin's own (the eye keeps one lobe), so with it on the two differ on purpose |
+
+The energy, measured (`_directional_albedo`, 600 × 600 directions; cos θ_v = 1 / 0.7 / 0.35):
+
+| r | single → dual, cos θ_v = 1 | 0.7 | 0.35 |
+|---|---|---|---|
+| 0.2 | 0.999 → 0.999 (+0.1 %) | +0.1 % | −0.6 % |
+| 0.4 | 0.968 → 0.977 (+1.0 %) | +1.8 % | +4.6 % |
+| 0.5 | 0.916 → 0.944 (+3.1 %) | +4.9 % | +5.9 % |
+| 0.6 | 0.825 → 0.892 (+8.2 %) | +10.0 % | +6.3 % |
+| 0.8 | 0.555 → 0.747 (+34.5 %) | +26.1 % | +11.5 % |
+
+The presets: Wet Skin 0.25, Zähne and Mundinneres 0.3 (≤ 2 %), Creature Skin 0.5, Organisch 0.55, Neutral 0.6. A light's
+size widens both lobes (`ld_lobe`), which moves a soft key's effective roughness up the table. If the practical test
+finds the highlights too strong, the options are: lower `DUAL_LOBE_MIX`'s sharp share, or normalise the mix to the single
+lobe's albedo (a fitted factor per roughness, a code constant). Either is a one-place change and Manu's call.
+
+### 18.3 Tests (container, llvmpipe, 2026-11-23)
+
+| # | Test |
+|---|---|
+| sources | `test_lookdev_shaders.py`: `test_the_dual_lobe_off_keeps_m1_and_s1_sources` (the M1 pin unchanged; new `PINNED_S1_SKIN_SOURCES_SHA256` over the 4 S1 variants, taken from `f8c771f` before the change: `shadow=True` and `shadow=True, dual_lobe=False` both equal it); `test_the_dual_lobe_variant_calls_the_dual_twins_for_the_lights_and_the_shadowed_key` (define and library once, the library after `LD_COMMON_SRC`, the key's shadowed term dual, the studio one lobe, nothing dual left with the effect off) |
+| twins | `test_lookdev_optics.py`: `test_ld_specular_dual_is_the_mix_of_two_widened_lobes` (the mix per light, the sum, `ld_key_shadowed(..., dual=True)` at visibility 1 and 0); `test_the_dual_lobe_keeps_energy` (S3-1, r = 0.2 / 0.4 / 0.6 / 0.8) |
+| GPU parity | `test_gl_lookdev_parity.py::test_dual_lobe`: `ld_direct_dual` (random light sizes) and `ld_specular_dual` against the twins, 2,048 inputs, within 10⁻³ relative |
+| block | `test_gl_lookdev_shadow.py::test_the_shadow_block_matches_ld_key_shadowed[True]`: the plane in full shadow and in the light equals `lookdev_output(ld_key_shadowed(..., dual=True))` (≤ 2.5/255); `[False]` is S1's test with the dual lobe off |
+| off = S1 | `test_the_dual_lobe_off_draws_s1_and_on_changes_the_highlight`: with the shadow on and the dual lobe off, the program built by S1's call (`skin_sources(…, shadow)`) draws the same pixels; on a glossy sphere the dual lobe changes > 50 px |
+| GL state | the defaults now include the dual lobe, so S1's `test_a_frame_that_renders_the_map_leaves_the_gl_state_as_found` and S2's state tests run with it on |
+| headless | `test_lookdev_persistence.py` (`test_an_s2_file_without_dual_lobe_keeps_its_settings`; the round trip writes three names), `test_lookdev_room.py` (view state, no Undo, no reason), `test_gui_lookdev_model.py` (the row, available with the shadow off), `experiments/drag_cost/tests/test_probe_lookdev_room.py` (`lookdev +dual`) |
+
+**Gollum (one-off, not committed):** `Gollum_Head_05`, 1024 × 768, the framed ¾ view and the face, cage and SubD 1,
+shadow and eye shadow on; dual lobe on against off:
+
+| Preset, material | changed > 2/255 (framed / face) | brighter / darker (face, SubD 1) | max (face, cage / SubD 1) |
+|---|---|---|---|
+| Portrait, Neutral (0.6) | 435–579 / 3,037–3,417 px | 3,024 / 13 | +25 / +26, −5 / −3 |
+| Portrait, Creature Skin (0.5) | 322–430 / 1,856–1,987 px | 1,849 / 0 | +21 / +23, −3 / −3 |
+| Dramatic, Creature Skin | 1,378–1,566 / 11,227–11,472 px | 10,012 / 187 | +36 / +34, −5 / −5 |
+
+The change sits in the highlights (bridge of the nose, cheekbones, brow, lips); the eyes are unchanged. The few darker
+pixels are the broader lobe's lower peak where a highlight was already at its edge. Not done this time: an S2-code
+against S3-code (dual off) pixel comparison on the head, as §17.3 did; the source pins (M1, S1) and the GL test cover it.
+
+Runs (GL files each in their own process under xvfb):
+
+| Command | Result |
+|---|---|
+| `xvfb-run -a python -m pytest tests/test_lookdev_shaders.py tests/test_lookdev_optics.py -q` | 29 passed |
+| `… tests/test_gl_lookdev_shadow.py` / `test_gl_lookdev_pass.py` / `test_gl_lookdev_parity.py` | 20 / 13 / 8 passed |
+| `… tests/test_gl_eye_pass.py` | 135 passed (unchanged; the eye pins green) |
+| `xvfb-run -a python -m pytest tests -k "lookdev or look or view_state or main_wiring" -q` | 408 passed |
+| `xvfb-run -a python -m pytest experiments/drag_cost/tests -q` | 105 passed |
+
+### 18.4 Measurement
+
+Container (llvmpipe, a function check only): `probe_lookdev_room.py --effects dual_lobe --draws 5 --surfaces cage`
+ran `lookdev` and `lookdev +dual` with `glGetError` 0; the entry compiled 2 programs behind the status line. Its ms say
+nothing about the reference PC.
+
+**Reference PC (S3, together with S1's and S2's open run):** NVIDIA "Maximale Leistung bevorzugen", repository root,
+`.venv312`:
+
+```
+python experiments\drag_cost\probe_lookdev_room.py | Tee-Object -FilePath lookdev_room_s3.txt
+```
+
+It measures every built row in one run (`lookdev`, `lookdev +shadow`, `lookdev +shadow +eyes`, `lookdev +dual`, the
+drag rows). What it decides for S3: `lookdev +dual` against `lookdev` ≤ +0.5 ms (§2.5; P3-0 run 2's stand-in measured
++0.06 to +0.29 ms). E16 and S1's / S2's decisions as §17.4 (the other two commands there).
+
+### 18.5 Practical test S3 (`scenes/Gollum_Head_05.mirai.json`, about 10 minutes; with S1 / S2's if still open)
+
+Open LookDev, SubD 1, view „¾“, then the face from the front.
+1. **„Doppel-Glanz“ an / aus** (Block „Effekte“), mit Portrait und Material Creature Skin, dann Neutral: Erwartet: an =
+   die Glanzlichter auf Nasenrücken, Wangenknochen, Stirn und Lippen haben einen helleren, schärferen Kern und einen
+   weichen Saum; aus = genau das Bild von vorher. Wirkt die Haut lebendiger oder eher feucht / speckig?
+2. **Dramatic:** derselbe Vergleich; hier ändert sich am meisten. Sind die Glanzlichter zu hell? Wenn ja, sag, ob die
+   Spitze schwächer (weniger scharfer Anteil) oder der Glanz insgesamt gedämpft werden soll (§18.2: auf die Helligkeit
+   eines Lobes normiert).
+3. **„Weichheit“ des Key** (0 → 1): Erwartet: beide Anteile werden weicher, der Kern bleibt etwas schärfer als ohne
+   Doppel-Glanz.
+4. **Zähne, Mundinneres, Wet Skin:** Erwartet: kaum Unterschied (niedrige Rauheit), der Glanz bleibt scharf.
+5. **Speichern und Laden:** der Schalter kommt so zurück, wie er war.
+
+Assumptions to correct in one sentence: the dual lobe is on by default; it needs nothing; the studio's reflection keeps
+one lobe until S5; the values are fixed (not per material).

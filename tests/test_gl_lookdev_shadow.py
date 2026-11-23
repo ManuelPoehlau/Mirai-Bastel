@@ -34,7 +34,7 @@ from viewport.viewport import Viewport  # noqa: E402
 SIZE = 192
 GREY = LookDraw((0.5, 0.5, 0.5), roughness=1.0, specular=0.0)
 FLAT = lo.Studio((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-OFF = lo.LookdevEffects(shadow=False)
+OFF = lo.LookdevEffects(shadow=False, dual_lobe=False)  # every P3 effect off: M1
 
 
 @pytest.fixture(scope="module")
@@ -515,15 +515,15 @@ def test_the_shadow_off_draws_m1_and_creates_nothing(gl_window):
     off = _frame(gl_window, viewport)
     passes = viewport.lookdev_pass
     assert passes.shadow is None and passes.features is None  # nothing made, nothing probed
-    assert set(passes.programs) == {(False, True, False)}
+    assert set(passes.programs) == {(False, True, False, False)}
     # the program is M1's: built from the pinned sources (the M1 call without the new argument)
     locations = {"position": GLRenderStore.program().attributes["position"]["location"],
                  "normal": GLRenderStore.program().attributes["normal"]["location"]}
     from pyglet.graphics.shader import Shader, ShaderProgram
 
     m1 = ShaderProgram(*(Shader(src, kind) for src, kind in ls.skin_sources(locations, False, True)))
-    passes.programs[(False, True, False)].delete()
-    passes.programs[(False, True, False)] = m1
+    passes.programs[(False, True, False, False)].delete()
+    passes.programs[(False, True, False, False)] = m1
     assert np.array_equal(_frame(gl_window, viewport), off)
     # with the shadow on and nothing between the key and the surfaces, the shadow changes no pixel
     viewport.set_shading("lookdev", _state(key_az=0.0, key_el=89.0, effects=lo.LookdevEffects()))
@@ -531,6 +531,42 @@ def test_the_shadow_off_draws_m1_and_creates_nothing(gl_window):
     on = _frame(gl_window, viewport)
     viewport.set_shading("lookdev", _state(key_az=0.0, key_el=89.0, effects=OFF))
     assert np.array_equal(_frame(gl_window, viewport), on)
+    _release(viewport)
+
+
+# -- AD-039 S3: the dual lobe off is S1, on it changes the highlight --------------------------------------------------
+
+def test_the_dual_lobe_off_draws_s1_and_on_changes_the_highlight(gl_window):
+    """AD-039 §6: with the shadow on and the dual lobe off, the frame is S1's - the program built by S1's call
+    (`skin_sources(..., shadow)`, without the new argument) draws the same pixels; with the dual lobe on, a material
+    with a highlight changes on a sphere (a sharper peak, a broader tail)."""
+    from pyglet.graphics.shader import Shader, ShaderProgram
+
+    camera = OrbitCamera(target=(0.0, 0.2, 0.0), distance=5.5, yaw=0.3, pitch=0.75)
+    viewport = _viewport(gl_window, {"ground": _ground(), "box": _box(*BOX)}, camera)
+    s1 = lo.LookdevEffects(dual_lobe=False)
+    state = _state(key_az=120.0, key_el=40.0, size=0.1, effects=s1)
+    viewport.set_shading("lookdev", state)
+    plain_off = _frame(gl_window, viewport)  # GREY: specular 0
+    passes = viewport.lookdev_pass
+    assert set(passes.programs) == {(False, True, True, False)}
+    locations = {"position": GLRenderStore.program().attributes["position"]["location"],
+                 "normal": GLRenderStore.program().attributes["normal"]["location"]}
+    s1_program = ShaderProgram(*(Shader(src, kind) for src, kind in ls.skin_sources(locations, False, True, True)))
+    passes.programs[(False, True, True, False)].delete()
+    passes.programs[(False, True, True, False)] = s1_program
+    assert np.array_equal(_frame(gl_window, viewport), plain_off)
+    _release(viewport)
+    viewport = _viewport(gl_window, {"sphere": _sphere()}, OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.0))
+    glossy = LookDraw((0.5, 0.5, 0.5), roughness=0.35, specular=1.0)
+    viewport.set_object_entry("sphere", viewport.object_entries["sphere"].mesh, (0.5, 0.5, 0.5), look=glossy)
+    viewport.set_shading("lookdev", _state(key_az=30.0, key_el=30.0, effects=s1))
+    off = _frame(gl_window, viewport)
+    viewport.set_shading("lookdev", _state(key_az=30.0, key_el=30.0, effects=lo.LookdevEffects()))
+    on = _frame(gl_window, viewport)
+    assert (False, True, True, True) in viewport.lookdev_pass.programs
+    changed = np.abs(on - off).max(axis=-1) > 2
+    assert changed.sum() > 50, changed.sum()
     _release(viewport)
 
 
@@ -600,7 +636,7 @@ def test_a_frame_that_renders_the_map_leaves_the_gl_state_as_found(gl_window):
 def test_without_a_depth_texture_the_shadow_is_off_with_a_status_line(gl_window, monkeypatch):
     camera = OrbitCamera(target=(0.0, 0.2, 0.0), distance=5.5, yaw=0.3, pitch=0.75)
     reference = _viewport(gl_window, {"ground": _ground(), "box": _box(*BOX)}, camera)
-    reference.set_shading("lookdev", _state(effects=OFF))
+    reference.set_shading("lookdev", _state(effects=lo.LookdevEffects(shadow=False)))  # the other effects stay on
     m1 = _frame(gl_window, reference)
     _release(reference)
     monkeypatch.setitem(lookdev_features.CHECKS, "depth_texture", lambda: False)
@@ -760,16 +796,18 @@ def test_ld_shadow_pcf_matches_pcf_visibility(gl_window, scale):
     assert (got[-64:] == 1.0).all()  # outside the map's box: lit
 
 
-def test_the_shadow_block_matches_ld_key_shadowed(gl_window):
+@pytest.mark.parametrize("dual", [False, True])
+def test_the_shadow_block_matches_ld_key_shadowed(gl_window, dual):
     """A plane half under a box, the key at 45°, a fill and SH9 from an environment, a wrap and a GGX highlight: the
     plane's colour in the full shadow and in the light equals `lookdev_output(ld_key_shadowed(...))` with visibility 0
     and 1 - the twin of the `SHADOW` block. The studio specular is the M1 lever off (`env_spec`), so the pixel is the
-    twin exactly."""
+    twin exactly. AD-039 S3 (`dual`): the same with the `DUAL_LOBE` blocks (the key's dual highlight in shadow)."""
     camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=5.5, yaw=0.0, pitch=1.2)
     viewport = _viewport(gl_window, {"ground": _ground(), "box": _box(*BOX)}, camera)
     studio = lo.Studio((0.3, 0.3, 0.32), (0.2, 0.2, 0.2), (0.05, 0.05, 0.05))
     state = _state(key_az=90.0, key_el=45.0, studio=studio, env_intensity=0.6,
-                   fill=lo.StudioLight(True, 0.4, -60.0, 30.0, 6500.0, 0.2))
+                   fill=lo.StudioLight(True, 0.4, -60.0, 30.0, 6500.0, 0.2),
+                   effects=lo.LookdevEffects(dual_lobe=dual))
     look = LookDraw((0.6, 0.5, 0.4), roughness=0.5, specular=0.5, wrap_rgb=(0.2, 0.1, 0.05))
     for key in ("ground", "box"):
         viewport.set_object_entry(key, viewport.object_entries[key].mesh, (0.5, 0.5, 0.5), look=look)
@@ -798,7 +836,7 @@ def test_the_shadow_block_matches_ld_key_shadowed(gl_window):
         v = -direction[ys, xs]
         normals = np.broadcast_to(n, v.shape)
         linear = lo.ld_key_shadowed(albedo, normals, v, look.wrap_rgb, look.roughness, look.f0, frame,
-                                    np.full(len(ys), visibility))
+                                    np.full(len(ys), visibility), dual=dual)
         expected = lo.lookdev_output(linear) * 255
         assert np.abs(pixels[ys, xs] - expected).max() <= 2.5, (want, np.abs(pixels[ys, xs] - expected).max())
     _release(viewport)

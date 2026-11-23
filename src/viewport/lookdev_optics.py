@@ -12,7 +12,8 @@ pattern (parity: `tests/test_gl_lookdev_parity.py`, `tests/test_lookdev_optics.p
 - P3 (AD-039 §2.1): `LookdevEffects` (the effect switches, view state in `LookdevState.effects`), `effective` /
   `effect_reasons` (dependencies and missing features); S1 (§4): `shadow_frustum`, `shadow_view_projection`,
   `shadow_resolution`, `shadow_coords`, `pcf_visibility` and `ld_key_shadowed`, the twins of
-  `lookdev_shaders.LD_SHADOW_SRC` and the `SHADOW` block.
+  `lookdev_shaders.LD_SHADOW_SRC` and the `SHADOW` block; S3 (§6): `ld_direct_dual` / `ld_specular_dual`, the twins of
+  `lookdev_shaders.LD_DUAL_LOBE_SRC` (`ld_key_shadowed(..., dual=True)` for the `SHADOW` block with `DUAL_LOBE`).
 
 World frame as `light_rig` (Y up, the model faces +Z, azimuth from +Z toward +X). The studio's frame turns by
 `rotation` degrees about Y; with "Licht folgt Kamera" it is the camera's (`right`, `up`, `-forward`), as
@@ -28,7 +29,8 @@ import numpy as np
 
 from . import eye_optics as eo
 from .light_rig import kelvin_to_rgb
-from .lookdev_shaders import MAX_STUDIO, SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT, TONE_CURVES
+from .lookdev_shaders import (DUAL_LOBE_MIX, DUAL_LOBE_SCALES, MAX_STUDIO, SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT,
+                              TONE_CURVES)
 
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 SH_DIRECTIONS = 4096
@@ -66,10 +68,12 @@ def lookdev_output(c, exposure: float = 1.0, curve: str = "reinhard") -> np.ndar
 class LookdevEffects:
     """The P3 effects' on/off (view state, `view.lookdev.effects`, no Undo). A field joins with its slice, default on
     once the slice is built (AD-039 §2.1). `shadow` (S1): the key's shadow map on skin and teeth; `eye_shadow` (S2): the
-    eyes receive it (the lids' shadow from the geometry), needs `shadow`."""
+    eyes receive it (the lids' shadow from the geometry), needs `shadow`; `dual_lobe` (S3): the skin's highlight from the
+    three lights as two lobes."""
 
     shadow: bool = True
     eye_shadow: bool = True
+    dual_lobe: bool = True
 
     @classmethod
     def names(cls) -> tuple[str, ...]:
@@ -85,7 +89,7 @@ EFFECT_NEEDS: dict[str, str] = {"eye_shadow": "shadow"}
 #: The panel's reasons for a greyed effect (German, the panel's language).
 FEATURE_REASON = {"depth_texture": "Tiefentextur fehlt", "sampler_objects": "Sampler-Objekte fehlen",
                   "cube_rgba16f": "Cube-Ziel fehlt", "texture_units": "zu wenige Textureinheiten"}
-EFFECT_LABEL = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten"}
+EFFECT_LABEL = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz"}
 
 
 def effect_reasons(effects: LookdevEffects, features=None) -> dict[str, str | None]:
@@ -364,6 +368,23 @@ def ld_specular(n, v, roughness, f0, values: dict) -> np.ndarray:
     return out
 
 
+def ld_direct_dual(n, v, l, roughness, size, f0) -> np.ndarray:
+    """GLSL `ld_direct_dual` (S3, AD-039 §6): one light's highlight as two GGX lobes - roughness x 0.75 and x 1.3, each
+    widened by the light's size, mixed 0.85 / 0.15."""
+    roughness = np.asarray(roughness, dtype=np.float64)
+    sharp = direct_specular(n, v, l, ld_lobe(roughness * DUAL_LOBE_SCALES[0], size), f0)
+    broad = direct_specular(n, v, l, ld_lobe(roughness * DUAL_LOBE_SCALES[1], size), f0)
+    return DUAL_LOBE_MIX * sharp + (1.0 - DUAL_LOBE_MIX) * broad
+
+
+def ld_specular_dual(n, v, roughness, f0, values: dict) -> np.ndarray:
+    """GLSL `ld_specular_dual`: `ld_specular` with `ld_direct_dual` per light."""
+    out = 0.0
+    for d, c, s in zip(values["u_ld_light_dir"], values["u_ld_light_color"], values["u_ld_light_size"]):
+        out = out + np.asarray(c) * ld_direct_dual(n, v, d, roughness, s, f0)[..., None]
+    return out
+
+
 # -- S1: the key shadow map (AD-039 §4) --------------------------------------------------------------------------------
 
 #: `PROVISIONAL` fixed setting (AD-039 §4, Q-P3-3; P3-0 run 2 on the reference PC): 1024² DEPTH_COMPONENT24, 3 x 3
@@ -497,21 +518,25 @@ def pcf_visibility(depth: np.ndarray, sp, scale: float = 1.0, slope=(0.0, 0.0)) 
     return np.where(inside, total / 9.0, 1.0)
 
 
-def ld_key_shadowed(albedo, n, v, wrap, roughness, f0, values: dict, visibility, wrap_visibility=None) -> np.ndarray:
+def ld_key_shadowed(albedo, n, v, wrap, roughness, f0, values: dict, visibility, wrap_visibility=None,
+                    dual: bool = False) -> np.ndarray:
     """The skin's light with the `SHADOW` block (AD-039 §4 / §16.7): albedo x `ld_diffuse` + `ld_specular`, minus the
     key's own term in shadow - its Lambert part and highlight times (1 - visibility), the wrap's excess past Lambert
     times (1 - wrap_visibility), the map's answer at the point lifted out along the normal (`shadow_coords(...,
-    lift=SHADOW_WRAP_LIFT)`; None = `visibility`)."""
+    lift=SHADOW_WRAP_LIFT)`; None = `visibility`). `dual` (S3): the highlights as two lobes (`DUAL_LOBE`)."""
     albedo = np.asarray(albedo, dtype=np.float64)
     n = np.asarray(n, dtype=np.float64)
     vis = np.asarray(visibility, dtype=np.float64)[..., None]
     vis_wrap = vis if wrap_visibility is None else np.asarray(wrap_visibility, dtype=np.float64)[..., None]
-    colour = albedo * ld_diffuse(n, wrap, values) + ld_specular(n, v, roughness, f0, values)
+    specular = ld_specular_dual if dual else ld_specular
+    colour = albedo * ld_diffuse(n, wrap, values) + specular(n, v, roughness, f0, values)
     d, c, s = values["u_ld_light_dir"][0], values["u_ld_light_color"][0], values["u_ld_light_size"][0]
     ndl = np.sum(n * np.asarray(d), -1)
     lambert = np.maximum(ndl, 0.0)[..., None]
+    key_specular = (ld_direct_dual(n, v, d, roughness, s, f0) if dual
+                    else direct_specular(n, v, d, ld_lobe(roughness, s), f0))
     key = np.asarray(c) * (albedo * ((1.0 - vis) * lambert + (1.0 - vis_wrap) * (ld_wrap(ndl, wrap) - lambert))
-                           + (1.0 - vis) * direct_specular(n, v, d, ld_lobe(roughness, s), f0)[..., None])
+                           + (1.0 - vis) * key_specular[..., None])
     return colour - key
 
 

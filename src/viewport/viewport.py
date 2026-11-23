@@ -486,7 +486,7 @@ class Viewport:
         return look is not None and getattr(rm.store, "alpha", 1.0) >= 1.0
 
     def _lookdev_programs(self) -> tuple[list, list]:
-        """The programs the next LookDev frame draws: ([skin (albedo map, env spec, shadow)], [eye program
+        """The programs the next LookDev frame draws: ([skin (albedo map, env spec, shadow, dual lobe)], [eye program
         arguments + (ld_shadow,)]). AD-039 §5: the eyes receive the key's shadow when `shadow` and `eye_shadow` are in
         force and something casts it."""
         skin, eyes = [], []
@@ -503,7 +503,8 @@ class Viewport:
                           self._entry_looks.get(key)))
         for rm, look in drawn:
             if look is not None:
-                skin.append((look.albedo is not None and rm.mesh.has_face_uvs(), env_spec, shadow))
+                skin.append((look.albedo is not None and rm.mesh.has_face_uvs(), env_spec, shadow,
+                             effects.dual_lobe))
         eye_shadow = shadow and effects.eye_shadow and any(self._casts_key_shadow(rm, look) for rm, look in drawn)
         return sorted(set(skin)), sorted(set(e + (eye_shadow,) for e in eyes))
 
@@ -527,8 +528,8 @@ class Viewport:
         skin, eyes = self._lookdev_programs()
         passes = self.lookdev_pass
         before = len(passes.programs) + len(self.eye_pass.programs)
-        for albedo_map, env_spec, shadow in skin:
-            passes.program(albedo_map, env_spec, shadow)
+        for albedo_map, env_spec, shadow, dual_lobe in skin:
+            passes.program(albedo_map, env_spec, shadow, dual_lobe)
         for level, fit, look, iris, sclera, ld_shadow in eyes:
             self.eye_pass.program(self.eye_display, level, fit, look, iris, sclera, lookdev=True, ld_shadow=ld_shadow)
         return len(passes.programs) + len(self.eye_pass.programs) - before
@@ -1283,7 +1284,8 @@ class Viewport:
         LookDraw through the LookDev pass, the eyes through the eye pass's LOOKDEV variant. Entries without a LookDraw
         (References, LD-D15 open) keep the Worklight draw. AD-039 S1: with the shadow on, the key's map is brought up
         to date before the background (re-rendered only on a change, `KeyShadow.key`); skin and teeth cast and receive.
-        AD-039 S2: with `eye_shadow` as well the eyes receive it (they never cast) - when something casts."""
+        AD-039 S2: with `eye_shadow` as well the eyes receive it (they never cast) - when something casts. AD-039 S3:
+        `dual_lobe` draws the skin's highlight with two lobes (the eyes keep theirs)."""
         camera = self.render_mesh.camera
         frame = self.lookdev_frame()
         passes = self.lookdev_pass
@@ -1314,7 +1316,7 @@ class Viewport:
                     continue
                 rm = self.entry_surface_render_meshes.get(eye_key, self.object_entries[eye_key])
                 look = self._entry_looks.get(eye_key)
-            if look is None or not passes.draw(rm, look, frame, shadow):
+            if look is None or not passes.draw(rm, look, frame, shadow, effects.dual_lobe):
                 rm.render(camera)
 
     def wire_drawn(self) -> bool:

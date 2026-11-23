@@ -10,7 +10,7 @@ from drag_cost import probe_lookdev_room as room
 def test_effects_default_every_built_effect_and_none_measures_no_p3_row():
     from viewport.lookdev_optics import LookdevEffects
 
-    assert room.parse_args([]).effects == LookdevEffects.names() == ("shadow", "eye_shadow")
+    assert room.parse_args([]).effects == LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe")
     assert room.parse_args(["--effects", "none"]).effects == ()
     assert room.parse_args(["--effects", "shadow"]).effects == ("shadow",)
 
@@ -28,3 +28,9 @@ def test_the_eye_shadow_row_switches_the_shadow_too():
     label, names = room.EFFECT_ROWS["eye_shadow"]
     assert label == "lookdev +shadow +eyes" and set(names) == {"eye_shadow", EFFECT_NEEDS["eye_shadow"]}
     assert room.parse_args(["--effects", "shadow,eye_shadow"]).effects == ("shadow", "eye_shadow")
+
+
+def test_the_dual_lobe_row_measures_it_alone():
+    """AD-039 §6: `lookdev +dual` against `lookdev` (every effect off) is S3's cost."""
+    assert room.EFFECT_ROWS["dual_lobe"] == ("lookdev +dual", ("dual_lobe",))
+    assert room.parse_args(["--effects", "dual_lobe"]).effects == ("dual_lobe",)

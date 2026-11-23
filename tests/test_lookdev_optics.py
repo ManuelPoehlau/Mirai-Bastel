@@ -128,17 +128,83 @@ def test_ld_diffuse_and_specular_twins():
 def test_effects_default_on_and_dependencies_and_features():
     from viewport.lookdev_features import FeatureReport
 
-    assert lo.LookdevEffects().shadow and lo.LookdevEffects.names() == ("shadow", "eye_shadow")
+    assert lo.LookdevEffects().shadow and lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe")
     assert lo.LookdevState("x", lo.EYE_STUDIO, lo.StudioLight(), lo.StudioLight(), lo.StudioLight()).effects \
         == lo.LookdevEffects()
     on = lo.LookdevEffects(shadow=True)
-    assert lo.effective(on) == on and lo.effect_reasons(on) == {"shadow": None, "eye_shadow": None}  # nothing probed
+    assert lo.effective(on) == on  # nothing probed: nothing missing
+    assert lo.effect_reasons(on) == {"shadow": None, "eye_shadow": None, "dual_lobe": None}
     assert lo.effective(on, FeatureReport(depth_texture=True)) == on
     missing = FeatureReport(depth_texture=False)
-    assert lo.effective(on, missing) == lo.LookdevEffects(shadow=False, eye_shadow=False)
-    assert lo.effect_reasons(on, missing) == {"shadow": "Tiefentextur fehlt", "eye_shadow": "braucht Schatten"}
+    # S3 needs no feature and no other effect: it stays on without a depth texture
+    assert lo.effective(on, missing) == lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=True)
+    assert lo.effect_reasons(on, missing) == {"shadow": "Tiefentextur fehlt", "eye_shadow": "braucht Schatten",
+                                              "dual_lobe": None}
     assert missing.status_lines() == ("LookDev: Schatten aus – Tiefentextur nicht verfügbar",)
     assert lo.effective(lo.LookdevEffects(shadow=False)) == lo.LookdevEffects(shadow=False, eye_shadow=False)
+    assert lo.effective(lo.LookdevEffects(dual_lobe=False)) == lo.LookdevEffects(dual_lobe=False)
+
+
+# -- AD-039 S3: dual-lobe specular ------------------------------------------------------------------------------------
+
+def test_ld_specular_dual_is_the_mix_of_two_widened_lobes():
+    """AD-039 §6: per light 0.85 x the lobe at roughness x 0.75 and 0.15 x the lobe at x 1.3, each widened by the
+    light's size as `ld_lobe`; summed over the three lights like `ld_specular`."""
+    from viewport.lookdev_shaders import DUAL_LOBE_MIX, DUAL_LOBE_SCALES
+
+    assert (DUAL_LOBE_SCALES, DUAL_LOBE_MIX) == ((0.75, 1.3), 0.85)  # Q-P3-7: fixed in P3
+    values = lo.frame_uniforms(_state())
+    n, v = _unit(64, 1), _unit(64, 2)
+    v = eo.normalize(n + 0.5 * v)
+    rough = np.linspace(0.1, 1.0, 64)
+    want = 0.0
+    for d, c, size in zip(values["u_ld_light_dir"], values["u_ld_light_color"], values["u_ld_light_size"]):
+        one = (0.85 * lo.direct_specular(n, v, d, lo.ld_lobe(0.75 * rough, size), 0.04)
+               + 0.15 * lo.direct_specular(n, v, d, lo.ld_lobe(1.3 * rough, size), 0.04))
+        assert np.allclose(lo.ld_direct_dual(n, v, d, rough, size, 0.04), one)
+        want = want + np.asarray(c) * one[:, None]
+    assert np.allclose(lo.ld_specular_dual(n, v, rough, 0.04, values), want)
+    # in the light (visibility 1) the shadowed twin is the plain sum with the dual highlight
+    albedo, wrap = np.array([0.4, 0.3, 0.25]), (0.2, 0.1, 0.05)
+    lit = lo.ld_key_shadowed(albedo, n, v, wrap, rough, 0.04, values, np.ones(64), dual=True)
+    assert np.allclose(lit, albedo * lo.ld_diffuse(n, wrap, values) + want)
+    # in the key's full shadow the key's dual highlight and its wrapped diffuse are gone, the fill's and rim's stay
+    dark = lo.ld_key_shadowed(albedo, n, v, wrap, rough, 0.04, values, np.zeros(64), dual=True)
+    d, c, size = values["u_ld_light_dir"][0], np.asarray(values["u_ld_light_color"][0]), values["u_ld_light_size"][0]
+    key = c * (albedo * lo.ld_wrap(n @ np.asarray(d), wrap)
+               + lo.ld_direct_dual(n, v, d, rough, size, 0.04)[:, None])
+    assert np.allclose(dark, lit - key)
+
+
+def _directional_albedo(specular, mu: float, count: int = 600) -> float:
+    """The integral of `specular(l)` x dω over the hemisphere around n = +Z, seen from cos θ_v = mu (F0 = 1)."""
+    theta = (np.arange(count) + 0.5) / count * (math.pi / 2)
+    phi = (np.arange(count) + 0.5) / count * (2 * math.pi)
+    t, p = np.meshgrid(theta, phi, indexing="ij")
+    l = np.stack([np.sin(t) * np.cos(p), np.sin(t) * np.sin(p), np.cos(t)], -1).reshape(-1, 3)
+    weight = (np.sin(t) * (math.pi / 2 / count) * (2 * math.pi / count)).reshape(-1)
+    v = np.array([math.sqrt(1.0 - mu * mu), 0.0, mu])
+    return float(np.sum(specular(np.array([0.0, 0.0, 1.0]), v, l) * weight))
+
+
+@pytest.mark.parametrize("roughness", [0.2, 0.4, 0.6, 0.8])
+def test_the_dual_lobe_keeps_energy(roughness):
+    """AD-039 §6 / §18.2 (S3-1): each lobe is a normalised GGX distribution, so their mix is one (within 2 %); the mix
+    reflects no more than comes in (F0 = 1: directional albedo <= 1) and no less than the single lobe (its sharper main
+    lobe loses less to Smith masking, the single-scatter GGX's known loss) - near the single lobe for r <= 0.4, up to a
+    third more at r = 0.8 (the table in §18.2)."""
+    for scale in (0.75, 1.3):
+        alpha = min(roughness * scale, 1.0) ** 2
+        count = 1200
+        theta = (np.arange(count) + 0.5) / count * (math.pi / 2)
+        ndf = np.sum(lo.ggx_d(np.cos(theta), alpha) * np.cos(theta) * np.sin(theta)) * (math.pi / 2 / count) * 2 * math.pi
+        assert abs(ndf - 1.0) < 0.02, (scale, ndf)
+    for mu in (1.0, 0.7, 0.35):
+        single = _directional_albedo(lambda n, v, l: lo.direct_specular(n, v, l, roughness, 1.0), mu)
+        dual = _directional_albedo(lambda n, v, l: lo.ld_direct_dual(n, v, l, roughness, 0.0, 1.0), mu)
+        assert single - 0.01 <= dual <= 1.0, (mu, single, dual)
+        if roughness <= 0.4:
+            assert dual <= single * 1.05, (mu, single, dual)
 
 
 def _head_like(rng, n=400):

@@ -72,3 +72,38 @@ def skin_sources_digest(**effects) -> tuple[int, str]:
 def test_the_m1_skin_sources_are_pinned():
     """AD-039 §2.3 / §14: every P3 effect off = the M1 skin program, character for character."""
     assert skin_sources_digest() == (12, PINNED_SKIN_SOURCES_SHA256)
+
+
+#: AD-039 §6 / §18 (S3): the 4 S1 skin variants (`shadow=True`), taken from the code before S3 changed
+#: `lookdev_shaders.py` (`f8c771f`). With the dual lobe off, the shadow's programs stay exactly S1's.
+PINNED_S1_SKIN_SOURCES_SHA256 = "54cc6cc64403e4ad5f5ef3981afb4f251e34db0ffdbaac92d66b7a7ba1d12313"
+
+
+def test_the_dual_lobe_off_keeps_m1_and_s1_sources():
+    """AD-039 §6: `dual_lobe=False` = the M1 sources and, with the shadow, S1's, character for character."""
+    assert skin_sources_digest(dual_lobe=False) == (12, PINNED_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True) == (12, PINNED_S1_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=False) == (12, PINNED_S1_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(dual_lobe=True)[1] != PINNED_SKIN_SOURCES_SHA256
+
+
+def test_the_dual_lobe_variant_calls_the_dual_twins_for_the_lights_and_the_shadowed_key():
+    """AD-039 §6: `DUAL_LOBE` defined once, its library appended once after the common library (it uses `ld_lobe`),
+    every light highlight - the `SHADOW` block's key term included - through `ld_direct_dual`; the studio's reflection
+    keeps one lobe (P3-0 run 2) and `LD_COMMON_SRC` (the eye's) is unchanged."""
+    locations = {"position": 0, "normal": 1}
+    for shadow in (False, True):
+        fs = ls.skin_sources(locations, True, True, shadow, True)[2][0]
+        assert fs.count("#define DUAL_LOBE 1\n") == 1 and fs.count(ls.LD_DUAL_LOBE_SRC) == 1
+        assert fs.index(ls.LD_COMMON_SRC) < fs.index(ls.LD_DUAL_LOBE_SRC)
+        assert ("#define SHADOW 1\n" in fs) == shadow
+        body = fs[fs.index("void main()"):]
+        assert "ld_specular_dual(n, v, rough, u_f0)" in body
+        assert "ld_env_specular(reflect(-v, n), rough)" in body  # one lobe on the studio
+        assert ("ld_direct_dual(n, v, u_ld_light_dir[0], rough, u_ld_light_size[0], u_f0)" in body) == shadow
+    assert "ld_specular_dual" not in ls.LD_COMMON_SRC and "DUAL" not in ls.LD_COMMON_SRC
+    assert ls.SKIN_EFFECTS == ("SHADOW", "DUAL_LOBE")
+    # without DUAL_LOBE no call to the dual twins is left
+    for shadow in (False, True):
+        fs = ls.skin_sources(locations, True, True, shadow, False)[2][0]
+        assert "ld_specular_dual" not in fs and "ld_direct_dual" not in fs and "DUAL_LOBE" not in fs
