@@ -24,7 +24,12 @@ reference-PC row and practical test (§22.4–§22.5) are open. With S6 every P3
 built 2026-11-24** (§23; Manu: „Verfahren B bauen, als neuer P3-Effekt vor LD-3“, after the
 [diffuse area-light assessment](../research/LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24.md)): each
 light's size as a finite emitter in the diffuse term (sin σ = size × sin 40°, `PROVISIONAL`), default off; effect off =
-every earlier pin; its practical test and the probe row (§23.4–§23.5) are open.
+every earlier pin; its practical test and the probe row (§23.4–§23.5) are open. **S9 „Weicher Schatten“ built
+2026-11-24** (§24; Manu: „du kannst auch zu Gunsten besserer Qualität unter 30 Fps in Kauf nehmen“, after the
+[PCSS assessment](../research/LOOKDEV_PCSS_KEY_SHADOW_ASSESSMENT_2026-11-24.md) and two reference-PC runs): the key's
+penumbra from the receiver-to-blocker distance (PCSS, the map at full resolution), default off; effect off = every
+earlier pin; costs +1.4 to +6 ms at 1024 × 768 on the reference PC (a deliberate budget exception for quality); its
+practical test and the production probe row (§24.4–§24.5) are open.
 **Why now:** Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“
 ([proposal §0.1](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md), [AD-038](AD-038-LOOKDEV-ROOM-M1.md)
 §13.6). P3 needs its own AD before any `src/` change and fixes the order of the P3 items.
@@ -2022,3 +2027,116 @@ Q-PCSS-5:
 The cheapest form is still +2.6 to +3.3 ms in the close-up "face" at 1024 × 768. The threshold for way (a) is not met.
 The assessment §8.4 recommends way (b), a prefiltered prototype with event-time cost, in a fresh session. Manu decides
 (Q-PCSS-5).
+
+
+## 24. Implementation note — S9 „Weicher Schatten“ built (2026-11-24)
+
+**Decision:** Manu, 2026-11-24, after the cost diagnosis of §23.7 (the cheapest PCSS form +2.6 to +3.3 ms in the
+close-up, the threshold for way (a) missed): „du kannst auch zu Gunsten besserer Qualität unter 30 Fps in Kauf nehmen“.
+So way (a) with the best measured image, as the effect the assessment planned (§10 there). Basis:
+[LOOKDEV_PCSS_KEY_SHADOW_ASSESSMENT_2026-11-24](../research/LOOKDEV_PCSS_KEY_SHADOW_ASSESSMENT_2026-11-24.md),
+prototype [`experiments/lookdev_pcss/`](../../experiments/lookdev_pcss/README.md), reference-PC runs
+[RESULTS_REFERENCE_PC_2026-11-24](../../experiments/lookdev_pcss/RESULTS_REFERENCE_PC_2026-11-24.md). It answers Manu's
+§23.6 finding: the nose's cast shadow on the cheek becomes the broad, soft dimming of a real area light; contact shadows
+stay sharp; the coarse map's steps at a grazing key go (full resolution).
+
+**Kurzfassung (Deutsch):** Neuer Effekt-Schalter **„Weicher Schatten“** im Block „Effekte“ (Standard **aus**, bis zu
+deinem Praxistest; braucht „Schatten“). An: Der Schlagschatten des Key wird mit dem Abstand zum Werfer weicher, so wie
+unter einer echten Softbox: Der Nasenschatten auf der Wange läuft breit und weich aus, Kontaktschatten (Nasenloch,
+Lippen, Mundwinkel) bleiben scharf. Die Schattenkarte bleibt dafür in voller Auflösung (keine Treppen mehr bei flachem
+Key). Die „Weichheit“ des Key wirkt dabei als Winkelradius der Lichtquelle, genau wie bei „Weiches Licht“ (sin σ =
+Weichheit × sin 40°); beide zusammen ergeben das stimmigste Bild. Kosten auf dem Referenz-PC: +1.4 bis +6 ms bei
+1024 × 768 (in der Nahansicht am meisten) - bewusst über dem Budget, nach deiner Vorgabe Qualität vor 30 fps.
+Presets, gespeicherte Lichtwerte und das Szenenformat bleiben unverändert; das Auge behält seinen Schatten-Lookup.
+
+### 24.1 What is built
+
+| Layer | Built |
+|---|---|
+| Shaders | `lookdev_shaders`: constants `SOFT_SHADOW_*` (`PROVISIONAL`, tuned against the 32-key reference) and the tap patterns `SOFT_SHADOW_SEARCH_TAPS` / `SOFT_SHADOW_PCF_TAPS` (16 each, Vogel spirals; the search's radius linear in i: denser near the centre); new skin library string `LD_SOFT_SHADOW_SRC` with define `SOFT_SHADOW` (last in the define order), appended after the shadow's and the thickness's libraries; `LD_SOFT_SHADOW_DEPTH_SRC` declares the raw depth's sampler when `THICKNESS` is off (with it on, `LD_THICKNESS_SRC` declares it: no `#ifdef` in a library string, the S4 pins untouched). Functions: `ld_soft_tan_sigma`, `ld_soft_far`, `ld_soft_blockers`, `ld_soft_pcf`, `ld_soft_visibility(sp, spl, slope, slope_l)` (the testable core) and `ld_key_shadow_soft(p, n, l)`. `SKIN_BODY`: in the `SHADOW` block, in both `NORMAL_MAP` branches, an `#ifdef SOFT_SHADOW` around the two lookups (`vis`, `vis_wrap` from `ld_key_shadow_soft`); `skin_sources(..., soft_shadow=False)`, raises without `shadow` |
+| The lookup | one blocker search at the map point: 16 raw-depth fetches within 0.15 x 2R x tan σ (≥ 2 texels, ≤ 48 texels); within 1.5 texels of the point a fetch is a blocker above the receiver plane (as `ld_shadow_pcf`), from 3.75 texels a blocker more than max(2, cot σ) x \|o\| above the receiver - the light's own cone (blended between); none = lit (the early out). Then 16 bilinear-compare fetches each at the point (`vis`) and at the lifted point (`vis_wrap`) in a disc of radius (z − mean blocker depth) x tan σ (≥ 1 texel, ≤ 48 texels), beyond the near zone compared against half the blockers' height above the receiver instead of the receiver plane (a per-triangle plane extrapolated over tens of texels at a grazing key shadows the surface's own facets, the assessment §3). The PCF counts in full from 4 blockers or from one in the near zone (a contact blocker under a large key). The lifted point: `SHADOW_WRAP_LIFT` offsets + 0.23 x R x s³ |
+| Map | `Viewport._render_lookdev`: with the effect `KeyShadow.update(..., key_size=0)` - the full 1024² map whatever the key's size (the cache key holds the resolution: switching the effect re-renders it once); the eye's LD_SHADOW lookup reads the same full map (§24.2 S9-4) |
+| Pass | `LookdevPass.program_key(..., soft_shadow)`: 12 values only with the effect and the shadow on; `program(...)` / `draw(..., soft_shadow=False)`; the draw binds the raw depth (S4's sampler object on unit 7) for `thickness or soft_shadow` and unbinds it after |
+| Twins | `lookdev_optics.soft_shadow_visibility` (the core, with `bilinear_depth` / `compare_bilinear`), `soft_shadow_lift` |
+| Effects | `LookdevEffects.soft_shadow` (default **off**, last field; persistence by name - a file without it keeps the current value); `EFFECT_NEEDS["soft_shadow"] = "shadow"`, `EFFECT_FEATURE["soft_shadow"] = "sampler_objects"`; label „Weicher Schatten“, hint „Schlagschatten des Key werden mit dem Abstand zum Werfer weicher (am besten zusammen mit „Weiches Licht“; braucht Schatten; kostet Bildrate)“ |
+| GUI | the effect row „Weicher Schatten“ (generic: `lookdev_model`, `lookdev_panel`) |
+| Probe | `probe_lookdev_room.py`: `EFFECT_ROWS["soft_shadow"] = ("lookdev +shadow +soft", ("shadow", "soft_shadow"))` against `lookdev +shadow` |
+| Experiment | `compare.py --production`: production with the effect against the experiment's form `K16c-phys-fn` |
+
+Not touched: `LD_COMMON_SRC`, `LD_SHADOW_SRC`, `LD_THICKNESS_SRC` and the eye shaders (every eye pin); the presets and
+`StudioLight` values; the scene format; `shadow_resolution` and the lookup with the effect off (§16.6 / §16.7 as built,
+the assessment §6.3 finding stays there); „Weiches Licht“ (S8) itself; the Worklight; LD-3; `config/keymap.json`.
+
+### 24.2 Where the build differs from the assessment, and why
+
+| # | Assessment | Built | Why |
+|---|---|---|---|
+| S9-1 | §4 „K16c“: the search's cone test a fixed 2 x \|o\| | max(2, cot σ) x \|o\| - the light's own cone | the production gate T1-2 („a lit sphere does not shadow its lit half“) found the fixed cone darkening a lit sphere at n.l < 0.45 (4.5 % of its lit pixels at size 0.45): a blocker at \|o\| hides part of the disc only when it lies higher than \|o\| cot σ. Alone it was a little worse against the reference (mean 1.94 vs 1.89 / 255) |
+| S9-2 | the PCF fades in over the first 4 blockers | … or at once from one blocker in the near zone | the twin showed a contact blocker under a size-1 key darkening only 25 %: the search's 48-texel radius leaves one fetch where so near a blocker is visible. With S9-1 and S9-2 the image is the best measured: mean 1.83 vs K16c's 1.89 and production's 2.87 / 255 (32-key reference, 24 sets); the right mouth corner - K16c's one weak region - p99 brighter than the reference 52 → 12 at 0.45 (production 10) |
+| S9-3 | §10: the defines | `SOFT_SHADOW` after `AREA_DIFFUSE`; key 12 values | the S2-1 / S8-4 pattern: every earlier key and test stays |
+| S9-4 | §7: the eye keeps its lookup | as planned: with the effect the eye reads the full-resolution map with its 3 x 3 lookup | on the eye pixels the full map moves the error against the reference by ≤ 0.12/255 (the assessment §7); the eye pins are unchanged |
+| S9-5 | §8: budget ≤ +0.5 ms | +1.4 to +6.1 ms at 1024 × 768 (the cost of K16c; S9-1 / S9-2 add one accumulator and a max per pixel) | Manu's decision above; the effect is off by default |
+
+### 24.3 Tests (container, llvmpipe, 2026-11-24)
+
+| # | Test |
+|---|---|
+| sources | `test_lookdev_shaders.py`: `test_the_soft_shadow_off_keeps_every_earlier_pin` (M1, S1, S3, S4, S7, S5 pins and the S6 / S8 variants with `soft_shadow=False`); `test_the_soft_shadow_variant_replaces_the_two_key_lookups_and_reads_the_raw_depth_once` (64 combinations: define and library once, after shadow and thickness; the raw depth declared exactly once; the calls in each `SHADOW` statement, `n_geo` under `NORMAL_MAP`; off leaves no text; needs the shadow; `LD_COMMON_SRC` / `LD_SHADOW_SRC` untouched) |
+| twins | `test_lookdev_optics.py`: the lift (size 0 = `SHADOW_WRAP_LIFT`, + 0.23 R s³); the taps; no blocker = lit, also on a tilted plane; the penumbra grows with the blocker distance and the size, its inner edge at (z − blocker) tan σ within 4 texels, size 0 ≤ 4 texels at any distance; a contact blocker keeps a ≤ 6-texel edge at size 1; the effect's default, needs and feature |
+| GPU parity | `test_gl_lookdev_shadow.py::test_ld_soft_visibility_matches_soft_shadow_visibility` (sizes 0 / 0.45 / 1; a 128² map with discs and a low ridge, 4,096 points with random slopes and lifted points, the production bindings on units 6 / 7): mean error ≤ 0.005, p99 ≤ 0.06, > 0.15 at ≤ 0.3 % (the steps of the comparisons) |
+| real pass | `test_the_soft_shadow_widens_with_the_distance_to_the_blocker` (a plate 0.1 / 0.9 above the plane, size 0.45: the soft penumbra grows 12x - 88 → 1069 pixels - today's 3.3x with the visible shadow; near the plane as sharp as today); the gates with the effect: T1-2 acne (sizes 0 / 0.45 / 1), the grazing cast shadow at sizes 0 and 0.03 (black core, the true penumbra 4.6 tan σ left out), the convex terminator up to size 1 (median kept ≥ 0.85; the 16-key reference keeps 0.94 there, today 1.0), T1-5 the GL state with the effect and the thickness off (unit 7 bound and unbound) |
+| updated | the effect lists in `test_lookdev_optics.py`, `test_lookdev_room.py`, `test_gui_lookdev_model.py`, `test_lookdev_persistence.py` (+ `test_the_soft_shadow_survives_save_and_load_and_an_older_file_keeps_it_off`), `experiments/drag_cost/tests/test_probe_lookdev_room.py` (+ the row) |
+
+Runs (GL files each in their own process under xvfb):
+
+| Command | Result |
+|---|---|
+| `python -m pytest tests/test_lookdev_shaders.py tests/test_lookdev_optics.py tests/test_gui_lookdev_model.py tests/test_lookdev_persistence.py -q` | 132 passed |
+| `xvfb-run -a python -m pytest tests/test_lookdev_room.py tests/test_lookdev_session.py tests/test_view_state.py tests/test_gui_lookdev_window.py -q` | 28 passed |
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_shadow.py -q` | 47 passed |
+| `… tests/test_gl_lookdev_parity.py` / `test_gl_lookdev_pass.py` / `test_gl_lookdev_cube.py` / `test_gl_lookdev_maps.py` / `test_gl_lookdev_regions.py` | 9 / 13 / 13 / 9 / 9 passed |
+| `… tests/test_gl_eye_pass.py` | 135 passed (the eye pins unchanged) |
+| `xvfb-run -a python -m pytest experiments/lookdev_pcss/tests experiments/lookdev_diffuse_area/tests experiments/drag_cost/tests/test_probe_lookdev_room.py -q` | 80 passed |
+
+**Image check (container):** `compare.py --production --variants P,K16c,K16c-phys-fn` (Gollum SubD 1 in Manu's view,
+„face“, „framed“; the shapes; Neutral and Creature Skin*; sizes 0 / 0.25 / 0.45 / 1; „Weiches Licht“ on): production
+with the effect equals the experiment's form in all 32 sets - 0/255, linear ≤ 4.5e-7 (`s * s * s` for `pow`). Against
+the 32-key reference, mean over the 24 sets with size > 0: production today 2.87, K16c 1.89, built 1.83 / 255; Manu's
+view at 0.45 with Creature Skin*: 7.26 → 3.94.
+
+### 24.4 Measurement
+
+**Reference PC, from the prototype (Manu, 2026-11-24):** K16c +1.38 to +6.10 ms at 1024 × 768 (mean +3.16), mean
++5.13 ms at 1920 × 1080; the whole frame with it at most 30.6 ms (cage, close-up, 1080p). The built form adds one
+accumulator and a `max` per pixel: the same order [E].
+
+**Container (llvmpipe, a function check only):** `probe_lookdev_room.py --effects soft_shadow --draws 3 --surfaces
+cage` compiled the program behind the status line, measured `lookdev` and `lookdev +shadow +soft`, `glGetError` 0.
+
+**Reference PC (S9, open):** the production row, with every built row, in one run (NVIDIA „Maximale Leistung
+bevorzugen“, repository root, `.venv312`):
+
+```
+python experiments\drag_cost\probe_lookdev_room.py | Tee-Object -FilePath lookdev_room_s9.txt
+```
+
+`lookdev +shadow +soft` against `lookdev +shadow` is the effect's cost; expected as K16c above.
+
+### 24.5 Practical test S9 (`scenes/Gollum_Head_05.mirai.json`, about 10 minutes)
+
+Open LookDev, studio **Dramatic**, the head's material **Creature Skin**, SubD 1.
+1. **Dein Befund (§23.6):** Drehung 5°, Key 2.2 bei 70° / 9°, 4800 K, Weichheit 0.45, Fill und Rim aus, Creature Skin
+   angepasst (Rauheit 0.5, Glanz 0.35, Weichheit 0.5, Durchscheinen 0), „Weiches Licht“ an, Kamera auf der
+   Schattenseite. **„Weicher Schatten“ aus / an** (Block „Effekte“). Erwartet: an wird der harte Keil von der Nase zur
+   Wange eine breite, weiche Abdunklung; die Treppen an seinem Rand sind weg.
+2. **Key-Weichheit 0 / 0.25 / 0.45 / 1**, je mit „Weicher Schatten“ an: bei 0 wie vorher (harter Schatten); mit
+   wachsender Weichheit werden Schatten weit entfernter Werfer weicher, Kontaktschatten nicht.
+3. **Nasenloch, Mundwinkel, Lippen, Augenhöhlen:** keine hellen Ränder, kein Licht im Nasenloch (es glüht eher weniger
+   als ohne den Effekt).
+4. **Zusammen mit / ohne „Weiches Licht“:** am stimmigsten zusammen (erwartet; die Bewertung §5.6).
+5. **Bildrate** in der Nahansicht: spürbar langsamer (+1.4 bis +6 ms auf deinem PC).
+
+**Open questions for Manu [O]:**
+- **Q-S9-1:** „Weicher Schatten“ als Standard **an** - allein oder zusammen mit „Weiches Licht“ (Q-S8-1)?
+- **Q-S9-2:** eigener Schalter behalten, oder in „Weiches Licht“ aufgehen lassen (die Bewertung Q-PCSS-1)?
+- (unchanged) Q-S8-2: σ(1) = 40° or 30° - it now sets the shadow's penumbra too.

@@ -89,7 +89,8 @@ EFFECT_ROWS = {"shadow": ("lookdev +shadow", ("shadow",)),
                "cube": ("lookdev +cube", ("cube",)),
                "regions": ("lookdev +regions", ("regions",)),
                "maps": ("lookdev +maps", ("maps",)),
-               "area_diffuse": ("lookdev +area", ("area_diffuse",))}
+               "area_diffuse": ("lookdev +area", ("area_diffuse",)),
+               "soft_shadow": ("lookdev +shadow +soft", ("shadow", "soft_shadow"))}
 #: S6's probe region (AD-039 §9): the name the probe gives the edit object's first polygroup, and its material.
 PROBE_REGION = "Mouth"
 PROBE_REGION_MATERIAL = "Mundinneres"

@@ -582,7 +582,7 @@ class Viewport:
                 skin.append(LookdevPass.program_key(look.albedo_source(regions) is not None and uvs, env_spec, shadow,
                                                     effects.dual_lobe, effects.thickness, "roughness" in maps,
                                                     "normal" in maps, "translucency" in maps, cube, regions,
-                                                    effects.area_diffuse))
+                                                    effects.area_diffuse, effects.soft_shadow))
         eye_shadow = shadow and effects.eye_shadow and any(self._casts_key_shadow(rm, look) for rm, look in drawn)
         return sorted(set(skin)), sorted(set(e + (eye_shadow,) for e in eyes))
 
@@ -1390,7 +1390,8 @@ class Viewport:
         prefiltered cube, brought up to date before the background (prefiltered only on a studio content change).
         AD-039 S6: `regions` draws the objects' region materials (each drawn RenderMesh's triangle slots brought up to
         date first; off = one material per object, the slots freed). AD-039 S8: `area_diffuse` draws the lights' diffuse
-        term on the skin as finite emitters (the eyes keep theirs)."""
+        term on the skin as finite emitters (the eyes keep theirs). AD-039 S9: `soft_shadow` gives the skin's key
+        lookups the penumbra of the key's disc and keeps the map at full resolution (the eyes keep their lookup on it)."""
         camera = self.render_mesh.camera
         frame = self.lookdev_frame()
         passes = self.lookdev_pass
@@ -1410,7 +1411,10 @@ class Viewport:
         if effects.shadow:
             casters = [rm for rm, look, eye_key in skins if eye_key is None and self._casts_key_shadow(rm, look)]
             shadow = passes.key_shadow()
-            shadow.update(casters, frame["u_ld_light_dir"][0], frame["u_ld_light_size"][0])
+            # AD-039 §24: the soft shadow keeps the map at full resolution (its penumbra comes from the blocker
+            # distance, not from fewer texels): the key's size 0 for the map
+            shadow.update(casters, frame["u_ld_light_dir"][0],
+                          0.0 if effects.soft_shadow else frame["u_ld_light_size"][0])
             if effects.eye_shadow and casters:
                 eye_shadow = shadow
         cube = None
@@ -1430,7 +1434,8 @@ class Viewport:
                 rm = self.entry_surface_render_meshes.get(eye_key, self.object_entries[eye_key])
                 look = self._entry_looks.get(eye_key)
             if look is None or not passes.draw(rm, look, frame, shadow, effects.dual_lobe, effects.thickness,
-                                               effects.maps, cube, effects.regions, effects.area_diffuse):
+                                               effects.maps, cube, effects.regions, effects.area_diffuse,
+                                               effects.soft_shadow):
                 rm.render(camera)
 
     def wire_drawn(self) -> bool:

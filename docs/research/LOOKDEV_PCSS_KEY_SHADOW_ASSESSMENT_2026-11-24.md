@@ -9,6 +9,10 @@ um das 3- bis 12-Fache. **K16c wird so nicht eingebaut.**
 **Diagnose-Lauf erledigt (§8.4):** Der Haut-Pass ist mit PCSS rechengebunden, nicht von den Texturabfragen begrenzt.
 Die günstigste Form kostet in der Nahansicht noch +2.6 bis +3.3 ms. Weg (a) erreicht die Schwelle nicht. Die
 Empfehlung ist Weg (b), ein vorgefilterter Prototyp; Manu entscheidet (Q-PCSS-5).
+**Entschieden und gebaut 2026-11-24 (§12):** Manu: „du kannst auch zu Gunsten besserer Qualität unter 30 Fps in Kauf
+nehmen“. Also Weg (a) mit dem besten Bild: S9 „Weicher Schatten“,
+[AD-039 §24](../architecture/AD-039-LOOKDEV-P3.md). Gegenüber K16c mit zwei Korrekturen aus den Production-Tests
+(Lichtkegel cot σ, nahe Werfer zählen voll); im Bild noch besser (1.83 statt 1.89/255). Standard aus.
 **Basis:** AD-039 §23 (S8 „Weiches Licht“, `22a34b0`) und §23.6 (Manus Befund, `ab286c4`); Bewertung
 [LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24](LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24.md)
 §3 und §6.1–§6.3.
@@ -561,6 +565,28 @@ Ereigniskosten (Q-PCSS-5 b).
   - (a) bleibt möglich, wenn Manu den weichen Schatten früher will: Kosten dann ≈ +0.5–0.8 ms framed und +2.6–3.3 ms
     face, als Effekt standardmäßig aus.
 - Unverändert offen aus S8: Q-S8-1 (Standard an?), Q-S8-2 (σ(1) = 40° oder 30°; gilt jetzt auch für den Schatten).
+
+## 12. Gebaut (2026-11-24): S9 „Weicher Schatten“
+
+Manu, 2026-11-24, nach §8.4: „du kannst auch zu Gunsten besserer Qualität unter 30 Fps in Kauf nehmen“. Damit wird
+Weg (a) mit dem besten gemessenen Bild gebaut, nach dem Plan in §10: Define `SOFT_SHADOW`, Bibliothek
+`LD_SOFT_SHADOW_SRC`, Schalter „Weicher Schatten“ (Standard aus, braucht „Schatten“), aus = alle Pins bitgleich, das
+Auge unverändert. Bauvermerk, Tests und Praxistest: [AD-039 §24](../architecture/AD-039-LOOKDEV-P3.md).
+
+Zwei Korrekturen gegenüber K16c, beide durch Production-Tests gefunden und gegen REF bestätigt
+(`compare.py`, Variante `K16c-phys-fn`):
+
+1. **Kegel der Lichtscheibe statt fester Steigung 2.** Ein Werfer im seitlichen Abstand |o| zählt nur, wenn er
+   höher als |o| · max(2, cot σ) liegt. Grund: Der Akne-Test T1-2 zeigte mit dem festen Kegel eine Abdunklung der
+   beleuchteten Kugel bei n·l < 0.45. Dort sieht die Kugel die ganze Scheibe noch, abdunkeln darf es erst ab n·l < sin σ.
+2. **Nahe Werfer zählen voll.** Die Einblendung gilt sofort voll, wenn ein Werfer in der Nahzone (≈ 1.5–3.75 Texel)
+   gefunden wird. Grund: Der Zwilling zeigte, dass ein Kontaktschatten unter einer Platte bei Größe 1 nur zu 25 %
+   dunkel wurde. Das war die Ursache des hellen rechten Mundwinkels (§5.3).
+
+Ergebnis gegen REF (24 Sätze mit Größe > 0): mittlerer Fehler **1.83** (K16c 1.89, heute 2.87). Rechter Mundwinkel,
+Creature Skin\*, p99 heller als REF: 7 / 12 / 23 bei Größe 0.25 / 0.45 / 1 (K16c 27 / 52 / 45, heute 9 / 10 / 12).
+Production ist mit dieser Form bildgleich (0/255 in allen 32 Sätzen). Die Kosten entsprechen K16c (§8.2), also
+bewusst über dem Budget.
 
 ## Grenzen
 

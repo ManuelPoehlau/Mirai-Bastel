@@ -59,6 +59,12 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
   term, where the band joins the wrap's excess under the lifted lookup (§16.7, rule „lifted“ of the assessment §6.2).
   Twins: `lookdev_optics.ld_area_wrap` / `ld_diffuse_area` / `ld_key_shadowed(..., area=True)`. The eye keeps
   `ld_diffuse` (`LD_COMMON_SRC` unchanged).
+- `LD_SOFT_SHADOW_SRC` (S9 „Weicher Schatten“, AD-039 §24): the key's penumbra from the receiver-to-blocker distance
+  (PCSS, the assessment's „K16c“): `ld_key_shadow_soft` - a blocker search of 16 raw-depth fetches (S4's sampler on unit
+  7; `LD_SOFT_SHADOW_DEPTH_SRC` declares it when `THICKNESS` is off), then 16 bilinear-compare fetches each for the
+  key's and the lifted lookup with the radius (z - blocker) x tan sigma; the map at full resolution
+  (`KeyShadow.update(..., key_size=0)`). The `SOFT_SHADOW` block replaces the `SHADOW` block's two lookups. Twin:
+  `lookdev_optics.soft_shadow_visibility`.
 
 Colour (AD-038 §5.5): every albedo is an sRGB artist value, decoded here; lights are linear; one `lookdev_output` per
 pixel. Directions are world space; `u_ld_env_rot` turns a world direction into the studio's frame (rotation, and the
@@ -140,6 +146,40 @@ THICKNESS_FACE = 0.1
 AREA_SIN_MAX = math.sin(math.radians(40.0))
 #: Below this sin sigma the band is not widened further (the spline's 1 / 4s): a point light is `ld_wrap` within 2.5e-5.
 AREA_SIN_MIN = 1e-4
+#: S9 „Weicher Schatten“ (AD-039 §24; the PCSS assessment's „K16c“, all `PROVISIONAL`, tuned on Gollum_Head_05 and the
+#: shapes against 32 hard keys over the emitter): the key's penumbra grows with the receiver-to-blocker distance and
+#: sigma (the S8 mapping, sin sigma = size x `AREA_SIN_MAX`). The map's UV and depth both span its 2R, so a depth
+#: difference is a UV length: penumbra radius = (z - mean blocker depth) x tan sigma.
+SOFT_SHADOW_TAPS = 16             # blocker-search fetches (raw depth) and PCF fetches (bilinear compare) per lookup
+SOFT_SHADOW_SEARCH = 0.15         # the search reaches blockers up to this far above the receiver (map depth, x tan sigma)
+SOFT_SHADOW_SEARCH_MIN = 2.0      # the search radius's floor in texels (production's 3 x 3 PCF reaches 2 texels)
+SOFT_SHADOW_PCF_MIN = 1.0         # the PCF radius's floor in texels (a hard key = the 3 x 3 PCF's footprint)
+SOFT_SHADOW_MAX = 48.0            # the search / PCF radius's cap in texels of the full map
+SOFT_SHADOW_CONE = 2.0            # beyond the near zone a fetch is a blocker max(this, cot sigma) x |o| above the
+#                                   receiver: the light's own cone (a blocker at |o| hides part of the disc only when it
+#                                   lies higher than |o| cot sigma), at least this steep (a large key)
+SOFT_SHADOW_LEVEL = 0.5           # beyond the near zone the PCF compares against half the mean blocker height
+SOFT_SHADOW_NEAR = 1.5            # texels: the receiver plane decides within it, the cone / level from 2.5 x it
+SOFT_SHADOW_FADE = 4.0            # the PCF counts in full from this many blockers found (the early out's edge); a
+#                                   blocker found within the near zone counts in full at once (a contact blocker under
+#                                   a large key: only the innermost fetches can see it)
+SOFT_SHADOW_BAND_LIFT = 0.23      # the lifted lookup's extra lift: x R x s³ (R the map's radius, s = sin sigma)
+
+
+def soft_shadow_taps(count: int, centre: bool) -> tuple[tuple[float, float], ...]:
+    """The fetch offsets in the unit disc: a Vogel spiral (golden angle; fixed, noise-free), radius sqrt((i + 0.5) / n)
+    (even in area: the PCF) or (i + 0.5) / n (denser near the centre: the blocker search, so a thin contact blocker - a
+    lip crease, a nostril's rim - is not missed)."""
+    golden = math.pi * (3.0 - math.sqrt(5.0))
+    out = []
+    for i in range(count):
+        r = (i + 0.5) / count if centre else math.sqrt((i + 0.5) / count)
+        out.append((r * math.cos(i * golden), r * math.sin(i * golden)))
+    return tuple(out)
+
+
+SOFT_SHADOW_SEARCH_TAPS = soft_shadow_taps(SOFT_SHADOW_TAPS, True)
+SOFT_SHADOW_PCF_TAPS = soft_shadow_taps(SOFT_SHADOW_TAPS, False)
 
 
 def constant_src(name: str, library: str = es.EYE_LIB_SRC) -> str:
@@ -410,11 +450,25 @@ void main() {{
     {{
         float ndl = dot(n, u_ld_light_dir[0]);
 #ifdef NORMAL_MAP
+#ifdef SOFT_SHADOW
+        // AD-039 §24: both lookups with the penumbra of the key's disc (one blocker search, two PCFs)
+        vec2 vis_soft = ld_key_shadow_soft(v_world_pos, n_geo, u_ld_light_dir[0]);
+        float vis = vis_soft.x;
+        float vis_wrap = vis_soft.y;
+#else
         float vis = ld_key_visibility(v_world_pos, n_geo, u_ld_light_dir[0]);
         float vis_wrap = ld_key_visibility_lifted(v_world_pos, n_geo, u_ld_light_dir[0]);
+#endif
+#else
+#ifdef SOFT_SHADOW
+        // AD-039 §24: both lookups with the penumbra of the key's disc (one blocker search, two PCFs)
+        vec2 vis_soft = ld_key_shadow_soft(v_world_pos, n, u_ld_light_dir[0]);
+        float vis = vis_soft.x;
+        float vis_wrap = vis_soft.y;
 #else
         float vis = ld_key_visibility(v_world_pos, n, u_ld_light_dir[0]);
         float vis_wrap = ld_key_visibility_lifted(v_world_pos, n, u_ld_light_dir[0]);
+#endif
 #endif
         vec3 lambert = vec3(max(ndl, 0.0));
 #ifdef DUAL_LOBE
@@ -615,6 +669,103 @@ float ld_key_transmission(vec3 p, float face_l) {{
 }}
 """
 
+def _vec2_array(taps) -> str:
+    return ",\n    ".join(f"vec2({x!r}, {y!r})" for x, y in taps)
+
+
+#: S9 (AD-039 §24): the raw depth's sampler (S4's unit 7) when „Durchleuchtung“ is off; with it on,
+#: `LD_THICKNESS_SRC` declares the same uniform and this string is not appended (no `#ifdef` in a library string).
+LD_SOFT_SHADOW_DEPTH_SRC = """
+uniform sampler2D u_ld_shadow_depth;  // the key's map as raw depth (unit 7, a sampler object without compare)
+"""
+
+LD_SOFT_SHADOW_SRC = f"""
+// -- LookDev P3 S9 „Weicher Schatten“ (AD-039 §24): the key's penumbra from the receiver-to-blocker distance and the
+// key's angular radius sigma (sin sigma = size x LD_SOFT_SIN_MAX, the S8 mapping). One blocker search in the raw depth,
+// then a PCF of radius (z - mean blocker depth) x tan sigma at the surface (vis) and at the lifted point (vis_wrap).
+// Near the map point (LD_SOFT_NEAR texels) both compare against the receiver plane as ld_shadow_pcf does; farther out
+// against a cone (search) and half the blockers' height (PCF) instead: a per-triangle plane extrapolated over tens of
+// texels at a grazing key would shadow the receiver's own surface in facets (the PCSS assessment §3).
+const int LD_SOFT_TAPS = {SOFT_SHADOW_TAPS};
+const vec2 LD_SOFT_SEARCH_TAPS[LD_SOFT_TAPS] = vec2[](
+    {_vec2_array(SOFT_SHADOW_SEARCH_TAPS)});
+const vec2 LD_SOFT_PCF_TAPS[LD_SOFT_TAPS] = vec2[](
+    {_vec2_array(SOFT_SHADOW_PCF_TAPS)});
+const float LD_SOFT_SIN_MAX = {AREA_SIN_MAX!r};
+const float LD_SOFT_SEARCH = {SOFT_SHADOW_SEARCH!r};
+const float LD_SOFT_SEARCH_MIN = {SOFT_SHADOW_SEARCH_MIN!r};
+const float LD_SOFT_PCF_MIN = {SOFT_SHADOW_PCF_MIN!r};
+const float LD_SOFT_MAX = {SOFT_SHADOW_MAX!r};
+const float LD_SOFT_CONE = {SOFT_SHADOW_CONE!r};
+const float LD_SOFT_LEVEL = {SOFT_SHADOW_LEVEL!r};
+const float LD_SOFT_NEAR = {SOFT_SHADOW_NEAR!r};
+const float LD_SOFT_FADE = {SOFT_SHADOW_FADE!r};
+const float LD_SOFT_BAND_LIFT = {SOFT_SHADOW_BAND_LIFT!r};
+float ld_soft_tan_sigma() {{
+    float s = u_ld_light_size[0] * LD_SOFT_SIN_MAX;
+    return s / sqrt(max(1.0 - s * s, 1e-6));
+}}
+// 0 within LD_SOFT_NEAR texels of the map point (the receiver plane decides), 1 from 2.5 x that (cone / level)
+float ld_soft_far(vec2 o) {{
+    return smoothstep(LD_SOFT_NEAR, 2.5 * LD_SOFT_NEAR, length(o) * u_ld_shadow_scale / u_ld_shadow_radius);
+}}
+// x: the summed depth of the blockers around sp within radius r (map UV), y: how many, z: how many of them in the
+// near zone (weighted by 1 - ld_soft_far)
+vec3 ld_soft_blockers(vec3 sp, vec2 slope, float r, float cone) {{
+    vec3 acc = vec3(0.0);
+    for (int k = 0; k < LD_SOFT_TAPS; ++k) {{
+        vec2 o = LD_SOFT_SEARCH_TAPS[k] * r;
+        float d = textureLod(u_ld_shadow_depth, (sp.xy + o) * u_ld_shadow_scale, 0.0).r;
+        float far = ld_soft_far(o);
+        float b = step(d, sp.z - 2.0 * LD_SHADOW_BIAS + mix(dot(slope, o), -length(o) * cone, far));
+        acc += vec3(d * b, b, b * (1.0 - far));
+    }}
+    return acc;
+}}
+// LD_SOFT_TAPS bilinear-compare fetches in a disc of radius r around sp; near the centre against the receiver plane,
+// farther out against the level `level` above the receiver; outside the map = lit
+float ld_soft_pcf(vec3 sp, vec2 slope, float r, float level) {{
+    float sum = 0.0;
+    for (int k = 0; k < LD_SOFT_TAPS; ++k) {{
+        vec2 o = LD_SOFT_PCF_TAPS[k] * r;
+        float ref = sp.z - LD_SHADOW_BIAS + mix(dot(slope, o), -level, ld_soft_far(o));
+        sum += textureLod(u_ld_shadow, vec3((sp.xy + o) * u_ld_shadow_scale, ref), 0.0);
+    }}
+    float inside = float(all(greaterThanEqual(sp, vec3(0.0))) && all(lessThanEqual(sp, vec3(1.0))));
+    return mix(1.0, sum / float(LD_SOFT_TAPS), inside);
+}}
+// (vis, vis_wrap) at the map point sp and the lifted map point spl with their receiver-plane slopes: one blocker
+// search at sp (no blocker = lit, the early out), then the PCF at both with the penumbra of the mean blocker depth; the
+// PCF counts in full from LD_SOFT_FADE blockers found, or from one in the near zone. Call after the derivatives (it
+// branches).
+vec2 ld_soft_visibility(vec3 sp, vec3 spl, vec2 slope, vec2 slope_l) {{
+    float texel = u_ld_shadow_radius / u_ld_shadow_scale;
+    float tan_sigma = ld_soft_tan_sigma();
+    float rs = clamp(LD_SOFT_SEARCH * tan_sigma, LD_SOFT_SEARCH_MIN * texel, LD_SOFT_MAX * u_ld_shadow_radius);
+    vec3 found = ld_soft_blockers(sp, slope, rs, max(LD_SOFT_CONE, 1.0 / max(tan_sigma, 1e-3)));
+    if (found.y < 0.5) return vec2(1.0);
+    float depth = max(sp.z - found.x / found.y, 0.0);
+    float r = clamp(depth * tan_sigma, LD_SOFT_PCF_MIN * texel, LD_SOFT_MAX * u_ld_shadow_radius);
+    float level = LD_SOFT_LEVEL * depth;
+    float w = min(found.y / LD_SOFT_FADE + found.z, 1.0);
+    return vec2(1.0) - w * (vec2(1.0) - vec2(ld_soft_pcf(sp, slope, r, level), ld_soft_pcf(spl, slope_l, r, level)));
+}}
+// (vis, vis_wrap): ld_key_visibility / ld_key_visibility_lifted with the key's penumbra. The lifted point rises by
+// LD_SHADOW_WRAP_LIFT offsets plus LD_SOFT_BAND_LIFT x R x s³ (the height a point in the band n.l in (-s, 0) needs to
+// leave a convex surface's own shadow; R the map's radius as the scene's scale). The derivatives first (uniform control
+// flow), then ld_soft_visibility.
+vec2 ld_key_shadow_soft(vec3 p, vec3 n, vec3 l) {{
+    vec3 sp = ld_shadow_coord(p, n, l);
+    float s = u_ld_light_size[0] * LD_SOFT_SIN_MAX;
+    float radius = 1.0 / length(vec3(u_ld_shadow_vp[0][0], u_ld_shadow_vp[1][0], u_ld_shadow_vp[2][0]));
+    vec3 spl = ld_shadow_coord_lifted(p, n, l, LD_SHADOW_WRAP_LIFT
+                                      + LD_SOFT_BAND_LIFT * radius * s * s * s / max(u_ld_shadow_offset, 1e-9));
+    vec2 slope = ld_shadow_slope(sp);
+    vec2 slope_l = ld_shadow_slope(spl);
+    return ld_soft_visibility(sp, spl, slope, slope_l);
+}}
+"""
+
 LD_NORMAL_MAP_SRC = f"""
 // -- LookDev P3 S7 (AD-039 §10): a tangent-space normal map without a tangent buffer - the frame from the screen
 // derivatives of world position and UV (per triangle: a 2 x 2 quad never spans two triangles), orthogonal to the
@@ -745,26 +896,29 @@ def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, sh
                  dual_lobe: bool = False, thickness: bool = False, roughness_map: bool = False,
                  normal_map: bool = False, translucency_map: bool = False,
                  cube_env: bool = False, regions: bool = False,
-                 area_diffuse: bool = False) -> list[tuple[str, str]]:
+                 area_diffuse: bool = False, soft_shadow: bool = False) -> list[tuple[str, str]]:
     """The skin program (AD-038 §3.2): the textured Worklight program's vertex and geometry sources formatted with the
     Worklight program's attribute locations, the LookDev fragment source. Variants: `ALBEDO_MAP`, `ENV_SPEC`; P3
     (AD-039 §2.3): `SHADOW` (S1), `DUAL_LOBE` (S3), `THICKNESS` (S4, needs `shadow`); S7 (§10): `ROUGHNESS_MAP`,
     `NORMAL_MAP`, `TRANSLUCENCY_MAP` (with `LD_MAP_UV` for any of them); S5 (§8): `CUBE_ENV` (needs `env_spec`); S6 (§9):
     `REGIONS` (the material per triangle from its slot); S8 (§23): `AREA_DIFFUSE` (the lights' diffuse term as finite
-    emitters). An effect that is off leaves no text behind
+    emitters); S9 (§24): `SOFT_SHADOW` (the key's penumbra from the blocker distance; needs `shadow`). An effect that is
+    off leaves no text behind
     (its library string is not appended, its body blocks are resolved away), so every effect off = M1's sources."""
     from .eye_shaders import _without
     from .gl_render_store import TEXTURED_GEOMETRY_SRC, TEXTURED_VERTEX_SRC
 
     if thickness and not shadow:
         raise ValueError("THICKNESS reads the key's map: it needs SHADOW (AD-039 §2.1)")
+    if soft_shadow and not shadow:
+        raise ValueError("SOFT_SHADOW softens the key's map lookups: it needs SHADOW (AD-039 §24)")
     if cube_env and not env_spec:
         raise ValueError("CUBE_ENV is the studio's reflection: it needs ENV_SPEC (AD-039 §8)")
     maps = roughness_map or normal_map or translucency_map
     flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow), ("DUAL_LOBE", dual_lobe),
              ("THICKNESS", thickness), ("ROUGHNESS_MAP", roughness_map), ("NORMAL_MAP", normal_map),
              ("TRANSLUCENCY_MAP", translucency_map), ("LD_MAP_UV", maps), ("CUBE_ENV", cube_env),
-             ("REGIONS", regions), ("AREA_DIFFUSE", area_diffuse))
+             ("REGIONS", regions), ("AREA_DIFFUSE", area_diffuse), ("SOFT_SHADOW", soft_shadow))
     defines = "".join(f"#define {name} 1\n" for name, on in flags if on)
     body = SKIN_BODY
     for name, on in flags[2:]:
@@ -773,6 +927,8 @@ def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, sh
     library = (LD_BRDF_SRC + LD_COMMON_SRC + (LD_AREA_SRC if area_diffuse else "")
                + (LD_SHADOW_SRC if shadow else "") + (LD_DUAL_LOBE_SRC if dual_lobe else "")
                + (LD_THICKNESS_SRC if thickness else "")
+               + (LD_SOFT_SHADOW_DEPTH_SRC if soft_shadow and not thickness else "")
+               + (LD_SOFT_SHADOW_SRC if soft_shadow else "")
                + (LD_NORMAL_MAP_SRC if normal_map else "") + (LD_CUBE_SRC if cube_env else ""))
     fragment = "#version 330 core\n" + defines + library + body
     return [(TEXTURED_VERTEX_SRC.format(**locations), "vertex"), (TEXTURED_GEOMETRY_SRC, "geometry"),

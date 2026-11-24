@@ -131,14 +131,16 @@ def test_effects_default_on_and_dependencies_and_features():
 
     assert lo.LookdevEffects().shadow
     assert lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness", "cube", "regions", "maps",
-                                         "area_diffuse")
+                                         "area_diffuse", "soft_shadow")
     assert not lo.LookdevEffects().area_diffuse  # S8: off until Manu's practical test (AD-039 §23)
+    assert not lo.LookdevEffects().soft_shadow  # S9: off until Manu's practical test (AD-039 §24)
     assert lo.LookdevState("x", lo.EYE_STUDIO, lo.StudioLight(), lo.StudioLight(), lo.StudioLight()).effects \
         == lo.LookdevEffects()
     on = lo.LookdevEffects(shadow=True)
     assert lo.effective(on) == on  # nothing probed: nothing missing
     assert lo.effect_reasons(on) == {"shadow": None, "eye_shadow": None, "dual_lobe": None, "thickness": None,
-                                     "cube": None, "regions": None, "maps": None, "area_diffuse": None}
+                                     "cube": None, "regions": None, "maps": None, "area_diffuse": None,
+                                     "soft_shadow": None}
     assert lo.effective(on, FeatureReport(depth_texture=True)) == on
     missing = FeatureReport(depth_texture=False)
     # S3 needs no feature and no other effect: it stays on without a depth texture
@@ -146,7 +148,8 @@ def test_effects_default_on_and_dependencies_and_features():
                                                           thickness=False)
     assert lo.effect_reasons(on, missing) == {"shadow": "Tiefentextur fehlt", "eye_shadow": "braucht Schatten",
                                               "dual_lobe": None, "thickness": "braucht Schatten", "cube": None,
-                                              "regions": None, "maps": None, "area_diffuse": None}
+                                              "regions": None, "maps": None, "area_diffuse": None,
+                                              "soft_shadow": "braucht Schatten"}
     assert missing.status_lines() == ("LookDev: Schatten aus – Tiefentextur nicht verfügbar",)
     assert lo.effective(lo.LookdevEffects(shadow=False)) == lo.LookdevEffects(shadow=False, eye_shadow=False,
                                                                                thickness=False)
@@ -175,6 +178,14 @@ def test_effects_default_on_and_dependencies_and_features():
     assert lo.effective(soft, FeatureReport(depth_texture=False, sampler_objects=False, cube_rgba16f=False,
                                             texture_units=False)).area_diffuse
     assert lo.effective(lo.LookdevEffects(shadow=False, area_diffuse=True)).area_diffuse
+    # S9 needs the shadow and sampler objects (the raw depth on unit 7, as S4)
+    sharp = lo.LookdevEffects(soft_shadow=True)
+    assert lo.effective(sharp) == sharp
+    assert not lo.effective(lo.LookdevEffects(shadow=False, soft_shadow=True)).soft_shadow
+    assert lo.effect_reasons(lo.LookdevEffects(shadow=False, soft_shadow=True))["soft_shadow"] == "braucht Schatten"
+    assert not lo.effective(sharp, no_samplers).soft_shadow
+    assert lo.effect_reasons(sharp, no_samplers)["soft_shadow"] == "Sampler-Objekte fehlen"
+    assert not lo.effective(sharp, missing).soft_shadow
 
 
 # -- AD-039 S6: region materials ---------------------------------------------------------------------------------------
@@ -637,3 +648,83 @@ def test_a_facet_turned_toward_the_key_is_its_own_nearest_surface_rightly():
     assert lo.key_transmission(depth, sp, 2.0, face_l=-lo.THICKNESS_FACE) == 0.0
     assert lo.key_transmission(depth, sp, 2.0) == 0.0  # default: a facet facing away
     assert np.isclose(lo.key_transmission(depth, sp, 2.0, face_l=-0.5 * lo.THICKNESS_FACE), 0.5)
+
+
+# -- AD-039 S9 (§24): „Weicher Schatten“ - the key's penumbra from the blocker distance ---------------------------------
+
+def _plate_map(height: float, size: int = 256) -> np.ndarray:
+    """A receiver plane at map depth 0.7 with a blocker over its left half `height` (map depth units) above it."""
+    depth = np.full((size, size), 0.7)
+    depth[:, : size // 2] = 0.7 - height
+    return depth
+
+
+def _profile(depth: np.ndarray, size: float, row: float = 0.5) -> tuple[np.ndarray, np.ndarray]:
+    """(u, vis) along a line across the blocker's edge (at u = 0.5), receivers on the plane (slope 0)."""
+    u = np.linspace(0.3, 0.7, 801)
+    sp = np.stack([u, np.full_like(u, row), np.full_like(u, 0.7)], -1)
+    return u, lo.soft_shadow_visibility(depth, sp, sp, size)[0]
+
+
+def _penumbra_width(u, vis) -> float:
+    partial = (vis > 0.02) & (vis < 0.98)
+    return float(u[partial].max() - u[partial].min()) if partial.any() else 0.0
+
+
+def test_the_soft_shadow_lift_grows_with_the_cube_of_sin_sigma():
+    assert lo.soft_shadow_lift(0.0, 1.0, 0.003) == lo.SHADOW_WRAP_LIFT
+    extra = [lo.soft_shadow_lift(size, 1.0, 0.003) - lo.SHADOW_WRAP_LIFT for size in (0.5, 1.0)]
+    assert extra[1] / extra[0] == pytest.approx(8.0)
+    s = ls.AREA_SIN_MAX
+    assert extra[1] * 0.003 == pytest.approx(ls.SOFT_SHADOW_BAND_LIFT * s ** 3)  # world units = 0.23 R s³
+
+
+def test_the_soft_shadow_taps_fill_the_unit_disc_and_the_search_is_denser_near_the_centre():
+    for taps in (ls.SOFT_SHADOW_SEARCH_TAPS, ls.SOFT_SHADOW_PCF_TAPS):
+        radii = np.hypot(*np.asarray(taps).T)
+        assert len(taps) == ls.SOFT_SHADOW_TAPS and radii.max() <= 1.0 and len(set(taps)) == len(taps)
+    assert np.median(np.hypot(*np.asarray(ls.SOFT_SHADOW_SEARCH_TAPS).T)) < np.median(
+        np.hypot(*np.asarray(ls.SOFT_SHADOW_PCF_TAPS).T))
+
+
+@pytest.mark.parametrize("size", [0.0, 0.45, 1.0])
+def test_without_a_blocker_the_soft_shadow_is_lit(size):
+    """A plane facing the key (its own depth everywhere, tilted or not): no fetch is a blocker - lit, no acne."""
+    depth = np.full((128, 128), 0.7)
+    u = np.random.default_rng(3).uniform(0.05, 0.95, (500, 2))
+    sp = np.concatenate([u, np.full((500, 1), 0.7)], -1)
+    vis, vis_wrap = lo.soft_shadow_visibility(depth, sp, sp, size)
+    assert (vis == 1.0).all() and (vis_wrap == 1.0).all()
+    yy, xx = np.mgrid[0:128, 0:128] / 128.0  # a tilted plane, its receiver-plane slope given
+    tilted = 0.5 + 0.3 * xx
+    sp = np.concatenate([u, (0.5 + 0.3 * (u[:, :1] - 0.5 / 128))], -1)
+    vis, _ = lo.soft_shadow_visibility(tilted, sp, sp, size, slope=(0.3, 0.0))
+    assert (vis > 0.99).mean() > 0.99
+
+
+def test_the_soft_penumbra_grows_with_the_blocker_distance_and_the_key_size():
+    """The point of S9 (Manu 2026-11-24): the penumbra's width is (receiver - blocker) x tan sigma - a far blocker
+    softer than a near one, a larger key softer than a smaller; the core under the blocker dark, the plane beside it
+    lit; a hard key (size 0) keeps today's few-texel edge whatever the distance."""
+    widths = {}
+    for height in (0.02, 0.2):
+        for size in (0.0, 0.45, 1.0):
+            u, vis = _profile(_plate_map(height), size)
+            widths[height, size] = _penumbra_width(u, vis)
+            assert vis[u < 0.35].max() < 0.02 or size == 1.0  # the core under the blocker (size 1: wider than this)
+            assert vis[u > 0.6].min() > 0.98  # beside it: lit
+    texel = 1.0 / 256
+    assert widths[0.02, 0.0] <= 4 * texel and widths[0.2, 0.0] <= 4 * texel
+    assert widths[0.2, 0.45] > 3 * widths[0.02, 0.45]
+    assert widths[0.2, 1.0] > widths[0.2, 0.45] > widths[0.2, 0.0]
+    # the inner half of the penumbra (under the blocker) matches (z - blocker) x tan sigma within the fetches' spacing
+    s = 0.45 * ls.AREA_SIN_MAX
+    u, vis = _profile(_plate_map(0.2), 0.45)
+    inner = u[(vis > 0.02) & (u < 0.5)]
+    assert inner.min() == pytest.approx(0.5 - 0.2 * s / math.sqrt(1 - s * s), abs=4 * texel)
+
+
+def test_a_contact_blocker_keeps_a_sharp_edge_at_a_large_key():
+    """A blocker 0.005 above the receiver (a lip on a lip, a nostril's rim): at size 1 the edge stays a few texels."""
+    u, vis = _profile(_plate_map(0.005), 1.0)
+    assert _penumbra_width(u, vis) <= 6 / 256

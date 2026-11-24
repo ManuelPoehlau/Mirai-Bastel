@@ -177,15 +177,18 @@ class LookdevPass:
     def program_key(albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
                     thickness: bool = False, roughness_map: bool = False, normal_map: bool = False,
                     translucency_map: bool = False, cube_env: bool = False, regions: bool = False,
-                    area_diffuse: bool = False) -> tuple:
+                    area_diffuse: bool = False, soft_shadow: bool = False) -> tuple:
         """The skin program's cache key: the 5 values of S4, plus the three map flags when a map is drawn (S7), plus
         those and `CUBE_ENV` when the cube is (S5; only with `env_spec`), plus those, the cube flag and `REGIONS` when
-        region materials are (S6), plus all of those and `AREA_DIFFUSE` when the soft light is on (S8) - 5, 8, 9, 10 or
-        11 values, so every key of a frame without the cube, regions or the soft light stays as it was. The key is
+        region materials are (S6), plus all of those and `AREA_DIFFUSE` when the soft light is on (S8), plus all of
+        those and `SOFT_SHADOW` when the soft shadow is (S9; only with `shadow`) - 5, 8, 9, 10, 11 or 12 values, so every
+        key of a frame without the cube, regions, the soft light or the soft shadow stays as it was. The key is
         `skin_sources`' positional arguments after the locations."""
         key = (bool(albedo_map), bool(env_spec), bool(shadow), bool(dual_lobe), bool(thickness) and bool(shadow))
         maps = (bool(roughness_map), bool(normal_map), bool(translucency_map))
         cube = bool(cube_env) and bool(env_spec)
+        if soft_shadow and shadow:
+            return key + maps + (cube, bool(regions), bool(area_diffuse), True)
         if area_diffuse:
             return key + maps + (cube, bool(regions), True)
         if regions:
@@ -197,13 +200,13 @@ class LookdevPass:
     def program(self, albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
                 thickness: bool = False, roughness_map: bool = False, normal_map: bool = False,
                 translucency_map: bool = False, cube_env: bool = False, regions: bool = False,
-                area_diffuse: bool = False):
+                area_diffuse: bool = False, soft_shadow: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore, _register_sampler_buffer_uniform
 
         key = self.program_key(albedo_map, env_spec, shadow, dual_lobe, thickness, roughness_map, normal_map,
-                               translucency_map, cube_env, regions, area_diffuse)
+                               translucency_map, cube_env, regions, area_diffuse, soft_shadow)
         program = self.programs.get(key)
         if program is None:
             _register_sampler_buffer_uniform()
@@ -219,7 +222,7 @@ class LookdevPass:
 
     def draw(self, render_mesh, look: LookDraw, frame: dict, shadow=None, dual_lobe: bool = False,
              thickness: bool = False, maps: bool = False, cube=None, regions: bool = False,
-             area_diffuse: bool = False) -> bool:
+             area_diffuse: bool = False, soft_shadow: bool = False) -> bool:
         """Draw one object. False = nothing drawn (no VertexList / camera yet, or a Ghost): the caller draws it with the
         Worklight. `shadow` (AD-039 S1): a rendered `KeyShadow` the object receives (the `SHADOW` variant), else None;
         `dual_lobe` (S3): the `DUAL_LOBE` variant; `thickness` (S4): the `THICKNESS` variant, only with a shadow;
@@ -227,7 +230,9 @@ class LookdevPass:
         `cube` (S5): a built `EnvCube` the studio's reflection reads (the `CUBE_ENV` variant, with `env_spec`), else
         None; `regions` (S6): the LookDraw's region materials by the RenderMesh's triangle slots (the `REGIONS`
         variant, when the look has regions and the store holds slots), else the object's material everywhere;
-        `area_diffuse` (S8): the `AREA_DIFFUSE` variant (the lights' diffuse term as finite emitters)."""
+        `area_diffuse` (S8): the `AREA_DIFFUSE` variant (the lights' diffuse term as finite emitters); `soft_shadow`
+        (S9): the `SOFT_SHADOW` variant, only with a shadow (the key's penumbra from the blocker distance; it reads the
+        map's raw depth on `SHADOW_RAW_UNIT` as the thickness does)."""
         from pyglet import gl
 
         from .gl_render_store import GLRenderStore
@@ -253,10 +258,11 @@ class LookdevPass:
             uvs = False
         shadow = shadow if shadow is not None and shadow.ready else None
         thickness = bool(thickness) and shadow is not None
+        soft_shadow = bool(soft_shadow) and shadow is not None
         cube = cube if cube is not None and cube.ready and self.env_spec else None
         program = self.program(texture is not None, self.env_spec, shadow is not None, dual_lobe, thickness,
                                "roughness" in bound_maps, "normal" in bound_maps, "translucency" in bound_maps,
-                               cube is not None, regions, area_diffuse)
+                               cube is not None, regions, area_diffuse, soft_shadow)
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw
         model = store.uniform_data("model_uniforms")
@@ -280,7 +286,7 @@ class LookdevPass:
         if shadow is not None:
             set_uniforms(program, shadow.uniforms(), active)
             shadow.bind(SHADOW_UNIT)
-            if thickness:
+            if thickness or soft_shadow:
                 shadow.bind_raw(SHADOW_RAW_UNIT)
         seamless = None
         if cube is not None:
@@ -314,7 +320,7 @@ class LookdevPass:
             GLRenderStore.unbind_triangle_uvs(UV_UNIT)
         if shadow is not None:
             shadow.unbind(SHADOW_UNIT)
-            if thickness:
+            if thickness or soft_shadow:
                 shadow.unbind_raw(SHADOW_RAW_UNIT)
         if cube is not None:
             cube.unbind(CUBE_UNIT)

@@ -1,7 +1,9 @@
 # LookDev: Halbschatten des Key abhängig vom Abstand (PCSS), 2026-11-24
 
 **Status:** isoliertes Wegwerf-Experiment, keine Production-Spezifikation. Es gilt für AD-039 §23.6 / Q-S8-3, Manus
-Befund „der Übergang von Nase zur Wange links wirkt bei weichem Licht seltsam/unrealistisch“.
+Befund „der Übergang von Nase zur Wange links wirkt bei weichem Licht seltsam/unrealistisch“. **Seit 2026-11-24 ist die
+Form `K16c-phys-fn` Production** (S9 „Weicher Schatten“, [AD-039 §24](../../docs/architecture/AD-039-LOOKDEV-P3.md));
+`compare.py --production` vergleicht Production mit ihr (0/255 Unterschied).
 
 **Kein Eingriff in `src/`, `tests/`, `config/` oder Szenen.** Die Varianten werden nur *im eigenen Prozess*
 eingesetzt (`pcss_glsl.install`):

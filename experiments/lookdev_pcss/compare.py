@@ -51,7 +51,10 @@ import area_math as am  # noqa: E402
 import pcss_glsl as pg  # noqa: E402
 import run_compare as rc  # noqa: E402
 
-DIFFUSE = ag.Variant("A", spec=False, linear=True)  # with area_diffuse on the body calls production's B itself
+DIFFUSE = ag.Variant("A", spec=False, linear=True)
+#: the experiment's form production built as „Weicher Schatten“ (AD-039 §24; `--production` compares them)
+PRODUCTION_FORM = "K16c-phys-fn"
+production_check: dict = {}  # with area_diffuse on the body calls production's B itself
 BEAUTY_AREA = ag.Variant("A", linear=True)
 #: the candidate family "K" (2026-11-24, after the variants below): blocker search with the cone test (a fetch is a
 #: blocker 2 x |o| above the receiver), PCF against half the mean blocker height (no receiver plane), the PCF faded in
@@ -72,6 +75,10 @@ VARIANTS: dict[str, pg.Pcss | None] = {
     "K16c-s2": pg.Pcss(16, 16, "disc", **{**KC, "band_lift": 0.15, "band_power": 2.0}),
     "K16c-s4": pg.Pcss(16, 16, "disc", **{**KC, "band_lift": 0.36, "band_power": 4.0}),
     "K16c-bl0": pg.Pcss(16, 16, "disc", **{**KC, "band_lift": 0.0}),
+    # after the production GL gates (2026-11-24): the cone of the light itself, cot sigma, at least 2
+    "K16c-phys": pg.Pcss(16, 16, "disc", **{**KC, "cone": -2.0}),
+    # and the near blockers count in full for the fade (a contact blocker under a large key, AD-039 §24)
+    "K16c-phys-fn": pg.Pcss(16, 16, "disc", **{**KC, "cone": -2.0, "fade_near": True}),
     # cost diagnostics and cheaper forms (2026-11-24, after the reference-PC run: the cost did not follow the fetches)
     "K16c-lean": pg.Pcss(16, 16, "disc", lean=True, **KC),
     "K16c-lean-nb": pg.Pcss(16, 16, "disc", lean=True, early=False, **KC),
@@ -292,15 +299,33 @@ def run_scene(scene: str, args, out: Path, log) -> dict:
                     for name in args.variants:
                         img, mask = render(window, app, capture, DIFFUSE, VARIANTS[name])
                         images[name] = rc.display(img, mask)
+                    if args.production:  # production's „Weicher Schatten“ (AD-039 §24), against the experiment's form
+                        use(app, DIFFUSE, None)  # no experiment patch while production's own effect compiles
+                        app.set_lookdev_effect("soft_shadow", True)
+                        rc.settle(window, app, capture)
+                        img, mask = render(window, app, capture, DIFFUSE, None)
+                        app.set_lookdev_effect("soft_shadow", False)
+                        rc.settle(window, app, capture)
+                        images["PROD"] = rc.display(img, mask)
+                        if PRODUCTION_FORM in images:
+                            lin, _ = render(window, app, capture, DIFFUSE, VARIANTS[PRODUCTION_FORM])
+                            images[PRODUCTION_FORM + " (again)"] = rc.display(lin, mask)
+                            production_check[f"{scene}/{view}/{material}/size {size:g}"] = {
+                                "linear_max": float(abs(img - lin).max()),
+                                "display_max": int(abs(images["PROD"].astype(int)
+                                                       - images[PRODUCTION_FORM].astype(int)).max()),
+                                "display_mean": float(abs(images["PROD"].astype(float)
+                                                          - images[PRODUCTION_FORM].astype(float)).mean())}
                     for name in ("P",) + tuple(args.beauty):
                         img, mask = render(window, app, capture, BEAUTY_AREA, VARIANTS[name])
                         images[name + " beauty"] = rc.display(img, mask)
                     ref, rmask = render_reference(window, app, capture, size, args.ref, key_dir)
                     images["REF"] = rc.display(ref, rmask)
                     key = f"{scene}/{view}/{material}/size {size:g}"
-                    results[key] = {name: rc.metrics(images[name], images["REF"], rmask) for name in args.variants}
+                    results[key] = {name: rc.metrics(images[name], images["REF"], rmask)
+                                    for name in args.variants + (("PROD",) if args.production else ())}
                     log(f"{key}  ({time.perf_counter() - t0:.0f} s)")
-                    for name in args.variants:
+                    for name in args.variants + (("PROD",) if args.production else ()):
                         m = results[key][name]
                         log(f"    {name:<14} mae {m['mae']:5.2f}/255  brighter>8 {100 * m['brighter']:5.2f} %  "
                             f"darker>8 {100 * m['darker']:5.2f} %  max+ {m['max_brighter']:5.1f}")
@@ -338,6 +363,8 @@ def main(argv=None) -> int:
     parser.add_argument("--size", type=int, nargs=2, default=(1024, 768))
     parser.add_argument("--eyes", action="store_true", help="eyes shown, Augen-Schatten on (the S2 check)")
     parser.add_argument("--no-area", action="store_true", help="„Weiches Licht“ off (PCSS without S8's band)")
+    parser.add_argument("--production", action="store_true",
+                        help=f"also production's „Weicher Schatten“ (row PROD), against {PRODUCTION_FORM}")
     parser.add_argument("--spec", action="store_true",
                         help="the numbers with specular on (variants and REF; needed with --no-area: diffuse-only "
                              "without the band leaves only u_ld_light_size[0] in use and pyglet cannot set the array)")
@@ -372,6 +399,12 @@ def main(argv=None) -> int:
     for scene in args.scene.split(","):
         results.update(run_scene(scene, args, out, log))
     (out / "metrics.json").write_text(json.dumps(results, indent=1), encoding="utf-8")
+    if production_check:
+        (out / "production_check.json").write_text(json.dumps(production_check, indent=1), encoding="utf-8")
+        worst = max(production_check.values(), key=lambda d: d["display_max"])
+        log(f"production vs {PRODUCTION_FORM}: largest difference {worst['display_max']}/255 (display), "
+            f"{max(d['linear_max'] for d in production_check.values()):.2e} linear; mean "
+            f"{max(d['display_mean'] for d in production_check.values()):.4f}/255")
     (out / "log.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return 0
 

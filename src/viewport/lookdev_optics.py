@@ -37,6 +37,9 @@ import numpy as np
 
 from . import eye_optics as eo
 from .light_rig import kelvin_to_rgb
+from .lookdev_shaders import (SOFT_SHADOW_BAND_LIFT, SOFT_SHADOW_CONE, SOFT_SHADOW_FADE, SOFT_SHADOW_LEVEL,
+                              SOFT_SHADOW_MAX, SOFT_SHADOW_NEAR, SOFT_SHADOW_PCF_MIN, SOFT_SHADOW_PCF_TAPS,
+                              SOFT_SHADOW_SEARCH, SOFT_SHADOW_SEARCH_MIN, SOFT_SHADOW_SEARCH_TAPS)
 from .lookdev_shaders import (AREA_SIN_MAX, AREA_SIN_MIN, CUBE_LEVELS, CUBE_SAMPLES, DUAL_LOBE_MIX, DUAL_LOBE_SCALES, MAX_STUDIO, NORMAL_MAP_ZERO,
                               SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT, THICKNESS_EDGE, THICKNESS_FACE, THICKNESS_SCALE,
                               TONE_CURVES)
@@ -82,8 +85,10 @@ class LookdevEffects:
     `cube` (S5): the skin's studio reflection from the studio's prefiltered cube; `regions` (S6): the objects' region
     materials (off = one material per object); `maps` (S7): the materials' roughness, normal and translucency maps;
     `area_diffuse` (S8, „Weiches Licht“): the lights' diffuse term as finite emitters, each light's size softening its
-    terminator - **off** by default until Manu's practical test (AD-039 §23). The fields stand in the AD's slice order
-    (S5, S6 before S7; persistence is by name)."""
+    terminator - **off** by default until Manu's practical test (AD-039 §23); `soft_shadow` (S9, „Weicher Schatten“):
+    the key's penumbra grows with the distance to the blocker and the key's size (PCSS, the map at full resolution),
+    needs `shadow` - **off** by default until Manu's practical test (AD-039 §24). The fields stand in the AD's slice
+    order (S5, S6 before S7; persistence is by name)."""
 
     shadow: bool = True
     eye_shadow: bool = True
@@ -93,6 +98,7 @@ class LookdevEffects:
     regions: bool = True
     maps: bool = True
     area_diffuse: bool = False
+    soft_shadow: bool = False
 
     @classmethod
     def names(cls) -> tuple[str, ...]:
@@ -104,14 +110,14 @@ class LookdevEffects:
 
 #: The feature each effect needs (`viewport.lookdev_features`), and the effect it depends on (AD-039 §2.1 / §2.2).
 EFFECT_FEATURE = {"shadow": "depth_texture", "thickness": "sampler_objects", "cube": "cube_rgba16f",
-                  "regions": "texture_units", "maps": "texture_units"}
-EFFECT_NEEDS: dict[str, str] = {"eye_shadow": "shadow", "thickness": "shadow"}
+                  "regions": "texture_units", "maps": "texture_units", "soft_shadow": "sampler_objects"}
+EFFECT_NEEDS: dict[str, str] = {"eye_shadow": "shadow", "thickness": "shadow", "soft_shadow": "shadow"}
 #: The panel's reasons for a greyed effect (German, the panel's language).
 FEATURE_REASON = {"depth_texture": "Tiefentextur fehlt", "sampler_objects": "Sampler-Objekte fehlen",
                   "cube_rgba16f": "Cube-Ziel fehlt", "texture_units": "zu wenige Textureinheiten"}
 EFFECT_LABEL = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz",
                 "thickness": "Durchleuchtung", "cube": "Umgebungs-Cube", "regions": "Region-Materialien",
-                "maps": "Maps", "area_diffuse": "Weiches Licht"}
+                "maps": "Maps", "area_diffuse": "Weiches Licht", "soft_shadow": "Weicher Schatten"}
 
 
 def effect_reasons(effects: LookdevEffects, features=None) -> dict[str, str | None]:
@@ -588,6 +594,76 @@ def ld_key_shadowed(albedo, n, v, wrap, roughness, f0, values: dict, visibility,
 
 
 # -- S4: the key's light through thin parts (AD-039 §7) ---------------------------------------------------------------
+
+def soft_shadow_lift(size: float, radius: float, offset: float) -> float:
+    """The lifted lookup's lift in normal offsets with „Weicher Schatten“ (S9, AD-039 §24, `ld_key_shadow_soft`):
+    `SHADOW_WRAP_LIFT` plus `SOFT_SHADOW_BAND_LIFT` x R x s³ world units (R the map's radius, s = size x
+    `AREA_SIN_MAX`), over the normal offset `offset` (world units)."""
+    s = float(size) * AREA_SIN_MAX
+    return SHADOW_WRAP_LIFT + SOFT_SHADOW_BAND_LIFT * float(radius) * s * s * s / max(float(offset), 1e-9)
+
+
+def _soft_far(o_len, texel):
+    t = np.clip((o_len / texel - SOFT_SHADOW_NEAR) / (1.5 * SOFT_SHADOW_NEAR), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)  # GLSL smoothstep(NEAR, 2.5 NEAR, |o| in texels)
+
+
+def soft_shadow_visibility(depth: np.ndarray, sp, spl, size, slope=(0.0, 0.0), slope_l=(0.0, 0.0),
+                           scale: float = 1.0) -> tuple[np.ndarray, np.ndarray]:
+    """GLSL `ld_soft_visibility` (S9 „Weicher Schatten“, AD-039 §24): (vis, vis_wrap) at the map points `sp` and `spl`
+    (..., 3) with their receiver-plane slopes, for the key's `size`, over the map `depth` (storage, row 0 = v 0; its
+    rendered part `scale`). A blocker search of `SOFT_SHADOW_SEARCH_TAPS` raw fetches (`bilinear_depth`) - within
+    `SOFT_SHADOW_NEAR` texels against the receiver plane, farther out a blocker max(`SOFT_SHADOW_CONE`, cot sigma) x |o|
+    above the receiver (the light's cone); none = lit - then a PCF of `SOFT_SHADOW_PCF_TAPS` compare fetches (`compare_bilinear`) of radius (z - mean
+    blocker depth) x tan sigma at both points, farther out compared against `SOFT_SHADOW_LEVEL` x that depth above the
+    receiver, faded in over the first `SOFT_SHADOW_FADE` blockers (a blocker in the near zone counts in full at once).
+    Outside the map's box the PCF is lit."""
+    sp = np.asarray(sp, dtype=np.float64)
+    spl = np.asarray(spl, dtype=np.float64)
+    slope = np.broadcast_to(np.asarray(slope, dtype=np.float64), sp[..., :2].shape)
+    slope_l = np.broadcast_to(np.asarray(slope_l, dtype=np.float64), spl[..., :2].shape)
+    radius_uv = 1.0 / depth.shape[1]  # u_ld_shadow_radius: one texel of the storage
+    texel = radius_uv / scale
+    s = np.asarray(size, dtype=np.float64) * AREA_SIN_MAX
+    tan_sigma = s / np.sqrt(np.maximum(1.0 - s * s, 1e-6))
+    rs = np.clip(SOFT_SHADOW_SEARCH * tan_sigma, SOFT_SHADOW_SEARCH_MIN * texel, SOFT_SHADOW_MAX * radius_uv)
+    rs = np.broadcast_to(rs, sp.shape[:-1])
+    cone = np.maximum(SOFT_SHADOW_CONE, 1.0 / np.maximum(tan_sigma, 1e-3))
+    acc_d = np.zeros(sp.shape[:-1])
+    acc_n = np.zeros(sp.shape[:-1])
+    acc_near = np.zeros(sp.shape[:-1])
+    for tx, ty in SOFT_SHADOW_SEARCH_TAPS:
+        o = np.stack([tx * rs, ty * rs], -1)
+        o_len = np.hypot(o[..., 0], o[..., 1])
+        d = bilinear_depth(depth, (sp[..., :2] + o) * scale)
+        far = _soft_far(o_len, texel)
+        ref = sp[..., 2] - 2.0 * SHADOW_DEPTH_BIAS + (1.0 - far) * np.sum(slope * o, -1) - far * o_len * cone
+        b = (d <= ref).astype(np.float64)
+        acc_d = acc_d + d * b
+        acc_n = acc_n + b
+        acc_near = acc_near + b * (1.0 - far)
+    found = acc_n > 0.5
+    zb = np.where(found, acc_d / np.maximum(acc_n, 1.0), sp[..., 2])
+    blocker = np.maximum(sp[..., 2] - zb, 0.0)
+    r = np.clip(blocker * tan_sigma, SOFT_SHADOW_PCF_MIN * texel, SOFT_SHADOW_MAX * radius_uv)
+    level = SOFT_SHADOW_LEVEL * blocker
+
+    def pcf(point, slp):
+        total = np.zeros(point.shape[:-1])
+        for tx, ty in SOFT_SHADOW_PCF_TAPS:
+            o = np.stack([tx * r, ty * r], -1)
+            far = _soft_far(np.hypot(o[..., 0], o[..., 1]), texel)
+            ref = point[..., 2] - SHADOW_DEPTH_BIAS + (1.0 - far) * np.sum(slp * o, -1) - far * level
+            # a fixed-point depth texture clamps the reference to [0, 1] before the compare (GL 3.3 §3.8.16)
+            total = total + compare_bilinear(depth, (point[..., :2] + o) * scale, np.clip(ref, 0.0, 1.0))
+        inside = np.all((point >= 0.0) & (point <= 1.0), axis=-1)
+        return np.where(inside, total / len(SOFT_SHADOW_PCF_TAPS), 1.0)
+
+    w = np.minimum(acc_n / SOFT_SHADOW_FADE + acc_near, 1.0)
+    vis = np.where(found, 1.0 - w * (1.0 - pcf(sp, slope)), 1.0)
+    vis_wrap = np.where(found, 1.0 - w * (1.0 - pcf(spl, slope_l)), 1.0)
+    return vis, vis_wrap
+
 
 def bilinear_depth(depth: np.ndarray, uv) -> np.ndarray:
     """A raw `sampler2D` fetch of the depth map with GL_LINEAR and CLAMP_TO_EDGE (the S4 sampler object): the four

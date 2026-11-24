@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 import tests._bootstrap  # noqa: F401
 
 from viewport import eye_shaders as es
@@ -361,6 +363,62 @@ def test_the_soft_light_variant_calls_the_area_term_for_the_lights_and_the_shado
     assert "ld_area" not in ls.LD_COMMON_SRC and "AREA" not in ls.LD_COMMON_SRC
     assert _defined_functions(ls.LD_AREA_SRC) == {"ld_area_wrap", "ld_diffuse_area"}
     assert ls.SKIN_EFFECTS == ("SHADOW", "DUAL_LOBE", "THICKNESS")
+
+
+def test_the_soft_shadow_off_keeps_every_earlier_pin():
+    """AD-039 §24 (S9): `soft_shadow=False` = the sources before S9, character for character (every earlier pin, the
+    soft light's variants too)."""
+    import itertools
+
+    maps = dict(roughness_map=True, normal_map=True, translucency_map=True)
+    every = dict(shadow=True, dual_lobe=True, thickness=True, **maps)
+    assert skin_sources_digest(soft_shadow=False) == (12, PINNED_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, soft_shadow=False) == (12, PINNED_S1_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, soft_shadow=False) == (12, PINNED_S3_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, thickness=True, soft_shadow=False) == (
+        12, PINNED_S4_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(soft_shadow=False, **every) == (12, PINNED_S7_SKIN_SOURCES_SHA256)
+    assert s5_skin_sources_digest(soft_shadow=False, **every) == (12, PINNED_S5_SKIN_SOURCES_SHA256)
+    for area, regions in itertools.product((False, True), repeat=2):
+        assert skin_sources_digest(area_diffuse=area, regions=regions, **every) == skin_sources_digest(
+            area_diffuse=area, regions=regions, soft_shadow=False, **every)
+    assert skin_sources_digest(shadow=True, soft_shadow=True)[1] != PINNED_S1_SKIN_SOURCES_SHA256
+
+
+def test_the_soft_shadow_variant_replaces_the_two_key_lookups_and_reads_the_raw_depth_once():
+    """AD-039 §24: `SOFT_SHADOW` once (last), `LD_SOFT_SHADOW_SRC` once after the shadow's and the thickness's libraries;
+    the raw depth's sampler declared exactly once (by `LD_SOFT_SHADOW_DEPTH_SRC`, or by `LD_THICKNESS_SRC` when the
+    thickness is on); in each `SHADOW` statement `vis` / `vis_wrap` from `ld_key_shadow_soft` (with the geometric normal
+    under `NORMAL_MAP`) instead of the two plain lookups. It needs the shadow. Off: no text left; the eye's libraries
+    (`LD_COMMON_SRC`, `LD_SHADOW_SRC`) are untouched."""
+    import itertools
+
+    locations = {"position": 0, "normal": 1}
+    for albedo, env, dual, thick, nmap, area in itertools.product((False, True), repeat=6):
+        fs = ls.skin_sources(locations, albedo, env, True, dual, thick, normal_map=nmap, area_diffuse=area,
+                             soft_shadow=True)[2][0]
+        assert fs.count("#define SOFT_SHADOW 1\n") == 1 and fs.count(ls.LD_SOFT_SHADOW_SRC) == 1
+        assert fs.index("#define SOFT_SHADOW 1") > max(fs.index("#define SHADOW 1"), fs.find("#define AREA_DIFFUSE 1"))
+        assert fs.index(ls.LD_SHADOW_SRC) < fs.index(ls.LD_SOFT_SHADOW_SRC)
+        if thick:
+            assert fs.index(ls.LD_THICKNESS_SRC) < fs.index(ls.LD_SOFT_SHADOW_SRC)
+        assert fs.count("uniform sampler2D u_ld_shadow_depth;") == 1
+        assert fs.index("uniform sampler2D u_ld_shadow_depth;") < fs.index(ls.LD_SOFT_SHADOW_SRC)
+        body = fs[fs.index("void main()"):]
+        calls = body.count("vec2 vis_soft = ld_key_shadow_soft(v_world_pos, ")
+        assert calls == (2 if nmap else 1)  # the NORMAL_MAP block keeps both normals' statements
+        assert ("ld_key_shadow_soft(v_world_pos, n_geo, u_ld_light_dir[0])" in body) == nmap
+        assert "float vis = ld_key_visibility(" in body  # in the #else part, resolved by the preprocessor
+        off = ls.skin_sources(locations, albedo, env, True, dual, thick, normal_map=nmap, area_diffuse=area)[2][0]
+        assert "SOFT_SHADOW" not in off and "ld_key_shadow_soft" not in off and "ld_soft_" not in off
+    with pytest.raises(ValueError):
+        ls.skin_sources(locations, False, True, shadow=False, soft_shadow=True)
+    assert not any(t in src for t in ("ld_soft", "SOFT_SHADOW", "LD_SOFT") for src in (ls.LD_COMMON_SRC, ls.LD_SHADOW_SRC))
+    assert _defined_functions(ls.LD_SOFT_SHADOW_SRC) == {"ld_soft_tan_sigma", "ld_soft_far", "ld_soft_blockers",
+                                                          "ld_soft_pcf", "ld_soft_visibility", "ld_key_shadow_soft"}
+    assert not set(re_uniforms(ls.LD_SOFT_SHADOW_SRC))
+    assert re_uniforms(ls.LD_SOFT_SHADOW_DEPTH_SRC) == ["u_ld_shadow_depth"]
+    assert len(ls.SOFT_SHADOW_SEARCH_TAPS) == len(ls.SOFT_SHADOW_PCF_TAPS) == ls.SOFT_SHADOW_TAPS
 
 
 def re_uniforms(src: str) -> list[str]:

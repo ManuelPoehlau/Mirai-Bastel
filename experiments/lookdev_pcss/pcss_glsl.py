@@ -91,7 +91,7 @@ class Pcss:
     #: when it lies more than |o| x `cone` above the receiver - the receiver's own surface up to that steepness is not)
     #: or "both" (above the cone and above the receiver plane)
     search_test: str = "plane"
-    cone: float = 1.0          # 0 = the light's own cone: 1 / tan sigma
+    cone: float = 1.0          # 0 = the light's own cone: 1 / tan sigma; < 0: max(-cone, 1 / tan sigma)
     #: behind the terminator (n.l < 0: a facet turned away from the key, its plane lies behind the lit front) the
     #: receiver plane is meaningless: True = compare flat there (slope 0)
     back_flat: bool = False
@@ -131,6 +131,9 @@ class Pcss:
     #: fewer ALU per fetch: the plane / level blend and the cone length per fragment from the radius, the taps'
     #: lengths as constants, no per-tap smoothstep / length
     lean: bool = False
+    #: the fade counts a blocker found in the near zone (the receiver plane's, within ~NEAR texels) in full: a contact
+    #: blocker right over the receiver switches the PCF on at once, only stray hits at the search's edge fade in
+    fade_near: bool = False
     level: float = 0.5
 
     def label(self) -> str:
@@ -150,7 +153,7 @@ class Pcss:
                 + ("" if self.search_min == 1.0 else f"-sm{self.search_min:g}")
                 + ("" if not self.search_kind else f"-{self.search_kind}")
                 + ("" if not self.probe else f"-{self.probe}") + ("" if not self.unroll else f"-u{self.unroll}")
-                + ("-lean" if self.lean else ""))
+                + ("-lean" if self.lean else "") + ("-fn" if self.fade_near else ""))
 
 
 def _array(name: str, points) -> str:
@@ -167,7 +170,8 @@ def library(p: Pcss) -> str:
     from viewport.lookdev_shaders import AREA_SIN_MAX
 
     if p.search_at == "shared":  # one search at the surface point; its penumbra for both lookups
-        body = """    vec2 found = ldx_blockers(sp, slope, rs);
+        body = """    vec3 found3 = ldx_blockers(sp, slope, rs);
+    vec2 found = found3.xy;
 """ + ("""    if (found.y < 0.5) return vec2(1.0);
 """ if p.early else "") + ("""    float chord = found.y > 0.5 ? max(sp.z - found.x / found.y, 0.0) * 2.0 * radius : 0.0;  // world units
     spl = ld_shadow_coord_lifted(p, n, l, LD_SHADOW_WRAP_LIFT
@@ -175,25 +179,28 @@ def library(p: Pcss) -> str:
     slope_l = slope;  // the lifted plane is parallel to the receiver's
 """ if p.chord else "") + """    float r = ldx_penumbra(sp.z, found, rmin);
     float lv = ldx_level(sp.z, found);
-    float w = LDX_FADE > 0.0 ? min(found.y / LDX_FADE, 1.0) : 1.0;
+    float w = LDX_FADE > 0.0 ? min(found.y / LDX_FADE + LDX_FADE_NEAR * found3.z, 1.0) : 1.0;
     return vec2(1.0) - w * (vec2(1.0) - vec2(ldx_pcf(sp, slope, r, lv), ldx_pcf(spl, slope_l, r, lv)));"""
     elif p.search_at == "each":  # each lookup searches for itself
         if p.early:
-            body = """    vec2 found = ldx_blockers(sp, slope, rs);
-    vec2 found_l = ldx_blockers(spl, slope_l, rs);
+            body = """    vec3 found3 = ldx_blockers(sp, slope, rs);
+    vec2 found = found3.xy;
+    vec2 found_l = ldx_blockers(spl, slope_l, rs).xy;
     float v = found.y < 0.5 ? 1.0 : ldx_pcf(sp, slope, ldx_penumbra(sp.z, found, rmin), ldx_level(sp.z, found));
     float v_l = found_l.y < 0.5 ? 1.0 : ldx_pcf(spl, slope_l, ldx_penumbra(spl.z, found_l, rmin),
                                                ldx_level(spl.z, found_l));
     return vec2(v, v_l);"""
         else:
-            body = """    vec2 found = ldx_blockers(sp, slope, rs);
-    vec2 found_l = ldx_blockers(spl, slope_l, rs);
+            body = """    vec3 found3 = ldx_blockers(sp, slope, rs);
+    vec2 found = found3.xy;
+    vec2 found_l = ldx_blockers(spl, slope_l, rs).xy;
     return vec2(ldx_pcf(sp, slope, ldx_penumbra(sp.z, found, rmin), ldx_level(sp.z, found)),
                 ldx_pcf(spl, slope_l, ldx_penumbra(spl.z, found_l, rmin), ldx_level(spl.z, found_l)));"""
     else:
         raise ValueError(p.search_at)
     if p.probe == "search":
-        body = """    vec2 found = ldx_blockers(sp, slope, rs);
+        body = """    vec3 found3 = ldx_blockers(sp, slope, rs);
+    vec2 found = found3.xy;
     return vec2(1.0 - found.y / float(LDX_NB), clamp(found.x, 0.0, 1.0));"""
     elif p.probe == "pcf":
         body = """    float lv = 0.01 * sp.z;
@@ -225,6 +232,7 @@ const float LDX_CONE = {float(p.cone)!r};
 const float LDX_LEVEL = {float(p.level)!r};
 const float LDX_BAND_LIFT = {float(p.band_lift)!r};
 const float LDX_FADE = {float(p.fade)!r};
+const float LDX_FADE_NEAR = {1.0 if p.fade_near else 0.0!r};
 const float LDX_BAND_POWER = {float(p.band_power)!r};
 const float LDX_NEAR = {float(p.near)!r};
 const float LDX_CHORD = {float(p.chord)!r};
@@ -239,7 +247,8 @@ float ldx_tan_sigma() {{
     return s / sqrt(max(1.0 - s * s, 1e-6));
 }}
 float ldx_cone() {{
-    return LDX_CONE > 0.0 ? LDX_CONE : 1.0 / max(ldx_tan_sigma(), 1e-3);
+    // > 0: that slope; 0: the light's own cone cot sigma; < 0: the light's cone, at least -LDX_CONE
+    return LDX_CONE > 0.0 ? LDX_CONE : max(-LDX_CONE, 1.0 / max(ldx_tan_sigma(), 1e-3));
 }}
 // 0 near the map point (the receiver plane decides), 1 from 2.5 x LDX_NEAR texels out (the cone / level decides)
 float ldx_far(vec2 o) {{
@@ -247,8 +256,8 @@ float ldx_far(vec2 o) {{
 }}
 // x: the summed depth of the blockers around sp within radius r (map UV), y: how many; a blocker is nearer to the
 // key than the receiver's own plane at the fetch (the receiver-plane bias of the PCF)
-vec2 ldx_blockers(vec3 sp, vec2 slope, float r) {{
-    vec2 acc = vec2(0.0);
+vec3 ldx_blockers(vec3 sp, vec2 slope, float r) {{
+    vec3 acc = vec3(0.0);
 #if defined(LDX_LEAN)
     float rc = r * ldx_cone();
     float fw = smoothstep(LDX_NEAR, 2.5 * LDX_NEAR, 0.5 * r * u_ld_shadow_scale / u_ld_shadow_radius);
@@ -267,7 +276,11 @@ vec2 ldx_blockers(vec3 sp, vec2 slope, float r) {{
 #else
         float b = step(d, sp.z - LD_SHADOW_BIAS + dot(slope, o) - LD_SHADOW_BIAS);
 #endif
-        acc += vec2(d * b, b);
+#if defined(LDX_NEAR_ON) && !defined(LDX_LEAN)
+        acc += vec3(d * b, b, b * (1.0 - ldx_far(o)));
+#else
+        acc += vec3(d * b, b, 0.0);
+#endif
     }}
     return acc;
 }}

@@ -275,18 +275,59 @@ def test_the_penumbra_widens_with_the_keys_softness(gl_window):
     _release(viewport)
 
 
+def _box_at(height: float):
+    """A thin plate (BOX's footprint 0.8 x 0.8, 0.05 thick) `height` above the plane: one blocker distance."""
+    return (-0.4, height, -0.4), (0.4, height + 0.05, 0.4)
+
+
+def _penumbra_pixels(gl_window, effects, size: float, height: float) -> tuple[int, int]:
+    """(partial pixels, dark core pixels) of the plate's shadow on the plane, `height` above it, under
+    the default key (azimuth 200, elevation 60), seen as `test_the_penumbra_widens_with_the_keys_softness`."""
+    camera = OrbitCamera(target=(0.0, 0.2, 0.0), distance=5.5, yaw=0.3, pitch=0.75)
+    box = _box_at(height)
+    viewport = _viewport(gl_window, {"ground": _ground(), "box": _box(*box)}, camera)
+    viewport.set_shading("lookdev", _state(size=size, effects=OFF))
+    lit = _frame(gl_window, viewport).max(axis=-1)
+    viewport.set_shading("lookdev", _state(size=size, effects=effects))
+    shaded = _frame(gl_window, viewport).max(axis=-1)
+    origin, direction = _rays(viewport)
+    on_box, _ = _hits_box(origin, direction, *box)
+    t = -origin[..., 1] / direction[..., 1]
+    ground = (t > 0) & ~_grow(on_box, 2)
+    fraction = np.where(lit > 0, shaded / np.maximum(lit, 1), 1.0)
+    _release(viewport)
+    return int((ground & (fraction > 0.1) & (fraction < 0.9)).sum()), int((ground & (fraction <= 0.1)).sum())
+
+
+def test_the_soft_shadow_widens_with_the_distance_to_the_blocker(gl_window):
+    """AD-039 §24 (S9, Manu 2026-11-24: „der Übergang von Nase zur Wange … seltsam/unrealistisch“): with „Weicher
+    Schatten“ the penumbra grows with the receiver-to-blocker distance - the same plate 0.9 above the plane casts a much
+    wider penumbra than 0.1 above it, where the shadow stays nearly hard with its dark core. Without it the map's fixed
+    penumbra does not change with the height."""
+    soft_low, soft_high = (_penumbra_pixels(gl_window, lo.LookdevEffects(soft_shadow=True), 0.45, h) for h in (0.1, 0.9))
+    hard_low, hard_high = (_penumbra_pixels(gl_window, lo.LookdevEffects(), 0.45, h) for h in (0.1, 0.9))
+    # (measured 2026-11-24, llvmpipe: soft 88 -> 1069 partial pixels, today 61 -> 201: the visible shadow grows too)
+    soft_growth, hard_growth = soft_high[0] / max(soft_low[0], 1), hard_high[0] / max(hard_low[0], 1)
+    assert soft_growth > 2.5 * hard_growth, (soft_low, soft_high, hard_low, hard_high)
+    assert soft_low[0] < 2 * hard_low[0], (soft_low, hard_low)  # near the plane about as sharp as today
+    assert soft_high[0] > 3 * hard_high[0], (soft_high, hard_high)
+
+
 # -- T1-2: no acne on a lit sphere ------------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("key_el, size", [(60.0, 0.0), (20.0, 0.0), (60.0, 0.3), (20.0, 1.0)])
-def test_a_lit_sphere_does_not_shadow_its_lit_half(gl_window, key_el, size):
+@pytest.mark.parametrize("key_el, size, soft", [(60.0, 0.0, False), (20.0, 0.0, False), (60.0, 0.3, False),
+                                                (20.0, 1.0, False), (60.0, 0.0, True), (60.0, 0.45, True),
+                                                (20.0, 1.0, True)])
+def test_a_lit_sphere_does_not_shadow_its_lit_half(gl_window, key_el, size, soft):
     """No acne, also with a soft key (AD-039 §16.6: Manu 2026-11-22 „Weichheit wirkt noch sehr unsauber“ - the spread
-    fetches dipped under the curved surface)."""
+    fetches dipped under the curved surface). AD-039 §24 (S9): the same with „Weicher Schatten“ (its wide kernels
+    compare beyond a few texels against the blockers' level, not the receiver plane)."""
     camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.0, yaw=0.5, pitch=0.3)
     viewport = _viewport(gl_window, {"sphere": _sphere()}, camera)
     state = _state(key_az=30.0, key_el=key_el, size=size, effects=OFF)
     viewport.set_shading("lookdev", state)
     without = _frame(gl_window, viewport)
-    viewport.set_shading("lookdev", dataclasses.replace(state, effects=lo.LookdevEffects()))
+    viewport.set_shading("lookdev", dataclasses.replace(state, effects=lo.LookdevEffects(soft_shadow=soft)))
     with_shadow = _frame(gl_window, viewport)
     origin, direction = _rays(viewport)
     b = np.sum(origin * direction, -1)
@@ -308,18 +349,23 @@ def test_a_lit_sphere_does_not_shadow_its_lit_half(gl_window, key_el, size):
 WRAPPED = LookDraw((0.5, 0.5, 0.5), roughness=0.5, specular=0.5, wrap_rgb=(0.5, 0.3, 0.2))
 
 
-@pytest.mark.parametrize("size, area", [(0.0, False), (0.5, True), (1.0, True)])
-def test_a_cast_shadow_at_a_grazing_key_keeps_the_wrap_and_the_highlight_dark(gl_window, size, area):
+@pytest.mark.parametrize("size, area, soft", [(0.0, False, False), (0.5, True, False), (1.0, True, False),
+                                              (0.0, False, True), (0.03, True, True)])
+def test_a_cast_shadow_at_a_grazing_key_keeps_the_wrap_and_the_highlight_dark(gl_window, size, area, soft):
     """Manu, 2026-11-22: „in der Nase und um die Mundwinkel entstehen sehr helle Ränder um die Schatten“ - a cast
     shadow on a surface the key grazes (n.l < 0.3) let the wrap and the highlight through. The box's footprint on the
     plane under a 15° key is black (no fill, no environment). AD-039 §23 (S8): the same with the soft light on at the
     key's size 0.5 (the cast shadow under the softer map; the plane's wrapped cosine 0.46 - 0.76 lies above the band)
-    and 1 (sin sigma 0.64: green and blue in the band) - the band joins the wrap's excess and stays dark with it."""
+    and 1 (sin sigma 0.64: green and blue in the band) - the band joins the wrap's excess and stays dark with it.
+    AD-039 §24 (S9): with „Weicher Schatten“ at size 0 and at Manu's §16.7 size 0.03. The box floats 2.3 - 4.6 units
+    above the plane along the key, so the true penumbra reaches 4.6 tan sigma (0.09 at 0.03) into the footprint: the
+    band left out around the edge is that (x 1.3, + 0.05), the dark core inside it is then ~40 pixels and black (with a
+    0.1 band it read p99 13/255 - the penumbra, not a leak; at 0.06 this scene has no core left)."""
     camera = OrbitCamera(target=(0.0, 0.2, 0.0), distance=5.5, yaw=0.3, pitch=0.75)
     viewport = _viewport(gl_window, {"ground": _ground(), "box": _box(*BOX)}, camera)
     for key in ("ground", "box"):
         viewport.set_object_entry(key, viewport.object_entries[key].mesh, (0.5, 0.5, 0.5), look=WRAPPED)
-    state = _state(key_el=15.0, size=size, effects=lo.LookdevEffects(area_diffuse=area))
+    state = _state(key_el=15.0, size=size, effects=lo.LookdevEffects(area_diffuse=area, soft_shadow=soft))
     viewport.set_shading("lookdev", state)
     pixels = _frame(gl_window, viewport).max(axis=-1)
     origin, direction = _rays(viewport)
@@ -329,30 +375,40 @@ def test_a_cast_shadow_at_a_grazing_key_keeps_the_wrap_and_the_highlight_dark(gl
     key = _key_dir(state)
     shaded, _ = _hits_box(point, np.broadcast_to(key, point.shape), *BOX)
     band = np.zeros_like(shaded)
-    for dx, dz in BAND * (0.05 if size <= 0.5 else 0.08):  # at size 1 the map has 171 texels: a wider penumbra
+    sin_sigma = size * ls.AREA_SIN_MAX
+    # soft: the true penumbra, the box 2.3 - 4.6 above the plane along the 15° key: 4.6 tan sigma (x 1.3, + 0.05);
+    # at size 1 the effective map has 171 texels (today's wider fixed penumbra)
+    width = (0.05 + 1.3 * 4.6 * sin_sigma / math.sqrt(1.0 - sin_sigma ** 2) if soft
+             else 0.05 if size <= 0.5 else 0.08)
+    for dx, dz in BAND * width:
         moved, _ = _hits_box(point + np.array([dx, 0.0, dz]), np.broadcast_to(key, point.shape), *BOX)
         band |= moved != shaded
     ground = (t > 0) & ~_grow(on_box, 2) & (np.abs(point[..., 0]) < 1.9) & (np.abs(point[..., 2]) < 1.9)
     inside, outside = ground & shaded & ~band, ground & ~shaded & ~band
-    assert inside.sum() > 150 and outside.sum() > 3000
+    assert inside.sum() > (30 if soft else 150) and outside.sum() > 3000, (inside.sum(), outside.sum())
     assert np.percentile(pixels[inside], 99) <= 2, np.percentile(pixels[inside], 99)
     assert np.median(pixels[outside]) > 60  # the plane outside is lit (Lambert 0.26 + the wrap)
     _release(viewport)
 
 
-@pytest.mark.parametrize("size, area", [(0.0, False), (0.5, True)])
-def test_the_wrap_past_a_convex_terminator_is_not_cut(gl_window, size, area):
+@pytest.mark.parametrize("size, area, soft", [(0.0, False, False), (0.5, True, False), (0.0, False, True),
+                                              (0.5, True, True), (1.0, True, True)])
+def test_the_wrap_past_a_convex_terminator_is_not_cut(gl_window, size, area, soft):
     """A sphere with a wide wrap: past the terminator (n.l in [-0.2, 0]) the wrap's light stays as without the shadow
     (the convex surface's own shadow is left behind by the lifted lookup), while the lit half is untouched. AD-039 §23
     (S8): the same with the soft light on and the key's size 0.5 (both frames with it) - the area band past the
-    terminator is not cut either (rule „lifted“)."""
+    terminator is not cut either (rule „lifted“). AD-039 §24 (S9): with „Weicher Schatten“ as well, up to size 1 (the
+    lifted lookup's band lift R s³). There the band sees only part of the disc: in this scene at size 0.5 the
+    reference of 16 hard keys over the disc keeps a median 0.94 (measured 2026-11-24), the soft shadow 0.87 - so its
+    gate is a median of 0.85 and no hard cut (kept > 0.6), production without it (1.0) keeps its 0.95."""
     camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.0, yaw=1.2, pitch=0.2)
     viewport = _viewport(gl_window, {"sphere": _sphere()}, camera)
     viewport.set_object_entry("sphere", viewport.object_entries["sphere"].mesh, (0.5, 0.5, 0.5), look=WRAPPED)
     state = _state(key_az=30.0, key_el=20.0, size=size, effects=dataclasses.replace(OFF, area_diffuse=area))
     viewport.set_shading("lookdev", state)
     without = _frame(gl_window, viewport).astype(float)
-    viewport.set_shading("lookdev", dataclasses.replace(state, effects=lo.LookdevEffects(area_diffuse=area)))
+    viewport.set_shading("lookdev", dataclasses.replace(state, effects=lo.LookdevEffects(area_diffuse=area,
+                                                                                         soft_shadow=soft)))
     with_shadow = _frame(gl_window, viewport).astype(float)
     origin, direction = _rays(viewport)
     b = np.sum(origin * direction, -1)
@@ -364,7 +420,10 @@ def test_the_wrap_past_a_convex_terminator_is_not_cut(gl_window, size, area):
     past = hit & ~past & (ndl > -0.2) & (ndl < 0.0)
     assert past.sum() > 150 and (without[past].max(-1) > 20).mean() > 0.9  # the wrap lights it
     kept = with_shadow[past].sum(-1) / np.maximum(without[past].sum(-1), 1.0)
-    assert np.median(kept) > 0.95 and (kept > 0.8).mean() > 0.97, (np.median(kept), (kept > 0.8).mean())
+    if soft:
+        assert np.median(kept) > 0.85 and (kept > 0.6).mean() > 0.97, (np.median(kept), (kept > 0.6).mean())
+    else:
+        assert np.median(kept) > 0.95 and (kept > 0.8).mean() > 0.97, (np.median(kept), (kept > 0.8).mean())
     _release(viewport)
 
 
@@ -791,7 +850,11 @@ def _full_state() -> dict:
     return state
 
 
-def test_a_frame_that_renders_the_map_leaves_the_gl_state_as_found(gl_window):
+@pytest.mark.parametrize("effects", [None, lo.LookdevEffects(thickness=False, soft_shadow=True)],
+                         ids=["default", "soft-shadow-without-thickness"])
+def test_a_frame_that_renders_the_map_leaves_the_gl_state_as_found(gl_window, effects):
+    """T1-5; AD-039 §24 (S9): also with „Weicher Schatten“ and the thickness off - the raw depth's texture and sampler
+    object on unit 7 are bound for the soft lookup alone and unbound after the draw."""
     from pyglet import gl
 
     from mirai.eye_object import DEFAULT_EYE, cornea_triangles, shell_mesh
@@ -805,7 +868,7 @@ def test_a_frame_that_renders_the_map_leaves_the_gl_state_as_found(gl_window):
     viewport.set_object_entry("eye", shell_mesh(DEFAULT_EYE), grey, model_matrix=eye_model, finish=DEFAULT_FINISH,
                               eye=EyeDraw(DEFAULT_EYE, None, grey, DEFAULT_FINISH, cornea_triangles()))
     viewport.set_eye_display(tier="full")
-    state = _state()
+    state = _state(effects=effects)
     viewport.set_shading("lookdev", state)
     _frame(gl_window, viewport)  # compiles
     for change in range(2):
@@ -1240,3 +1303,130 @@ def test_ld_key_transmission_matches_key_transmission(gl_window, scale):
     assert np.abs(got - expected).max() <= 0.03, np.abs(got - expected).max()
     assert np.abs(got - expected).mean() <= 0.003
     assert (got[-64:] == 0.0).all()  # outside the map's box: no light passes
+
+
+SOFT_PARITY_BODY = """
+uniform samplerBuffer u_inputs;
+uniform int u_width;
+uniform int u_count;
+layout(location = 0) out vec4 out_value;
+void main() {
+    int i = int(gl_FragCoord.y) * u_width + int(gl_FragCoord.x);
+    if (i >= u_count) { out_value = vec4(0.0); return; }
+    vec4 a = texelFetch(u_inputs, 3 * i);
+    vec4 b = texelFetch(u_inputs, 3 * i + 1);
+    vec4 c = texelFetch(u_inputs, 3 * i + 2);
+    out_value = vec4(ld_soft_visibility(a.xyz, b.xyz, vec2(a.w, b.w), c.xy), 0.0, 1.0);
+}
+"""
+
+
+@pytest.mark.parametrize("size", [0.0, 0.45, 1.0])
+def test_ld_soft_visibility_matches_soft_shadow_visibility(gl_window, size):
+    """AD-039 §24 (S9, twin): a 128² depth map - a receiver surface at 0.7 with raised blockers (discs at 0.35 and a
+    ridge near the receiver at 0.62, the contact case) - uploaded as the compare texture on unit 6 and read raw on unit 7
+    through `KeyShadow`'s sampler object (the production binding); `ld_soft_visibility` at 4,096 map points (receivers
+    under, beside and between the blockers, random receiver-plane slopes, a lifted point near each) against
+    `lookdev_optics.soft_shadow_visibility`. The search's and the PCF's comparisons are steps: where a stored depth equals
+    a reference within float32, GPU and twin may count a fetch differently - hence a mean and a tail, not a maximum."""
+    from pyglet import gl
+    from pyglet.graphics.shader import Shader, ShaderProgram
+
+    from viewport.gl_render_store import _register_sampler_buffer_uniform
+    from viewport.lookdev_shadow import KeyShadow, register_shadow_sampler_uniform
+
+    gl_window.switch_to()
+    _register_sampler_buffer_uniform()
+    register_shadow_sampler_uniform()
+    rng = np.random.default_rng(23)
+    size_px, width, count = 128, 64, 4096
+    yy, xx = np.mgrid[0:size_px, 0:size_px] / size_px
+    depth = np.full((size_px, size_px), 0.7)
+    for cx, cy, r in ((0.3, 0.3, 0.12), (0.7, 0.6, 0.18), (0.25, 0.75, 0.06)):
+        depth = np.where(np.hypot(xx - cx, yy - cy) < r, 0.35, depth)
+    depth = np.where((np.abs(xx - 0.55) < 0.02) & (yy < 0.4), 0.62, depth)  # a low ridge: the contact case
+    depth = np.ascontiguousarray(depth, dtype=np.float32)
+    sp = np.stack([rng.uniform(0.0, 1.0, count), rng.uniform(0.0, 1.0, count), rng.uniform(0.66, 0.72, count)], -1)
+    spl = sp + rng.uniform(-0.004, 0.004, (count, 3)) + [0.0, 0.0, 0.01]
+    slope, slope_l = rng.uniform(-0.5, 0.5, (count, 2)), rng.uniform(-0.5, 0.5, (count, 2))
+    expected = np.stack(lo.soft_shadow_visibility(depth.astype(np.float64), sp, spl, size, slope, slope_l), -1)
+
+    def gen(fn) -> int:
+        ident = gl.GLuint()
+        fn(1, ctypes.byref(ident))
+        return ident.value
+
+    texture, buffer, buf_tex, fbo, rbo, vao = (gen(gl.glGenTextures), gen(gl.glGenBuffers), gen(gl.glGenTextures),
+                                               gen(gl.glGenFramebuffers), gen(gl.glGenRenderbuffers),
+                                               gen(gl.glGenVertexArrays))
+    gl.glActiveTexture(gl.GL_TEXTURE0 + ls.SHADOW_UNIT)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, texture)
+    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_DEPTH_COMPONENT24, size_px, size_px, 0, gl.GL_DEPTH_COMPONENT,
+                    gl.GL_FLOAT, depth.ctypes.data_as(ctypes.c_void_p))
+    for name, value in ((gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR), (gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR),
+                        (gl.GL_TEXTURE_WRAP_S, gl.GL_CLAMP_TO_BORDER), (gl.GL_TEXTURE_WRAP_T, gl.GL_CLAMP_TO_BORDER),
+                        (gl.GL_TEXTURE_COMPARE_MODE, gl.GL_COMPARE_REF_TO_TEXTURE),
+                        (gl.GL_TEXTURE_COMPARE_FUNC, gl.GL_LEQUAL)):
+        gl.glTexParameteri(gl.GL_TEXTURE_2D, name, value)
+    gl.glTexParameterfv(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_BORDER_COLOR, (gl.GLfloat * 4)(1.0, 1.0, 1.0, 1.0))
+    shadow = KeyShadow(size=size_px)
+    shadow._targets = [(texture, 0)]  # the uploaded map stands in for a rendered one (bind_raw reads only this)
+    shadow.bind_raw(ls.SHADOW_RAW_UNIT)
+    data = np.zeros((count, 3, 4), np.float32)
+    data[:, 0, :3], data[:, 0, 3] = sp, slope[:, 0]
+    data[:, 1, :3], data[:, 1, 3] = spl, slope[:, 1]
+    data[:, 2, :2] = slope_l
+    gl.glBindBuffer(gl.GL_TEXTURE_BUFFER, buffer)
+    gl.glBufferData(gl.GL_TEXTURE_BUFFER, data.nbytes, data.ctypes.data_as(ctypes.c_void_p), gl.GL_STATIC_DRAW)
+    gl.glActiveTexture(gl.GL_TEXTURE0 + 1)
+    gl.glBindTexture(gl.GL_TEXTURE_BUFFER, buf_tex)
+    gl.glTexBuffer(gl.GL_TEXTURE_BUFFER, gl.GL_RGBA32F, buffer)
+    gl.glActiveTexture(gl.GL_TEXTURE0)
+    height = count // width
+    gl.glBindRenderbuffer(gl.GL_RENDERBUFFER, rbo)
+    gl.glRenderbufferStorage(gl.GL_RENDERBUFFER, gl.GL_RGBA32F, width, height)
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo)
+    gl.glFramebufferRenderbuffer(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0, gl.GL_RENDERBUFFER, rbo)
+    assert gl.glCheckFramebufferStatus(gl.GL_FRAMEBUFFER) == gl.GL_FRAMEBUFFER_COMPLETE
+    fragment = ("#version 330 core\nuniform float u_ld_light_size[1];\n" + ls.LD_SHADOW_SRC
+                + ls.LD_SOFT_SHADOW_DEPTH_SRC + ls.LD_SOFT_SHADOW_SRC + SOFT_PARITY_BODY)
+    program = ShaderProgram(Shader(ls.FULLSCREEN_VERTEX_SRC, "vertex"), Shader(fragment, "fragment"))
+    program.use()
+    active = program.uniforms
+    values = {"u_inputs": 1, "u_width": width, "u_count": count, "u_ld_shadow": ls.SHADOW_UNIT,
+              "u_ld_shadow_depth": ls.SHADOW_RAW_UNIT, "u_ld_shadow_radius": 1.0 / size_px,
+              "u_ld_shadow_scale": 1.0, "u_ld_light_size": float(size)}
+    for name, value in values.items():
+        if name in active:
+            program[name] = value
+    gl.glViewport(0, 0, width, height)
+    gl.glDisable(gl.GL_DEPTH_TEST)
+    gl.glBindVertexArray(vao)
+    gl.glDrawArrays(gl.GL_TRIANGLES, 0, 3)
+    out = np.zeros((height, width, 4), np.float32)
+    gl.glReadPixels(0, 0, width, height, gl.GL_RGBA, gl.GL_FLOAT, out.ctypes.data_as(ctypes.c_void_p))
+    gl.glBindVertexArray(0)
+    program.stop()
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)
+    gl.glViewport(0, 0, SIZE, SIZE)
+    KeyShadow.unbind_raw(ls.SHADOW_RAW_UNIT)
+    for unit, target in ((ls.SHADOW_UNIT, gl.GL_TEXTURE_2D), (1, gl.GL_TEXTURE_BUFFER)):
+        gl.glActiveTexture(gl.GL_TEXTURE0 + unit)
+        gl.glBindTexture(target, 0)
+    gl.glActiveTexture(gl.GL_TEXTURE0)
+    got = out.reshape(-1, 4)[:count, :2].astype(np.float64)
+    for ident, fn in ((fbo, gl.glDeleteFramebuffers), (rbo, gl.glDeleteRenderbuffers), (vao, gl.glDeleteVertexArrays),
+                      (buffer, gl.glDeleteBuffers)):
+        fn(1, ctypes.byref(gl.GLuint(ident)))
+    shadow._targets = []
+    shadow.release()
+    for ident in (texture, buf_tex):
+        gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(ident)))
+    program.delete()
+    assert gl.glGetError() == gl.GL_NO_ERROR
+    error = np.abs(got - expected)
+    assert ((expected > 0.05) & (expected < 0.95)).sum() > 100  # the penumbrae are sampled
+    assert (expected < 0.05).sum() > (200 if size < 1.0 else 0) and (expected > 0.95).sum() > 1000  # size 1: no core
+    assert error.mean() <= 0.005, error.mean()
+    assert np.percentile(error, 99) <= 0.06, np.percentile(error, 99)
+    assert (error > 0.15).mean() <= 0.003, (error > 0.15).mean()
