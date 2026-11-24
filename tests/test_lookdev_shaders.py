@@ -133,7 +133,7 @@ def test_the_thickness_variant_replaces_the_rim_proxy_and_needs_the_shadow():
         assert fs.count("#define THICKNESS 1\n") == 1 and fs.count(ls.LD_THICKNESS_SRC) == 1
         assert fs.index(ls.LD_SHADOW_SRC) < fs.index(ls.LD_THICKNESS_SRC)
         body = fs[fs.index("void main()"):]
-        assert "ld_key_transmission(v_world_pos, n, u_ld_light_dir[0])" in body
+        assert "ld_key_transmission(v_world_pos) * max(-dot(n, u_ld_light_dir[0]), 0.0)" in body
         assert "(1.0 - nv) * (1.0 - nv) * (1.0 - nv)" in body  # the #else part (resolved by the preprocessor)
     assert ls.SKIN_EFFECTS == ("SHADOW", "DUAL_LOBE", "THICKNESS")
     assert ls.SHADOW_RAW_UNIT == 7 and ls.SHADOW_UNIT == 6
@@ -146,7 +146,9 @@ def test_the_thickness_variant_replaces_the_rim_proxy_and_needs_the_shadow():
 #: AD-039 §10 / §20 (S7): the 4 S4 skin variants with every effect before S7 on (`shadow`, `dual_lobe`, `thickness`),
 #: taken from the code before S7 changed `lookdev_shaders.py` (`50c69cd`). With no map, the frame's programs stay
 #: exactly S4's.
-PINNED_S4_SKIN_SOURCES_SHA256 = "934cf4517e997b6399a9f298bf8db83dfa680fcdbf85fb70dc7cdc4d203bb093"
+#: Re-taken 2026-11-24 with AD-039 §19.6 (the thickness: no light without tissue in front, the lookup without the normal
+#: offset) - `LD_THICKNESS_SRC` and the `THICKNESS` block changed; every pin without the thickness is unchanged.
+PINNED_S4_SKIN_SOURCES_SHA256 = "184770ab7a63529c0343d383cd1a8d66c80fd0f09c13896462e11ac1682816cf"
 
 
 def test_no_map_keeps_the_m1_to_s4_sources():
@@ -163,7 +165,9 @@ def test_no_map_keeps_the_m1_to_s4_sources():
 #: AD-039 §8 / §21 (S5): the 4 S7 skin variants with every effect before S5 on and all three maps (`shadow`,
 #: `dual_lobe`, `thickness`, `roughness_map`, `normal_map`, `translucency_map`), taken from the code before S5 changed
 #: `lookdev_shaders.py` (`eb4c817`). With the cube off, the frame's programs stay exactly S7's.
-PINNED_S7_SKIN_SOURCES_SHA256 = "1c80bb853211db484a05bf51369a26ac656946392b0e008446fe7b4cd0d88d6b"
+#: Re-taken 2026-11-24 with AD-039 §19.6 (the thickness: no light without tissue in front, the lookup without the normal
+#: offset) - `LD_THICKNESS_SRC` and the `THICKNESS` block changed; every pin without the thickness is unchanged.
+PINNED_S7_SKIN_SOURCES_SHA256 = "04ffb725ead54032d3de9e8b306590460cdca8dde081d23ea886437f1330593f"
 
 
 def test_the_cube_off_keeps_the_m1_to_s7_sources():
@@ -240,7 +244,7 @@ def test_each_map_has_its_define_and_only_its_text():
         assert fs.count("uniform samplerBuffer u_triangle_uvs;") == 2  # once per #ifdef / #ifndef ALBEDO_MAP
         body = fs[fs.index("void main()"):]
         assert ("ld_key_visibility(v_world_pos, n_geo, u_ld_light_dir[0])" in body) == normal
-        assert ("ld_key_transmission(v_world_pos, n_geo, u_ld_light_dir[0])" in body) == normal
+        assert body.count("ld_key_transmission(v_world_pos)") == 1  # the lookup needs no normal (AD-039 §19.6)
         assert ("texture(u_roughness_map, map_uv)" in body) == rough
         assert ("texture(u_translucency_map, map_uv)" in body) == trans
     assert "NORMAL_MAP" not in ls.LD_COMMON_SRC and "map_uv" not in ls.LD_COMMON_SRC
@@ -249,7 +253,9 @@ def test_each_map_has_its_define_and_only_its_text():
 #: AD-039 §9 / §22 (S6): the 4 S5 skin variants with every effect before S6 on, all three maps and the cube wherever it
 #: can be (`cube_env = env_spec`; `shadow`, `dual_lobe`, `thickness`, the three maps), taken from the code before S6
 #: changed `lookdev_shaders.py` (`dc4fe82`). With the region materials off, the frame's programs stay exactly S5's.
-PINNED_S5_SKIN_SOURCES_SHA256 = "39b387d460e95737b3d3408e42629e3846e608cea1d4096cb5702aa30005231d"
+#: Re-taken 2026-11-24 with AD-039 §19.6 (the thickness: no light without tissue in front, the lookup without the normal
+#: offset) - `LD_THICKNESS_SRC` and the `THICKNESS` block changed; every pin without the thickness is unchanged.
+PINNED_S5_SKIN_SOURCES_SHA256 = "46d44a6e04b0949c3d77ad6b2ad2f4c12e96d8785aeee2e89d83fdc29f8b3dc7"
 
 
 def s5_skin_sources_digest(**effects) -> tuple[int, str]:

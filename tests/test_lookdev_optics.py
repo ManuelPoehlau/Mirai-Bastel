@@ -404,15 +404,15 @@ def test_bilinear_depth_reads_texel_centres_and_blends_between_them():
 
 
 def test_key_transmission_falls_with_the_path_inside_the_mesh():
-    """AD-039 §7: a fragment `t` world units behind the map's nearest surface transmits exp(-t / scale); in front of it
-    (the lit surface itself) all of it; outside the map's box none (the AD's named limit)."""
+    """AD-039 §7: a fragment `t` world units behind the map's nearest surface transmits exp(-t / scale); outside the
+    map's box none (the AD's named limit)."""
     depth = np.full((8, 8), 0.25)
     depth_range = 2.0  # world units per unit of map depth
     scale = lo.THICKNESS_SCALE
-    sp = np.array([[0.5, 0.5, 0.25 + t / depth_range] for t in (0.0, 0.5 * scale, scale, 4 * scale)])
+    ts = np.array([lo.THICKNESS_EDGE, 0.5 * scale, scale, 4 * scale])
+    sp = np.array([[0.5, 0.5, 0.25 + t / depth_range] for t in ts])
     got = lo.key_transmission(depth, sp, depth_range)
-    assert np.allclose(got, np.exp(-np.array([0.0, 0.5, 1.0, 4.0])), atol=1e-9)
-    assert lo.key_transmission(depth, [0.5, 0.5, 0.1], depth_range) == 1.0  # in front of the surface: no path
+    assert np.allclose(got, np.exp(-ts / scale), atol=1e-9)
     assert lo.key_transmission(depth, [1.2, 0.5, 0.3], depth_range) == 0.0
     assert lo.key_transmission(depth, [0.5, 0.5, 1.1], depth_range) == 0.0
     # the rendered part of the map (a soft key's effective resolution): the lookup scales the UV
@@ -420,6 +420,23 @@ def test_key_transmission_falls_with_the_path_inside_the_mesh():
     half[:4, :4] = 0.25
     assert np.isclose(lo.key_transmission(half, [0.6, 0.6, 0.25 + scale / depth_range], depth_range, scale=0.5),
                       math.exp(-1.0))
+
+
+def test_no_tissue_in_front_lets_no_light_through():
+    """AD-039 §19.6 (Manu 2026-11-24, a red patch on the cheek): a fragment that is itself the nearest surface toward
+    the key (no thickness: the key reached it through an opening - the socket behind a non-casting eye whose back
+    polygons were deleted) gets none of it; the transmission rises over `THICKNESS_EDGE` (smoothstep) to exp(-t / s)."""
+    depth = np.full((8, 8), 0.25)
+    depth_range = 2.0
+    edge = lo.THICKNESS_EDGE
+    assert 0.0 < edge <= 0.1 * lo.THICKNESS_SCALE + 1e-12
+    at = lambda t: float(lo.key_transmission(depth, [0.5, 0.5, 0.25 + t / depth_range], depth_range))  # noqa: E731
+    assert at(0.0) == 0.0  # the surface itself
+    assert lo.key_transmission(depth, [0.5, 0.5, 0.1], depth_range) == 0.0  # in front of the stored surface
+    assert np.isclose(at(0.5 * edge), 0.5 * math.exp(-0.5 * edge / lo.THICKNESS_SCALE))  # smoothstep(0.5) = 0.5
+    rising = [at(t) for t in np.linspace(0.0, edge, 11)]
+    assert all(b >= a for a, b in zip(rising, rising[1:]))
+    assert np.isclose(at(edge), math.exp(-edge / lo.THICKNESS_SCALE))
 
 
 def test_ld_backscatter_proxy_and_transmission():

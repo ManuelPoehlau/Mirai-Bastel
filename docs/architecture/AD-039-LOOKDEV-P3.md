@@ -1394,6 +1394,49 @@ Open LookDev, SubD 1, material **Creature Skin** (or **Mundinneres** for a stron
 Assumptions to correct in one sentence: the thickness is on by default; it needs the shadow; it only changes materials
 with a backscatter; the value is in this scene's world units (0.05).
 
+### 19.6 Fix (2026-11-24): no light through an opening
+
+**Kurzfassung (Deutsch):** Dein roter Fleck auf dem Wangenknochen (Screenshot 2026-11-24, Dramatic, Key 70° / 20°,
+Durchscheinen 0,32) kam von einem Loch: Hinter dem Auge hattest du Polygone gelöscht, und die Augäpfel werfen keinen
+Schatten (Q-P3-5). Das Licht des Key fiel durch die Augenhöhle in den hohlen Kopf und traf die Wange von innen. Die
+Schattenkarte sah dort die Wange selbst als nächste Fläche, also Dicke 0, also volles Durchscheinen – eine harte, flache
+Fläche. „Border close“ schließt das Loch; der Fix macht dasselbe Bild auch ohne geschlossenes Loch: Wo vor dem Punkt
+kein Gewebe liegt, kommt kein Licht durch. Der rosa Rand am offenen Halsende (§19.2) war derselbe Fehler und ist mit
+weg. Die Durchscheinen-Map aus S7 und alle anderen Effekte sind unverändert.
+
+**Cause [V]:** `ld_key_thickness` measures from the map's nearest surface toward the key. A surface facing away from
+the key always has tissue in front of it on a closed mesh. When the key reaches it through an opening - the socket
+behind a non-casting eyeball with its back polygons deleted (Manu's newer scene; `border close` made the patch go
+away), the mouth, the neck's open rim - the surface is itself the nearest one: thickness 0, transmission 1. In the
+container scene (an older file, socket closed) a CPU ray test from every face facing away from the key (`n·l < −0.2`,
+3,000 points) found 6 rays that leave the head without crossing it; Manu's file confirmed the opening.
+
+**What changed:**
+- `ld_key_transmission(p)` = `exp(−t / THICKNESS_SCALE) × smoothstep(0, THICKNESS_EDGE, t)` with
+  `THICKNESS_EDGE = 0.1 × THICKNESS_SCALE` (0.005 world units, `PROVISIONAL`): no tissue in front, no light; full
+  transmission from 0.005 on (Gollum's ears and nostril wings are thicker).
+- The lookup reads `p`'s own map point, **without** the shadow's normal offset: the sideways offset moves the lookup
+  across the surface's slope (by `offset × |n − l(n·l)|² / |n·l|`, 0.006–0.02 world units on Gollum) and so read a
+  thickness on exactly those surfaces that have none. `ld_key_thickness(p)` / `ld_key_transmission(p)` lose their
+  `n`, `l` arguments; the `THICKNESS` block has one line again (S7's `#ifdef NORMAL_MAP` split there only chose the
+  normal for that offset).
+- Twin `lookdev_optics.key_transmission` with the same smoothstep.
+
+**Named:** a single-sided sheet (an ear modelled as one surface) has no thickness either, so it is no longer lit
+through. The thin warm band right behind a convex terminator (thickness < 0.005) fades out.
+
+**Tests:** `test_lookdev_optics.py::test_no_tissue_in_front_lets_no_light_through` (0 at the surface and in front of
+it, the smoothstep rising to `exp(−edge / scale)`); `test_gl_lookdev_shadow.py::test_a_surface_reached_through_an_opening_is_not_lit_through`
+(a block open on the key's side next to the closed 0.02 slab: the open block's front face ≤ 2/255, the slab > 60 mean;
+**with the smoothstep taken out of the shader the open block reads 156/255** - the patch, reproduced); the slab /
+block test (T4-1) and the GPU parity unchanged in meaning. Pins: `PINNED_S4_`, `PINNED_S7_` and
+`PINNED_S5_SKIN_SOURCES_SHA256` re-taken (their sources contain `LD_THICKNESS_SRC`); M1, S1, S3 and the four eye pins
+unchanged. Runs: `test_gl_lookdev_shadow.py` 26, `_pass` 13, `_parity` 8, `_cube` 13, `_maps` 9, `_regions` 9 passed;
+`pytest tests -k "lookdev or look or view_state or main_wiring"` 548 passed.
+
+**Practical test (2 minutes):** your newer scene with the hole behind the eye **open again** (undo `border close`),
+Dramatic, key 70° / 20°: the patch on the cheekbone is gone; the ears still glow with the key from behind (§19.5 point 1).
+
 ---
 
 ## 20. Implementation note — S7 built (2026-11-24)
@@ -1420,7 +1463,7 @@ kommt aus den Bildschirm-Ableitungen von Position und UV, je Dreieck. Bilder: PN
 | App | `mirai/look_maps.py` (the size policy from the file header: PNG / JPEG / BMP up to `MAX_SIZE` 4096, a hint above 2048; `drawable`, `status_text`); `lookdev_material.with_map`, `keep_maps`, `MAP_VALUES` through `with_values` (never „angepasst“); `Application.set_lookdev_map(kind, path)` (one Undo step on the material targets, refused with the reason; a target without a look gets Neutral with the map; a target without UVs keeps it, the status line says it is not drawn); `set_lookdev_material` keeps the maps; `set_lookdev_material_values(normal_strength=…, normal_green_down=…)`; load resolves the paths against the scene, save copies them into `<stem>_textures/` (`_copy_look_maps`, the AD-035 S-10 rule: content name, never overwrites, never deletes, a missing image keeps its path) and writes them scene-relative; `LookdevRoom.look_draw` hands the drawable maps on an object with UVs |
 | Effects / features | `LookdevEffects.maps` (default on, the fifth field), `EFFECT_FEATURE["maps"] = "texture_units"`; `FeatureReport.texture_units` (`GL_MAX_TEXTURE_IMAGE_UNITS` ≥ 12), status line „LookDev: Maps aus – zu wenige Textureinheiten“; the check runs only when a drawn LookDraw has a map (`Viewport._lookdev_maps`) |
 | Shaders | `MAP_UNITS` 9 / 10 / 11, `SKIN_MAPS`, `NORMAL_MAP_ZERO = 128/255`; defines `ROUGHNESS_MAP`, `NORMAL_MAP`, `TRANSLUCENCY_MAP`, and `LD_MAP_UV` with any of them; `LD_NORMAL_MAP_SRC` (`ld_normal_tangent`, `ld_cotangent_frame`, `ld_normal_mapped`) appended only with the normal map; `skin_sources(..., roughness_map, normal_map, translucency_map)` |
-| Body blocks | `LD_MAP_UV`: the triangle UVs (declared under `#ifndef ALBEDO_MAP` when the albedo has not) read in uniform control flow, `map_on` 0 on a triangle without UVs; `NORMAL_MAP`: `n_geo = n`, then `n` tilted (only where `map_on`); `ROUGHNESS_MAP`: `alpha = u_roughness × map` before the specular AA; `TRANSLUCENCY_MAP`: `back ×= map`; inside `SHADOW` and `THICKNESS`, a nested `NORMAL_MAP` block gives the key map's lookups `n_geo` (the `#else` lines are S4's) |
+| Body blocks | `LD_MAP_UV`: the triangle UVs (declared under `#ifndef ALBEDO_MAP` when the albedo has not) read in uniform control flow, `map_on` 0 on a triangle without UVs; `NORMAL_MAP`: `n_geo = n`, then `n` tilted (only where `map_on`); `ROUGHNESS_MAP`: `alpha = u_roughness × map` before the specular AA; `TRANSLUCENCY_MAP`: `back ×= map`; inside `SHADOW` and `THICKNESS`, a nested `NORMAL_MAP` block gives the key map's lookups `n_geo` (the `#else` lines are S4's; since §19.6, 2026-11-24, only in `SHADOW`: the thickness lookup takes no normal) |
 | Pass | `LookDraw` gains `roughness_map`, `normal_map`, `translucency_map`, `normal_strength`, `normal_green_down`, `map_paths()`, `needs_uvs`, `map_uniforms()`; `LookdevPass.program_key` = S4's 5 values, plus the three map flags only when a map is drawn; `draw(..., maps=False)` binds the triangle UVs even without an albedo map, each loadable map through `GLRenderStore.texture` (mipmapped, repeating) on its unit, unbinds them after the draw |
 | Viewport | the UV request follows `LookDraw.needs_uvs`; `_lookdev_programs` adds the map flags for a mesh with UVs (so `prepare_lookdev` compiles them behind the status line); `_render_lookdev` hands `effects.maps` to every skin draw. Eyes untouched |
 | Twins | `lookdev_optics.normal_map_tangent`, `cotangent_frame`, `ld_normal_mapped`, `map_roughness` |

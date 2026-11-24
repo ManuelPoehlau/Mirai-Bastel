@@ -33,9 +33,9 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
   (`CUBE_ENV`) the reflection takes both lobes (two lookups, P3-0 run 5). Twins:
   `lookdev_optics.ld_direct_dual` / `ld_specular_dual`.
 - `LD_THICKNESS_SRC` (S4, AD-039 §7 / §19): the key's map read a second time as raw depth (`u_ld_shadow_depth` on unit 7,
-  a sampler object without compare mode) at the same map point as the shadow; `ld_key_thickness` is the distance the
+  a sampler object without compare mode) at the fragment's own map point; `ld_key_thickness` is the distance the
   key light travels inside the mesh to the fragment, `ld_key_transmission` its `exp(-thickness / scale)` (0 outside the
-  map). The `THICKNESS` block replaces M1's view-rim backscatter proxy with it. Needs `LD_SHADOW_SRC` (the effect needs
+  map, and 0 below `THICKNESS_EDGE`: no tissue in front means the key came through an opening, §19.6). The `THICKNESS` block replaces M1's view-rim backscatter proxy with it. Needs `LD_SHADOW_SRC` (the effect needs
   the shadow). Twins: `lookdev_optics.bilinear_depth` / `key_transmission` / `ld_backscatter`.
 - S7 (AD-039 §10 / §20): the material's image maps, one define each - `ROUGHNESS_MAP` (a linear grey value multiplying
   the roughness before the specular AA), `NORMAL_MAP` (a tangent-space map in the frame of the screen derivatives of
@@ -115,6 +115,11 @@ DUAL_LOBE_MIX = 0.85
 #: units (`PROVISIONAL`, tuned on `Gollum_Head_05`'s ears; the AD's "0.6 cm" assumed 1 unit = 1 cm, which that scene does
 #: not follow).
 THICKNESS_SCALE = 0.05
+#: The thickness below which no light comes through, in world units (`PROVISIONAL`, AD-039 §19.6, 2026-11-24): a surface
+#: facing away from the key with no tissue in front of it is not lit through but reached through an opening (an eye
+#: socket behind a non-casting eyeball, the mouth, the neck's rim) or past a clipped caster; the transmission rises
+#: from 0 at no thickness to full at this one.
+THICKNESS_EDGE = 0.1 * THICKNESS_SCALE
 
 
 def constant_src(name: str, library: str = es.EYE_LIB_SRC) -> str:
@@ -414,11 +419,7 @@ void main() {{
 #ifdef THICKNESS
     // AD-039 §7: the key's light through thin parts (ears, nostril wings) - how far it travelled inside the mesh, from
     // the key's depth map - in place of M1's view-rim proxy
-#ifdef NORMAL_MAP
-    float back = ld_key_transmission(v_world_pos, n_geo, u_ld_light_dir[0]) * max(-dot(n, u_ld_light_dir[0]), 0.0);
-#else
-    float back = ld_key_transmission(v_world_pos, n, u_ld_light_dir[0]) * max(-dot(n, u_ld_light_dir[0]), 0.0);
-#endif
+    float back = ld_key_transmission(v_world_pos) * max(-dot(n, u_ld_light_dir[0]), 0.0);
 #else
     float back = (1.0 - nv) * (1.0 - nv) * (1.0 - nv) * max(-dot(n, u_ld_light_dir[0]), 0.0);
 #endif
@@ -511,18 +512,22 @@ LD_THICKNESS_SRC = f"""
 uniform sampler2D u_ld_shadow_depth;
 uniform float u_ld_shadow_range;  // world units per unit of the map's depth
 const float LD_THICKNESS_SCALE = {THICKNESS_SCALE!r};
+const float LD_THICKNESS_EDGE = {THICKNESS_EDGE!r};
 // the distance (world units) the key light travels inside the mesh before it reaches p: p's depth from the key past
-// the nearest surface in the map, at the shadow's map point; a negative value outside the map
-float ld_key_thickness(vec3 p, vec3 n, vec3 l) {{
-    vec3 sp = ld_shadow_coord(p, n, l);
+// the nearest surface in the map, at p's own map point (no normal offset: it would shift the lookup across the
+// surface's slope and read a thickness where there is none); a negative value outside the map
+float ld_key_thickness(vec3 p) {{
+    vec4 lp = u_ld_shadow_vp * vec4(p, 1.0);
+    vec3 sp = lp.xyz / lp.w * 0.5 + 0.5;
     float stored = texture(u_ld_shadow_depth, sp.xy * u_ld_shadow_scale).r;
     float inside = float(all(greaterThanEqual(sp, vec3(0.0))) && all(lessThanEqual(sp, vec3(1.0))));
     return mix(-1.0, max(sp.z - stored, 0.0) * u_ld_shadow_range, inside);
 }}
-// the share of the key's light that comes through: exp(-thickness / scale); outside the map none
-float ld_key_transmission(vec3 p, vec3 n, vec3 l) {{
-    float t = ld_key_thickness(p, n, l);
-    return t < 0.0 ? 0.0 : exp(-t / LD_THICKNESS_SCALE);
+// the share of the key's light that comes through: exp(-thickness / scale); outside the map none, and none where no
+// tissue lies in front of p (p itself is the nearest surface: the key reaches it through an opening, AD-039 §19.6)
+float ld_key_transmission(vec3 p) {{
+    float t = ld_key_thickness(p);
+    return t < 0.0 ? 0.0 : exp(-t / LD_THICKNESS_SCALE) * smoothstep(0.0, LD_THICKNESS_EDGE, t);
 }}
 """
 

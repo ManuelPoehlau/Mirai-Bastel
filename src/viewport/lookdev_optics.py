@@ -36,7 +36,7 @@ import numpy as np
 from . import eye_optics as eo
 from .light_rig import kelvin_to_rgb
 from .lookdev_shaders import (CUBE_LEVELS, CUBE_SAMPLES, DUAL_LOBE_MIX, DUAL_LOBE_SCALES, MAX_STUDIO, NORMAL_MAP_ZERO,
-                              SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT, THICKNESS_SCALE, TONE_CURVES)
+                              SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT, THICKNESS_EDGE, THICKNESS_SCALE, TONE_CURVES)
 
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 SH_DIRECTIONS = 4096
@@ -578,13 +578,15 @@ def bilinear_depth(depth: np.ndarray, uv) -> np.ndarray:
 def key_transmission(depth: np.ndarray, sp, depth_range: float, scale: float = 1.0,
                      thickness_scale: float = THICKNESS_SCALE) -> np.ndarray:
     """GLSL `ld_key_transmission` from the map point `sp` (..., 3): the thickness `max(z - stored, 0) x depth_range`
-    (world units, the stored depth read raw over the rendered part `scale` of the map), `exp(-thickness / scale)`;
-    0 outside the map's box."""
+    (world units, the stored depth read raw over the rendered part `scale` of the map), `exp(-thickness / scale)` times
+    `smoothstep(0, THICKNESS_EDGE, thickness)` (no tissue in front: an opening, AD-039 §19.6); 0 outside the map's
+    box."""
     sp = np.asarray(sp, dtype=np.float64)
     stored = bilinear_depth(depth, sp[..., :2] * scale)
     thickness = np.maximum(sp[..., 2] - stored, 0.0) * depth_range
     inside = np.all((sp >= 0.0) & (sp <= 1.0), axis=-1)
-    return np.where(inside, np.exp(-thickness / thickness_scale), 0.0)
+    x = np.clip(thickness / THICKNESS_EDGE, 0.0, 1.0)
+    return np.where(inside, np.exp(-thickness / thickness_scale) * x * x * (3.0 - 2.0 * x), 0.0)
 
 
 def ld_backscatter(albedo, n, v, values: dict, backscatter: float, backscatter_color, transmission=None) -> np.ndarray:

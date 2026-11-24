@@ -579,13 +579,15 @@ BLOCK = ((0.1, -0.5, -0.4), (1.1, 0.5, 0.4))      # 0.8 thick
 BACKLIT = LookDraw((0.7, 0.6, 0.5), roughness=0.6, specular=0.0, backscatter=1.0, backscatter_color=(1.0, 1.0, 1.0))
 
 
-def _flat_box(lo_corner, hi_corner) -> Mesh:
+def _flat_box(lo_corner, hi_corner, without=None) -> Mesh:
     """A box of six separate quads (4 vertices each): every face keeps its own normal - `_box` shares its 8 corners,
-    so its vertex normals bend toward the corners."""
+    so its vertex normals bend toward the corners. `without` = (axis, side): that face left out (an opening)."""
     mesh = Mesh()
     lo_c, hi_c = np.asarray(lo_corner, float), np.asarray(hi_corner, float)
     for axis in range(3):
         for side in (0, 1):
+            if (axis, side) == without:
+                continue
             quad = []
             for a, b in ((0, 0), (0, 1), (1, 1), (1, 0)):
                 index = [0, 0, 0]
@@ -680,6 +682,26 @@ def test_the_thickness_off_draws_s3_and_binds_nothing_on_unit_7(gl_window):
     gl.glActiveTexture(gl.GL_TEXTURE0)
     assert (bound.value, sampler.value) == (0, 0)
     assert passes.shadow._raw_sampler != 0  # made by the thickness frame, kept for the next
+    _release(viewport)
+
+
+def test_a_surface_reached_through_an_opening_is_not_lit_through(gl_window):
+    """AD-039 §19.6 (Manu 2026-11-24: a hard red patch on Gollum's cheek; the polygons behind the eye were deleted, and
+    the eyes do not cast): a block open on the key's side - the key, straight behind, enters through the opening and
+    reaches the inside of the front face with no tissue in front of it, so the front face is the map's nearest
+    surface. It gets no transmission (before the fix: all of it, a flat bright patch); the closed thin slab beside it
+    still transmits exp(-0.02 / scale)."""
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=4.5, yaw=0.0, pitch=0.0)
+    meshes = {"slab": _flat_box(*SLAB), "open": _flat_box(*BLOCK, without=(2, 0))}
+    viewport = _viewport(gl_window, meshes, camera)
+    for key in meshes:
+        viewport.set_object_entry(key, viewport.object_entries[key].mesh, (0.5, 0.5, 0.5), look=BACKLIT)
+    viewport.set_shading("lookdev", _state(key_az=180.0, key_el=0.0, effects=lo.LookdevEffects()))
+    pixels = _frame(gl_window, viewport)
+    ys, xs = _front_pixels(viewport, *BLOCK)
+    assert len(ys) > 200 and pixels[ys, xs].max() <= 2, pixels[ys, xs].max()
+    slab_ys, slab_xs = _front_pixels(viewport, *SLAB)
+    assert pixels[slab_ys, slab_xs].mean() > 60
     _release(viewport)
 
 
@@ -982,8 +1004,8 @@ void main() {
     int i = int(gl_FragCoord.y) * u_width + int(gl_FragCoord.x);
     if (i >= u_count) { out_value = vec4(0.0); return; }
     vec3 sp = texelFetch(u_inputs, i).xyz;
-    // the identity map matrix and no offset: ld_shadow_coord(p) = p * 0.5 + 0.5
-    out_value = vec4(ld_key_transmission(sp * 2.0 - 1.0, vec3(0.0, 0.0, 1.0), vec3(0.0, 0.0, 1.0)), 0.0, 0.0, 1.0);
+    // the identity map matrix: the map point of p is p * 0.5 + 0.5
+    out_value = vec4(ld_key_transmission(sp * 2.0 - 1.0), 0.0, 0.0, 1.0);
 }
 """
 
@@ -992,7 +1014,8 @@ void main() {
 def test_ld_key_transmission_matches_key_transmission(gl_window, scale):
     """AD-039 §7 (twin): a smooth random 64² depth map uploaded as the shadow's compare texture and read raw on unit 7
     through `KeyShadow`'s sampler object (the production binding); `ld_key_transmission` at 4,096 map points against
-    `lookdev_optics.key_transmission`: inside, in front of the surface (all of it), outside the map (none)."""
+    `lookdev_optics.key_transmission`: inside, at and in front of the surface (none: no tissue in front), outside the
+    map (none)."""
     from pyglet import gl
     from pyglet.graphics.shader import Shader, ShaderProgram
 
