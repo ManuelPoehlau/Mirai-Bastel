@@ -114,12 +114,12 @@ def test_hover_hits_the_element_drawn_under_the_cursor_in_a_pose(mode, morph):
     distinguished = 0
     for element in elements:
         x, y = _screen(app, _anchor(drawn, mesh, element))
-        want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True)
+        want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True, nearest_on_face=True)
         got = _hover(app, _anchor(drawn, mesh, element))
         assert type(got) is type(want) and got == want
         # at the rest anchor the cursor gets what is drawn there, not the rest element
         x, y = _screen(app, _anchor(rest, mesh, element))
-        want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True)
+        want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True, nearest_on_face=True)
         got = _hover(app, _anchor(rest, mesh, element))
         assert type(got) is type(want) and got == want
         distinguished += got != element
@@ -137,9 +137,9 @@ def test_a_cursor_sweep_equals_the_picker_on_the_posed_surface_with_occlusion(mo
             x, y = 40 + i * 52, 40 + j * 50
             app.pointer_motion(x, y)
             got = app.selection.hovered
-            want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True)
+            want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True, nearest_on_face=True)
             assert type(got) is type(want) and got == want, (x, y, got, want)
-            at_rest = pick_component(_camera(app), mesh, mode, x, y, WIDTH, HEIGHT, occlusion=True)
+            at_rest = pick_component(_camera(app), mesh, mode, x, y, WIDTH, HEIGHT, occlusion=True, nearest_on_face=True)
             differ += at_rest != want
     assert differ >= 3
 
@@ -454,7 +454,7 @@ def test_gollum_open_jaw_edge_face_box_lasso_and_paint_on_the_drawn_surface():
         app.selection.mode = mode
         for element in elements:
             x, y = _screen(app, _anchor(drawn, mesh, element))
-            want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True)
+            want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True, nearest_on_face=True)
             got = _hover(app, _anchor(drawn, mesh, element))
             assert type(got) is type(want) and got == want
     # box / lasso / paint over the inside of the mouth

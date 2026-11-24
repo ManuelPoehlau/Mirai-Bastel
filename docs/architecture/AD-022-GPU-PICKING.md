@@ -405,6 +405,18 @@ mode and every headless path keep the CPU picker (slice 3 not done). Engineering
   2026-11-11, `RESULTS_O0_REFERENCE_PC_2026-11-11.md`): hover vertex / edge 6.49 / 7.65 → **4.46 / 4.17 ms**, of it
   the two ID reads 0.96 / 0.92 ms (the rest, ~3.3–3.5 ms, is CPU); first pick 11.00 / 12.62 → **8.58 / 9.31 ms**
   (2026-10-21, before the Ngon rule: 6.94 / 8.23 and hover 2.15 / 2.72). GL tests 37/37 there.
+- **Nearest-on-face, 2026-11-24** (Manu: "Wenn ich in Silo oder Zbrush über einem Mesh hovere, wird immer ein Element
+  gehighlighted. Das am nähesten liegende Element. … Das spart viele Mauswege beim Shapen und selektieren und man muss
+  nicht so genau mit dem Cursor zielen."): in vertex / edge mode, when no element lies within 14 / 9 px but the
+  cursor is on a face, the nearest corner / edge of the front face under the cursor wins (with occlusion: the nearest
+  one the CPU rule calls visible). Off the mesh the radius alone decides, so empty space stays empty (a click clears,
+  Box starts there). Applies to everything that reads `Application._pick` (hover, click, Paint Select, the Tweak
+  press, Shift+Ctrl+click on groups); the Knife keeps its own picker. Same rule on both paths:
+  `picking.pick_nearest_on_face` (CPU, `pick_component(..., nearest_on_face=True)`) and `gpu_pick_component(...,
+  nearest_on_face=True)`, which takes the face under the cursor from the face window the occlusion test reads anyway
+  (2 ID reads per hover; a third, small one only when the nearest corner / edge point lies outside the cursor's
+  window - [C] head, 320 x 240: 1 of 7 fallback hovers). Switch: `Application.pick_nearest_on_face` (default on; no UI toggle yet).
+  **Open (Praxistest, Manu):** whether it feels as in Silo / ZBrush, also on dense meshes.
 - **Open:** the Box silhouette rule (re-check later, Manu); the Knife
   (picker and planner) still projects the whole mesh per camera change; object picking (mode `4`) is CPU; the Box
   still projects every vertex once per gesture; H7 surfaces: the ID pass draws the cage — since 2026-11-03 the *shown* cage: the morph mix while a target is dialled

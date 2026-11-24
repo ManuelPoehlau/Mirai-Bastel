@@ -128,6 +128,9 @@ def test_undo_with_empty_history_is_a_noop(app, monkeypatch):
 
 
 def test_undo_repicks_hover_at_last_cursor(app):
+    # The radius picker only: nearest-on-face (Manu 2026-11-24) may find the moved vertex again on its stretched
+    # faces under the resting cursor; this test is about the re-pick after Undo.
+    app.pick_nearest_on_face = False
     vid = _visible_target(app)
     cursor = _screen(app, vid)
     _committed_move(app, vid)

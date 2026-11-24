@@ -210,6 +210,9 @@ def test_entry_is_one_mesh_state_command_and_notifies_viewport(app, monkeypatch)
 def test_pick_cache_invalidated_hover_and_click_find_new_positions(app):
     """T-R4d: after an external change, hover and a click pick the *new*
     vertex position without any camera change."""
+    # The radius picker only: nearest-on-face (Manu 2026-11-24) would find the moved vertex again on its
+    # stretched faces under the resting cursor; this test is about the stale cache.
+    app.pick_nearest_on_face = False
     vid = _visible(app)[0]
     old_xy = _screen(app, vid)
     app.pointer_motion(*old_xy)  # fills the pick cache at the old positions

@@ -17,6 +17,8 @@ among those few stays the CPU picker's rule, so the two paths differ only where 
   an even nearer face covers it, and that one is tested instead. The one case the window cannot see through -
   the element's own face in front of it (the Ngon case) - takes the whole-mesh CPU test;
 - face: the face under the cursor's pixel (pixel-centre convention);
+- nearest on face (opt-in, Manu 2026-11-24): no vertex / edge within the radius, but the cursor on a face -> the
+  nearest corner / edge of that face that the CPU rule calls visible (`picking.pick_nearest_on_face`);
 - Box (`elements_in_rect`): the CPU candidate rule (all corners inside the rectangle, `PickCache` projections)
   with the depth buffer as the visibility test instead of one ray test per element ("depth oracle", AD-022 §3).
 
@@ -34,6 +36,7 @@ from .picking import (
     _incident_faces_of_vertex,
     _point_segment_distance_t,
     edge_point_occluded,
+    face_element_candidates,
     point_occluded_by,
     vertex_occluded,
 )
@@ -47,10 +50,13 @@ OCCLUDER_WINDOW_PX = 2.0
 
 
 def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, y: float,
-                       width: int, height: int, *, occlusion: bool, cache: PickCache | None = None):
+                       width: int, height: int, *, occlusion: bool, cache: PickCache | None = None,
+                       nearest_on_face: bool = False):
     """Element under the cursor in `mode` (vertex / edge / face), or None. `picker` must be prepared
-    for this frame's buffers (`GpuPicker.prepare` is called here)."""
-    from viewport.gpu_picker import EDGES, FACES, POINTS
+    for this frame's buffers (`GpuPicker.prepare` is called here). `nearest_on_face`: no vertex / edge within
+    the radius -> the nearest (visible) corner / edge of the face under the cursor (`picking.pick_nearest_on_face`,
+    Silo / ZBrush hover, Manu 2026-11-24)."""
+    from viewport.gpu_picker import FACES
 
     if mode is SelectionMode.FACE:
         picker.prepare(render_mesh, width, height, occlusion=occlusion, target=FACES)
@@ -58,6 +64,47 @@ def gpu_pick_component(picker, render_mesh, camera, mesh: Mesh, mode, x: float, 
         return face if face is not None and mesh.is_valid_face(face) else None
     project = _projector(camera, width, height)
     near = _NearFaces(picker, render_mesh, x, y, max(VERTEX_RADIUS_PX, EDGE_RADIUS_PX) + OCCLUDER_WINDOW_PX + 1.0)
+    hit = _gpu_pick_near(picker, render_mesh, camera, mesh, mode, x, y, width, height, occlusion, cache,
+                         project, near)
+    if hit is not None or not nearest_on_face:
+        return hit
+    # The face pass ignores `occlusion` (always depth-tested); preparing with the vertex / edge passes' False keeps
+    # their buffers current instead of re-rendering everything for the other flag.
+    picker.prepare(render_mesh, width, height, occlusion=False, target=FACES)
+    face = near.face_at(x, y)  # from the window the occlusion tests read anyway: no extra GPU sync
+    if face is None or not mesh.is_valid_face(face):
+        return None
+    for candidate in sorted(face_element_candidates(mesh, mode, face, project, x, y), key=lambda c: c[0]):
+        if not occlusion or not _candidate_occluded(near, camera, mesh, cache, width, height, project, candidate):
+            return candidate[1]
+    return None
+
+
+def _candidate_occluded(near, camera, mesh: Mesh, cache, width: int, height: int, project, candidate) -> bool:
+    """The occlusion rule of `gpu_pick_component` for one `face_element_candidates` entry."""
+    if isinstance(candidate[1], VertexId):
+        vid = candidate[1]
+        point = mesh.vertex_position(vid)
+        return _occluded(
+            near, camera, mesh, point, project(point), _incident_faces_of_vertex(mesh, vid, cache),
+            lambda: vertex_occluded(camera, mesh, _refreshed(cache, camera, mesh, width, height), vid, width, height),
+        )
+    _, eid, t = candidate
+    va, vb = mesh.edge_vertices(eid)
+    pa, pb = mesh.vertex_position(va), mesh.vertex_position(vb)
+    point = (pa[0] + (pb[0] - pa[0]) * t, pa[1] + (pb[1] - pa[1]) * t, pa[2] + (pb[2] - pa[2]) * t)
+    return _occluded(
+        near, camera, mesh, point, project(point), set(mesh.edge_faces(eid)),
+        lambda: edge_point_occluded(camera, mesh, _refreshed(cache, camera, mesh, width, height), eid, t,
+                                    width, height),
+    )
+
+
+def _gpu_pick_near(picker, render_mesh, camera, mesh: Mesh, mode, x: float, y: float, width: int, height: int,
+                   occlusion: bool, cache, project, near):
+    """The vertex / edge within the pick radius (see the module docstring), or None."""
+    from viewport.gpu_picker import EDGES, POINTS
+
     if mode is SelectionMode.VERTEX:
         picker.prepare(render_mesh, width, height, occlusion=False, target=POINTS)
         candidates = []
@@ -137,6 +184,13 @@ class _NearFaces:
             self._window = self._picker.face_window(*self._args)
         r = OCCLUDER_WINDOW_PX
         return self._window(sx - r, sy - r, sx + r, sy + r)
+
+    def face_at(self, x: float, y: float):
+        """The face whose triangle covers the pixel of (x, y) (`GpuPicker.face_at`), or None."""
+        if self._window is None:
+            self._window = self._picker.face_window(*self._args)
+        faces = self._window(x, y, x, y)
+        return next(iter(faces)) if faces else None
 
 
 def _occluded(near, camera, mesh: Mesh, point, screen, incident, whole_mesh) -> bool:

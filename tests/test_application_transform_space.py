@@ -291,7 +291,9 @@ def test_an_axis_without_a_direction_is_refused_visibly(app, mode_key, constrain
     app.key_press(K)
     app.key_press(constraint_key)
     before = _positions(app)
-    assert _gesture(app, mode_key) is False
+    # `_gesture`'s True may be a hover change alone (the cursor stays on the mesh: nearest-on-face, Manu
+    # 2026-11-24); the refusal is the status, the unchanged positions and the empty history.
+    _gesture(app, mode_key)
     assert text in app.status_message
     assert _positions(app) == before
     assert not app.history.can_undo()

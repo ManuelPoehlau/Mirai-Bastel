@@ -535,7 +535,28 @@ _vertex_occluded = vertex_occluded
 _edge_point_occluded = edge_point_occluded
 
 
-def pick_component(
+def face_element_candidates(mesh, mode, face, project, sx, sy) -> list:
+    """Nearest-on-face (Silo / ZBrush hover, Manu 2026-11-24): the corners (vertex mode, `(dist, VertexId)`) or
+    edges (edge mode, `(dist, EdgeId, t)`) of `face` with their screen distance to the cursor, unsorted. `project`
+    maps a world point to the window (None = not projectable: the element is left out)."""
+    candidates = []
+    if mode is SelectionMode.VERTEX:
+        for vid in mesh.face_vertices(face):
+            p = project(mesh.vertex_position(vid))
+            if p is not None:
+                candidates.append((math.hypot(p[0] - sx, p[1] - sy), VertexId(vid)))
+    elif mode is SelectionMode.EDGE:
+        for eid in mesh.face_edges(face):
+            va, vb = mesh.edge_vertices(eid)
+            a = project(mesh.vertex_position(va))
+            b = project(mesh.vertex_position(vb))
+            if a is not None and b is not None:
+                d, t = _point_segment_distance_t(sx, sy, a[0], a[1], b[0], b[1])
+                candidates.append((d, EdgeId(eid), t))
+    return candidates
+
+
+def pick_nearest_on_face(
     camera,
     mesh,
     mode,
@@ -548,21 +569,66 @@ def pick_component(
     occlusion: bool = False,
     depth_tolerance: float = DEPTH_TOLERANCE,
 ):
+    """The fallback when no vertex / edge lies within the pick radius but the cursor is on the mesh: the nearest
+    corner / edge of the front face under the cursor (with `occlusion`, the nearest one that is visible), so the
+    cursor anywhere inside a face hovers an element (Silo / ZBrush, Manu 2026-11-24). None off the mesh and in
+    face / object mode."""
+    if mode not in (SelectionMode.VERTEX, SelectionMode.EDGE):
+        return None
+    face = pick_face(camera, mesh, sx, sy, width, height, cache=cache)
+    if face is None:
+        return None
+    candidates = face_element_candidates(
+        mesh, mode, face, lambda p: camera.project_to_screen(p, width, height), sx, sy,
+    )
+    occluded = None
+    if occlusion:
+        if mode is SelectionMode.VERTEX:
+            def occluded(vid):
+                return vertex_occluded(camera, mesh, cache, vid, width, height, depth_tolerance)
+        else:
+            def occluded(eid, t):
+                return edge_point_occluded(camera, mesh, cache, eid, t, width, height, depth_tolerance)
+    return _nearest_visible(candidates, math.inf, occluded)
+
+
+def pick_component(
+    camera,
+    mesh,
+    mode,
+    sx,
+    sy,
+    width,
+    height,
+    *,
+    cache: PickCache | None = None,
+    occlusion: bool = False,
+    depth_tolerance: float = DEPTH_TOLERANCE,
+    nearest_on_face: bool = False,
+):
     """Picker nach Selection-Modus (WP-06 B5b, E43): nächster Vertex, nächste
     Edge oder vorderste Face unter dem Cursor (Playground `selector.
     pick_component`, dort mit der ganzen Selection statt nur dem Modus).
-    `cache`/`occlusion` siehe Moduldocstring (WP-06 B8)."""
+    `cache`/`occlusion` siehe Moduldocstring (WP-06 B8). `nearest_on_face`:
+    nothing within the radius -> `pick_nearest_on_face` (Manu 2026-11-24)."""
     if mode is SelectionMode.VERTEX:
-        return pick_nearest_vertex(
+        hit = pick_nearest_vertex(
             camera, mesh, sx, sy, width, height,
             cache=cache, occlusion=occlusion, depth_tolerance=depth_tolerance,
         )
-    if mode is SelectionMode.EDGE:
-        return pick_nearest_edge(
+    elif mode is SelectionMode.EDGE:
+        hit = pick_nearest_edge(
             camera, mesh, sx, sy, width, height,
             cache=cache, occlusion=occlusion, depth_tolerance=depth_tolerance,
         )
-    return pick_face(camera, mesh, sx, sy, width, height, cache=cache)
+    else:
+        return pick_face(camera, mesh, sx, sy, width, height, cache=cache)
+    if hit is None and nearest_on_face:
+        hit = pick_nearest_on_face(
+            camera, mesh, mode, sx, sy, width, height,
+            cache=cache, occlusion=occlusion, depth_tolerance=depth_tolerance,
+        )
+    return hit
 
 
 # -- AD-021 M1: object picking (mode `4`) --------------------------------------

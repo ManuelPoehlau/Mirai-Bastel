@@ -77,7 +77,8 @@ def app(gl_window, request, monkeypatch) -> Application:
 
 def _cpu(app, mode, x, y):
     return pick_component(app._objects.edit_camera, app.scene.mesh, mode, x, y, W, H,
-                          cache=app._pick_cache, occlusion=app.display.show_faces)
+                          cache=app._pick_cache, occlusion=app.display.show_faces,
+                          nearest_on_face=app.pick_nearest_on_face)
 
 
 def _gpu(app, mode, x, y):
@@ -316,3 +317,28 @@ def test_a_hover_reads_the_id_buffers_at_most_twice(app, monkeypatch, mode):
         hits += app._pick(x, y) is not None
         assert len(reads) <= 2, (x, y, len(reads))
     assert hits > 30
+
+
+@pytest.mark.parametrize("mode", [SelectionMode.VERTEX, SelectionMode.EDGE])
+def test_nearest_on_face_names_an_element_of_the_face_under_the_cursor(app, mode):
+    """Silo / ZBrush hover (Manu 2026-11-24): a cursor on a face with nothing in the pick radius still hovers - an
+    element of the face under the cursor; off the mesh nothing."""
+    mesh = app.scene.mesh
+    fallback = 0
+    for x, y in _cursors(5):
+        app.selection.mode = SelectionMode.FACE
+        face = app._pick(x, y)
+        app.pick_nearest_on_face = False
+        app.selection.mode = mode
+        near = app._pick(x, y)
+        app.pick_nearest_on_face = True
+        hit = app._pick(x, y)
+        if face is None:
+            assert hit == near, (x, y)  # off the mesh: only the radius decides
+            continue
+        assert hit is not None, (x, y)
+        if near is None:
+            fallback += 1
+            own = mesh.face_vertices(face) if mode is SelectionMode.VERTEX else mesh.face_edges(face)
+            assert hit in own, (x, y, face, hit)
+    assert fallback > 0  # the head is dense at 320 x 240: few cursors lie outside every radius

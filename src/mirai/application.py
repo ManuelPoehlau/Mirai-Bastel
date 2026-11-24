@@ -5854,6 +5854,11 @@ class Application:
             return self._set_hovered(None)
         return self._set_hovered(self._pick(x, y))
 
+    #: Nearest-on-face (Silo / ZBrush, Manu 2026-11-24): in vertex / edge mode the cursor anywhere on a face hovers
+    #: and clicks the nearest corner / edge of that face when nothing lies within the pick radius. Off the mesh the
+    #: radius still decides (empty space stays empty: click clears, Box starts there).
+    pick_nearest_on_face: bool = True
+
     def _pick(self, x: float, y: float):
         """E43: Element unter dem Cursor im aktiven Selection-Modus (oder None).
         WP-06 B8: cached (`self._pick_cache`) and occlusion-aware - only
@@ -5863,7 +5868,7 @@ class Application:
         edit object's mesh only, so a Reference never blocks it (RF-6)."""
         if self.selection.mode is SelectionMode.OBJECT:
             return self._objects.pick(x, y)
-        hit = self._gpu_pick(self.selection.mode, x, y)
+        hit = self._gpu_pick(self.selection.mode, x, y, nearest_on_face=self.pick_nearest_on_face)
         if hit is not _CPU:
             return hit
         return pick_component(
@@ -5876,6 +5881,7 @@ class Application:
             self.viewport_height,
             cache=self._pick_cache,
             occlusion=self.display.show_faces,
+            nearest_on_face=self.pick_nearest_on_face,
         )
 
     def _query_cage(self) -> SurfacePositions | None:
@@ -5922,7 +5928,7 @@ class Application:
         self.gpu_picking = False
         self._set_status(f"GPU picking off ({type(exc).__name__}: {exc}) - CPU picker")
 
-    def _gpu_pick(self, mode, x: float, y: float):
+    def _gpu_pick(self, mode, x: float, y: float, *, nearest_on_face: bool = False):
         """The GPU pick of `mode` at (x, y), or `_CPU` when the window cannot serve it."""
         rm = self._gpu_pick_mesh()
         if rm is None:
@@ -5931,7 +5937,7 @@ class Application:
             return gpu_pick_component(
                 self.viewport.gpu_picker, rm, self._objects.edit_camera, self._query_mesh(), mode,
                 x, y, int(self.viewport_width), int(self.viewport_height),
-                occlusion=self.display.show_faces, cache=self._pick_cache,
+                occlusion=self.display.show_faces, cache=self._pick_cache, nearest_on_face=nearest_on_face,
             )
         except Exception as exc:  # noqa: BLE001 - any GL failure falls back, never breaks picking
             self._gpu_failed(exc)

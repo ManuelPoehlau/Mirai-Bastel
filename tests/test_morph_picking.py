@@ -164,7 +164,7 @@ def test_hover_hits_the_element_drawn_under_the_cursor(mode, weight):
         assert _hover(app, _anchor(drawn, mesh, element)) == element
         # at the rest anchor the cursor gets what is drawn there - for most elements no longer the element itself
         x, y = _screen(app, _anchor(rest, mesh, element))
-        want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True)
+        want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True, nearest_on_face=True)
         got = _hover(app, _anchor(rest, mesh, element))
         assert type(got) is type(want) and got == want
         distinguished += got != element
@@ -185,9 +185,9 @@ def test_picks_equal_the_picker_on_the_evaluated_mix_with_occlusion(mode):
             x, y = 40 + i * 52, 40 + j * 50
             app.pointer_motion(x, y)
             got = app.selection.hovered
-            want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True)
+            want = pick_component(_camera(app), oracle, mode, x, y, WIDTH, HEIGHT, occlusion=True, nearest_on_face=True)
             assert type(got) is type(want) and got == want, (x, y, got, want)
-            at_rest = pick_component(_camera(app), mesh, mode, x, y, WIDTH, HEIGHT, occlusion=True)
+            at_rest = pick_component(_camera(app), mesh, mode, x, y, WIDTH, HEIGHT, occlusion=True, nearest_on_face=True)
             differ += at_rest != want
     assert differ >= 3
 

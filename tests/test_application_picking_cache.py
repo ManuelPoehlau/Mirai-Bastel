@@ -70,8 +70,10 @@ def test_hidden_vertex_not_hoverable_in_shaded_but_hoverable_in_wireframe(app):
     _front, hidden = _front_and_hidden(app)
     pos = _vertex_screen(app, hidden)
 
+    # Shaded (default): occluded - the cursor is on the front faces, so nearest-on-face (Manu 2026-11-24) may
+    # hover a visible element there, never the hidden one.
     app.pointer_motion(*pos)
-    assert app.selection.hovered is None  # Shaded (default): occluded
+    assert app.selection.hovered != hidden
 
     app.dispatch_command(cmd.SET_WIREFRAME)
     app.pointer_motion(*pos)
@@ -79,7 +81,7 @@ def test_hidden_vertex_not_hoverable_in_shaded_but_hoverable_in_wireframe(app):
 
     app.dispatch_command(cmd.SET_SHADED)
     app.pointer_motion(*pos)
-    assert app.selection.hovered is None
+    assert app.selection.hovered != hidden
 
 
 def test_visible_vertex_stays_hoverable_in_shaded(app):
@@ -260,7 +262,7 @@ def test_display_mode_change_gives_fresh_occlusion_immediately(app):
     _front, hidden = _front_and_hidden(app)
     pos = _vertex_screen(app, hidden)
     app.pointer_motion(*pos)
-    assert app.selection.hovered is None
+    assert app.selection.hovered != hidden  # occluded (a visible front element may win: nearest-on-face)
 
     app.dispatch_command(cmd.SET_WIREFRAME)
 

@@ -134,6 +134,9 @@ def test_alt_click_below_threshold_keeps_hover(app):
 
 
 def test_wheel_repicks_at_last_cursor_position(app):
+    # The radius picker only: on the cube, nearest-on-face (Manu 2026-11-24) keeps the zoomed vertex hovered (the
+    # cursor stays on its face); this test is about the re-pick itself.
+    app.pick_nearest_on_face = False
     # Ein Vertex weit weg von der Bildmitte wandert beim Zoom am stärksten.
     vid = max(
         (v for v in app.scene.mesh.all_vertex_ids()
@@ -194,3 +197,42 @@ def test_hover_before_init_scene_does_not_crash():
     app.set_viewport_size(WIDTH, HEIGHT)
     assert not app.pointer_motion(10, 10)
     assert not app.pointer_leave()
+
+
+@pytest.mark.parametrize("mode", [SelectionMode.VERTEX, SelectionMode.EDGE])
+def test_inside_a_face_the_nearest_element_hovers_and_clicks(app, mode):
+    """Silo / ZBrush (Manu 2026-11-24): the cursor in the middle of a face, outside every pick radius, hovers the
+    nearest corner / edge of that face, and a click selects it; empty space stays empty (the click clears)."""
+    from mirai.viewport.picking import pick_face
+
+    app.selection.mode = mode
+    mesh = app.scene.mesh
+
+    def centroid(f):
+        pts = [_screen(app, v) for v in mesh.face_vertices(f)]
+        return sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+
+    # The visible face whose screen centroid lies farthest from its corners (the largest one on screen).
+    face = max(
+        (f for f in mesh.all_face_ids() if pick_face(app.camera, mesh, *centroid(f), WIDTH, HEIGHT) == f),
+        key=lambda f: min(math.dist(centroid(f), _screen(app, v)) for v in mesh.face_vertices(f)),
+    )
+    x, y = centroid(face)
+    app.pick_nearest_on_face = False
+    app.pointer_motion(x, y)
+    assert app.selection.hovered is None  # the face centre lies outside every radius
+    app.pick_nearest_on_face = True
+    app.pointer_motion(x + 1.0, y)
+    hovered = app.selection.hovered
+    own = mesh.face_vertices(face) if mode is SelectionMode.VERTEX else mesh.face_edges(face)
+    assert hovered is not None and hovered in own
+    app.pointer_press(_mouse("LEFT"), x + 1.0, y)
+    app.pointer_release("LEFT", x + 1.0, y)
+    selected = app.selection.vertices if mode is SelectionMode.VERTEX else app.selection.edges
+    assert selected == {hovered}
+
+    app.pointer_motion(2.0, 2.0)
+    assert app.selection.hovered is None
+    app.pointer_press(_mouse("LEFT"), 2.0, 2.0)
+    app.pointer_release("LEFT", 2.0, 2.0)
+    assert not app.selection.vertices and not app.selection.edges
