@@ -1942,3 +1942,26 @@ Open LookDev, studio **Dramatic**, the head's material **Creature Skin**, SubD 1
 - **Q-S8-2:** σ(1) = **40°** behalten oder kleiner (z. B. **30°**, `AREA_SIN_MAX`)?
 - (unchanged, separate) the §6.3 correction proposal for the lifted lookup; the eye (`lit`, the cornea softbox) on the
   same meaning; renaming the material's „Weichheit“.
+
+### 23.6 Practical test, first finding (Manu, 2026-11-24): „der Übergang von Nase zur Wange links wirkt bei weichem Licht seltsam/unrealistisch“
+
+Setting from Manu's screenshot: Dramatic (rotation 5°), key 2.2 at 70° / 9°, 4800 K, size 0.45; fill and rim off;
+Creature Skin (adjusted: roughness 0.5, gloss 0.35, wrap 0.5); every effect on. Reproduced in the container (SubD 1,
+the head seen from its shadow side) with the experiment's reference: 32 hard keys over the emitter's cap (σ = 16.8°),
+averaged - each casts its own hard shadow, so the average has the true penumbrae.
+
+**Cause [M-C]:** not the band itself but the balance the assessment §6.1 named. With the effect on, the terminator
+softens with σ (the wrap 0.5 and the band light the cheek far past it), while the nose's **cast shadow** keeps the
+map's penumbra: about 3 texels of the effective map (315 texels at size 0.45, ≈ 4 mm on the head), the same at every
+distance from the nose. The true penumbra at the nose's 2–4 cm to the cheek is ≈ 2 × d × tan σ ≈ 1–2.5 cm: the
+reference shows the nose shadow on the cheek as a broad, soft dimming, production a hard dark wedge in a softly lit
+cheek. The 9° key grazes the cheek, so the coarse map's texels also project as stair steps along the wedge's edge
+(visible with the effect off too, less contrasted). With the effect off the wedge sits in an already dark, red-fringed
+terminator and reads less.
+
+**Not a fix in S8's terms:** a wider fixed kernel would also blur the contact shadows (nostril, lips) and bring back
+§16.6 / §16.7's leaks. The matching remedy is a distance-dependent penumbra for the key (a blocker search, PCSS: the
+penumbra from the receiver-to-blocker depth and σ, the map at full resolution so the steps go too) - the separate
+shadow proposal the assessment §6.1 deferred. Its cost on the reference PC (the skin pass is fetch-bound: +16-32
+fetches) is the material uncertainty. Open for Manu: Q-S8-3 (PCSS as the next step, prototype + reference-PC bench
+first?).
