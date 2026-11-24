@@ -12,7 +12,7 @@ Bilder: [`lookdev_diffuse_area_assets_2026-11-24/`](lookdev_diffuse_area_assets_
 `gui/lookdev_panel.py`, `eye_shaders.py`, `eye_optics.py`, `lookdev_shadow.py`, `lookdev_pass.py`; AD-038 (Licht, I-3,
 I-6), AD-039 §2.3–§2.5, §4, §16.6–§16.7, §19.6–§19.8, RENDERING_VISION §(Haut), REFERENCE_HARDWARE.
 **Evidenz:** **[V]** im Code geprüft · **[M-C]** im Container gemessen (llvmpipe: Bilder gültig, Zeiten nicht) ·
-**[E]** Schätzung · **[O]** offen für Manu. Eine Messung auf dem Referenz-PC gibt es **nicht**; das Skript liegt bereit.
+**[M-RPC]** auf dem Referenz-PC gemessen (GeForce 9800 GTX, siehe §5) · **[E]** Schätzung · **[O]** offen für Manu.
 
 ---
 
@@ -199,10 +199,37 @@ Pixel); Zuschlag 1.15 für 2×2-Quads und Überzeichnung.
 - Keine neue Geometrie, keine CPU-Arbeit pro Vertex, keine Uploads: B liest nur `u_ld_light_size`, das schon jeden
   Frame da ist.
 
-**Referenz-PC [O]:** `experiments/lookdev_diffuse_area/bench.py` (1024 × 768 und `--size 1920 1080`). Es misst den
-echten LookDev-Frame mit Schatten, Augen-Schatten, Doppel-Glanz, Durchleuchtung und Cube, Key-Größe 0.5, cage / SubD 1,
-¾ und Gesicht. Die Varianten werden verschachtelt gemessen. Die Zeilen `Ax16` / `Bx16` werten die Varianten 16-fach
-aus, damit B's eigener Anteil aus dem Rauschen kommt.
+**Referenz-PC [M-RPC]:** Beide Läufe auf der GeForce 9800 GTX wurden am 2026-11-24 erfolgreich ausgeführt. Das vollständige Protokoll steht in [RESULTS_REFERENCE_PC_2026-11-24.md](../../experiments/lookdev_diffuse_area/RESULTS_REFERENCE_PC_2026-11-24.md). Die Messung bestätigt B's niedrige Zusatzkosten; Details und Einordnung folgen direkt unten.
+
+
+### Referenz-PC: GeForce 9800 GTX [M-RPC], 2026-11-24
+
+Manu führte `bench.py` auf der dokumentierten Referenzhardware aus: Q9550, GeForce 9800 GTX, OpenGL 3.3, CPython 3.12.10. Beide Auflösungen wurden mit 20 Runden × 3 Frames je Variante nach 5 Warm-up-Frames gemessen; die Varianten liefen verschachtelt. Der gemessene Quellstand war Commit `8347c42619`, `src/`-Tree `c51b82c960`.
+
+**Isolierter Zusatzaufwand von B**, ermittelt mit `(Bx16 − Ax16) / 16` (vier diffuse Auswertungen je Pixel):
+
+| Auflösung | Oberfläche / Ansicht | B eigener GPU-Aufwand | B GPU p50 | Anteil am 33.3-ms-Budget |
+|---|---|---:|---:|---:|
+| 1024 × 768 | Cage, framed | 0.129 ms | 4.696 ms | 14.1 % |
+| 1024 × 768 | Cage, face | 0.370 ms | 12.388 ms | 37.2 % |
+| 1024 × 768 | SubD 1, framed | 0.198 ms | 6.858 ms | 20.6 % |
+| 1024 × 768 | SubD 1, face | 0.448 ms | 15.741 ms | 47.2 % |
+| 1920 × 1080 | Cage, framed | 0.215 ms | 6.838 ms | 20.5 % |
+| 1920 × 1080 | Cage, face | 0.659 ms | 20.627 ms | 61.9 % |
+| 1920 × 1080 | SubD 1, framed | 0.293 ms | 9.853 ms | 29.6 % |
+| 1920 × 1080 | SubD 1, face | 0.776 ms | 24.753 ms | 74.3 % |
+
+**Einordnung:**
+
+- Die frühere Schätzung für 1024 × 768 (0.09–0.35 ms) lag in der richtigen Größenordnung, unterschätzte aber die SubD-Gesichts-Nahaufnahme: gemessen 0.448 ms. Damit liegt B dort knapp unter dem oberen P3-Richtwert von +0.5 ms pro Effekt.
+- Bei 1920 × 1080 steigt B's eigener Aufwand auf 0.215–0.776 ms. In der teuersten getesteten Einstellung (SubD 1, face) bleibt der ganze LookDev-GPU-Frame mit B bei 24.753 ms und damit unter 33.3 ms; die Reserve sinkt aber auf rund 8.5 ms.
+- B2 und C16 sind deutlich teurer. C16 überschreitet bei 1920 × 1080, SubD 1, face mit 39.026 ms das 30-FPS-GPU-Budget. B bleibt in derselben Konfiguration darunter.
+- `B − A` und der isolierte x16-Wert sind nicht identisch: Für den reinen Shader-Aufwand ist die verstärkte Differenz `(Bx16 − Ax16) / 16` robuster gegen das Messrauschen. Beide Messwerte stehen im vollständigen Protokoll.
+- `glGetError` war am Ende beider Läufe `0x0000`.
+
+Das Ergebnis bestätigt die Performance-Eignung von B auf der realen Referenz-GPU. Es ist **keine** visuelle Freigabe: die Risiken um konkave Übergänge und den bestehenden Wrap-Lift aus §6.2–§6.3 müssen weiterhin gelöst beziehungsweise praktisch beurteilt werden.
+
+Das vollständige Protokoll mit Min/Max-, CPU- und GPU-Werten für alle Varianten steht in [RESULTS_REFERENCE_PC_2026-11-24.md](../../experiments/lookdev_diffuse_area/RESULTS_REFERENCE_PC_2026-11-24.md).
 
 ## 6. Verträglichkeit und Bildrisiken
 

@@ -6,7 +6,7 @@ Shaders gepatcht (`area_glsl.install`); der Augen-Shader und `LD_COMMON_SRC` ble
 **Bewertung und Empfehlung:**
 [`docs/research/LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24.md`](../../docs/research/LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24.md).
 **Container-Lauf:** [`RESULTS_CONTAINER_2026-11-24.md`](RESULTS_CONTAINER_2026-11-24.md) (llvmpipe: Bilder und
-Funktionsprüfung, **keine** 9800-GTX-Messung). Referenz-PC: `OPEN`.
+Funktionsprüfung, **keine** 9800-GTX-Messung). **Referenz-PC gemessen:** [`RESULTS_REFERENCE_PC_2026-11-24.md`](RESULTS_REFERENCE_PC_2026-11-24.md) (GeForce 9800 GTX, 1024 × 768 und 1920 × 1080).
 
 ## Frage
 
@@ -66,8 +66,7 @@ $py = (Resolve-Path .\.venv312\Scripts\python.exe).Path; git rev-parse --short=1
 & $py experiments\lookdev_diffuse_area\bench.py --size 1920 1080
 ```
 
-Die Ausgabe (beide Läufe) als `RESULTS_REFERENCE_PC_<Datum>.md` hierher. Entscheidend sind die Zeilen `B` gegen `A`
-und `(Bx16 - Ax16) / 16` je Fläche (cage / subd1) und Ansicht (framed / face).
+Die dokumentierten Läufe vom 2026-11-24 stehen in [`RESULTS_REFERENCE_PC_2026-11-24.md`](RESULTS_REFERENCE_PC_2026-11-24.md). Bei Wiederholungen die neue Roh-Ausgabe mit Datum ergänzen. Entscheidend sind die Zeilen `B` gegen `A` und `(Bx16 - Ax16) / 16` je Fläche (cage / subd1) und Ansicht (framed / face).
 
 ## Grenzen
 
