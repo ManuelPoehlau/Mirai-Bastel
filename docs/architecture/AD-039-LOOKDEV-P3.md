@@ -1561,7 +1561,7 @@ Runs (GL files each in their own process under xvfb):
 | `… test_gl_face_data_layout.py` / `test_gl_shading.py` / `test_gl_texture.py` (E1) / `test_gl_gpu_picking.py` / `test_gl_morph_picking.py` (E15) | 16 / 19 / 10 / 41 / 16 passed |
 | `… test_gui_imgui_window.py` / `test_gui_lookdev_window.py` | 18 / 2 passed (the maps window test now accepts the 9-value key with the cube) |
 | `xvfb-run -a python -m pytest tests -k "lookdev or look or view_state or main_wiring" -q` | 492 passed |
-| `python -m pytest experiments/drag_cost/tests` / `experiments/lookdev_eye_lab/tests` | 107 / 145 passed (61 skipped: the lab's GL tests without its window in this run) |
+| `python -m pytest experiments/drag_cost/tests` / `xvfb-run -a … experiments/lookdev_eye_lab/tests` | 107 / 206 passed |
 
 Not run: the full `tests/` (S5 touches no `src/core/`, §14).
 
