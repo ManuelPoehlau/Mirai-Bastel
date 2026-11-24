@@ -501,9 +501,24 @@ def test_the_edge_of_an_opening_lets_no_light_through():
     depth[:, 4:] = 0.6            # through the opening: the surface itself
     depth_range, z = 2.0, 0.6
     xs = (np.arange(8) + 0.5) / 8.0
-    edge = xs[3] + 0.97 * (xs[4] - xs[3])  # just before the first surface texel: mostly its own depth
+    edge = xs[3] + 0.99 * (xs[4] - xs[3])  # just before the first surface texel: mostly its own depth
     blended = lo.bilinear_depth(depth, (edge, 0.5))
     assert 0.0 < (z - blended) * depth_range < lo.THICKNESS_SCALE  # the bilinear read: thin, would glow
     assert lo.key_transmission(depth, [edge, 0.5, z], depth_range) == 0.0
     assert lo.key_transmission(depth, [xs[1], 0.5, z], depth_range) < 1e-6  # the frame: 0.8 thick
     assert lo.farthest_depth(depth, (edge, 0.5)) == 0.6
+
+
+
+def test_a_facet_turned_toward_the_key_is_its_own_nearest_surface_rightly():
+    """AD-039 §19.8 (Manu 2026-11-24: jagged black in the red on the cage): with smooth normals on a faceted cage, a
+    facet whose geometric normal faces the key (`face_l` >= 0) is the map's nearest surface without being reached
+    through an opening; it keeps exp(-t / s) (t = 0: all of it, times the smooth normal's max(-n.l, 0) in the shader).
+    The opening rule holds from `face_l` <= -THICKNESS_FACE on, between them it fades."""
+    depth = np.full((8, 8), 0.25)
+    sp = [0.5, 0.5, 0.25]  # the surface itself: no tissue in front
+    assert lo.key_transmission(depth, sp, 2.0, face_l=0.0) == 1.0
+    assert lo.key_transmission(depth, sp, 2.0, face_l=0.3) == 1.0
+    assert lo.key_transmission(depth, sp, 2.0, face_l=-lo.THICKNESS_FACE) == 0.0
+    assert lo.key_transmission(depth, sp, 2.0) == 0.0  # default: a facet facing away
+    assert np.isclose(lo.key_transmission(depth, sp, 2.0, face_l=-0.5 * lo.THICKNESS_FACE), 0.5)

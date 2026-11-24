@@ -1462,6 +1462,42 @@ Runs: `test_gl_lookdev_shadow.py` 27, `_cube` 13, `_maps` 9, `_regions` 9, `_pas
 **Named:** the dark area round an opening grows by up to one map texel (about 0.003 world units on Gollum at full
 resolution, more with a soft key's lower effective resolution).
 
+### 19.8 Fix 3 (2026-11-24): no red wash and no jagged black on the shadow side; the scale 0.02
+
+**Kurzfassung (Deutsch):** Dein Vergleich (Loch offen / geschlossen, Dramatic, Key 70° / 24°, Weichheit 0,
+Durchscheinen 0,58, Käfig) zeigte auf der Schattenseite rote Flächen mit gezackten schwarzen Rändern, in beiden
+Fassungen. Im Container nachgestellt; mit Durchleuchtung aus sind sie weg, mit Weichheit 0 bleiben sie, also kommen
+sie von der Durchleuchtung. Zwei Ursachen:
+1. **Die Skala war zu groß.** Der Key läuft von der Schattenseite der Wange nur 0,02–0,1 Einheiten durch den vorderen
+   Gesichtsgrat (Nase / Wange), bei Gollums Größe 2–12 mm. Mit 0,05 kam davon 15–70 % durch: eine rote Fläche. Jetzt
+   **0,02** (etwa 2,4 mm bei dieser Kopfgröße): die Schattenseite bleibt dunkel, die Ohren leuchten mit dem Key von
+   hinten weiter (verglichen bei 0,05 / 0,03 / 0,02).
+2. **Die Kanten des Käfigs.** Er ist facettiert, die Schattierung nutzt geglättete Normalen. Eine Facette, die
+   geometrisch zum Key zeigt, ist zu Recht selbst die nächste Fläche – die Loch-Regel aus §19.6 machte sie trotzdem
+   schwarz. Jetzt gilt die Loch-Regel nur auf Facetten, die auch geometrisch vom Key weg zeigen (die Facetten-Normale
+   aus den Bildschirm-Ableitungen der Weltposition).
+
+**Evidence [M-C]:** Gollum (container scene), cage, Manu's studio values with fill and rim off: the red regions on the
+shadow side are gone with the thickness off and stay with wrap 0. A red pixel on the far cheek (p = (−0.196, 0.41,
+0.269)) read a thickness of 0.059 from the map: the key's ray through the face's front ridge; others 0.018–0.098.
+
+**What changed:**
+- `THICKNESS_SCALE` 0.05 → **0.02** (`THICKNESS_EDGE` = 0.1 × scale follows: 0.002).
+- `ld_key_transmission(p, face_l)`: the tissue factor is `max(smoothstep(0, EDGE, least), smoothstep(−THICKNESS_FACE,
+  0, face_l))`, `THICKNESS_FACE = 0.1`; `face_l` = the facet's geometric normal · l, the normal from
+  `cross(dFdx(v_world_pos), dFdy(v_world_pos))` (uniform control flow, turned toward the camera, the smooth normal if
+  degenerate). Twin `key_transmission(..., face_l=-1.0)`.
+
+**Tests:** `test_lookdev_optics.py::test_a_facet_turned_toward_the_key_is_its_own_nearest_surface_rightly`; the §19.6 /
+§19.7 tests unchanged in meaning (their faces face away from the key: the open block, the window block still ≤ 2/255);
+the edge-of-an-opening twin test's point moved to 99 % (at the new scale 97 % no longer reads thin). Pins S4 / S7 / S5
+re-taken; M1, S1, S3 and the eye pins unchanged. Runs: `test_gl_lookdev_shadow.py` 27, `_cube` 13, `_maps` 9,
+`_regions` 9, `_pass` 13, `_parity` 8 passed; `pytest tests -k "lookdev or look or view_state or main_wiring"` 551 passed.
+
+**Named:** with a soft key (lower effective map resolution) and on the cage, the edge between thin and thick tissue
+still follows the map's texels; `Weichheit` softens it. The unit question (§19.2, S4-1) stands: 0.02 is again in this
+scene's world units.
+
 ---
 
 ## 20. Implementation note — S7 built (2026-11-24)

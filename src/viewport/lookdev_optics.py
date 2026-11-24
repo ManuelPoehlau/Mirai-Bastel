@@ -36,7 +36,8 @@ import numpy as np
 from . import eye_optics as eo
 from .light_rig import kelvin_to_rgb
 from .lookdev_shaders import (CUBE_LEVELS, CUBE_SAMPLES, DUAL_LOBE_MIX, DUAL_LOBE_SCALES, MAX_STUDIO, NORMAL_MAP_ZERO,
-                              SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT, THICKNESS_EDGE, THICKNESS_SCALE, TONE_CURVES)
+                              SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT, THICKNESS_EDGE, THICKNESS_FACE, THICKNESS_SCALE,
+                              TONE_CURVES)
 
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 SH_DIRECTIONS = 4096
@@ -590,19 +591,26 @@ def farthest_depth(depth: np.ndarray, uv) -> np.ndarray:
     return out
 
 
+def _smoothstep(edge0: float, edge1: float, x) -> np.ndarray:
+    x = np.clip((np.asarray(x, dtype=np.float64) - edge0) / (edge1 - edge0), 0.0, 1.0)
+    return x * x * (3.0 - 2.0 * x)
+
+
 def key_transmission(depth: np.ndarray, sp, depth_range: float, scale: float = 1.0,
-                     thickness_scale: float = THICKNESS_SCALE) -> np.ndarray:
+                     thickness_scale: float = THICKNESS_SCALE, face_l=-1.0) -> np.ndarray:
     """GLSL `ld_key_transmission` from the map point `sp` (..., 3): the thickness `max(z - stored, 0) x depth_range`
     (world units, the stored depth read raw over the rendered part `scale` of the map), `exp(-thickness / scale)` times
-    `smoothstep(0, THICKNESS_EDGE, least)` with `least` past the farthest of the 4 texels (no tissue in front at any of
-    them: an opening, AD-039 §19.6 / §19.7); 0 outside the map's box."""
+    the tissue factor `max(smoothstep(0, THICKNESS_EDGE, least), smoothstep(-THICKNESS_FACE, 0, face_l))` - `least`
+    past the farthest of the 4 texels (no tissue in front at any of them: an opening, AD-039 §19.6 / §19.7), `face_l`
+    the facet's geometric normal . l (a facet turned toward the key is rightly its own nearest surface, §19.8; the
+    default -1: facing away); 0 outside the map's box."""
     sp = np.asarray(sp, dtype=np.float64)
     stored = bilinear_depth(depth, sp[..., :2] * scale)
     thickness = np.maximum(sp[..., 2] - stored, 0.0) * depth_range
     least = np.maximum(sp[..., 2] - farthest_depth(depth, sp[..., :2] * scale), 0.0) * depth_range
     inside = np.all((sp >= 0.0) & (sp <= 1.0), axis=-1)
-    x = np.clip(least / THICKNESS_EDGE, 0.0, 1.0)
-    return np.where(inside, np.exp(-thickness / thickness_scale) * x * x * (3.0 - 2.0 * x), 0.0)
+    tissue = np.maximum(_smoothstep(0.0, THICKNESS_EDGE, least), _smoothstep(-THICKNESS_FACE, 0.0, face_l))
+    return np.where(inside, np.exp(-thickness / thickness_scale) * tissue, 0.0)
 
 
 def ld_backscatter(albedo, n, v, values: dict, backscatter: float, backscatter_color, transmission=None) -> np.ndarray:

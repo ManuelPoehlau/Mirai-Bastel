@@ -1041,7 +1041,7 @@ void main() {
     if (i >= u_count) { out_value = vec4(0.0); return; }
     vec3 sp = texelFetch(u_inputs, i).xyz;
     // the identity map matrix: the map point of p is p * 0.5 + 0.5
-    out_value = vec4(ld_key_transmission(sp * 2.0 - 1.0), 0.0, 0.0, 1.0);
+    out_value = vec4(ld_key_transmission(sp * 2.0 - 1.0, -1.0), 0.0, 0.0, 1.0);  // a facet facing away
 }
 """
 

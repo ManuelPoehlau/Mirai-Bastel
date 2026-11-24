@@ -112,14 +112,19 @@ SHADOW_WRAP_LIFT = 4.0
 DUAL_LOBE_SCALES = (0.75, 1.3)
 DUAL_LOBE_MIX = 0.85
 #: S4 (AD-039 §7 / §19.2): the key light's path inside the mesh over which the transmission falls to 1/e, in world
-#: units (`PROVISIONAL`, tuned on `Gollum_Head_05`'s ears; the AD's "0.6 cm" assumed 1 unit = 1 cm, which that scene does
-#: not follow).
-THICKNESS_SCALE = 0.05
+#: units (`PROVISIONAL`; the AD's "0.6 cm" assumed 1 unit = 1 cm, which `Gollum_Head_05` does not follow). 0.05 until
+#: 2026-11-24; 0.02 since §19.8: at 0.05 the 0.02-0.1 chords through the face's front (nose / cheek) washed the shadow
+#: side red, at 0.02 they are dark and the ears with the key behind still glow.
+THICKNESS_SCALE = 0.02
 #: The thickness below which no light comes through, in world units (`PROVISIONAL`, AD-039 §19.6, 2026-11-24): a surface
 #: facing away from the key with no tissue in front of it is not lit through but reached through an opening (an eye
 #: socket behind a non-casting eyeball, the mouth, the neck's rim) or past a clipped caster; the transmission rises
 #: from 0 at no thickness to full at this one.
 THICKNESS_EDGE = 0.1 * THICKNESS_SCALE
+#: The opening rule only holds on a facet that faces away from the key (AD-039 §19.8): a facet turned toward it (its
+#: geometric normal, n_face . l >= 0) is rightly its own nearest surface - on a faceted cage with smooth normals the
+#: terminator's facets are. The rule fades out between n_face . l = -this and 0.
+THICKNESS_FACE = 0.1
 
 
 def constant_src(name: str, library: str = es.EYE_LIB_SRC) -> str:
@@ -419,7 +424,13 @@ void main() {{
 #ifdef THICKNESS
     // AD-039 §7: the key's light through thin parts (ears, nostril wings) - how far it travelled inside the mesh, from
     // the key's depth map - in place of M1's view-rim proxy
-    float back = ld_key_transmission(v_world_pos) * max(-dot(n, u_ld_light_dir[0]), 0.0);
+    // the facet's own normal (screen derivatives of the world position; uniform control flow), toward the camera
+    vec3 n_face = cross(dFdx(v_world_pos), dFdy(v_world_pos));
+    float n_face_len = length(n_face);
+    n_face = n_face_len > 0.0 ? n_face / n_face_len : n;
+    if (dot(n_face, v) < 0.0) n_face = -n_face;
+    float back = ld_key_transmission(v_world_pos, dot(n_face, u_ld_light_dir[0]))
+               * max(-dot(n, u_ld_light_dir[0]), 0.0);
 #else
     float back = (1.0 - nv) * (1.0 - nv) * (1.0 - nv) * max(-dot(n, u_ld_light_dir[0]), 0.0);
 #endif
@@ -513,6 +524,7 @@ uniform sampler2D u_ld_shadow_depth;
 uniform float u_ld_shadow_range;  // world units per unit of the map's depth
 const float LD_THICKNESS_SCALE = {THICKNESS_SCALE!r};
 const float LD_THICKNESS_EDGE = {THICKNESS_EDGE!r};
+const float LD_THICKNESS_FACE = {THICKNESS_FACE!r};
 // the distance (world units) the key light travels inside the mesh before it reaches p: p's depth from the key past
 // the nearest surface in the map, at p's own map point (no normal offset: it would shift the lookup across the
 // surface's slope and read a thickness where there is none). x: through the bilinear depth of the 4 texels around
@@ -536,9 +548,12 @@ vec2 ld_key_thickness(vec3 p) {{
 // the share of the key's light that comes through: exp(-thickness / scale); outside the map none, and none where no
 // tissue lies in front of p (p itself is the nearest surface: the key reaches it through an opening, AD-039 §19.6) -
 // decided on the 4 texels, so the edge of an opening does not blend the surface's own depth into a thin glowing line
-float ld_key_transmission(vec3 p) {{
+// (§19.7), and only on a facet facing away from the key (`face_l` = its geometric normal . l, §19.8): a facet turned
+// toward the key is rightly its own nearest surface
+float ld_key_transmission(vec3 p, float face_l) {{
     vec2 t = ld_key_thickness(p);
-    return t.x < 0.0 ? 0.0 : exp(-t.x / LD_THICKNESS_SCALE) * smoothstep(0.0, LD_THICKNESS_EDGE, t.y);
+    float tissue = max(smoothstep(0.0, LD_THICKNESS_EDGE, t.y), smoothstep(-LD_THICKNESS_FACE, 0.0, face_l));
+    return t.x < 0.0 ? 0.0 : exp(-t.x / LD_THICKNESS_SCALE) * tissue;
 }}
 """
 
