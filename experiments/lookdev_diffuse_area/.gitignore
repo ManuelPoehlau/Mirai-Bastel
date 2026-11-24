@@ -1,0 +1,3 @@
+# Renders, sheets, metrics and the bench output: regenerate with run_compare.py / analyze.py / curves.py / bench.py
+out/
+out_*/
