@@ -13,7 +13,10 @@ pins; the §6 energy claim corrected, §18.2): its reference-PC row and practica
 units, the unit question open, §19.2 S4-1): its reference-PC row and practical test (§19.4–§19.5) are open. **S7 built
 2026-11-24, ahead of S5 / S6** (§20; Manu on Q-P3-2: „Map-Pfade“, and „S7 jetzt vorziehen“): roughness, normal and
 translucency maps as image paths on the material (`core.LookMaps`, `LookMaterial.maps`, format **v16**; S6 takes v17);
-no map = S4 by pins; its reference-PC row and practical test (§20.4–§20.5) are open. S5 next.
+no map = S4 by pins; its reference-PC row and practical test (§20.4–§20.5) are open. **S5 built 2026-11-24** (§21: the
+studio's environment cube, „Umgebungs-Cube“: the analytic studio prefiltered on the GPU, read back and uploaded - the
+reference PC's FBO-cube defect - on unit 8; cube off = S7 by pins; with the dual lobe two lookups; the eye stays
+analytic): its reference-PC rows and practical test (§21.4–§21.5) are open. S6 next, after LD-D8.
 **Why now:** Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“
 ([proposal §0.1](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md), [AD-038](AD-038-LOOKDEV-ROOM-M1.md)
 §13.6). P3 needs its own AD before any `src/` change and fixes the order of the P3 items.
@@ -57,7 +60,7 @@ container (a function check only), **[M-RPC]** measured on the reference PC, **[
   4. **S4 Durchscheinen mit Dicke aus der Form:** Die Dicke kommt aus derselben Schattenkarte, ohne Malen.
      - Das korrigiert den Vorschlag: Diese Dicke hängt **nicht** an der Mal-Kanal-Entscheidung (§1.2 C3).
   5. **S5 Cube-Umgebung** mit GPU-Vorfilter. Inhalt ist das analytische Studio der Vorlage, also weiter ohne
-     HDRI-Dateien (D-L4).
+     HDRI-Dateien (D-L4). **Gebaut 2026-11-24** (§21).
   6. **S6 Region-Materialien**, nach LD-D8.
   7. **S7 Maps** für Rauheit, Normalen und Durchscheinen, nach der Mal-Kanal-Entscheidung. **Gebaut 2026-11-24, vor S5
      und S6 vorgezogen** (dein „Map-Pfade“ und „S7 jetzt vorziehen“, §20).
@@ -543,6 +546,10 @@ key.
   - GL state, the seamless flag restored.
 - **Measurement:** room probe row `lookdev +cube`, the prefilter's wall time on a preset switch; P3-0 row `cube env`
   and the chain time.
+- **Built 2026-11-24 (§21).** As §11.1 run 4 / 5 changed it: the prefilter renders into a scratch cube, the chain is
+  read back and uploaded into the cube the skin samples, and a preset switch waits one frame behind the status line
+  „LookDev: Umgebung wird vorbereitet …“. With the dual lobe the reflection takes two lookups (run 5). Level 0 holds
+  within one RGBA16F step, not 1e-3 (§21.2 S5-2).
 
 ---
 
@@ -1480,3 +1487,101 @@ Open LookDev, select the head, material **Creature Skin**, view „¾“, SubD 1
 
 Assumptions to correct in one sentence: maps are images in the object's UVs, not painted in Mirai (painted channels
 are a later AD-037 phase); OpenGL green-up by default; a preset keeps the maps; at most 4096², PNG / JPEG / BMP.
+
+---
+
+## 21. Implementation note — S5 built (2026-11-24)
+
+**Kurzfassung (Deutsch):** Die Spiegelung des Studios auf der Haut kommt jetzt aus einem vorgefilterten Umgebungs-Cube
+statt aus der analytischen Näherung pro Pixel. Der Inhalt des Cubes **ist** das analytische Studio der Vorlage (keine
+HDRI-Dateien, D-L4; Q-P3-4 wie vorgeschlagen): Level 0 ist das scharfe Studio, die rauen Level sind daraus mit GGX
+gefiltert (64 Proben, Ecken-Korrektur). Er wird nur neu berechnet, wenn sich der **Inhalt** des Studios ändert (eine
+Vorlage); Drehen, Intensität, Belichtung und die Lichter kosten nichts. Wegen des Treiberfehlers deiner Karte (§11.1
+Lauf 4/5) wird der Cube auf der GPU gefiltert, zurückgelesen und neu hochgeladen; die Haut liest nur die Kopie. Ein
+Vorlagenwechsel zeigt dafür einen Frame lang „LookDev: Umgebung wird vorbereitet …“. Mit „Doppel-Glanz“ liest die
+Spiegelung jetzt auch zwei Anteile (P3-0 Lauf 5: billiger als ein analytischer). Die Augen bleiben beim analytischen
+Studio. Neuer Schalter „Umgebungs-Cube“ (Standard an, braucht ein Cube-Ziel). Cube aus = S7, Zeichen für Zeichen.
+**Sichtbar ändert sich wenig** (wie §8 sagt): am Gollum-Kopf nur einzelne Pixel an der Silhouette (≤ 7/255); auf einer
+glänzenden Kugel im Mittel < 1/255, höchstens 20/255 bei Dramatic und Rauheit 0,25. Der Gewinn ist die richtige
+Filterung bei mittlerer bis hoher Rauheit, weniger GPU-Zeit pro Pixel und die Grundlage für andere Umgebungen.
+
+### 21.1 What is built
+
+| Layer | Built |
+|---|---|
+| Effects / features | `LookdevEffects.cube` (default on; the fifth field, before `maps`, in the AD's slice order - persistence is by name); `EFFECT_FEATURE["cube"] = "cube_rgba16f"`, `EFFECT_LABEL` „Umgebungs-Cube“; `lookdev_features._cube_rgba16f` (the production size and levels, every face of every level attached in turn: complete, `glGetError` 0), status line „LookDev: Umgebungs-Cube aus – Cube-Ziel nicht verfügbar“ |
+| Shaders | `CUBE_UNIT = 8`, `CUBE_SIZE = 128`, `CUBE_LEVELS = 7` (128² … 2²), `CUBE_SAMPLES = 64` (`PROVISIONAL`); `LD_CUBE_SRC` (`u_ld_env_cube`, `ld_env_cube(r, roughness)`: `u_ld_env_intensity × textureLod(cube, u_ld_env_rot × r, clamp(roughness) × 6)`), appended last only with the effect; `CUBE_PREFILTER_SRC` + `cube_prefilter_sources()` (the full-screen triangle; `LD_BRDF_SRC + LD_COMMON_SRC`, so the content is `ld_studio` itself; level 0 one sample, the rest GGX importance sampling, Hammersley, N = V = R, N·L-weighted; the corner fix); `skin_sources(..., cube_env)` refuses it without `env_spec` |
+| Body block (1) | inside `ENV_SPEC`: `#ifdef CUBE_ENV` - `ld_env_cube` at `rough`, with a nested `DUAL_LOBE` the mix of two lookups at `rough × 1.3` / `× 0.75` (0.15 / 0.85, the lights' values) - `#else` the analytic line, character for character |
+| Cube | `viewport/lookdev_cube.py`: `EnvCube.update(studio)` (prefilter only when `holds(studio)` is false: the `Studio` content, the SH9 key; renders every face of every level into a scratch RGBA16F cube through its own FBO, reads the chain back with `glGetTexImage` and uploads it into a fresh cube, deletes the scratch cube and the FBO; saves / restores FBOs, viewport, program, VAO, caps, depth mask, the active unit and unit 8's cube); `prefilters`, `last_ms`, `bind` / `unbind`, `read_back(level)` (test hook), `release()` |
+| Pass | `LookdevPass.env_cube()` (created on first use, released in `release()`); `program_key(..., cube_env)`: 9 values with the cube (S4's 5, the three map flags, `CUBE_ENV`), else 5 or 8 as before; `draw(..., cube=None)` binds the cube on unit 8 and enables `GL_TEXTURE_CUBE_MAP_SEAMLESS` only around the draw (restored to what it was) |
+| Viewport | `set_lookdev_effects(effects, studio=None)`: the studio content the next frame's cube shows; `_lookdev_programs` adds the cube flag; `lookdev_prepare_needed` is also true when a cube program is drawn and the cube does not hold the wanted content (`lookdev_cube_needed`), `prepare_lookdev` prefilters it; `_render_lookdev` brings the cube up to date before the background when a skin LookDraw is drawn and hands it to every skin draw. Eyes untouched |
+| App | `_set_lookdev_studio_state` (every studio change: a preset, a setter, a loaded `view.lookdev`): with the room open and a prefilter due it takes the I-10 path - the frame before stays, status „LookDev: Umgebung wird vorbereitet …“, then `_prepare_lookdev_step` prefilters and switches („… (Umgebung in x s vorbereitet)“); rotation, intensity, exposure and the lights never wait |
+| Twins | `lookdev_optics.cube_face_direction`, `cube_texel_directions` (with the corner fix), `radical_inverse`, `cube_level_roughness`, `cube_lod`, `prefilter_ggx` |
+| GUI | `lookdev_model`: the effect row „Umgebungs-Cube“ with its hint; the „Doppel-Glanz“ hint says the reflection takes two lobes with the cube |
+| Probe | `probe_lookdev_room.py`: `EFFECT_ROWS["cube"] = ("lookdev +cube", ("cube",))` against `lookdev`; `cube_rows`: per studio preset the build's wall ms (`EnvCube.last_ms`) and the frame after the preparation |
+
+Not touched: `src/core/`, `serialization.py`, `LD_COMMON_SRC` (the eye's LOOKDEV pin), the other P3 library strings,
+`eye_shaders.py`, `eye_pass.py`, `KeyShadow`, `main.py`, `config/keymap.json` (no keys), SH9 (the diffuse environment).
+
+### 21.2 Where the build differs from §2 / §8, and why
+
+| # | AD | Built | Why |
+|---|---|---|---|
+| S5-1 | §8 "prefilter … inside the frame, with no status line" | GPU prefilter, then read back and upload; a preset switch behind the status line of §2.1 | §11.1 run 4 / 5 (the reference PC's defect with sampling an FBO-rendered float cube; the copy costs 17–24 ms there). Applied on every card: checks are by function, never by GPU name (§2.2); `test_the_copied_cube_samples_over_many_frames` is the gate |
+| S5-2 | §8 test "level 0 vs `ld_studio` within 1e-3 relative" | within one RGBA16F step (2⁻¹⁰) + 2e-4 | 1e-3 is the format's own limit: a half float's step is 9.8e-4 relative just above a power of two, and Mesa rounds the store toward zero. llvmpipe: 1.14e-3 at values just above 1.0 (≈ 1.15 steps), everywhere else below 1e-3; LD-0 (c) on the reference PC 6e-4 |
+| S5-3 | §6 / §11.1 run 5 "S3 uses the second lobe on the environment too once S5 is in" | built: with `DUAL_LOBE` and `CUBE_ENV` two lookups; the analytic studio keeps one lobe | as run 5 decided (`cube dual env` cheaper than one analytic lobe) |
+| S5-4 | §2.3 point 4 (the key's defines in a fixed order) | 9 values only with the cube (`key + maps + (True,)`), 5 / 8 as before without it | the S2-1 / S7-3 pattern: every key and test before S5 stays as it was |
+| S5-5 | §8 "When: on a change of the studio's content" | also only when a skin LookDraw is drawn | an eyes-only or Reference-only frame needs no cube; the gate "every effect off: nothing created" holds |
+| S5-6 | §8 "`update(studio)` … about 12 ms … inside the frame" | the frame builds it only if the room did not (a viewport without the app, a test); the app prefilters in `prepare_lookdev` | the I-10 path of §2.1 is the app's; the frame keeps a correct fallback |
+
+**What changes in the picture** (container, llvmpipe): a glossy sphere (`GLOSSY`-like, F0 0.08) per preset and roughness
+0.25 / 0.45 / 0.7 against the analytic studio - mean 0.4–0.8/255 over the lit pixels, p99 1–8/255, max 2–20/255 (the
+largest at Dramatic, r 0.25: the softbox's edge, sharper in the cube's level 1 than in the analytic fit's widened
+edge). `Gollum_Head_05`, SubD 1, Creature Skin, all other effects on, framed ¾ at 1024 × 768: Portrait 6 px > 2/255
+(max 3), Dramatic 7 px (max 7), Soft Studio 0 px - all at the silhouette, where the Fresnel term lifts the reflection.
+The eyes are unchanged.
+
+### 21.3 Tests (container, llvmpipe, 2026-11-24)
+
+| # | Test |
+|---|---|
+| sources | `test_lookdev_shaders.py`: new `PINNED_S7_SKIN_SOURCES_SHA256` (the 4 variants with every effect before S5 and all three maps, taken from `eb4c817` before the change); `test_the_cube_off_keeps_the_m1_to_s7_sources` (every pin with `cube_env=False`); `test_the_cube_variant_reads_the_cube_instead_of_the_analytic_studio` (define and library once, the library last, `ld_env_cube` in its block, twice with the dual lobe, refused without `ENV_SPEC`, nothing left with it off, `LD_COMMON_SRC` without a cube); `test_the_prefilter_program_is_the_studio_library_and_the_prefilter` |
+| twins | `test_lookdev_optics.py`: the GL cube table and the corner fix (the three faces of a corner share its direction), `radical_inverse` / `cube_lod`, `prefilter_ggx` (one sample = the studio, a constant studio stays constant, a rough level is smoother); the `cube` effect, its feature and reason |
+| GL (`tests/test_gl_lookdev_cube.py`, 13) | level 0 vs `ld_studio` (S5-2); the corner spread 0 at all 7 levels; levels 1–6 vs `prefilter_ggx` at 24 texels each (≤ 2 %; measured ≤ 9.6e-4); `ld_env_cube` at texel centres and the level's roughness = the texel × intensity with the studio turned 33° (the `textureLod` read-back); prefiltered only on a content change (rotation, intensity, exposure, a light, the camera +0, a preset +1, back +1, the capture's second draw +0); 30 frames of the copied cube identical, no GL error; cube off = the program of S7's call, pixel for pixel, nothing on unit 8, on stays close; the dual lobe reads it twice (9-value key, the picture changes); seamless and unit 8 as found (off and on before the frame); `prepare_lookdev` prefilters the wanted studio and the frame before keeps the old content; `cube_rgba16f` stubbed false = the cube-off frame, no cube, the status line once; the check passes on llvmpipe; in the app a preset switch waits one frame with „LookDev: Umgebung wird vorbereitet …“, then prefilters once, rotation / a light do not wait, the effect off compiles behind the status line and a preset switch then waits for nothing |
+| updated | the effect lists in persistence / room / panel / probe tests gain `cube`; tests that compare against a program or twin before S5 (`test_gl_lookdev_shadow.py`: `OFF`, the S1 / S3 / S4 comparisons; `test_gl_lookdev_maps.py`: `MAPS_ONLY`) switch the cube off, as S3-4 did for E7. **Pre-existing, fixed here:** `test_lookdev_room.py::test_set_lookdev_effect_is_view_state_and_a_preset_keeps_the_effects` failed since S7 (its reasons dict lacked `maps`) |
+
+Runs (GL files each in their own process under xvfb):
+
+| Command | Result |
+|---|---|
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_cube.py -q` | 13 passed |
+| `… tests/test_gl_lookdev_shadow.py` / `test_gl_lookdev_pass.py` / `test_gl_lookdev_parity.py` / `test_gl_lookdev_maps.py` | 25 / 13 / 8 / 9 passed |
+| `… tests/test_gl_eye_pass.py` | 135 passed (unchanged; the eye pins green) |
+| `python -m pytest tests/test_lookdev_shaders.py tests/test_lookdev_optics.py tests/test_lookdev_persistence.py tests/test_lookdev_room.py tests/test_gui_lookdev_model.py experiments/drag_cost/tests/test_probe_lookdev_room.py -q` | all passed |
+| E1 / E15 / panel / `-k lookdev` / drag_cost / eye lab | see the follow-up below |
+
+### 21.4 Measurement
+
+Container (llvmpipe, a function check only): `probe_lookdev_room.py --effects cube --draws 3 --surfaces cage` ran
+`lookdev`, `lookdev +cube` and the four `cube prefilter` rows (each `prefilters +1`, the build 49–65 ms wall on
+llvmpipe) with `glGetError` 0.
+
+**Reference PC (S5, with S1–S4's and S7's open run):** the same single command as §18.4 (`probe_lookdev_room.py`, every
+built row). What it decides for S5:
+- `lookdev +cube` against `lookdev` ≤ +0.3 ms (§2.5; P3-0 run 5 measured −0.4 / −0.6 ms, cheaper);
+- `cube prefilter` ≤ about 40 ms wall per preset switch (run 5: 12 ms prefilter + 17–24 ms copy) - one frame's hitch
+  behind the status line. Above it, the lever is the cube's size (a constant; LD-3's knob later).
+
+### 21.5 Practical test S5 (`scenes/Gollum_Head_05.mirai.json`, about 5 minutes)
+
+Open LookDev, SubD 1, material **Creature Skin**, then **Wet Skin**, view „¾“.
+1. **„Umgebungs-Cube“ an / aus** (Block „Effekte“): Erwartet: kaum ein Unterschied, höchstens an der Silhouette und in
+   den Glanzlichtern der Studio-Lichtflächen. Fällt dir etwas auf, das schlechter wirkt?
+2. **Vorlage wechseln** (Portrait → Dramatic → Soft Studio): Erwartet: ein Frame mit „LookDev: Umgebung wird vorbereitet
+   …“, dann das neue Studio; kein spürbares Stocken über diesen einen Frame hinaus.
+3. **Studio drehen, Intensität, Lichter:** Erwartet: flüssig, keine Statuszeile (der Cube wird nicht neu gerechnet).
+4. **Wet Skin, „Doppel-Glanz“ an / aus:** die Spiegelung der Lichtflächen hat mit Doppel-Glanz einen weicheren Saum.
+
+Assumptions to correct in one sentence: the cube is on by default; its content is the preset's analytic studio (no
+HDRI, Q-P3-4: an `.hdr` import of your own files is a separate item on your word); the eyes keep the analytic studio;
+the size is fixed (128², LD-3's knob later).

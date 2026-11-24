@@ -34,7 +34,7 @@ from viewport.viewport import Viewport  # noqa: E402
 SIZE = 192
 GREY = LookDraw((0.5, 0.5, 0.5), roughness=1.0, specular=0.0)
 FLAT = lo.Studio((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-OFF = lo.LookdevEffects(shadow=False, dual_lobe=False, thickness=False)  # every P3 effect off: M1
+OFF = lo.LookdevEffects(shadow=False, dual_lobe=False, thickness=False, cube=False)  # every P3 effect off: M1
 
 
 @pytest.fixture(scope="module")
@@ -544,7 +544,7 @@ def test_the_dual_lobe_off_draws_s1_and_on_changes_the_highlight(gl_window):
 
     camera = OrbitCamera(target=(0.0, 0.2, 0.0), distance=5.5, yaw=0.3, pitch=0.75)
     viewport = _viewport(gl_window, {"ground": _ground(), "box": _box(*BOX)}, camera)
-    s1 = lo.LookdevEffects(dual_lobe=False, thickness=False)
+    s1 = lo.LookdevEffects(dual_lobe=False, thickness=False, cube=False)
     state = _state(key_az=120.0, key_el=40.0, size=0.1, effects=s1)
     viewport.set_shading("lookdev", state)
     plain_off = _frame(gl_window, viewport)  # GREY: specular 0
@@ -562,7 +562,8 @@ def test_the_dual_lobe_off_draws_s1_and_on_changes_the_highlight(gl_window):
     viewport.set_object_entry("sphere", viewport.object_entries["sphere"].mesh, (0.5, 0.5, 0.5), look=glossy)
     viewport.set_shading("lookdev", _state(key_az=30.0, key_el=30.0, effects=s1))
     off = _frame(gl_window, viewport)
-    viewport.set_shading("lookdev", _state(key_az=30.0, key_el=30.0, effects=lo.LookdevEffects(thickness=False)))
+    viewport.set_shading("lookdev", _state(key_az=30.0, key_el=30.0,
+                                           effects=lo.LookdevEffects(thickness=False, cube=False)))
     on = _frame(gl_window, viewport)
     assert (False, True, True, True, False) in viewport.lookdev_pass.programs
     changed = np.abs(on - off).max(axis=-1) > 2
@@ -622,7 +623,7 @@ def test_the_thickness_lets_a_thin_slab_through_and_not_a_thick_block(gl_window)
     transmits `exp(-0.02 / THICKNESS_SCALE)`, the block's (0.8 behind) nothing; the pixels equal the twin
     `lookdev_output(ld_backscatter(..., transmission))`. With the thickness off both faces show M1's view-rim proxy,
     which is 0 face-on."""
-    viewport = _backlit(gl_window, lo.LookdevEffects())
+    viewport = _backlit(gl_window, lo.LookdevEffects(cube=False))
     pixels = _frame(gl_window, viewport)
     assert (False, True, True, True, True) in viewport.lookdev_pass.programs
     frame = viewport.lookdev_frame()
@@ -639,7 +640,8 @@ def test_the_thickness_lets_a_thin_slab_through_and_not_a_thick_block(gl_window)
     slab_ys, slab_xs = _front_pixels(viewport, *SLAB)
     block_ys, block_xs = _front_pixels(viewport, *BLOCK)
     assert pixels[slab_ys, slab_xs].mean() > 60 and pixels[block_ys, block_xs].max() <= 2
-    viewport.set_shading("lookdev", _state(key_az=180.0, key_el=0.0, effects=lo.LookdevEffects(thickness=False)))
+    viewport.set_shading("lookdev", _state(key_az=180.0, key_el=0.0,
+                                           effects=lo.LookdevEffects(thickness=False, cube=False)))
     off = _frame(gl_window, viewport)
     assert off[slab_ys, slab_xs].max() <= 2  # the proxy: (1 - n.v)^3 = 0 face-on
     _release(viewport)
@@ -652,8 +654,9 @@ def test_the_thickness_off_draws_s3_and_binds_nothing_on_unit_7(gl_window):
     from pyglet import gl
     from pyglet.graphics.shader import Shader, ShaderProgram
 
-    viewport = _backlit(gl_window, lo.LookdevEffects(thickness=False))
-    viewport.set_shading("lookdev", _state(key_az=150.0, key_el=20.0, effects=lo.LookdevEffects(thickness=False)))
+    viewport = _backlit(gl_window, lo.LookdevEffects(thickness=False, cube=False))
+    viewport.set_shading("lookdev", _state(key_az=150.0, key_el=20.0,
+                                           effects=lo.LookdevEffects(thickness=False, cube=False)))
     s3 = _frame(gl_window, viewport)
     passes = viewport.lookdev_pass
     key = (False, True, True, True, False)
@@ -664,9 +667,10 @@ def test_the_thickness_off_draws_s3_and_binds_nothing_on_unit_7(gl_window):
                                            for src, kind in ls.skin_sources(locations, False, True, True, True)))
     assert np.array_equal(_frame(gl_window, viewport), s3)
     # the key straight in front: no face the camera sees faces away from it - the thickness changes nothing
-    viewport.set_shading("lookdev", _state(key_az=0.0, key_el=0.0, effects=lo.LookdevEffects(thickness=False)))
+    viewport.set_shading("lookdev", _state(key_az=0.0, key_el=0.0,
+                                           effects=lo.LookdevEffects(thickness=False, cube=False)))
     front_off = _frame(gl_window, viewport)
-    viewport.set_shading("lookdev", _state(key_az=0.0, key_el=0.0, effects=lo.LookdevEffects()))
+    viewport.set_shading("lookdev", _state(key_az=0.0, key_el=0.0, effects=lo.LookdevEffects(cube=False)))
     assert np.array_equal(_frame(gl_window, viewport), front_off)
     gl.glActiveTexture(gl.GL_TEXTURE0 + ls.SHADOW_RAW_UNIT)
     bound, sampler = gl.GLint(), gl.GLint()
@@ -681,11 +685,11 @@ def test_the_thickness_off_draws_s3_and_binds_nothing_on_unit_7(gl_window):
 def test_without_sampler_objects_the_thickness_is_off_with_a_status_line(gl_window, monkeypatch):
     """AD-039 §2.2 / §7 (T4-3): `sampler_objects` stubbed false - the frame equals the thickness-off frame, the status
     line once, the shadow stays on."""
-    reference = _backlit(gl_window, lo.LookdevEffects(thickness=False))
+    reference = _backlit(gl_window, lo.LookdevEffects(thickness=False, cube=False))
     want = _frame(gl_window, reference)
     _release(reference)
     monkeypatch.setitem(lookdev_features.CHECKS, "sampler_objects", lambda: False)
-    viewport = _backlit(gl_window, lo.LookdevEffects())
+    viewport = _backlit(gl_window, lo.LookdevEffects(cube=False))
     assert np.array_equal(_frame(gl_window, viewport), want)
     effects = viewport.lookdev_effects()
     assert effects.shadow and not effects.thickness

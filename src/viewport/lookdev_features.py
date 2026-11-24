@@ -8,7 +8,10 @@ one status line; the check does not retry in the session. The report is a plain 
 S1 adds `depth_texture`: a DEPTH_COMPONENT24 texture with `GL_COMPARE_REF_TO_TEXTURE` attached to an FBO -
 `glCheckFramebufferStatus == COMPLETE` and `glGetError` 0. S4 adds `sampler_objects`: `glGenSamplers` succeeds and
 `glGetError` stays 0. S7 adds `texture_units`: `GL_MAX_TEXTURE_IMAGE_UNITS` covers the highest unit the skin binds
-(`lookdev_shaders.MAP_UNITS`, 11) + 1. S5 adds `cube_rgba16f` here.
+(`lookdev_shaders.MAP_UNITS`, 11) + 1. S5 adds `cube_rgba16f`: an RGBA16F cube of the production size with every level
+allocated, each face of each level attached to an FBO in turn - every attachment `GL_FRAMEBUFFER_COMPLETE`, `glGetError`
+0 (the LD-0 (c) check; it does not detect the reference PC's defect with sampling an FBO-rendered cube, which
+`viewport.lookdev_cube.EnvCube` works around by copying the cube, AD-039 §11.1 run 4 / 5).
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from dataclasses import dataclass, fields
 #: The status line of a feature that is missing (German, the app's status language).
 FEATURE_STATUS = {"depth_texture": "LookDev: Schatten aus – Tiefentextur nicht verfügbar",
                   "sampler_objects": "LookDev: Durchleuchtung aus – Sampler-Objekte nicht verfügbar",
+                  "cube_rgba16f": "LookDev: Umgebungs-Cube aus – Cube-Ziel nicht verfügbar",
                   "texture_units": "LookDev: Maps aus – zu wenige Textureinheiten"}
 
 
@@ -27,6 +31,7 @@ class FeatureReport:
 
     depth_texture: bool = True
     sampler_objects: bool = True
+    cube_rgba16f: bool = True
     texture_units: bool = True
 
     def missing(self) -> tuple[str, ...]:
@@ -91,6 +96,50 @@ def _sampler_objects() -> bool:
     return made and gl.glGetError() == gl.GL_NO_ERROR
 
 
+def _cube_rgba16f() -> bool:
+    """An RGBA16F cube (`CUBE_SIZE`, `CUBE_LEVELS`), every face of every level as an FBO's colour attachment: complete
+    and no GL error. Leaves the framebuffers, the cube binding of unit 0 and the active unit as found and deletes what it
+    made."""
+    import ctypes
+
+    from pyglet import gl
+
+    from .lookdev_shaders import CUBE_LEVELS, CUBE_SIZE
+
+    while gl.glGetError() != gl.GL_NO_ERROR:  # an earlier error must not fail this check
+        pass
+    draw_fbo, read_fbo, bound, active = gl.GLint(), gl.GLint(), gl.GLint(), gl.GLint()
+    gl.glGetIntegerv(gl.GL_DRAW_FRAMEBUFFER_BINDING, ctypes.byref(draw_fbo))
+    gl.glGetIntegerv(gl.GL_READ_FRAMEBUFFER_BINDING, ctypes.byref(read_fbo))
+    gl.glGetIntegerv(gl.GL_ACTIVE_TEXTURE, ctypes.byref(active))
+    gl.glActiveTexture(gl.GL_TEXTURE0)
+    gl.glGetIntegerv(gl.GL_TEXTURE_BINDING_CUBE_MAP, ctypes.byref(bound))
+    texture, fbo = gl.GLuint(), gl.GLuint()
+    gl.glGenTextures(1, ctypes.byref(texture))
+    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, texture.value)
+    for level in range(CUBE_LEVELS):
+        side = CUBE_SIZE >> level
+        for face in range(6):
+            gl.glTexImage2D(gl.GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, level, gl.GL_RGBA16F, side, side, 0, gl.GL_RGBA,
+                            gl.GL_FLOAT, None)
+    gl.glTexParameteri(gl.GL_TEXTURE_CUBE_MAP, gl.GL_TEXTURE_MAX_LEVEL, CUBE_LEVELS - 1)
+    gl.glBindTexture(gl.GL_TEXTURE_CUBE_MAP, bound.value)
+    gl.glGenFramebuffers(1, ctypes.byref(fbo))
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo.value)
+    complete = True
+    for level in range(CUBE_LEVELS):
+        for face in range(6):
+            gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0,
+                                      gl.GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, texture.value, level)
+            complete = complete and gl.glCheckFramebufferStatus(gl.GL_FRAMEBUFFER) == gl.GL_FRAMEBUFFER_COMPLETE
+    gl.glBindFramebuffer(gl.GL_DRAW_FRAMEBUFFER, draw_fbo.value)
+    gl.glBindFramebuffer(gl.GL_READ_FRAMEBUFFER, read_fbo.value)
+    gl.glDeleteFramebuffers(1, ctypes.byref(fbo))
+    gl.glDeleteTextures(1, ctypes.byref(texture))
+    gl.glActiveTexture(active.value)
+    return complete and gl.glGetError() == gl.GL_NO_ERROR
+
+
 def _texture_units() -> bool:
     """`GL_MAX_TEXTURE_IMAGE_UNITS` (fragment units) above the highest unit the skin pass binds (AD-039 §2.4)."""
     import ctypes
@@ -105,7 +154,8 @@ def _texture_units() -> bool:
 
 
 #: The checks, by feature (a test replaces one with a stub to force its failure, AD-039 §2.2).
-CHECKS = {"depth_texture": _depth_texture, "sampler_objects": _sampler_objects, "texture_units": _texture_units}
+CHECKS = {"depth_texture": _depth_texture, "sampler_objects": _sampler_objects, "cube_rgba16f": _cube_rgba16f,
+          "texture_units": _texture_units}
 
 
 def probe() -> FeatureReport:

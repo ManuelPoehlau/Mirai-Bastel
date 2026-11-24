@@ -28,8 +28,9 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
   `SHADOW_DEPTH_SRC`: the depth pass's program (`viewport.lookdev_shadow.KeyShadow`).
 - `LD_DUAL_LOBE_SRC` (S3, AD-039 §6 / §18): `ld_direct_dual` and `ld_specular_dual`, the skin's two-lobe twins of
   `direct_specular` / `ld_specular` (roughness x 0.75 and x 1.3, mixed 0.85 / 0.15, each lobe widened by the light's
-  size); the `DUAL_LOBE` blocks call them for the three lights, the `SHADOW` block's key term included. The studio's
-  reflection keeps one lobe (P3-0 run 2: a second analytic lobe costs +0.9 to +4 ms; S5's cube takes it). Twins:
+  size); the `DUAL_LOBE` blocks call them for the three lights, the `SHADOW` block's key term included. The analytic
+  studio's reflection keeps one lobe (P3-0 run 2: a second analytic lobe costs +0.9 to +4 ms); with S5's cube
+  (`CUBE_ENV`) the reflection takes both lobes (two lookups, P3-0 run 5). Twins:
   `lookdev_optics.ld_direct_dual` / `ld_specular_dual`.
 - `LD_THICKNESS_SRC` (S4, AD-039 §7 / §19): the key's map read a second time as raw depth (`u_ld_shadow_depth` on unit 7,
   a sampler object without compare mode) at the same map point as the shadow; `ld_key_thickness` is the distance the
@@ -44,6 +45,13 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
   fragment's UV from the triangle UVs in uniform control flow (`map_on` 0 on a triangle without UVs: no map applies).
   With a normal map the key map's lookups (shadow, thickness) keep the geometric normal (`n_geo`). Units 9-11
   (`MAP_UNITS`).
+- `LD_CUBE_SRC` (S5, AD-039 §8 / §21): the studio's reflection from a prefiltered cube (`u_ld_env_cube` on unit 8,
+  `ld_env_cube`: `textureLod` at the effective roughness, level L at roughness L / (levels - 1)) instead of
+  evaluating `ld_studio` per pixel; the `CUBE_ENV` block inside `ENV_SPEC` calls it, with `DUAL_LOBE` twice (the two
+  lobes' roughness, mixed as the lights'). The cube's content **is** the analytic studio: `CUBE_PREFILTER_SRC` renders
+  `ld_studio(d, 0)` into level 0 and a GGX importance-sampled prefilter of it (64 samples, the corner fix) into the
+  rougher levels (`viewport.lookdev_cube.EnvCube`). Twins: `lookdev_optics.cube_texel_directions` /
+  `prefilter_ggx` / `cube_lod`. The eye keeps the analytic studio (AD-039 §8).
 
 Colour (AD-038 §5.5): every albedo is an sRGB artist value, decoded here; lights are linear; one `lookdev_output` per
 pixel. Directions are world space; `u_ld_env_rot` turns a world direction into the studio's frame (rotation, and the
@@ -73,6 +81,13 @@ SHADOW_UNIT = 6
 SHADOW_RAW_UNIT = 7
 #: AD-039 §2.4 / §10: the material's roughness, normal and translucency maps, S7.
 MAP_UNITS = {"roughness": 9, "normal": 10, "translucency": 11}
+#: AD-039 §2.4 / §8: the studio's prefiltered environment cube, S5.
+CUBE_UNIT = 8
+#: S5 (AD-039 §8, `PROVISIONAL` fixed setting; LD-3's knobs later): a 128² RGBA16F cube with mips down to 2² (7 levels),
+#: level L prefiltered at perceptual roughness L / (CUBE_LEVELS - 1) with CUBE_SAMPLES GGX importance samples.
+CUBE_SIZE = 128
+CUBE_LEVELS = 7
+CUBE_SAMPLES = 64
 #: The P3 defines in their fixed order (the skin program key, AD-039 §2.3 point 4).
 SKIN_EFFECTS = ("SHADOW", "DUAL_LOBE", "THICKNESS")
 #: S7's defines, one per map (AD-039 §10), in the key's order after `SKIN_EFFECTS`.
@@ -336,7 +351,21 @@ void main() {{
     }}
 #endif
 #ifdef ENV_SPEC
+#ifdef CUBE_ENV
+    // AD-039 §8: the studio's reflection from its prefiltered cube; with the dual lobe as two lookups (§11.1 run 5)
+    {{
+        vec3 r_env = reflect(-v, n);
+#ifdef DUAL_LOBE
+        vec3 env = mix(ld_env_cube(r_env, rough * LD_DUAL_SCALES.y), ld_env_cube(r_env, rough * LD_DUAL_SCALES.x),
+                       LD_DUAL_MIX);
+#else
+        vec3 env = ld_env_cube(r_env, rough);
+#endif
+        colour += env * env_brdf_approx(u_f0, rough, nv);
+    }}
+#else
     colour += ld_env_specular(reflect(-v, n), rough) * env_brdf_approx(u_f0, rough, nv);
+#endif
 #endif
 #ifdef THICKNESS
     // AD-039 §7: the key's light through thin parts (ears, nostril wings) - how far it travelled inside the mesh, from
@@ -482,6 +511,86 @@ vec3 ld_normal_mapped(vec3 n, vec3 p, vec2 uv, vec3 texel, float strength, float
 }}
 """
 
+LD_CUBE_SRC = f"""
+// -- LookDev P3 S5 (AD-039 §8): the studio's reflection from its prefiltered cube (studio frame), level L at
+// roughness L / {CUBE_LEVELS - 1}
+uniform samplerCube u_ld_env_cube;
+const float LD_CUBE_MAX_LOD = {float(CUBE_LEVELS - 1)!r};
+// world reflection r -> the studio's reflected light as a lobe of `roughness` sees it (ld_env_specular's twin)
+vec3 ld_env_cube(vec3 r, float roughness) {{
+    return u_ld_env_intensity * textureLod(u_ld_env_cube, u_ld_env_rot * r,
+                                           clamp(roughness, 0.0, 1.0) * LD_CUBE_MAX_LOD).rgb;
+}}
+"""
+
+#: S5 (AD-039 §8): the cube's prefilter, one face of one level per draw (a full-screen triangle into the face through an
+#: FBO). Level 0 (`u_samples` 1) is `ld_studio(d, 0)`; a rougher level is the GGX importance-sampled mean of it around
+#: the texel's direction (N = V = R, weighted by N.L), `u_samples` Hammersley points. Corner fix (AD-039 C7): a corner
+#: texel takes the cube corner's direction, so the three texels meeting there are equal by construction.
+CUBE_PREFILTER_SRC = """
+uniform int u_face;
+uniform float u_size;
+uniform float u_roughness;
+uniform int u_samples;
+out vec4 out_color;
+// the GL cube-map direction of `face` (+X, -X, +Y, -Y, +Z, -Z) at (s, t) in [-1, 1] (GL 3.3 table 3.19)
+vec3 ld_cube_direction(int face, vec2 st) {
+    if (face == 0) return vec3(1.0, -st.y, -st.x);
+    if (face == 1) return vec3(-1.0, -st.y, st.x);
+    if (face == 2) return vec3(st.x, 1.0, st.y);
+    if (face == 3) return vec3(st.x, -1.0, -st.y);
+    if (face == 4) return vec3(st.x, -st.y, 1.0);
+    return vec3(-st.x, -st.y, -1.0);
+}
+float ld_radical_inverse(uint bits) {
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return float(bits) * 2.3283064365386963e-10;
+}
+void main() {
+    vec2 st = gl_FragCoord.xy / u_size * 2.0 - 1.0;
+    vec2 texel = floor(gl_FragCoord.xy);
+    vec2 last = vec2(u_size - 1.0);
+    if ((texel.x == 0.0 || texel.x == last.x) && (texel.y == 0.0 || texel.y == last.y)) st = sign(st);
+    vec3 n = normalize(ld_cube_direction(u_face, st));
+    if (u_samples <= 1) {
+        out_color = vec4(ld_studio(n, 0.0), 1.0);
+        return;
+    }
+    vec3 up = abs(n.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tx = normalize(cross(up, n));
+    vec3 ty = cross(n, tx);
+    float a = max(u_roughness * u_roughness, 1e-3);
+    vec3 sum = vec3(0.0);
+    float weight = 0.0;
+    for (int i = 0; i < u_samples; ++i) {
+        vec2 xi = vec2(float(i) / float(u_samples), ld_radical_inverse(uint(i)));
+        float phi = 2.0 * PI * xi.x;
+        float cos_t = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+        float sin_t = sqrt(1.0 - cos_t * cos_t);
+        vec3 h = tx * (cos(phi) * sin_t) + ty * (sin(phi) * sin_t) + n * cos_t;
+        vec3 l = reflect(-n, h);
+        float ndl = dot(n, l);
+        if (ndl > 0.0) {
+            sum += ld_studio(l, 0.0) * ndl;
+            weight += ndl;
+        }
+    }
+    out_color = vec4(sum / max(weight, 1e-6), 1.0);
+}
+"""
+
+
+def cube_prefilter_sources() -> list[tuple[str, str]]:
+    """S5's prefilter program: the full-screen triangle, the studio library (`LD_BRDF_SRC` + `LD_COMMON_SRC`: the
+    content is `ld_studio` itself, so skin and eye reflect one studio) and `CUBE_PREFILTER_SRC`."""
+    return [(FULLSCREEN_VERTEX_SRC, "vertex"),
+            ("#version 330 core\n" + LD_BRDF_SRC + LD_COMMON_SRC + CUBE_PREFILTER_SRC, "fragment")]
+
+
 #: The depth pass from the key (`KeyShadow`): its own minimal program - the position at the store's location, the
 #: object's model matrix and the key's view-projection; an empty fragment stage (depth only).
 SHADOW_DEPTH_VERTEX_SRC = """#version 330 core
@@ -501,21 +610,24 @@ def shadow_depth_sources(locations: dict[str, int]) -> list[tuple[str, str]]:
 
 def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, shadow: bool = False,
                  dual_lobe: bool = False, thickness: bool = False, roughness_map: bool = False,
-                 normal_map: bool = False, translucency_map: bool = False) -> list[tuple[str, str]]:
+                 normal_map: bool = False, translucency_map: bool = False,
+                 cube_env: bool = False) -> list[tuple[str, str]]:
     """The skin program (AD-038 §3.2): the textured Worklight program's vertex and geometry sources formatted with the
     Worklight program's attribute locations, the LookDev fragment source. Variants: `ALBEDO_MAP`, `ENV_SPEC`; P3
     (AD-039 §2.3): `SHADOW` (S1), `DUAL_LOBE` (S3), `THICKNESS` (S4, needs `shadow`); S7 (§10): `ROUGHNESS_MAP`,
-    `NORMAL_MAP`, `TRANSLUCENCY_MAP` (with `LD_MAP_UV` for any of them). An effect that is off leaves no text behind
+    `NORMAL_MAP`, `TRANSLUCENCY_MAP` (with `LD_MAP_UV` for any of them); S5 (§8): `CUBE_ENV` (needs `env_spec`). An effect that is off leaves no text behind
     (its library string is not appended, its body blocks are resolved away), so every effect off = M1's sources."""
     from .eye_shaders import _without
     from .gl_render_store import TEXTURED_GEOMETRY_SRC, TEXTURED_VERTEX_SRC
 
     if thickness and not shadow:
         raise ValueError("THICKNESS reads the key's map: it needs SHADOW (AD-039 §2.1)")
+    if cube_env and not env_spec:
+        raise ValueError("CUBE_ENV is the studio's reflection: it needs ENV_SPEC (AD-039 §8)")
     maps = roughness_map or normal_map or translucency_map
     flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow), ("DUAL_LOBE", dual_lobe),
              ("THICKNESS", thickness), ("ROUGHNESS_MAP", roughness_map), ("NORMAL_MAP", normal_map),
-             ("TRANSLUCENCY_MAP", translucency_map), ("LD_MAP_UV", maps))
+             ("TRANSLUCENCY_MAP", translucency_map), ("LD_MAP_UV", maps), ("CUBE_ENV", cube_env))
     defines = "".join(f"#define {name} 1\n" for name, on in flags if on)
     body = SKIN_BODY
     for name, on in flags[2:]:
@@ -523,7 +635,7 @@ def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, sh
             body = _without(body, name)
     library = (LD_BRDF_SRC + LD_COMMON_SRC + (LD_SHADOW_SRC if shadow else "")
                + (LD_DUAL_LOBE_SRC if dual_lobe else "") + (LD_THICKNESS_SRC if thickness else "")
-               + (LD_NORMAL_MAP_SRC if normal_map else ""))
+               + (LD_NORMAL_MAP_SRC if normal_map else "") + (LD_CUBE_SRC if cube_env else ""))
     fragment = "#version 330 core\n" + defines + library + body
     return [(TEXTURED_VERTEX_SRC.format(**locations), "vertex"), (TEXTURED_GEOMETRY_SRC, "geometry"),
             (fragment, "fragment")]

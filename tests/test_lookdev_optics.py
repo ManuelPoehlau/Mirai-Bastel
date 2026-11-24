@@ -12,6 +12,7 @@ import tests._bootstrap  # noqa: F401
 
 from viewport import eye_optics as eo
 from viewport import lookdev_optics as lo
+from viewport import lookdev_shaders as ls
 
 
 def _unit(n: int, seed: int) -> np.ndarray:
@@ -129,20 +130,21 @@ def test_effects_default_on_and_dependencies_and_features():
     from viewport.lookdev_features import FeatureReport
 
     assert lo.LookdevEffects().shadow
-    assert lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness", "maps")
+    assert lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness", "cube", "maps")
     assert lo.LookdevState("x", lo.EYE_STUDIO, lo.StudioLight(), lo.StudioLight(), lo.StudioLight()).effects \
         == lo.LookdevEffects()
     on = lo.LookdevEffects(shadow=True)
     assert lo.effective(on) == on  # nothing probed: nothing missing
     assert lo.effect_reasons(on) == {"shadow": None, "eye_shadow": None, "dual_lobe": None, "thickness": None,
-                                     "maps": None}
+                                     "cube": None, "maps": None}
     assert lo.effective(on, FeatureReport(depth_texture=True)) == on
     missing = FeatureReport(depth_texture=False)
     # S3 needs no feature and no other effect: it stays on without a depth texture
     assert lo.effective(on, missing) == lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=True,
                                                           thickness=False)
     assert lo.effect_reasons(on, missing) == {"shadow": "Tiefentextur fehlt", "eye_shadow": "braucht Schatten",
-                                              "dual_lobe": None, "thickness": "braucht Schatten", "maps": None}
+                                              "dual_lobe": None, "thickness": "braucht Schatten", "cube": None,
+                                              "maps": None}
     assert missing.status_lines() == ("LookDev: Schatten aus – Tiefentextur nicht verfügbar",)
     assert lo.effective(lo.LookdevEffects(shadow=False)) == lo.LookdevEffects(shadow=False, eye_shadow=False,
                                                                                thickness=False)
@@ -158,6 +160,54 @@ def test_effects_default_on_and_dependencies_and_features():
     assert lo.effect_reasons(on, few_units)["maps"] == "zu wenige Textureinheiten"
     assert few_units.status_lines() == ("LookDev: Maps aus – zu wenige Textureinheiten",)
     assert lo.effective(lo.LookdevEffects(shadow=False)).maps
+    # S5 needs a complete RGBA16F cube target, nothing else: without it only the cube is off
+    no_cube = FeatureReport(cube_rgba16f=False)
+    assert lo.effective(on, no_cube) == lo.LookdevEffects(cube=False)
+    assert lo.effect_reasons(on, no_cube)["cube"] == "Cube-Ziel fehlt"
+    assert no_cube.status_lines() == ("LookDev: Umgebungs-Cube aus – Cube-Ziel nicht verfügbar",)
+    assert lo.effective(lo.LookdevEffects(shadow=False)).cube
+
+
+# -- AD-039 S5: the environment cube -----------------------------------------------------------------------------------
+
+def test_cube_directions_follow_the_gl_table_and_the_corner_fix():
+    """GLSL `ld_cube_direction`: each face's centre is its axis; (s, t) run as GL's table; the corner fix puts a
+    corner texel on the cube corner's direction, the same for the three faces that meet there."""
+    axes = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
+    for face, axis in enumerate(axes):
+        assert np.allclose(lo.cube_face_direction(face, 0.0, 0.0), axis)
+    assert np.allclose(lo.cube_face_direction(0, 0.5, 0.25), (1.0, -0.25, -0.5))  # +X: (1, -t, -s)
+    assert np.allclose(lo.cube_face_direction(2, 0.5, 0.25), (0.5, 1.0, 0.25))   # +Y: (s, 1, t)
+    side = 8
+    fixed, plain = lo.cube_texel_directions(0, side), lo.cube_texel_directions(0, side, corner_fix=False)
+    assert np.allclose(np.linalg.norm(fixed, axis=-1), 1.0)
+    assert np.allclose(fixed[0, 0], np.array([1.0, 1.0, 1.0]) / math.sqrt(3.0))  # +X, s = t = -1: (1, 1, 1)
+    assert not np.allclose(plain[0, 0], fixed[0, 0]) and np.allclose(plain[1:-1], fixed[1:-1])
+    # the corner (1, 1, 1) on +X (s = t = -1), +Y (s = 1, t = 1) and +Z (s = 1, t = -1)
+    corner = [lo.cube_texel_directions(0, side)[0, 0], lo.cube_texel_directions(2, side)[-1, -1],
+              lo.cube_texel_directions(4, side)[0, -1]]
+    assert np.allclose(corner[0], corner[1]) and np.allclose(corner[0], corner[2])
+
+
+def test_radical_inverse_and_the_cube_lod():
+    assert [float(lo.radical_inverse(i)) for i in range(5)] == [0.0, 0.5, 0.25, 0.75, 0.125]
+    assert lo.cube_level_roughness(0) == 0.0 and lo.cube_level_roughness(ls.CUBE_LEVELS - 1) == 1.0
+    assert np.allclose(lo.cube_lod([-0.2, 0.0, 0.5, 1.0, 1.7]), [0.0, 0.0, 3.0, 6.0, 6.0])
+
+
+def test_prefilter_ggx_is_the_studio_at_level_0_and_keeps_a_constant_environment():
+    """`prefilter_ggx` with one sample is `ld_studio(d, 0)`; a constant studio stays constant at every roughness (the
+    N.L-weighted mean of a constant); a rough level of a real studio is smoother than its sharp content and stays in its
+    range."""
+    d = lo.fibonacci_directions(64)
+    studio = lo.EYE_STUDIO
+    assert np.allclose(lo.prefilter_ggx(d, 0.0, studio, samples=1), lo.ld_studio(d, 0.0, studio))
+    grey = lo.Studio((0.3, 0.2, 0.1), (0.3, 0.2, 0.1), (0.3, 0.2, 0.1))
+    for r in (1 / 6, 0.5, 1.0):
+        assert np.allclose(lo.prefilter_ggx(d, r, grey), (0.3, 0.2, 0.1), atol=1e-9)
+    sharp = lo.ld_studio(d, 0.0, studio)
+    rough = lo.prefilter_ggx(d, 1.0, studio)
+    assert rough.max() < sharp.max() and rough.min() >= sharp.min() - 1e-9
 
 
 # -- AD-039 S3: dual-lobe specular ------------------------------------------------------------------------------------

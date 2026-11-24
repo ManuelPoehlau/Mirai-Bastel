@@ -160,6 +160,63 @@ def test_no_map_keeps_the_m1_to_s4_sources():
                                                                                       PINNED_S4_SKIN_SOURCES_SHA256)
 
 
+#: AD-039 §8 / §21 (S5): the 4 S7 skin variants with every effect before S5 on and all three maps (`shadow`,
+#: `dual_lobe`, `thickness`, `roughness_map`, `normal_map`, `translucency_map`), taken from the code before S5 changed
+#: `lookdev_shaders.py` (`eb4c817`). With the cube off, the frame's programs stay exactly S7's.
+PINNED_S7_SKIN_SOURCES_SHA256 = "1c80bb853211db484a05bf51369a26ac656946392b0e008446fe7b4cd0d88d6b"
+
+
+def test_the_cube_off_keeps_the_m1_to_s7_sources():
+    """AD-039 §8: `cube_env` off = the sources before S5, character for character (every earlier pin)."""
+    maps = dict(roughness_map=True, normal_map=True, translucency_map=True)
+    assert skin_sources_digest(cube_env=False) == (12, PINNED_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, cube_env=False) == (12, PINNED_S1_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, cube_env=False) == (12, PINNED_S3_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, thickness=True, cube_env=False) == (
+        12, PINNED_S4_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, thickness=True, **maps) == (12,
+                                                                                       PINNED_S7_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, thickness=True, cube_env=False, **maps) == (
+        12, PINNED_S7_SKIN_SOURCES_SHA256)
+
+
+def test_the_cube_variant_reads_the_cube_instead_of_the_analytic_studio():
+    """AD-039 §8: `CUBE_ENV` once, `LD_CUBE_SRC` once and last; the reflection from `ld_env_cube` (twice with the dual
+    lobe, at roughness x 0.75 and x 1.3) in its block, `ld_env_specular` in the `#else` the preprocessor drops; refused without `ENV_SPEC`; with it off no text
+    is left. The eye's library is untouched (`LD_COMMON_SRC` has no cube)."""
+    import itertools
+
+    import pytest
+
+    locations = {"position": 0, "normal": 1}
+    assert ls.CUBE_UNIT == 8 and (ls.CUBE_SIZE, ls.CUBE_LEVELS, ls.CUBE_SAMPLES) == (128, 7, 64)
+    assert ls.CUBE_SIZE >> (ls.CUBE_LEVELS - 1) == 2  # mips down to 2² (the lab's chain)
+    assert ls.CUBE_UNIT not in (0, ls.UV_UNIT, ls.ALBEDO_UNIT, ls.SHADOW_UNIT, ls.SHADOW_RAW_UNIT,
+                                *ls.MAP_UNITS.values())
+    for albedo, shadow, dual in itertools.product((False, True), repeat=3):
+        fs = ls.skin_sources(locations, albedo, True, shadow, dual, shadow, cube_env=True)[2][0]
+        body = fs[fs.index("void main()"):]
+        assert fs.count("#define CUBE_ENV 1\n") == 1 and fs.count(ls.LD_CUBE_SRC) == 1
+        assert fs[fs.index(ls.LD_CUBE_SRC) + len(ls.LD_CUBE_SRC):].startswith("\nin vec3 v_normal;")  # the last library
+        cube_block = body[body.index("#ifdef CUBE_ENV"):body.index("#else", body.index("colour += env *"))]
+        assert "ld_env_specular(" not in cube_block
+        assert "colour += env * env_brdf_approx(u_f0, rough, nv);" in cube_block
+        assert body.count("ld_env_cube(") == (3 if dual else 1)  # the dual block's two and its #else's one
+        assert ("rough * LD_DUAL_SCALES.y" in body) == dual
+        off = ls.skin_sources(locations, albedo, True, shadow, dual, shadow)[2][0]
+        assert "CUBE_ENV" not in off and "ld_env_cube" not in off and ls.LD_CUBE_SRC not in off
+    with pytest.raises(ValueError):
+        ls.skin_sources(locations, False, False, cube_env=True)
+    assert "samplerCube" not in ls.LD_COMMON_SRC and "CUBE" not in ls.LD_COMMON_SRC
+
+
+def test_the_prefilter_program_is_the_studio_library_and_the_prefilter():
+    (vs, k0), (fs, k1) = ls.cube_prefilter_sources()
+    assert (k0, k1) == ("vertex", "fragment") and vs == ls.FULLSCREEN_VERTEX_SRC
+    assert fs == "#version 330 core\n" + ls.LD_BRDF_SRC + ls.LD_COMMON_SRC + ls.CUBE_PREFILTER_SRC
+    assert "ld_studio(n, 0.0)" in fs and "ld_studio(l, 0.0)" in fs  # the content is the analytic studio
+
+
 def test_each_map_has_its_define_and_only_its_text():
     """AD-039 §10: one define per map, `LD_MAP_UV` with any of them, the normal map's library only with it; the
     triangle UVs declared once with or without the albedo map; with the normal map the key map's lookups take the

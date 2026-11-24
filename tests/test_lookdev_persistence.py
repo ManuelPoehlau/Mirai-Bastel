@@ -222,7 +222,7 @@ def test_the_effects_survive_save_and_load(app, tmp_path):
     assert app.save_scene_file(path)
     assert json.loads(path.read_text())["view"]["lookdev"]["effects"] == {"shadow": False, "eye_shadow": True,
                                                                             "dual_lobe": True, "thickness": True,
-                                                                            "maps": True}
+                                                                            "cube": True, "maps": True}
     fresh = _load(path)
     assert fresh.lookdev.studio == app.lookdev.studio and not fresh.lookdev.studio.effects.shadow
 

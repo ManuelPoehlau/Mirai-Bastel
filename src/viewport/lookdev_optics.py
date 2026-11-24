@@ -16,7 +16,9 @@ pattern (parity: `tests/test_gl_lookdev_parity.py`, `tests/test_lookdev_optics.p
   `lookdev_shaders.LD_DUAL_LOBE_SRC` (`ld_key_shadowed(..., dual=True)` for the `SHADOW` block with `DUAL_LOBE`);
   S4 (§7): `bilinear_depth`, `key_transmission` and `ld_backscatter`, the twins of `lookdev_shaders.LD_THICKNESS_SRC`
   and the `THICKNESS` block; S7 (§10): `normal_map_tangent`, `cotangent_frame`, `ld_normal_mapped` and
-  `map_roughness`, the twins of `lookdev_shaders.LD_NORMAL_MAP_SRC` and the `ROUGHNESS_MAP` block.
+  `map_roughness`, the twins of `lookdev_shaders.LD_NORMAL_MAP_SRC` and the `ROUGHNESS_MAP` block; S5 (§8):
+  `cube_face_direction`, `cube_texel_directions`, `prefilter_ggx` and `cube_lod`, the twins of
+  `lookdev_shaders.CUBE_PREFILTER_SRC` and `LD_CUBE_SRC`.
 
 World frame as `light_rig` (Y up, the model faces +Z, azimuth from +Z toward +X). The studio's frame turns by
 `rotation` degrees about Y; with "Licht folgt Kamera" it is the camera's (`right`, `up`, `-forward`), as
@@ -32,8 +34,8 @@ import numpy as np
 
 from . import eye_optics as eo
 from .light_rig import kelvin_to_rgb
-from .lookdev_shaders import (DUAL_LOBE_MIX, DUAL_LOBE_SCALES, MAX_STUDIO, NORMAL_MAP_ZERO, SHADOW_DEPTH_BIAS,
-                              SHADOW_WRAP_LIFT, THICKNESS_SCALE, TONE_CURVES)
+from .lookdev_shaders import (CUBE_LEVELS, CUBE_SAMPLES, DUAL_LOBE_MIX, DUAL_LOBE_SCALES, MAX_STUDIO, NORMAL_MAP_ZERO,
+                              SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT, THICKNESS_SCALE, TONE_CURVES)
 
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 SH_DIRECTIONS = 4096
@@ -73,12 +75,14 @@ class LookdevEffects:
     once the slice is built (AD-039 §2.1). `shadow` (S1): the key's shadow map on skin and teeth; `eye_shadow` (S2): the
     eyes receive it (the lids' shadow from the geometry), needs `shadow`; `dual_lobe` (S3): the skin's highlight from the
     three lights as two lobes; `thickness` (S4): the key's light through thin parts, from the key's map, needs `shadow`;
-    `maps` (S7): the materials' roughness, normal and translucency maps."""
+    `cube` (S5): the skin's studio reflection from the studio's prefiltered cube; `maps` (S7): the materials'
+    roughness, normal and translucency maps. The fields stand in the AD's slice order (S5 before S7)."""
 
     shadow: bool = True
     eye_shadow: bool = True
     dual_lobe: bool = True
     thickness: bool = True
+    cube: bool = True
     maps: bool = True
 
     @classmethod
@@ -90,13 +94,14 @@ class LookdevEffects:
 
 
 #: The feature each effect needs (`viewport.lookdev_features`), and the effect it depends on (AD-039 §2.1 / §2.2).
-EFFECT_FEATURE = {"shadow": "depth_texture", "thickness": "sampler_objects", "maps": "texture_units"}
+EFFECT_FEATURE = {"shadow": "depth_texture", "thickness": "sampler_objects", "cube": "cube_rgba16f",
+                  "maps": "texture_units"}
 EFFECT_NEEDS: dict[str, str] = {"eye_shadow": "shadow", "thickness": "shadow"}
 #: The panel's reasons for a greyed effect (German, the panel's language).
 FEATURE_REASON = {"depth_texture": "Tiefentextur fehlt", "sampler_objects": "Sampler-Objekte fehlen",
                   "cube_rgba16f": "Cube-Ziel fehlt", "texture_units": "zu wenige Textureinheiten"}
 EFFECT_LABEL = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz",
-                "thickness": "Durchleuchtung", "maps": "Maps"}
+                "thickness": "Durchleuchtung", "cube": "Umgebungs-Cube", "maps": "Maps"}
 
 
 def effect_reasons(effects: LookdevEffects, features=None) -> dict[str, str | None]:
@@ -629,6 +634,79 @@ def ld_normal_mapped(n, dp1, dp2, duv1, duv2, texel, strength: float = 1.0, gree
 def map_roughness(roughness: float, grey) -> np.ndarray:
     """The `ROUGHNESS_MAP` block: the perceptual roughness times the map's grey value (alpha = its square)."""
     return float(roughness) * np.asarray(grey, dtype=np.float64)
+
+
+# -- S5: the environment cube (AD-039 §8) ------------------------------------------------------------------------------
+
+def cube_face_direction(face: int, s, t) -> np.ndarray:
+    """GLSL `ld_cube_direction`: the GL cube-map direction (unnormalised, (..., 3)) of `face` (+X, -X, +Y, -Y, +Z, -Z)
+    at (s, t) in [-1, 1]."""
+    s, t = np.broadcast_arrays(np.asarray(s, dtype=np.float64), np.asarray(t, dtype=np.float64))
+    one = np.ones_like(s)
+    return np.stack(((one, -t, -s), (-one, -t, s), (s, one, t), (s, -one, -t), (s, -t, one), (-s, -t, -one))[face],
+                    axis=-1)
+
+
+def cube_texel_directions(face: int, side: int, corner_fix: bool = True) -> np.ndarray:
+    """(side, side, 3) unit directions of a face's texel centres as the prefilter takes them (row = t, as
+    `glGetTexImage` returns it); `corner_fix`: a corner texel takes the cube corner's direction (AD-039 C7)."""
+    c = (np.arange(side) + 0.5) / side * 2.0 - 1.0
+    s, t = np.meshgrid(c, c)
+    if corner_fix:
+        corner = np.zeros((side, side), dtype=bool)
+        for i in (0, side - 1):
+            for j in (0, side - 1):
+                corner[i, j] = True
+        s, t = np.where(corner, np.sign(s), s), np.where(corner, np.sign(t), t)
+    return eo.normalize(cube_face_direction(face, s, t))
+
+
+def radical_inverse(i) -> np.ndarray:
+    """GLSL `ld_radical_inverse`: the van der Corput sequence (base 2) of the 32-bit integers `i`."""
+    bits = np.asarray(i, dtype=np.uint64) & 0xFFFFFFFF
+    bits = ((bits << 16) | (bits >> 16)) & 0xFFFFFFFF
+    bits = ((bits & 0x55555555) << 1) | ((bits & 0xAAAAAAAA) >> 1)
+    bits = ((bits & 0x33333333) << 2) | ((bits & 0xCCCCCCCC) >> 2)
+    bits = ((bits & 0x0F0F0F0F) << 4) | ((bits & 0xF0F0F0F0) >> 4)
+    bits = ((bits & 0x00FF00FF) << 8) | ((bits & 0xFF00FF00) >> 8)
+    return bits.astype(np.float64) * 2.3283064365386963e-10
+
+
+def cube_level_roughness(level: int) -> float:
+    """The perceptual roughness the cube's `level` is prefiltered at: level / (levels - 1)."""
+    return float(level) / float(CUBE_LEVELS - 1)
+
+
+def cube_lod(roughness) -> np.ndarray:
+    """GLSL `ld_env_cube`'s level: the roughness clamped to [0, 1] times (levels - 1)."""
+    return np.clip(np.asarray(roughness, dtype=np.float64), 0.0, 1.0) * float(CUBE_LEVELS - 1)
+
+
+def prefilter_ggx(n, roughness: float, studio: Studio, samples: int = CUBE_SAMPLES) -> np.ndarray:
+    """The prefilter's texel (GLSL `CUBE_PREFILTER_SRC`), linear rgb (..., 3) at unit directions `n` (studio frame):
+    with `samples` <= 1 the sharp studio `ld_studio(n, 0)`; else the N.L-weighted mean of `ld_studio(l, 0)` over
+    `samples` GGX importance samples (Hammersley) of alpha = max(roughness², 1e-3), N = V = R."""
+    n = eo.normalize(np.asarray(n, dtype=np.float64))
+    if samples <= 1:
+        return ld_studio(n, 0.0, studio)
+    up = np.where((np.abs(n[..., 1]) < 0.999)[..., None], np.array([0.0, 1.0, 0.0]), np.array([1.0, 0.0, 0.0]))
+    tx = eo.normalize(np.cross(up, n))
+    ty = np.cross(n, tx)
+    a = max(roughness * roughness, 1e-3)
+    total = np.zeros(n.shape, dtype=np.float64)
+    weight = np.zeros(n.shape[:-1], dtype=np.float64)
+    for i in range(samples):
+        phi = 2.0 * math.pi * (i / samples)
+        y = float(radical_inverse(i))
+        cos_t = math.sqrt((1.0 - y) / (1.0 + (a * a - 1.0) * y))
+        sin_t = math.sqrt(max(0.0, 1.0 - cos_t * cos_t))
+        h = tx * (math.cos(phi) * sin_t) + ty * (math.sin(phi) * sin_t) + n * cos_t
+        l = 2.0 * np.sum(n * h, axis=-1, keepdims=True) * h - n
+        ndl = np.sum(n * l, axis=-1)
+        lit = ndl > 0.0
+        total = total + np.where(lit[..., None], ld_studio(l, 0.0, studio) * ndl[..., None], 0.0)
+        weight = weight + np.where(lit, ndl, 0.0)
+    return total / np.maximum(weight, 1e-6)[..., None]
 
 
 # -- S2: the eye in the key's shadow (AD-039 §5) -----------------------------------------------------------------------

@@ -1223,7 +1223,8 @@ class Application:
         self._set_hovered(None)
         viewport = self.viewport
         if viewport is not None:
-            viewport.set_lookdev_effects(self._lookdev.studio.effects)  # AD-039: the effects its programs need
+            # AD-039: the effects its programs need, the studio its environment cube shows
+            viewport.set_lookdev_effects(self._lookdev.studio.effects, self._lookdev.studio.studio)
         if viewport is not None and viewport.lookdev_prepare_needed():
             self._lookdev.preparing = self.LOOKDEV_PREPARE_FRAMES
             self._set_status("LookDev: Shader werden vorbereitet …")
@@ -1243,11 +1244,14 @@ class Application:
             return
         start = time.perf_counter()
         if self.viewport is not None:
-            self.viewport.set_lookdev_effects(room.studio.effects)
+            self.viewport.set_lookdev_effects(room.studio.effects, room.studio.studio)
         count = self.viewport.prepare_lookdev() if self.viewport is not None else 0
         seconds = time.perf_counter() - start
         self._apply_lookdev()
-        self._set_status(f"{self.lookdev_status()} ({count} Shader in {seconds:.1f} s vorbereitet)")
+        if count:
+            self._set_status(f"{self.lookdev_status()} ({count} Shader in {seconds:.1f} s vorbereitet)")
+        else:  # AD-039 §8: only the environment cube was prefiltered (a studio preset switch)
+            self._set_status(f"{self.lookdev_status()} (Umgebung in {seconds:.2f} s vorbereitet)")
         self._lookdev_feature_status()
 
     def _lookdev_feature_status(self) -> None:
@@ -1292,9 +1296,21 @@ class Application:
     # The studio (AD-038 §6): view state - no Undo, saved in `view.lookdev` (§18). The materials (§7): document data
     # since LD-2 (`SceneObject.look`, one Undo step each).
 
-    def _set_lookdev_studio_state(self, state) -> None:
-        self._lookdev.studio = state
+    def _set_lookdev_studio_state(self, state) -> bool:
+        """The session studio. AD-039 §8: a new studio *content* (a preset) whose environment cube is not prefiltered
+        yet takes the I-10 path - the frame before stays one frame with the status line, then the prefilter (12 ms +
+        the copy's 17-24 ms on the reference PC, §11.1 run 5). True = it waits for that."""
+        room, viewport = self._lookdev, self.viewport
+        room.studio = state
+        if room.open and not room.preparing and viewport is not None and viewport.shading == "lookdev":
+            viewport.set_lookdev_effects(state.effects, state.studio)
+            if viewport.lookdev_prepare_needed():
+                room.preparing = self.LOOKDEV_PREPARE_FRAMES
+                self._set_status("LookDev: Umgebung wird vorbereitet …" if viewport.lookdev_cube_needed()
+                                 else "LookDev: Shader werden vorbereitet …")
+                return True
         self._apply_lookdev()
+        return False
 
     def set_lookdev_studio_preset(self, name: str) -> bool:
         """Pick a studio preset (`mirai.lookdev_presets`): lights, environment, exposure, background; the P3 effect
@@ -1312,8 +1328,8 @@ class Application:
         state = dataclasses.replace(state, effects=self._lookdev.studio.effects)
         if state == self._lookdev.studio:
             return False
-        self._set_lookdev_studio_state(state)
-        self._set_status(f"LookDev: Studio {name!r}")
+        if not self._set_lookdev_studio_state(state):
+            self._set_status(f"LookDev: Studio {name!r}")
         return True
 
     #: (low, high) of the studio's numeric values; a value outside is refused with a status line
@@ -1397,7 +1413,7 @@ class Application:
         room.studio = wanted
         viewport = self.viewport
         if room.open and not room.preparing and viewport is not None:
-            viewport.set_lookdev_effects(wanted.effects)
+            viewport.set_lookdev_effects(wanted.effects, wanted.studio)
             if viewport.lookdev_prepare_needed():
                 room.preparing = self.LOOKDEV_PREPARE_FRAMES
                 self._set_status("LookDev: Shader werden vorbereitet …")

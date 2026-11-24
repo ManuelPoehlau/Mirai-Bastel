@@ -254,6 +254,9 @@ class Viewport:
         self._lookdev_frame_cache = None  # (studio state, camera basis with "Licht folgt Kamera"), its frame dict
         # AD-039 §2.1: the P3 effects the next LookDev frame draws (the room sets them before its programs compile).
         self._lookdev_effects = None
+        # AD-039 §8: the studio content the next frame's environment cube shows (set with the effects by the room, so a
+        # preset switch prefilters behind the status line before the frame draws it).
+        self._lookdev_studio = None
         # Optional (None = headless/TraceStore: es entsteht kein GL-Objekt).
         self.point_overlay = (
             point_overlay_type() if point_overlay_type is not None else None
@@ -438,11 +441,15 @@ class Viewport:
         self.lookdev_state = state if shading == "lookdev" else None
         if self.lookdev_state is not None:
             self._lookdev_effects = self.lookdev_state.effects
+            self._lookdev_studio = self.lookdev_state.studio
 
-    def set_lookdev_effects(self, effects) -> None:
+    def set_lookdev_effects(self, effects, studio=None) -> None:
         """AD-039 §2.1: the P3 effects (`lookdev_optics.LookdevEffects`) the next LookDev frame and `prepare_lookdev`
-        use - set by the room before a compile, so the frame before it still shows the previous state."""
+        use - set by the room before a compile, so the frame before it still shows the previous state. `studio` (AD-039
+        §8): the studio content (`lookdev_optics.Studio`) the next frame's cube shows (None = unchanged)."""
         self._lookdev_effects = effects
+        if studio is not None:
+            self._lookdev_studio = studio
 
     def lookdev_effects(self, wanted: bool = True):
         """The effects in force: switched on, their feature present (`lookdev_features`, probed once per context the
@@ -495,7 +502,8 @@ class Viewport:
 
     def _lookdev_programs(self) -> tuple[list, list]:
         """The programs the next LookDev frame draws: ([skin program keys (albedo map, env spec, shadow, dual lobe,
-        thickness[, roughness map, normal map, translucency map])], [eye program arguments + (ld_shadow,)]). AD-039 §5:
+        thickness[, roughness map, normal map, translucency map[, cube env]])], [eye program arguments + (ld_shadow,)]).
+        AD-039 §5:
         the eyes receive the key's shadow when `shadow` and `eye_shadow` are in force and something casts it. AD-039
         §10: a LookDraw's maps with `maps` in force on a mesh with UVs."""
         from .lookdev_pass import LookdevPass
@@ -503,6 +511,7 @@ class Viewport:
         skin, eyes = [], []
         env_spec = self._lookdev_pass.env_spec if self._lookdev_pass is not None else True
         effects = self.lookdev_effects()
+        cube = effects.cube and env_spec
         shadow = effects.shadow
         drawn = [(self.surface_render_mesh or self.render_mesh, self._edit_look)] if self.show_faces else []
         for key in self._entry_draw_order():
@@ -518,7 +527,7 @@ class Viewport:
                 maps = look.map_paths() if effects.maps and uvs else {}
                 skin.append(LookdevPass.program_key(look.albedo is not None and uvs, env_spec, shadow,
                                                     effects.dual_lobe, effects.thickness, "roughness" in maps,
-                                                    "normal" in maps, "translucency" in maps))
+                                                    "normal" in maps, "translucency" in maps, cube))
         eye_shadow = shadow and effects.eye_shadow and any(self._casts_key_shadow(rm, look) for rm, look in drawn)
         return sorted(set(skin)), sorted(set(e + (eye_shadow,) for e in eyes))
 
@@ -532,7 +541,25 @@ class Viewport:
         display = self.eye_display
         return (any(k not in cached for k in skin)
                 or any(self.eye_pass.program_key(display, *e[:5], lookdev=True, ld_shadow=e[5]) not in eye_cache
-                       for e in eyes))
+                       for e in eyes)
+                or self._lookdev_cube_studio(skin) is not None)
+
+    def lookdev_cube_needed(self) -> bool:
+        """AD-039 §8: the next LookDev frame would prefilter the environment cube first (a GL viewport only)."""
+        return hasattr(self.render_mesh.store, "vertex_list") and self._lookdev_cube_studio() is not None
+
+    def _lookdev_cube_studio(self, skin=None):
+        """AD-039 §8: the studio content the next frame's cube must be prefiltered for (a skin program with
+        `CUBE_ENV` is drawn and the pass's cube does not hold that content yet), else None."""
+        if skin is None:
+            skin = self._lookdev_programs()[0]
+        studio = self._lookdev_studio
+        if studio is None and self.lookdev_state is not None:
+            studio = self.lookdev_state.studio
+        if studio is None or not any(len(key) == 9 and key[8] for key in skin):
+            return None
+        cube = self._lookdev_pass.cube if self._lookdev_pass is not None else None
+        return None if cube is not None and cube.holds(studio) else studio
 
     def prepare_lookdev(self) -> int:
         """Compile the programs the next LookDev frame draws (the room's entry, once per process, §9). Returns how many
@@ -542,6 +569,9 @@ class Viewport:
         skin, eyes = self._lookdev_programs()
         passes = self.lookdev_pass
         before = len(passes.programs) + len(self.eye_pass.programs)
+        studio = self._lookdev_cube_studio(skin)
+        if studio is not None:  # AD-039 §8: the cube's prefilter (and its copy) behind the same status line
+            passes.env_cube().update(studio)
         for key in skin:
             passes.program(*key)
         for level, fit, look, iris, sclera, ld_shadow in eyes:
@@ -1301,7 +1331,8 @@ class Viewport:
         AD-039 S2: with `eye_shadow` as well the eyes receive it (they never cast) - when something casts. AD-039 S3:
         `dual_lobe` draws the skin's highlight with two lobes (the eyes keep theirs). AD-039 S4: `thickness` reads the
         key's map a second time on the skin (the light through thin parts). AD-039 S7: `maps` draws the materials'
-        roughness, normal and translucency maps."""
+        roughness, normal and translucency maps. AD-039 S5: `cube` reads the studio's reflection on the skin from its
+        prefiltered cube, brought up to date before the background (prefiltered only on a studio content change)."""
         camera = self.render_mesh.camera
         frame = self.lookdev_frame()
         passes = self.lookdev_pass
@@ -1324,6 +1355,11 @@ class Viewport:
             shadow.update(casters, frame["u_ld_light_dir"][0], frame["u_ld_light_size"][0])
             if effects.eye_shadow and casters:
                 eye_shadow = shadow
+        cube = None
+        skin_drawn = any(look is not None for _rm, look, eye_key in skins if eye_key is None)
+        if effects.cube and passes.env_spec and skin_drawn:
+            cube = passes.env_cube()
+            cube.update(self.lookdev_state.studio)
         passes.draw_background(*self.lookdev_state.background_colours())
         for rm, look, eye_key in skins:
             if eye_key is not None:
@@ -1333,7 +1369,7 @@ class Viewport:
                 rm = self.entry_surface_render_meshes.get(eye_key, self.object_entries[eye_key])
                 look = self._entry_looks.get(eye_key)
             if look is None or not passes.draw(rm, look, frame, shadow, effects.dual_lobe, effects.thickness,
-                                               effects.maps):
+                                               effects.maps, cube):
                 rm.render(camera)
 
     def wire_drawn(self) -> bool:

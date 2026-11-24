@@ -11,7 +11,7 @@ def test_effects_default_every_built_effect_and_none_measures_no_p3_row():
     from viewport.lookdev_optics import LookdevEffects
 
     assert room.parse_args([]).effects == LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness",
-                                                                         "maps")
+                                                                         "cube", "maps")
     assert room.parse_args(["--effects", "none"]).effects == ()
     assert room.parse_args(["--effects", "shadow"]).effects == ("shadow",)
 

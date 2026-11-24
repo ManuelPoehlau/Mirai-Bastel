@@ -131,6 +131,7 @@ def test_the_effects_block(app):
                                                                           ("eye_shadow", "Augen-Schatten", True, True),
                                                                           ("dual_lobe", "Doppel-Glanz", True, True),
                                                                           ("thickness", "Durchleuchtung", True, True),
+                                                                          ("cube", "Umgebungs-Cube", True, True),
                                                                           ("maps", "Maps", True, True)]
     assert lm.EFFECTS_TITLE == "Effekte" and all(r.hint for r in st.effects)
     app.set_lookdev_effect("shadow", False)
@@ -149,5 +150,7 @@ def test_the_effects_block(app):
     assert not rows[2].on and rows[2].available and rows[2].reason is None
     # AD-039 §7: the thickness needs the shadow (greyed with the reason, its own switch kept)
     assert rows[3].on and not rows[3].available and rows[3].reason == "braucht Schatten"
+    # AD-039 §8: the cube needs no other effect (only its feature): available with the shadow off
+    assert rows[4].name == "cube" and rows[4].on and rows[4].available and rows[4].reason is None
     app.set_lookdev_effect("dual_lobe", True)
     assert lm.state(app).effects[2].on and lm.state(app).effects[2].available

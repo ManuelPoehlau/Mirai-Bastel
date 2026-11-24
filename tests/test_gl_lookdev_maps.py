@@ -31,7 +31,7 @@ from viewport.viewport import Viewport  # noqa: E402
 SIZE = 128
 HALF = 2.0
 FLAT = lo.Studio((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-MAPS_ONLY = lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=False, thickness=False, maps=True)
+MAPS_ONLY = lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=False, thickness=False, cube=False, maps=True)
 NO_MAPS = dataclasses.replace(MAPS_ONLY, maps=False)
 MATTE = LookDraw((0.5, 0.5, 0.5), roughness=1.0, specular=0.0)
 

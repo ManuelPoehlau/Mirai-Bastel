@@ -14,7 +14,10 @@
   on unit 7 through its raw-depth sampler object, unbound (texture and sampler) after it. S7 (AD-039 §10): a
   LookDraw's maps through the shared texture cache (`GLRenderStore.texture`, mipmapped) on units 9-11
   (`MAP_UNITS`), with the triangle UVs on unit 3 even without an albedo map; unbound after the draw. A program's key
-  gains the three map flags only when a map is drawn (every key without maps stays the 5 values of S4).
+  gains the three map flags only when a map is drawn (every key without maps stays the 5 values of S4). S5 (AD-039 §8):
+  the studio's prefiltered cube (`lookdev_cube.EnvCube`, created on the first frame with the effect on, deleted in
+  `release()`) on unit 8 for a draw with `ENV_SPEC`, `GL_TEXTURE_CUBE_MAP_SEAMLESS` on only around that draw (restored
+  to what it was); a key with the cube is 9 values (S4's 5, the three map flags, `CUBE_ENV`).
 - GL state as `EyePass`: during the draw depth test and write on, blend off, back faces culled, polygon offset (1, 1)
   when `store.polygon_offset`; afterwards offset, cull and depth test off, units 3 / 4 unbound, unit 0 active, program
   stopped. No FBO, no float target (the RGBA8 default framebuffer).
@@ -29,8 +32,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .lookdev_shaders import (ALBEDO_UNIT, MAP_UNITS, SHADOW_RAW_UNIT, SHADOW_UNIT, UV_UNIT, background_sources,
-                              skin_sources)
+from .lookdev_shaders import (ALBEDO_UNIT, CUBE_UNIT, MAP_UNITS, SHADOW_RAW_UNIT, SHADOW_UNIT, UV_UNIT,
+                              background_sources, skin_sources)
 
 _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
@@ -111,6 +114,8 @@ class LookdevPass:
         self.notices: list[str] = []
         #: AD-039 §4: the key's shadow map (S1), created on the first frame with the shadow on.
         self.shadow = None
+        #: AD-039 §8: the studio's environment cube (S5), created on the first frame with the cube on.
+        self.cube = None
 
     def feature_report(self):
         """The context's P3 features, probed once (AD-039 §2.2); a missing one queues its status line once."""
@@ -129,24 +134,36 @@ class LookdevPass:
             self.shadow = KeyShadow()
         return self.shadow
 
+    def env_cube(self):
+        """S5's cube (AD-039 §8), created on first use."""
+        if self.cube is None:
+            from .lookdev_cube import EnvCube
+
+            self.cube = EnvCube()
+        return self.cube
+
     @staticmethod
     def program_key(albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
                     thickness: bool = False, roughness_map: bool = False, normal_map: bool = False,
-                    translucency_map: bool = False) -> tuple:
-        """The skin program's cache key: the 5 values of S4, plus the three map flags only when a map is drawn (S7)."""
+                    translucency_map: bool = False, cube_env: bool = False) -> tuple:
+        """The skin program's cache key: the 5 values of S4, plus the three map flags when a map is drawn (S7), plus
+        those and `CUBE_ENV` when the cube is (S5; only with `env_spec`) - 5, 8 or 9 values, so every key of a frame
+        without the cube stays as it was."""
         key = (bool(albedo_map), bool(env_spec), bool(shadow), bool(dual_lobe), bool(thickness) and bool(shadow))
         maps = (bool(roughness_map), bool(normal_map), bool(translucency_map))
+        if cube_env and env_spec:
+            return key + maps + (True,)
         return key + maps if any(maps) else key
 
     def program(self, albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
                 thickness: bool = False, roughness_map: bool = False, normal_map: bool = False,
-                translucency_map: bool = False):
+                translucency_map: bool = False, cube_env: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore, _register_sampler_buffer_uniform
 
         key = self.program_key(albedo_map, env_spec, shadow, dual_lobe, thickness, roughness_map, normal_map,
-                               translucency_map)
+                               translucency_map, cube_env)
         program = self.programs.get(key)
         if program is None:
             _register_sampler_buffer_uniform()
@@ -161,11 +178,13 @@ class LookdevPass:
         return program
 
     def draw(self, render_mesh, look: LookDraw, frame: dict, shadow=None, dual_lobe: bool = False,
-             thickness: bool = False, maps: bool = False) -> bool:
+             thickness: bool = False, maps: bool = False, cube=None) -> bool:
         """Draw one object. False = nothing drawn (no VertexList / camera yet, or a Ghost): the caller draws it with the
         Worklight. `shadow` (AD-039 S1): a rendered `KeyShadow` the object receives (the `SHADOW` variant), else None;
         `dual_lobe` (S3): the `DUAL_LOBE` variant; `thickness` (S4): the `THICKNESS` variant, only with a shadow;
-        `maps` (S7): the LookDraw's maps that load are drawn (one define each) - on a mesh with triangle UVs."""
+        `maps` (S7): the LookDraw's maps that load are drawn (one define each) - on a mesh with triangle UVs;
+        `cube` (S5): a built `EnvCube` the studio's reflection reads (the `CUBE_ENV` variant, with `env_spec`), else
+        None."""
         from pyglet import gl
 
         from .gl_render_store import GLRenderStore
@@ -188,8 +207,10 @@ class LookdevPass:
             uvs = False
         shadow = shadow if shadow is not None and shadow.ready else None
         thickness = bool(thickness) and shadow is not None
+        cube = cube if cube is not None and cube.ready and self.env_spec else None
         program = self.program(texture is not None, self.env_spec, shadow is not None, dual_lobe, thickness,
-                               "roughness" in bound_maps, "normal" in bound_maps, "translucency" in bound_maps)
+                               "roughness" in bound_maps, "normal" in bound_maps, "translucency" in bound_maps,
+                               cube is not None)
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw
         model = store.uniform_data("model_uniforms")
@@ -213,6 +234,12 @@ class LookdevPass:
             shadow.bind(SHADOW_UNIT)
             if thickness:
                 shadow.bind_raw(SHADOW_RAW_UNIT)
+        seamless = None
+        if cube is not None:
+            set_uniforms(program, cube.uniforms(), active)
+            cube.bind(CUBE_UNIT)
+            seamless = bool(gl.glIsEnabled(gl.GL_TEXTURE_CUBE_MAP_SEAMLESS))
+            gl.glEnable(gl.GL_TEXTURE_CUBE_MAP_SEAMLESS)
         gl.glEnable(gl.GL_DEPTH_TEST)
         gl.glDepthMask(gl.GL_TRUE)
         gl.glDisable(gl.GL_BLEND)
@@ -241,6 +268,10 @@ class LookdevPass:
             shadow.unbind(SHADOW_UNIT)
             if thickness:
                 shadow.unbind_raw(SHADOW_RAW_UNIT)
+        if cube is not None:
+            cube.unbind(CUBE_UNIT)
+            if not seamless:
+                gl.glDisable(gl.GL_TEXTURE_CUBE_MAP_SEAMLESS)
         program.stop()
         self.draws += 1
         return True
@@ -283,6 +314,9 @@ class LookdevPass:
         if self.shadow is not None:
             self.shadow.release()
             self.shadow = None
+        if self.cube is not None:
+            self.cube.release()
+            self.cube = None
         if self._background is not None:
             import ctypes
 
