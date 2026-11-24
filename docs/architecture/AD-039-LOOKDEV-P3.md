@@ -16,7 +16,8 @@ translucency maps as image paths on the material (`core.LookMaps`, `LookMaterial
 no map = S4 by pins; its reference-PC row and practical test (§20.4–§20.5) are open. **S5 built 2026-11-24** (§21: the
 studio's environment cube, „Umgebungs-Cube“: the analytic studio prefiltered on the GPU, read back and uploaded - the
 reference PC's FBO-cube defect - on unit 8; cube off = S7 by pins; with the dual lobe two lookups; the eye stays
-analytic): its reference-PC rows and practical test (§21.4–§21.5) are open. S6 next, after LD-D8.
+analytic): its reference-PC rows and practical test (§21.4–§21.5) are open. **LD-D8 decided 2026-11-24 (Manu): „A,
+Regionen wie vorgeschlagen“** (face regions, §9; format v17). S6 next.
 **Why now:** Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“
 ([proposal §0.1](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md), [AD-038](AD-038-LOOKDEV-ROOM-M1.md)
 §13.6). P3 needs its own AD before any `src/` change and fixes the order of the P3 items.
@@ -796,7 +797,7 @@ A slice that misses its target (§2.5) takes the levers in their order. It does 
 | # | Question | Proposal |
 |---|---|---|
 | **Q-P3-0** | Accept the slice order S1 → S7 (§3), with S2 and S4 added after the shadow map? | yes; the practical test may re-order (§12 point 3) |
-| **Q-P3-1 (LD-D8)** | Region materials: face regions with a material per region on the object, or a separate mouth object? | **face regions** (§9): `SceneObject.look_regions`, ≤ 4 per object, later entry wins on overlap, keyed by name; format v16. The separate object stays a no-code fallback |
+| **Q-P3-1 (LD-D8)** | Region materials: face regions with a material per region on the object, or a separate mouth object? | **face regions** (§9): `SceneObject.look_regions`, ≤ 4 per object, later entry wins on overlap, keyed by name; format v16 (**v17**, S7 took v16). The separate object stays a no-code fallback. **Decided 2026-11-24 (Manu): „A, Regionen wie vorgeschlagen“** |
 | **Q-P3-2 (paint channel)** | Roughness / normal / translucency: a map path on the material, or a second paint stack per channel? | **map paths first** (§10), `LookMaterial.maps`, imported images; painted channels later as their own AD-037 phase. **Decided 2026-11-24 (Manu): „Map-Pfade“; built §20** |
 | **Q-P3-3** | Shadow map size and PCF | **1024², 3 × 3 bilinear-compare fetches, softness from the key's „Weichheit“**; P3-0 confirms or moves it (§11.1). 2048² and 4 × 4 become LD-3 knobs |
 | **Q-P3-4** | What is in the cube of the studio presets? | **the preset's own analytic studio** (D-L4: reproducible, no HDRI files). If you want real environments, the next step is an `.hdr` (Radiance) import of your own files as a separate small item. That needs your word, because it lifts D-L4 |
