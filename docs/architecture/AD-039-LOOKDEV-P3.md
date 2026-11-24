@@ -1450,7 +1450,7 @@ Runs (GL files each in their own process under xvfb):
 | `… test_gl_face_data_layout.py` / `test_gl_shading.py` / `test_gl_texture.py` (E1) / `test_gl_gpu_picking.py` / `test_gl_morph_picking.py` (E15) | 16 / 19 / 10 / 37 / 16 passed |
 | `… test_gui_imgui_window.py` / `test_gui_lookdev_window.py` (new: the map rows under „Mehr“) | 18 / 2 passed |
 | `python -m pytest experiments/lookdev_eye_lab/tests` / `experiments/drag_cost/tests` | 206 / 107 passed |
-| `xvfb-run -a python -m pytest tests -q` (a Core slice, §14) | see the follow-up note below |
+| `xvfb-run -a python -m pytest tests -q` (a Core slice, §14; `test_scene_menu_local_tmp.py::test_probe_menu_wiring` deselected: pre-existing, §16.3) | 8,030 passed, 8 skipped |
 
 **Sight check (container):** `Gollum_Head_05`, SubD 1, Creature Skin, the probe's 1024² bump normal map: 18,968 px
 change, the bumps follow the UVs smoothly over the whole head, no black (NaN) pixel.
