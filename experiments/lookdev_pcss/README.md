@@ -90,6 +90,13 @@ Key-Größe. Das Budget ist AD-039 §2.5: pro Effekt ≤ +0.5 ms bei 1024 × 768
 
 Diagnose-Lauf (offen; Bewertung §8.3). 13 Zeilen, Key-Größe 0.45, wenige Minuten je Auflösung:
 
+Zuerst den Stand holen und `$py` setzen (in jeder neuen PowerShell nötig):
+
+```powershell
+git pull
+$py = (Resolve-Path .\.venv312\Scripts\python.exe).Path; git rev-parse --short=10 HEAD; git status --short
+```
+
 ```powershell
 & $py experiments\lookdev_pcss\bench.py --set diag --key-sizes 0.45
 ```

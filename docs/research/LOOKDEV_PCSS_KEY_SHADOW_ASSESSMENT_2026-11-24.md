@@ -417,6 +417,13 @@ liefern im Container das Bild von K16c (Mittel 1.90 statt 1.89/255).
 | `K16c-cap12` | Radius auf 12 Texel gekappt: Ist das viel billiger, belasten breite Kerne den Texture-Cache (im Bild bei Größe 1 schlechter, Mittel 2.27) |
 | `K16c-lean`, `K16c-lean-nb`, `K8c/8-lean-nb` | weniger Rechnung je Abfrage: Mischung Ebene/Höhe und Kegellänge je Fragment statt je Abfrage, Längen als Konstanten. K16c-lean hat das gleiche Bild; K8/8 verliert in der Rinne |
 
+Zuerst den Stand holen und `$py` setzen (in jeder neuen PowerShell nötig):
+
+```powershell
+git pull
+$py = (Resolve-Path .\.venv312\Scripts\python.exe).Path; git rev-parse --short=10 HEAD; git status --short
+```
+
 ```powershell
 & $py experiments\lookdev_pcss\bench.py --set diag --key-sizes 0.45
 ```
