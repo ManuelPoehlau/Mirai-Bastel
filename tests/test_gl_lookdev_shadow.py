@@ -705,6 +705,42 @@ def test_a_surface_reached_through_an_opening_is_not_lit_through(gl_window):
     _release(viewport)
 
 
+def _block_with_a_window(lo_corner, hi_corner, window: float) -> Mesh:
+    """`_flat_box` whose back face (z = lo) is a frame around a square opening `window` wide (centred)."""
+    mesh = _flat_box(lo_corner, hi_corner, without=(2, 0))
+    x0, y0, z = lo_corner
+    x1, y1, _ = hi_corner
+    cx, cy, h = (x0 + x1) / 2, (y0 + y1) / 2, window / 2
+    xs, ys = (x0, cx - h, cx + h, x1), (y0, cy - h, cy + h, y1)
+    for i in range(3):
+        for j in range(3):
+            if (i, j) == (1, 1):
+                continue
+            quad = [mesh.add_vertex((xs[i + a], ys[j + b], z)) for a, b in ((0, 0), (0, 1), (1, 1), (1, 0))]
+            _face(mesh, quad, (0.0, 0.0, -1.0))
+    return mesh
+
+
+def test_no_bright_outline_where_an_opening_s_edge_falls(gl_window):
+    """AD-039 §19.7 (Manu 2026-11-24, after §19.6: the patch dark, its outline red): a block whose back face has a
+    window, the key straight behind - through the window the front face is the map's nearest surface (no light),
+    around it the block is 0.8 thick (no light). No pixel of the front face may light up where the window's edge falls:
+    the bilinear depth there blends the face's own depth with the frame's and read a small thickness."""
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=4.5, yaw=0.0, pitch=0.0)
+    meshes = {"slab": _flat_box(*SLAB), "window": _block_with_a_window(*BLOCK, window=0.5)}
+    viewport = _viewport(gl_window, meshes, camera)
+    for key in meshes:
+        viewport.set_object_entry(key, viewport.object_entries[key].mesh, (0.5, 0.5, 0.5), look=BACKLIT)
+    for az in (180.0, 176.0, 183.0):  # straight behind, and a little off so the window's edge crosses texels obliquely
+        viewport.set_shading("lookdev", _state(key_az=az, key_el=1.5, effects=lo.LookdevEffects()))
+        pixels = _frame(gl_window, viewport)
+        ys, xs = _front_pixels(viewport, *BLOCK)
+        assert len(ys) > 200 and pixels[ys, xs].max() <= 2, (az, pixels[ys, xs].max())
+        slab_ys, slab_xs = _front_pixels(viewport, *SLAB)
+        assert pixels[slab_ys, slab_xs].mean() > 60
+    _release(viewport)
+
+
 def test_without_sampler_objects_the_thickness_is_off_with_a_status_line(gl_window, monkeypatch):
     """AD-039 §2.2 / §7 (T4-3): `sampler_objects` stubbed false - the frame equals the thickness-off frame, the status
     line once, the shadow stays on."""

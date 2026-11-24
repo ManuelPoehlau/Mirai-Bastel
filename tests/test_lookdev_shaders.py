@@ -146,9 +146,9 @@ def test_the_thickness_variant_replaces_the_rim_proxy_and_needs_the_shadow():
 #: AD-039 §10 / §20 (S7): the 4 S4 skin variants with every effect before S7 on (`shadow`, `dual_lobe`, `thickness`),
 #: taken from the code before S7 changed `lookdev_shaders.py` (`50c69cd`). With no map, the frame's programs stay
 #: exactly S4's.
-#: Re-taken 2026-11-24 with AD-039 §19.6 (the thickness: no light without tissue in front, the lookup without the normal
-#: offset) - `LD_THICKNESS_SRC` and the `THICKNESS` block changed; every pin without the thickness is unchanged.
-PINNED_S4_SKIN_SOURCES_SHA256 = "184770ab7a63529c0343d383cd1a8d66c80fd0f09c13896462e11ac1682816cf"
+#: Re-taken 2026-11-24 with AD-039 §19.6 / §19.7 (the thickness: no light without tissue in front, decided on the 4
+#: texels; the lookup without the normal offset) - `LD_THICKNESS_SRC` and the `THICKNESS` block changed; every pin without the thickness is unchanged.
+PINNED_S4_SKIN_SOURCES_SHA256 = "a05efdd4648bab0a21d1c47691d8c17b594146721e6c03ee1fce60b5e7d187fd"
 
 
 def test_no_map_keeps_the_m1_to_s4_sources():
@@ -165,9 +165,9 @@ def test_no_map_keeps_the_m1_to_s4_sources():
 #: AD-039 §8 / §21 (S5): the 4 S7 skin variants with every effect before S5 on and all three maps (`shadow`,
 #: `dual_lobe`, `thickness`, `roughness_map`, `normal_map`, `translucency_map`), taken from the code before S5 changed
 #: `lookdev_shaders.py` (`eb4c817`). With the cube off, the frame's programs stay exactly S7's.
-#: Re-taken 2026-11-24 with AD-039 §19.6 (the thickness: no light without tissue in front, the lookup without the normal
-#: offset) - `LD_THICKNESS_SRC` and the `THICKNESS` block changed; every pin without the thickness is unchanged.
-PINNED_S7_SKIN_SOURCES_SHA256 = "04ffb725ead54032d3de9e8b306590460cdca8dde081d23ea886437f1330593f"
+#: Re-taken 2026-11-24 with AD-039 §19.6 / §19.7 (the thickness: no light without tissue in front, decided on the 4
+#: texels; the lookup without the normal offset) - `LD_THICKNESS_SRC` and the `THICKNESS` block changed; every pin without the thickness is unchanged.
+PINNED_S7_SKIN_SOURCES_SHA256 = "b4c53439dfe1654e63c04f5a1b886869387b31c3322275841d863aba31b34a61"
 
 
 def test_the_cube_off_keeps_the_m1_to_s7_sources():
@@ -253,9 +253,9 @@ def test_each_map_has_its_define_and_only_its_text():
 #: AD-039 §9 / §22 (S6): the 4 S5 skin variants with every effect before S6 on, all three maps and the cube wherever it
 #: can be (`cube_env = env_spec`; `shadow`, `dual_lobe`, `thickness`, the three maps), taken from the code before S6
 #: changed `lookdev_shaders.py` (`dc4fe82`). With the region materials off, the frame's programs stay exactly S5's.
-#: Re-taken 2026-11-24 with AD-039 §19.6 (the thickness: no light without tissue in front, the lookup without the normal
-#: offset) - `LD_THICKNESS_SRC` and the `THICKNESS` block changed; every pin without the thickness is unchanged.
-PINNED_S5_SKIN_SOURCES_SHA256 = "46d44a6e04b0949c3d77ad6b2ad2f4c12e96d8785aeee2e89d83fdc29f8b3dc7"
+#: Re-taken 2026-11-24 with AD-039 §19.6 / §19.7 (the thickness: no light without tissue in front, decided on the 4
+#: texels; the lookup without the normal offset) - `LD_THICKNESS_SRC` and the `THICKNESS` block changed; every pin without the thickness is unchanged.
+PINNED_S5_SKIN_SOURCES_SHA256 = "70a7d6c907338d16439fbe1cce1154f61239f51d331313c005795889f97d9cc3"
 
 
 def s5_skin_sources_digest(**effects) -> tuple[int, str]:

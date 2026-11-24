@@ -515,19 +515,30 @@ const float LD_THICKNESS_SCALE = {THICKNESS_SCALE!r};
 const float LD_THICKNESS_EDGE = {THICKNESS_EDGE!r};
 // the distance (world units) the key light travels inside the mesh before it reaches p: p's depth from the key past
 // the nearest surface in the map, at p's own map point (no normal offset: it would shift the lookup across the
-// surface's slope and read a thickness where there is none); a negative value outside the map
-float ld_key_thickness(vec3 p) {{
+// surface's slope and read a thickness where there is none). x: through the bilinear depth of the 4 texels around
+// the point; y: past the farthest of the 4 (the least tissue any of them holds, AD-039 §19.7); negative outside the map
+vec2 ld_key_thickness(vec3 p) {{
     vec4 lp = u_ld_shadow_vp * vec4(p, 1.0);
     vec3 sp = lp.xyz / lp.w * 0.5 + 0.5;
-    float stored = texture(u_ld_shadow_depth, sp.xy * u_ld_shadow_scale).r;
+    ivec2 last = textureSize(u_ld_shadow_depth, 0) - 1;
+    vec2 xy = sp.xy * u_ld_shadow_scale * vec2(last + 1) - 0.5;
+    ivec2 i = ivec2(floor(xy));
+    vec2 f = xy - floor(xy);
+    float d00 = texelFetch(u_ld_shadow_depth, clamp(i, ivec2(0), last), 0).r;
+    float d10 = texelFetch(u_ld_shadow_depth, clamp(i + ivec2(1, 0), ivec2(0), last), 0).r;
+    float d01 = texelFetch(u_ld_shadow_depth, clamp(i + ivec2(0, 1), ivec2(0), last), 0).r;
+    float d11 = texelFetch(u_ld_shadow_depth, clamp(i + ivec2(1, 1), ivec2(0), last), 0).r;
+    float stored = mix(mix(d00, d10, f.x), mix(d01, d11, f.x), f.y);
+    float farthest = max(max(d00, d10), max(d01, d11));
     float inside = float(all(greaterThanEqual(sp, vec3(0.0))) && all(lessThanEqual(sp, vec3(1.0))));
-    return mix(-1.0, max(sp.z - stored, 0.0) * u_ld_shadow_range, inside);
+    return mix(vec2(-1.0), vec2(max(sp.z - stored, 0.0), max(sp.z - farthest, 0.0)) * u_ld_shadow_range, inside);
 }}
 // the share of the key's light that comes through: exp(-thickness / scale); outside the map none, and none where no
-// tissue lies in front of p (p itself is the nearest surface: the key reaches it through an opening, AD-039 §19.6)
+// tissue lies in front of p (p itself is the nearest surface: the key reaches it through an opening, AD-039 §19.6) -
+// decided on the 4 texels, so the edge of an opening does not blend the surface's own depth into a thin glowing line
 float ld_key_transmission(vec3 p) {{
-    float t = ld_key_thickness(p);
-    return t < 0.0 ? 0.0 : exp(-t / LD_THICKNESS_SCALE) * smoothstep(0.0, LD_THICKNESS_EDGE, t);
+    vec2 t = ld_key_thickness(p);
+    return t.x < 0.0 ? 0.0 : exp(-t.x / LD_THICKNESS_SCALE) * smoothstep(0.0, LD_THICKNESS_EDGE, t.y);
 }}
 """
 

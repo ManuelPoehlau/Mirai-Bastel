@@ -490,3 +490,20 @@ def test_the_cotangent_frame_follows_the_uv_and_a_flat_map_keeps_the_normal():
 
 def test_the_roughness_map_multiplies_the_roughness():
     assert np.allclose(lo.map_roughness(0.6, [1.0, 0.5, 0.0]), [0.6, 0.3, 0.0])
+
+
+def test_the_edge_of_an_opening_lets_no_light_through():
+    """AD-039 §19.7 (Manu 2026-11-24: the patch dark, a red outline round it): beside an opening the bilinear depth
+    blends the surface's own depth (no tissue) with the frame's (much nearer the key) and reads a small thickness; the
+    4-texel rule sees the surface itself among the texels and lets nothing through. Away from the edge the frame's
+    thickness holds."""
+    depth = np.full((8, 8), 0.2)  # the frame, nearer the key
+    depth[:, 4:] = 0.6            # through the opening: the surface itself
+    depth_range, z = 2.0, 0.6
+    xs = (np.arange(8) + 0.5) / 8.0
+    edge = xs[3] + 0.97 * (xs[4] - xs[3])  # just before the first surface texel: mostly its own depth
+    blended = lo.bilinear_depth(depth, (edge, 0.5))
+    assert 0.0 < (z - blended) * depth_range < lo.THICKNESS_SCALE  # the bilinear read: thin, would glow
+    assert lo.key_transmission(depth, [edge, 0.5, z], depth_range) == 0.0
+    assert lo.key_transmission(depth, [xs[1], 0.5, z], depth_range) < 1e-6  # the frame: 0.8 thick
+    assert lo.farthest_depth(depth, (edge, 0.5)) == 0.6

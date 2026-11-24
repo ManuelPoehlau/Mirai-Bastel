@@ -575,17 +575,33 @@ def bilinear_depth(depth: np.ndarray, uv) -> np.ndarray:
             + (at(x0, y0 + 1) * (1 - fx) + at(x0 + 1, y0 + 1) * fx) * fy)
 
 
+def farthest_depth(depth: np.ndarray, uv) -> np.ndarray:
+    """The largest stored depth of the 4 texels a bilinear fetch at `uv` reads (CLAMP_TO_EDGE), as the shader's
+    `texelFetch`es (AD-039 §19.7)."""
+    uv = np.asarray(uv, dtype=np.float64)
+    h, w = depth.shape
+    x0 = np.floor(uv[..., 0] * w - 0.5).astype(int)
+    y0 = np.floor(uv[..., 1] * h - 0.5).astype(int)
+    out = None
+    for dx in (0, 1):
+        for dy in (0, 1):
+            d = depth[np.clip(y0 + dy, 0, h - 1), np.clip(x0 + dx, 0, w - 1)]
+            out = d if out is None else np.maximum(out, d)
+    return out
+
+
 def key_transmission(depth: np.ndarray, sp, depth_range: float, scale: float = 1.0,
                      thickness_scale: float = THICKNESS_SCALE) -> np.ndarray:
     """GLSL `ld_key_transmission` from the map point `sp` (..., 3): the thickness `max(z - stored, 0) x depth_range`
     (world units, the stored depth read raw over the rendered part `scale` of the map), `exp(-thickness / scale)` times
-    `smoothstep(0, THICKNESS_EDGE, thickness)` (no tissue in front: an opening, AD-039 §19.6); 0 outside the map's
-    box."""
+    `smoothstep(0, THICKNESS_EDGE, least)` with `least` past the farthest of the 4 texels (no tissue in front at any of
+    them: an opening, AD-039 §19.6 / §19.7); 0 outside the map's box."""
     sp = np.asarray(sp, dtype=np.float64)
     stored = bilinear_depth(depth, sp[..., :2] * scale)
     thickness = np.maximum(sp[..., 2] - stored, 0.0) * depth_range
+    least = np.maximum(sp[..., 2] - farthest_depth(depth, sp[..., :2] * scale), 0.0) * depth_range
     inside = np.all((sp >= 0.0) & (sp <= 1.0), axis=-1)
-    x = np.clip(thickness / THICKNESS_EDGE, 0.0, 1.0)
+    x = np.clip(least / THICKNESS_EDGE, 0.0, 1.0)
     return np.where(inside, np.exp(-thickness / thickness_scale) * x * x * (3.0 - 2.0 * x), 0.0)
 
 

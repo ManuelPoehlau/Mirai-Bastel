@@ -1437,6 +1437,31 @@ unchanged. Runs: `test_gl_lookdev_shadow.py` 26, `_pass` 13, `_parity` 8, `_cube
 **Practical test (2 minutes):** your newer scene with the hole behind the eye **open again** (undo `border close`),
 Dramatic, key 70° / 20°: the patch on the cheekbone is gone; the ears still glow with the key from behind (§19.5 point 1).
 
+### 19.7 Fix 2 (2026-11-24): no glowing outline at an opening's edge
+
+**Kurzfassung (Deutsch):** Nach §19.6 war der Fleck dunkel, aber sein Rand leuchtete als dünne rote Linie (dein zweiter
+Screenshot, auch am Unterkiefer). Grund: Am Rand des Lochs mischt das bilineare Lesen der Tiefe die eigene Tiefe der
+Wange mit der des Augenhöhlen-Rands und ergibt dort eine kleine Dicke, also Durchscheinen. Jetzt entscheiden die vier
+Texel um den Punkt: Ist die Fläche an einem von ihnen selbst die nächste zum Key, kommt nichts durch. Die Stärke des
+Durchscheinens (`exp(−Dicke / 0,05)`) bleibt bilinear und glatt.
+
+**What changed:** `ld_key_thickness(p)` returns `vec2`: x the thickness through the bilinear depth of the 4 texels
+(four `texelFetch`es, mixed in the shader - the same value the GL_LINEAR fetch gave), y the thickness past the
+**farthest** of the 4 (the least tissue any of them holds). `ld_key_transmission` = `exp(−x / scale) ×
+smoothstep(0, THICKNESS_EDGE, y)`. Twins: `lookdev_optics.farthest_depth`, `key_transmission`. Cost: 4 fetches instead
+of 1 [E: within S4's +0.5 ms; the reference-PC row `lookdev +shadow +thick` measures it].
+
+**Tests:** `test_gl_lookdev_shadow.py::test_no_bright_outline_where_an_opening_s_edge_falls` (a block with a window
+in its back face, the key behind at 180° / 176° / 183°: no pixel of its front face above 2/255 - **23/255 at the
+window's edge with §19.6 alone**, the outline reproduced; the closed slab beside it still transmits);
+`test_lookdev_optics.py::test_the_edge_of_an_opening_lets_no_light_through` (the bilinear read just before the
+surface's texel is thin, the transmission 0). Pins S4 / S7 / S5 re-taken again; M1, S1, S3 and the eye pins unchanged.
+Runs: `test_gl_lookdev_shadow.py` 27, `_cube` 13, `_maps` 9, `_regions` 9, `_pass` 13, `_parity` 8 passed;
+`test_lookdev_optics.py` 36, `test_lookdev_shaders.py` 15 passed.
+
+**Named:** the dark area round an opening grows by up to one map texel (about 0.003 world units on Gollum at full
+resolution, more with a soft key's lower effective resolution).
+
 ---
 
 ## 20. Implementation note — S7 built (2026-11-24)
