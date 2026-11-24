@@ -116,6 +116,15 @@ ablehnt, statt die Maps still zu verlieren. Gelesen werden 2-16. Ungültig (die 
 einer Datei unter 16 und jede ungültige Map-Gruppe. Was ein Map-Pfad bedeutet (relativ zur Szene, `<Szene>_textures/`),
 entscheidet `src/mirai` (`mirai.texture_files`).
 
+Version 17 (Region-Materialien, AD-039 §9 S6, Manu 2026-11-24 LD-D8 „A, Regionen wie vorgeschlagen“, CORE_V1_FREEZE §7.1)
+ist additiv: ein Objekt mit Region-Materialien trägt `"look_regions": [{"region", "look"}, ...]` (die Werte von
+`core.scene.RegionLook`, höchstens `LOOK_REGIONS_MAX`, Namen eindeutig, die Reihenfolge ist die Bedeutung: bei
+Überlappung gewinnt der spätere Eintrag; fehlt = keine, eine leere Liste wird nie geschrieben). Nur geschrieben, wenn ein
+Objekt Region-Materialien hat (sonst 4-16 wie bisher, Byte für Byte gleich), damit ein älterer Build die Datei ablehnt,
+statt die Region-Materialien still zu verlieren. Gelesen werden 2-17. Ungültig (die Datei wird abgelehnt): ein
+`"look_regions"` in einer Datei unter 17, eine leere Liste und jeder ungültige Eintrag. Ob die Region im Mesh existiert,
+entscheidet `src/mirai` (eine fehlende wird nicht gezeichnet, der Eintrag bleibt).
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -128,7 +137,7 @@ import json
 from .ids import BoneId, ObjectId
 from .mesh import LayerKind, Mesh
 from .rig import Rig
-from .scene import (EyeSpec, LookMaterial, MirrorPair, ObjectMaterial, ObjectState, ObjectTransform, PaintStack, Scene,
+from .scene import (EyeSpec, LookMaterial, MirrorPair, RegionLook, ObjectMaterial, ObjectState, ObjectTransform, PaintStack, Scene,
                     SceneObject)
 
 FORMAT_VERSION = 4
@@ -156,6 +165,8 @@ PAINT_FORMAT_VERSION = 14
 LOOK_FORMAT_VERSION = 15
 #: Written when any LookDev material has maps (`LookMaterial.maps`, AD-039 §10 S7).
 LOOK_MAPS_FORMAT_VERSION = 16
+#: Written when any object has region materials (`SceneObject.look_regions`, AD-039 §9 S6).
+LOOK_REGIONS_FORMAT_VERSION = 17
 
 
 def scene_to_dict(scene: Scene) -> dict:
@@ -167,7 +178,9 @@ def scene_to_dict(scene: Scene) -> dict:
         obj.state is ObjectState.GROUP or obj.hidden or obj.parent is not None for obj in scene.objects.values()
     ) or (scene.rig is not None and bool(scene.rig.hidden_ids()))
     looks = [obj.eye.look for obj in objects if obj.eye is not None and obj.eye.look is not None]
-    if any(obj.look is not None and obj.look.maps is not None for obj in objects):
+    if any(obj.look_regions for obj in objects):
+        version = LOOK_REGIONS_FORMAT_VERSION
+    elif any(obj.look is not None and obj.look.maps is not None for obj in objects):
         version = LOOK_MAPS_FORMAT_VERSION
     elif any(obj.look is not None for obj in objects):
         version = LOOK_FORMAT_VERSION
@@ -212,7 +225,8 @@ def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
     if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION, GROUP_FORMAT_VERSION,
                    EYE_FORMAT_VERSION, EYE_LOOK_FORMAT_VERSION, EYE_IRIS_FORMAT_VERSION, EYE_SCLERA_FORMAT_VERSION,
-                   BONE_LINK_FORMAT_VERSION, PAINT_FORMAT_VERSION, LOOK_FORMAT_VERSION, LOOK_MAPS_FORMAT_VERSION):
+                   BONE_LINK_FORMAT_VERSION, PAINT_FORMAT_VERSION, LOOK_FORMAT_VERSION, LOOK_MAPS_FORMAT_VERSION,
+                   LOOK_REGIONS_FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw, version) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
@@ -279,7 +293,21 @@ def _object_to_dict(obj: SceneObject) -> dict:
         out["paint"] = obj.paint.to_dict()  # version 14 (AD-037)
     if obj.look is not None:
         out["look"] = obj.look.to_dict()  # version 15 (AD-038 §18), "look.maps" 16 (AD-039 §10)
+    if obj.look_regions:
+        out["look_regions"] = [entry.to_dict() for entry in obj.look_regions]  # version 17 (AD-039 §9)
     return out
+
+
+def _look_regions_from(raw: dict, version: int) -> tuple[RegionLook, ...]:
+    if "look_regions" not in raw:
+        return ()
+    value = raw["look_regions"]
+    if version < LOOK_REGIONS_FORMAT_VERSION:
+        raise ValueError(f"Objekt {raw.get('id')!r}: \"look_regions\" erst ab Version {LOOK_REGIONS_FORMAT_VERSION}, "
+                         f"Datei {version}")
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"Objekt {raw.get('id')!r}: \"look_regions\" ist eine nicht leere Liste, nicht {value!r}")
+    return tuple(RegionLook.from_dict(entry) for entry in value)
 
 
 def _look_from(raw: dict, version: int) -> LookMaterial | None:
@@ -335,6 +363,7 @@ def _object_from_dict(raw: dict, version: int) -> SceneObject:
         bone=_bone_from(raw, version),
         paint=_paint_from(raw, version),
         look=_look_from(raw, version),
+        look_regions=_look_regions_from(raw, version),
     )
 
 

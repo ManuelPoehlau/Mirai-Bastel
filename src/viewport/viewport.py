@@ -153,6 +153,8 @@ Kein Fenster-/Event-Loop-Code hier (siehe Paket-Docstring in `__init__.py`).
 
 from __future__ import annotations
 
+import weakref
+
 from dataclasses import replace
 
 from core import Mesh, Selection, VertexId
@@ -257,6 +259,9 @@ class Viewport:
         # AD-039 §8: the studio content the next frame's environment cube shows (set with the effects by the room, so a
         # preset switch prefilters behind the status line before the frame draws it).
         self._lookdev_studio = None
+        # AD-039 §9 (S6): per drawn RenderMesh the key its triangle material slots were last set for (a SubD surface maps
+        # its faces through `face_parent`: done again only when the regions or the surface's topology change).
+        self._material_slot_keys = weakref.WeakKeyDictionary()
         # Optional (None = headless/TraceStore: es entsteht kein GL-Objekt).
         self.point_overlay = (
             point_overlay_type() if point_overlay_type is not None else None
@@ -422,6 +427,8 @@ class Viewport:
             else:
                 self._entry_looks[key] = look
             self._request_uvs(key, look is not None and look.needs_uvs)
+            if look is None or not look.regions:
+                self._release_material_slots(key)
             changed = True
         return changed
 
@@ -431,7 +438,20 @@ class Viewport:
             return False
         self._edit_look = look
         self._request_uvs(EDIT_KEY, look is not None and look.needs_uvs)
+        if look is None or not look.regions:
+            self._release_material_slots(EDIT_KEY)
         return True
+
+    def _release_material_slots(self, key) -> None:
+        """AD-039 §9: a key whose LookDraw has no regions (or none at all: the room closed) keeps no slot buffer, on
+        its RenderMesh and the surface drawn in its place - the Worklight has exactly today's resources."""
+        if key == EDIT_KEY:
+            meshes = (self.render_mesh, self.surface_render_mesh)
+        else:
+            meshes = (self.object_entries.get(key), self.entry_surface_render_meshes.get(key))
+        for rm in meshes:
+            if rm is not None:
+                self._sync_material_slots(rm, None, False)
 
     def set_shading(self, shading: str, state=None) -> None:
         """AD-038 §3.1: "worklight" or "lookdev" with its studio (`lookdev_optics.LookdevState`). Pure draw state."""
@@ -461,9 +481,11 @@ class Viewport:
         if effects is None:
             effects = self.lookdev_state.effects if self.lookdev_state is not None else LookdevEffects()
         features = None
-        # AD-039 §2.2: the maps need their check only when a drawn material has a map (else nothing is probed)
+        # AD-039 §2.2: the maps (regions) need their check only when a drawn material has a map (regions): else nothing
+        # is probed
         needed = [name for name in EFFECT_FEATURE
-                  if getattr(effects, name) and (name != "maps" or self._lookdev_maps())]
+                  if getattr(effects, name) and (name != "maps" or self._lookdev_maps())
+                  and (name != "regions" or self._lookdev_regions())]
         if needed and hasattr(self.render_mesh.store, "vertex_list"):
             features = self.lookdev_pass.feature_report()
         elif self._lookdev_pass is not None:
@@ -474,6 +496,36 @@ class Viewport:
         """AD-039 §10: a LookDraw (the edit object's or an entry's) has a map path."""
         looks = [self._edit_look, *self._entry_looks.values()]
         return any(look is not None and look.map_paths() for look in looks)
+
+    def _lookdev_regions(self) -> bool:
+        """AD-039 §9: a LookDraw (the edit object's or an entry's) has region materials."""
+        looks = [self._edit_look, *self._entry_looks.values()]
+        return any(look is not None and look.regions for look in looks)
+
+    def _sync_material_slots(self, rm, look, on: bool) -> None:
+        """AD-039 §9 (S6): the triangle material slots of the drawn RenderMesh `rm` for `look`'s regions - by FaceId
+        on the object's mesh and the ID-identical posed / morphed surfaces, through the provider's `face_parent`
+        mapping (`surface_face_values`) on a derived (SubD) surface. None (the buffer freed) when the regions are off
+        or the look has none: then the object draws one material."""
+        if not hasattr(rm, "set_triangle_material_slots"):
+            return
+        if not on or look is None or not look.regions:
+            if rm.triangle_material_slots:
+                rm.set_triangle_material_slots(None)
+            self._material_slot_keys.pop(rm, None)
+            return
+        from .lookdev_optics import face_material_slots
+
+        provider = self.surface_provider
+        derived = (rm is self.surface_render_mesh and provider is not None
+                   and not getattr(provider, "wire_follows_surface", False)
+                   and getattr(provider, "surface_face_values", None) is not None)
+        key = (look.region_faces, id(rm.mesh), provider.hidden_key if derived else None)
+        if self._material_slot_keys.get(rm) == key:
+            return
+        self._material_slot_keys[rm] = key
+        slots = face_material_slots(look.region_faces)
+        rm.set_triangle_material_slots(provider.surface_face_values(slots) if derived else slots)
 
     def lookdev_features(self):
         """This context's P3 feature report, or None before an effect needed it (the panel's reasons)."""
@@ -502,7 +554,8 @@ class Viewport:
 
     def _lookdev_programs(self) -> tuple[list, list]:
         """The programs the next LookDev frame draws: ([skin program keys (albedo map, env spec, shadow, dual lobe,
-        thickness[, roughness map, normal map, translucency map[, cube env]])], [eye program arguments + (ld_shadow,)]).
+        thickness[, roughness map, normal map, translucency map[, cube env[, regions]]])], [eye program arguments +
+        (ld_shadow,)]).
         AD-039 §5:
         the eyes receive the key's shadow when `shadow` and `eye_shadow` are in force and something casts it. AD-039
         §10: a LookDraw's maps with `maps` in force on a mesh with UVs."""
@@ -525,9 +578,10 @@ class Viewport:
             if look is not None:
                 uvs = rm.mesh.has_face_uvs()
                 maps = look.map_paths() if effects.maps and uvs else {}
-                skin.append(LookdevPass.program_key(look.albedo is not None and uvs, env_spec, shadow,
+                regions = effects.regions and bool(look.regions)
+                skin.append(LookdevPass.program_key(look.albedo_source(regions) is not None and uvs, env_spec, shadow,
                                                     effects.dual_lobe, effects.thickness, "roughness" in maps,
-                                                    "normal" in maps, "translucency" in maps, cube))
+                                                    "normal" in maps, "translucency" in maps, cube, regions))
         eye_shadow = shadow and effects.eye_shadow and any(self._casts_key_shadow(rm, look) for rm, look in drawn)
         return sorted(set(skin)), sorted(set(e + (eye_shadow,) for e in eyes))
 
@@ -556,7 +610,7 @@ class Viewport:
         studio = self._lookdev_studio
         if studio is None and self.lookdev_state is not None:
             studio = self.lookdev_state.studio
-        if studio is None or not any(len(key) == 9 and key[8] for key in skin):
+        if studio is None or not any(len(key) >= 9 and key[8] for key in skin):
             return None
         cube = self._lookdev_pass.cube if self._lookdev_pass is not None else None
         return None if cube is not None and cube.holds(studio) else studio
@@ -1332,7 +1386,9 @@ class Viewport:
         `dual_lobe` draws the skin's highlight with two lobes (the eyes keep theirs). AD-039 S4: `thickness` reads the
         key's map a second time on the skin (the light through thin parts). AD-039 S7: `maps` draws the materials'
         roughness, normal and translucency maps. AD-039 S5: `cube` reads the studio's reflection on the skin from its
-        prefiltered cube, brought up to date before the background (prefiltered only on a studio content change)."""
+        prefiltered cube, brought up to date before the background (prefiltered only on a studio content change).
+        AD-039 S6: `regions` draws the objects' region materials (each drawn RenderMesh's triangle slots brought up to
+        date first; off = one material per object, the slots freed)."""
         camera = self.render_mesh.camera
         frame = self.lookdev_frame()
         passes = self.lookdev_pass
@@ -1360,6 +1416,9 @@ class Viewport:
         if effects.cube and passes.env_spec and skin_drawn:
             cube = passes.env_cube()
             cube.update(self.lookdev_state.studio)
+        for rm, look, eye_key in skins:
+            if eye_key is None:
+                self._sync_material_slots(rm, look, effects.regions)
         passes.draw_background(*self.lookdev_state.background_colours())
         for rm, look, eye_key in skins:
             if eye_key is not None:
@@ -1369,7 +1428,7 @@ class Viewport:
                 rm = self.entry_surface_render_meshes.get(eye_key, self.object_entries[eye_key])
                 look = self._entry_looks.get(eye_key)
             if look is None or not passes.draw(rm, look, frame, shadow, effects.dual_lobe, effects.thickness,
-                                               effects.maps, cube):
+                                               effects.maps, cube, effects.regions):
                 rm.render(camera)
 
     def wire_drawn(self) -> bool:

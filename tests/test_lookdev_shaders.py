@@ -244,3 +244,74 @@ def test_each_map_has_its_define_and_only_its_text():
         assert ("texture(u_roughness_map, map_uv)" in body) == rough
         assert ("texture(u_translucency_map, map_uv)" in body) == trans
     assert "NORMAL_MAP" not in ls.LD_COMMON_SRC and "map_uv" not in ls.LD_COMMON_SRC
+
+
+#: AD-039 §9 / §22 (S6): the 4 S5 skin variants with every effect before S6 on, all three maps and the cube wherever it
+#: can be (`cube_env = env_spec`; `shadow`, `dual_lobe`, `thickness`, the three maps), taken from the code before S6
+#: changed `lookdev_shaders.py` (`dc4fe82`). With the region materials off, the frame's programs stay exactly S5's.
+PINNED_S5_SKIN_SOURCES_SHA256 = "39b387d460e95737b3d3408e42629e3846e608cea1d4096cb5702aa30005231d"
+
+
+def s5_skin_sources_digest(**effects) -> tuple[int, str]:
+    """As `skin_sources_digest`, with the cube on in the two `ENV_SPEC` variants (it needs `ENV_SPEC`)."""
+    import hashlib
+    import itertools
+
+    digest, count = hashlib.sha256(), 0
+    for albedo_map, env_spec in itertools.product((False, True), (False, True)):
+        for src, kind in ls.skin_sources({"position": 0, "normal": 1}, albedo_map, env_spec, cube_env=env_spec,
+                                         **effects):
+            digest.update(kind.encode() + b"\0" + src.encode() + b"\0")
+            count += 1
+    return count, digest.hexdigest()
+
+
+def test_the_regions_off_keep_the_m1_to_s5_sources():
+    """AD-039 §9: `regions` off = the sources before S6, character for character (every earlier pin)."""
+    maps = dict(roughness_map=True, normal_map=True, translucency_map=True)
+    every = dict(shadow=True, dual_lobe=True, thickness=True, **maps)
+    assert skin_sources_digest(regions=False) == (12, PINNED_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, regions=False) == (12, PINNED_S1_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, regions=False) == (12, PINNED_S3_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, thickness=True, regions=False) == (
+        12, PINNED_S4_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(regions=False, **every) == (12, PINNED_S7_SKIN_SOURCES_SHA256)
+    assert s5_skin_sources_digest(**every) == (12, PINNED_S5_SKIN_SOURCES_SHA256)
+    assert s5_skin_sources_digest(regions=False, **every) == (12, PINNED_S5_SKIN_SOURCES_SHA256)
+    assert s5_skin_sources_digest(regions=True, **every)[1] != PINNED_S5_SKIN_SOURCES_SHA256
+
+
+def test_the_regions_variant_picks_the_material_per_triangle():
+    """AD-039 §9: `REGIONS` once; the slot from `u_triangle_material` by `gl_PrimitiveID` at the start of `main`, the
+    material values as globals named like the uniforms they replace (so the body reads them alike), the albedo map only
+    where the slot says so; unit 12, five slots. Off: no text left. The eye's library is untouched."""
+    import itertools
+
+    locations = {"position": 0, "normal": 1}
+    assert ls.REGION_UNIT == 12 and ls.REGION_SLOTS == 5
+    assert ls.REGION_UNIT not in (0, ls.UV_UNIT, ls.ALBEDO_UNIT, 5, ls.SHADOW_UNIT, ls.SHADOW_RAW_UNIT, ls.CUBE_UNIT,
+                                  *ls.MAP_UNITS.values())
+    names = ("u_base_color", "u_roughness", "u_f0", "u_wrap", "u_backscatter", "u_backscatter_color")
+    for albedo, env, shadow, maps in itertools.product((False, True), repeat=4):
+        fs = ls.skin_sources(locations, albedo, env, shadow, shadow, shadow, maps, maps, maps, env, regions=True)[2][0]
+        assert fs.count("#define REGIONS 1\n") == 1 and fs.count("uniform samplerBuffer u_triangle_material;") == 1
+        head, body = fs[:fs.index("void main()")], fs[fs.index("void main()"):]
+        regions = head[head.index("#ifdef REGIONS"):head.index("#endif", head.index("#ifdef REGIONS"))]
+        for name in names:
+            assert f"uniform {'float' if name in ('u_roughness', 'u_f0', 'u_backscatter') else 'vec3'} {name};" in \
+                regions[regions.index("#else"):]  # the variant without regions keeps its uniforms
+            assert f"\n{'float' if name in ('u_roughness', 'u_f0', 'u_backscatter') else 'vec3'} {name};" in \
+                regions[:regions.index("#else")]  # with regions a global of the same name
+            array = "u_slot_fresnel" if name == "u_f0" else f"u_slot_{name[2:]}"
+            assert f"{name} = {array}[slot];" in body
+        assert body.index("texelFetch(u_triangle_material, gl_PrimitiveID)") < body.index("vec3 n = normalize(")
+        assert "slot = slot < 0 || slot >= LD_SLOTS ? 0 : slot;" in body
+        assert "if (a.x > -1.0e29 && ld_slot_albedo > 0.5) {" in body
+        off = ls.skin_sources(locations, albedo, env, shadow, shadow, shadow, maps, maps, maps, env)[2][0]
+        assert "REGIONS" not in off and "u_slot_" not in off and "u_triangle_material" not in off
+        assert "ld_slot_albedo" not in off
+    assert "REGIONS" not in ls.LD_COMMON_SRC and "u_slot_" not in ls.LD_COMMON_SRC
+    from viewport.lookdev_pass import LookDraw
+
+    # pyglet cuts an array uniform's trailing digit (`u_slot_f0[0]` -> `u_slot_f`): no slot array may end in one
+    assert not any(name[-1].isdigit() for name in LookDraw((0.5, 0.5, 0.5)).slot_uniforms())

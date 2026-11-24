@@ -848,6 +848,7 @@ class ObjectController:
         obj.texture = source.texture  # AD-026: and its texture (the UVs come with the mesh)
         obj.paint = source.paint  # AD-037: and its paint, with the current pixels
         obj.look = source.look  # AD-038 §18: and its LookDev material
+        obj.look_regions = source.look_regions  # AD-039 §9: and its region materials (by name)
         self.services.paint.copy_object(source, obj)
         # AD-036 §4.4: the copy keeps the link only for a bone on the mirror plane (the AD-028 §8.4 seam rule)
         link_note = ""
@@ -1355,6 +1356,7 @@ class ObjectController:
             obj.bone = source.bone  # AD-036 §4.4: same place, same bone
             obj.paint = source.paint  # AD-037: the same paint, with the current pixels
             obj.look = source.look  # AD-038 §18: and the same LookDev material
+            obj.look_regions = source.look_regions  # AD-039 §9: and its region materials
             services.paint.copy_object(source, obj)
             copies[source.id] = obj
             steps.append(AddObjectCommand(scene, obj))
@@ -1595,7 +1597,7 @@ class ObjectController:
             scene.edit_object_id,
             tuple(
                 (oid, obj.state, obj.material, obj.texture, obj.hidden, obj.parent, obj.eye, id(obj.mesh), obj.paint,
-                 obj.look)
+                 obj.look, obj.look_regions, obj.mesh.face_regions if obj.look_regions else None)
                 for oid, obj in scene.objects.items()
             ),
         )
@@ -2016,18 +2018,19 @@ class ObjectController:
         self.sync_views()
         return True
 
-    def commit_looks(self, changes: list, label: str) -> bool:
+    def commit_looks(self, changes: list, label: str, field: str = "look") -> bool:
         """AD-038 §18 (LD-2): one Undo step (`ObjectLookCommand`) for `(obj, before, after)` LookDev materials
-        (unchanged ones dropped) and the view; the caller posts the status line. True = something changed."""
+        (unchanged ones dropped) and the view; the caller posts the status line. True = something changed. AD-039 §9:
+        `field="look_regions"` commits the objects' region materials instead."""
         changes = [(obj, before, after) for obj, before, after in changes if before != after]
         if not changes:
             return False
         services = self.services
         before = services.selection_snapshot()
         for obj, _, after in changes:
-            obj.look = after
+            setattr(obj, field, after)
         names = ", ".join(repr(obj.name) for obj, _, _ in changes)
-        services.history.push(ObjectLookCommand(changes, f"{label} {names}"))
+        services.history.push(ObjectLookCommand(changes, f"{label} {names}", field))
         services.record_selection_history(before, mesh_step=False)
         self.sync_views()
         return True

@@ -53,6 +53,7 @@ def detached_object(scene: Scene, src: SceneObject, mesh: Mesh) -> tuple[SceneOb
     obj.bone = src.bone  # AD-036: a detached part of a rigid part follows the same bone
     obj.paint = src.paint  # AD-037: the same UVs, the same paint (the caller copies the pixels)
     obj.look = src.look  # AD-038 §18: and the same LookDev material
+    obj.look_regions = src.look_regions  # AD-039 §9: and its region materials (a region not in the part is ignored)
     scene.remove_object(obj.id)
     return obj, AddObjectCommand(scene, obj)
 

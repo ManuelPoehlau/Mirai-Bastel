@@ -83,6 +83,11 @@ SHADOW_RAW_UNIT = 7
 MAP_UNITS = {"roughness": 9, "normal": 10, "translucency": 11}
 #: AD-039 §2.4 / §8: the studio's prefiltered environment cube, S5.
 CUBE_UNIT = 8
+#: AD-039 §2.4 / §9: the triangles' material slots (an R32F buffer texture), S6.
+REGION_UNIT = 12
+#: AD-039 §9: the material slots of a `REGIONS` program - the object's own (0) and at most four regions
+#: (`core.scene.LOOK_REGIONS_MAX`).
+REGION_SLOTS = 5
 #: S5 (AD-039 §8, `PROVISIONAL` fixed setting; LD-3's knobs later): a 128² RGBA16F cube with mips down to 2² (7 levels),
 #: level L prefiltered at perceptual roughness L / (CUBE_LEVELS - 1) with CUBE_SAMPLES GGX importance samples.
 CUBE_SIZE = 128
@@ -234,12 +239,33 @@ in vec3 v_world_pos;
 in vec3 g_bary;
 uniform mat4 u_view;
 uniform mat4 u_proj;
+#ifdef REGIONS
+// AD-039 §9: the material of each slot (0 = the object's, 1-4 its regions) and the triangles' slots; the body reads the
+// triangle's values through globals named like the uniforms of the variant without regions
+const int LD_SLOTS = {REGION_SLOTS};
+uniform samplerBuffer u_triangle_material;
+uniform vec3 u_slot_base_color[LD_SLOTS];
+uniform float u_slot_albedo[LD_SLOTS];  // 1 = the albedo map (where the triangle has UVs), 0 = the colour
+uniform float u_slot_roughness[LD_SLOTS];
+uniform float u_slot_fresnel[LD_SLOTS];  // F0 (not `u_slot_f0`: pyglet cuts an array name's last digit)
+uniform vec3 u_slot_wrap[LD_SLOTS];
+uniform float u_slot_backscatter[LD_SLOTS];
+uniform vec3 u_slot_backscatter_color[LD_SLOTS];
+vec3 u_base_color;
+float u_roughness;
+float u_f0;
+vec3 u_wrap;
+float u_backscatter;
+vec3 u_backscatter_color;
+float ld_slot_albedo;
+#else
 uniform vec3 u_base_color;
 uniform float u_roughness;
 uniform float u_f0;
 uniform vec3 u_wrap;
 uniform float u_backscatter;
 uniform vec3 u_backscatter_color;
+#endif
 #ifdef ALBEDO_MAP
 uniform samplerBuffer u_triangle_uvs;
 uniform sampler2D u_albedo;
@@ -265,6 +291,20 @@ out vec4 out_color;
 const float SPEC_AA_K = {SPEC_AA_K!r};
 
 void main() {{
+#ifdef REGIONS
+    {{
+        // AD-039 §9: the triangle's slot; a value outside the slots (a stale or free slot) draws the object's material
+        int slot = int(texelFetch(u_triangle_material, gl_PrimitiveID).r + 0.5);
+        slot = slot < 0 || slot >= LD_SLOTS ? 0 : slot;
+        u_base_color = u_slot_base_color[slot];
+        u_roughness = u_slot_roughness[slot];
+        u_f0 = u_slot_fresnel[slot];
+        u_wrap = u_slot_wrap[slot];
+        u_backscatter = u_slot_backscatter[slot];
+        u_backscatter_color = u_slot_backscatter_color[slot];
+        ld_slot_albedo = u_slot_albedo[slot];
+    }}
+#endif
     vec3 n = normalize(v_normal);
     // derivatives outside any branch (undefined in non-uniform control flow)
     vec3 dndx = dFdx(n);
@@ -310,7 +350,11 @@ void main() {{
     {{
         int t = gl_PrimitiveID * 3;
         vec2 a = texelFetch(u_triangle_uvs, t).xy;
+#ifdef REGIONS
+        if (a.x > -1.0e29 && ld_slot_albedo > 0.5) {{
+#else
         if (a.x > -1.0e29) {{
+#endif
             vec2 uv = a * g_bary.x + texelFetch(u_triangle_uvs, t + 1).xy * g_bary.y
                     + texelFetch(u_triangle_uvs, t + 2).xy * g_bary.z;
             albedo = texture(u_albedo, uv).rgb;
@@ -611,11 +655,12 @@ def shadow_depth_sources(locations: dict[str, int]) -> list[tuple[str, str]]:
 def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, shadow: bool = False,
                  dual_lobe: bool = False, thickness: bool = False, roughness_map: bool = False,
                  normal_map: bool = False, translucency_map: bool = False,
-                 cube_env: bool = False) -> list[tuple[str, str]]:
+                 cube_env: bool = False, regions: bool = False) -> list[tuple[str, str]]:
     """The skin program (AD-038 §3.2): the textured Worklight program's vertex and geometry sources formatted with the
     Worklight program's attribute locations, the LookDev fragment source. Variants: `ALBEDO_MAP`, `ENV_SPEC`; P3
     (AD-039 §2.3): `SHADOW` (S1), `DUAL_LOBE` (S3), `THICKNESS` (S4, needs `shadow`); S7 (§10): `ROUGHNESS_MAP`,
-    `NORMAL_MAP`, `TRANSLUCENCY_MAP` (with `LD_MAP_UV` for any of them); S5 (§8): `CUBE_ENV` (needs `env_spec`). An effect that is off leaves no text behind
+    `NORMAL_MAP`, `TRANSLUCENCY_MAP` (with `LD_MAP_UV` for any of them); S5 (§8): `CUBE_ENV` (needs `env_spec`); S6 (§9):
+    `REGIONS` (the material per triangle from its slot). An effect that is off leaves no text behind
     (its library string is not appended, its body blocks are resolved away), so every effect off = M1's sources."""
     from .eye_shaders import _without
     from .gl_render_store import TEXTURED_GEOMETRY_SRC, TEXTURED_VERTEX_SRC
@@ -627,7 +672,8 @@ def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, sh
     maps = roughness_map or normal_map or translucency_map
     flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow), ("DUAL_LOBE", dual_lobe),
              ("THICKNESS", thickness), ("ROUGHNESS_MAP", roughness_map), ("NORMAL_MAP", normal_map),
-             ("TRANSLUCENCY_MAP", translucency_map), ("LD_MAP_UV", maps), ("CUBE_ENV", cube_env))
+             ("TRANSLUCENCY_MAP", translucency_map), ("LD_MAP_UV", maps), ("CUBE_ENV", cube_env),
+             ("REGIONS", regions))
     defines = "".join(f"#define {name} 1\n" for name, on in flags if on)
     body = SKIN_BODY
     for name, on in flags[2:]:

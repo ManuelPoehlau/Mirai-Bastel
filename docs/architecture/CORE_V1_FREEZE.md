@@ -2,7 +2,7 @@
 
 **Status:** FROZEN (with authorized exceptions; see §7.1)
 **Datum:** 2026-08-27
-**Revidiert:** 2026-11-24 (AD-039 §10 S7: `LookMaps`, `LookMaterial.maps`, format version 16); previously 2026-11-21 (AD-038 §18 LD-2: `LookMaterial`, `SceneObject.look`, format version 15); previously 2026-11-18 (AD-037 Phase 1d: `PaintLayer`, `PaintStack`, `SceneObject.paint`, format version 14); previously 2026-11-18 (AD-036 slice 1: `SceneObject.bone`, format version 13); previously 2026-11-17 (AD-035 M1: `EyeSpec.sclera_texture`, format version 12); previously 2026-11-16 (Eye LookDev phase 4: `EyeIris`, `EyeLook.iris`, format version 11); previously 2026-11-16 (Eye LookDev phase 3: `EyeLook`, `EyeSpec.look`, format version 10); previously 2026-11-15 (AD-033 eyes: `EyeSpec`, `SceneObject.eye`, format version 9); previously 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
+**Revidiert:** 2026-11-24 (AD-039 §9 S6: `RegionLook`, `SceneObject.look_regions`, format version 17); previously 2026-11-24 (AD-039 §10 S7: `LookMaps`, `LookMaterial.maps`, format version 16); previously 2026-11-21 (AD-038 §18 LD-2: `LookMaterial`, `SceneObject.look`, format version 15); previously 2026-11-18 (AD-037 Phase 1d: `PaintLayer`, `PaintStack`, `SceneObject.paint`, format version 14); previously 2026-11-18 (AD-036 slice 1: `SceneObject.bone`, format version 13); previously 2026-11-17 (AD-035 M1: `EyeSpec.sclera_texture`, format version 12); previously 2026-11-16 (Eye LookDev phase 4: `EyeIris`, `EyeLook.iris`, format version 11); previously 2026-11-16 (Eye LookDev phase 3: `EyeLook`, `EyeSpec.look`, format version 10); previously 2026-11-15 (AD-033 eyes: `EyeSpec`, `SceneObject.eye`, format version 9); previously 2026-11-02 (AD-028 skeleton and skinning: the WEIGHTS point-layer kind, `PackedWeights`, `BoneId`, `core.rig`, `Scene.rig: Rig | None`, format version 7); previously 2026-10-29 (AD-026 face-corner UVs on the Mesh, `SceneObject.texture`, format version 6); previously 2026-10-24 (object material: `ObjectMaterial`, `SceneObject.material`, format version 4); previously 2026-10-23 (object mirror pairs: `MirrorPair`, `Scene.mirror_pairs`, format version 3); previously 2026-10-21 (AD-023 §9: Mesh change journal, `MeshDeltaCommand`, vertex → edge index); previously 2026-10-15 (AD-021 M0: Scene objects, `ObjectId`, `Selection.objects`, format version 2); previously 2026-10-14 (AD-SYM-05 SS1: weighted transforms in the Core loop, `params["influence"]`); previously 2026-10-06 (WP Delete/Dissolve: `Mesh.dissolve_vertex/dissolve_edges/dissolve_faces` and `delete_vertices/delete_edges/delete_faces` added); previously 2026-10-01 (AD-017 K1 `Mesh.split_face` extension added, WP-KNIFE-00); previously 2026-09-24 (AD-SYM-02 symmetric Move extension added, WP-SYM-01 Slice 2); previously 2026-09-24 (AD-SYM-01 SymmetryDefinition extension added); previously 2026-09-22 (AD-017 split_edge(t) extension added); previously 2026-09-17 (AP-05 `add_edge()` precedent added; previously 2026-09-04, ADR-001 precedent added)
 **Grundlage:** Hardening-Phasen A–E + Gesamtarchitektur-Review
 
 ## 1. Entscheidung
@@ -455,6 +455,36 @@ untouched: every existing signature's behaviour on a mesh without UVs (export: o
 vertex record shapes, point layers; (5) tests `tests/test_core_face_uvs.py` (every primitive incl. seams, journal
 exactness, file validation, random sequences against U1 and exact Undo), `tests/mesh_invariants.assert_uv_invariants`,
 `tests/test_obj_uvs.py`, `tests/test_point_layers.py` (the pinned export key list now ends with `"face_uvs"`).
+
+**Decision:** AD-039 §9 (S6), the region materials of an object, Core part (2026-11-24;
+[AD-039](AD-039-LOOKDEV-P3.md) §9 / §22; Manu on LD-D8 (Q-P3-1), 2026-11-24: „A, Regionen wie vorgeschlagen“ - face
+regions at the object (`core.RegionLook`, `SceneObject.look_regions`, ≤ 4 entries, the later one wins on overlap, by
+region name, a rename carries the entry, a missing region is ignored) - the go for this change, §12 point 5)
+
+Freeze rule (§7): (1) requirement - the mouth interior, the wet lip line and the like need their own LookDev material on
+part of the head mesh, which is posed, morphed and subdivided as one object; the materials belong to the object and
+travel with it through Undo / Redo, save / load, Duplicate, mirror copy, Detach and the scene reset like `look` itself
+(AD-039 §9); (2) not solvable with the public API: `SceneObject.look` is one `LookMaterial` and `LookMaterial.from_dict`
+takes exactly its field names, so a per-region material cannot ride beside it; a session table would lose the materials
+on save (the AD-038 §18 reason); a separate mouth object (Detach, no code) opens a boundary along the lip line where
+SubD rounds differently (§9 "why not a separate object"); (3) documented in AD-039 §9 / §22; (4) smallest extension,
+**data only**: `src/core/scene.py` gains `RegionLook` (frozen: `region` a non-empty name text, `look` a `LookMaterial`;
+`to_dict` / `from_dict` with exactly those two keys), `LOOK_REGIONS_MAX` = 4 and `SceneObject.look_regions: tuple
+[RegionLook, ...] = ()` - a property whose setter refuses anything but a tuple of `RegionLook`, more than four entries or
+a repeated region name (`TypeError` / `ValueError`, never repaired); the order is kept and is the meaning (the later
+entry wins on overlap). Whether the region exists in the mesh, which faces it holds, how a rename carries the entry and
+how it is drawn are `src/mirai`'s / `src/viewport`'s business (the Core does not look into `Mesh.face_regions` for it).
+`src/core/serialization.py` writes **version 17** only when an object has region materials (else 4-16 as before; a scene
+without them is the same text), the object key `"look_regions"` (a non-empty list of entries; absent = none); reads
+2-17; invalid (the file is refused): a `"look_regions"` key in a file below 17, an empty list and every invalid entry.
+Exported from `core`. Not touched: `Mesh` (its `face_regions` stay as they were), `LookMaterial`, `LookMaps`,
+`Operation`, `HistoryStack`, `Selection`, every other field and signature; no NumPy in the Core. Existing tests unchanged
+except the six assertions that pinned 17 as the first unknown version (`test_rig.py`, `test_eye_sclera.py`,
+`test_bone_link_format.py`, `test_paint_format.py`, `test_look_format.py`, `test_look_maps_format.py`: now 18). (5)
+contract tests `tests/test_look_regions_format.py` (value rules, ≤ 4 and unique names, the order kept, a refused value
+changes nothing, an object without region materials = the v16 / v15 text, v17 round trip on the JSON text, the version
+by content, "look_regions" below 17 and 18 refused, every invalid group refused, several objects) and
+`tests/test_look_regions.py` (the application part).
 
 **Decision:** AD-039 §10 (S7), the image maps of a LookDev material, Core part (2026-11-24;
 [AD-039](AD-039-LOOKDEV-P3.md) §10 / §20; Manu on Q-P3-2 „Map-Pfade“ and „S7 jetzt vorziehen“, 2026-11-24 — the paint

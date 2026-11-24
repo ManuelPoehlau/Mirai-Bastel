@@ -587,6 +587,9 @@ class GLRenderStore(ResourceStore):
         # AD-026: face-data buffers that may be absent without switching the face data off (the
         # triangle UVs exist only while a texture shows), and the texture path to show.
         self._optional_face_buffers: set[str] = set()
+        # AD-039 §9 (S6): buffers only another pass reads (name -> GL format), stored like face data but never
+        # uploaded or bound by the Worklight draw: the triangles' LookDev material slots.
+        self._pass_buffers: dict[str, str] = {}
         self._texture_path: str | None = None
         # O2: VertexList attribute -> (buffer texture, (buffer name, size) it was attached to).
         self._vertex_textures: dict[str, tuple[int, tuple[int, int] | None]] = {}
@@ -641,6 +644,12 @@ class GLRenderStore(ResourceStore):
         self._face_buffers[name] = ("GL_RG32F", _TRIANGLE_UVS_UNIT, "u_triangle_uvs")
         self._optional_face_buffers.add(name)
 
+    def declare_triangle_materials(self, name: str) -> None:
+        """AD-039 §9 (S6): `name` holds per triangle its LookDev material slot (one float), read only by the LookDev
+        pass (`bind_triangle_materials`); it exists only while a region material is drawn. Not part of the Worklight's
+        face data: its draw neither uploads nor binds it."""
+        self._pass_buffers[name] = "GL_R32F"
+
     def set_texture(self, path) -> None:
         """The texture to show (AD-026; None = none): a path (loaded at the first draw) or a `LiveTexture` (AD-037,
         uploaded at each draw that finds it changed). Pure draw state."""
@@ -663,7 +672,7 @@ class GLRenderStore(ResourceStore):
             self.destroy(name)
         res = self._ensure(name)
         res.created = True
-        if name in self._face_buffers:
+        if name in self._face_buffers or name in self._pass_buffers:
             self._face_cpu[name] = array("f")
             self._face_dirty[name] = None
         elif self._is_vertex_attribute(name):
@@ -679,7 +688,7 @@ class GLRenderStore(ResourceStore):
         res.bytes_uploaded += nbytes
         self.stats.add_upload(nbytes)
         self.stats.snapshot_resource(res)
-        if name in self._face_buffers:
+        if name in self._face_buffers or name in self._pass_buffers:
             self._update_face_data(name, offset, data)
             return
         if self._is_vertex_attribute(name):
@@ -709,7 +718,7 @@ class GLRenderStore(ResourceStore):
             self._cpu.pop(name, None)
             self._face_cpu.pop(name, None)
             self.stats.count("gpu_resource_destroys")
-        if name in self._face_buffers:
+        if name in self._face_buffers or name in self._pass_buffers:
             self._face_dirty[name] = None
 
     # -- face data (AD-018 addendum 2026-10-15) -------------------------------------
@@ -808,6 +817,17 @@ class GLRenderStore(ResourceStore):
         gl.glActiveTexture(gl.GL_TEXTURE0)
         return bound
 
+    def bind_triangle_materials(self, unit: int) -> bool:
+        """AD-039 §9 (S6): uploads the triangles' material slots if pending and binds their buffer texture to `unit`;
+        unit 0 is active afterwards. False = this store holds none (nothing bound)."""
+        from pyglet import gl
+
+        for name, fmt in self._pass_buffers.items():
+            bound = self._flush_face_buffer(name, fmt, unit)
+            gl.glActiveTexture(gl.GL_TEXTURE0)
+            return bound
+        return False
+
     @staticmethod
     def unbind_triangle_uvs(unit: int) -> None:
         from pyglet import gl
@@ -904,7 +924,7 @@ class GLRenderStore(ResourceStore):
                 gl.glDeleteTextures(1, ctypes.byref(gl.GLuint(texture_id)))
         self._vertex_textures.clear()
         self._face_gl.clear()
-        self._face_dirty = {name: None for name in self._face_buffers}
+        self._face_dirty = {name: None for name in (*self._face_buffers, *self._pass_buffers)}
 
     # -- vertex-group assembly ------------------------------------------------
 

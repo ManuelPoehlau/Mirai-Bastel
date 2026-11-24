@@ -108,6 +108,8 @@ class LookdevPanel:
             imgui.text_disabled("kein Objekt")
         else:
             imgui.text_disabled(lm.targets_label(row))
+        if row is not None and row.targets and row.areas:
+            self.draw_area(row)
         if row is not None and row.targets:
             imgui.set_next_item_width(self.WIDTH)
             if imgui.begin_combo("Material", lm.material_label(row)):
@@ -140,14 +142,15 @@ class LookdevPanel:
                                                     imgui.ColorEditFlags_.no_inputs)
                 if changed:
                     self.edit.hold(app, backscatter_color=tuple(colour))
-                self.draw_maps(row)
+                if row.area is None:  # AD-039 §9: the maps are the object's
+                    self.draw_maps(row)
             imgui.begin_disabled(not row.has_look)
             if imgui.button(lm.RESET):
                 self.edit.drop(app)
                 app.reset_lookdev_material()
             imgui.end_disabled()
             if imgui.is_item_hovered():
-                imgui.set_tooltip(lm.RESET_HINT)
+                imgui.set_tooltip(lm.RESET_HINT if row.area is None else lm.AREA_RESET_HINT)
         # -- Ansicht
         imgui.separator_text("Ansicht")
         for i, (name, (yaw, pitch)) in enumerate(lm.VIEWS.items()):
@@ -180,6 +183,33 @@ class LookdevPanel:
             changed, on = imgui.checkbox("Licht folgt Kamera", st.follow_camera)
             if changed:
                 app.set_lookdev_studio(follow_camera=on)
+
+    def draw_area(self, row: lm.MaterialRow) -> None:
+        """AD-039 §9 (S6): the „Bereich“ - „Ganzes Objekt“ or one face region; with a region's own material its place
+        in the order (`PROVISIONAL` layout)."""
+        imgui, app = self.imgui, self.app
+        imgui.set_next_item_width(self.WIDTH)
+        if imgui.begin_combo(lm.AREA, lm.area_label(row)):
+            if imgui.selectable(lm.AREA_WHOLE, row.area is None)[0]:
+                self.edit.drop(app)
+                app.set_lookdev_area(None)
+            for area in row.areas:
+                if imgui.selectable(area.label, area.name == row.area)[0]:
+                    self.edit.drop(app)
+                    app.set_lookdev_area(area.name)
+            imgui.end_combo()
+        if imgui.is_item_hovered():
+            imgui.set_tooltip(lm.AREA_HINT)
+        if row.area is not None and row.has_look:
+            if imgui.small_button(lm.AREA_UP):
+                self.edit.drop(app)
+                app.move_lookdev_region(-1)
+            imgui.same_line()
+            if imgui.small_button(lm.AREA_DOWN):
+                self.edit.drop(app)
+                app.move_lookdev_region(1)
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(lm.AREA_ORDER_HINT)
 
     def browse_map(self, kind: str) -> None:
         """„Laden …“: the file browser (`gui.file_browser`) for a map image; the pick loads it (one Undo step)."""

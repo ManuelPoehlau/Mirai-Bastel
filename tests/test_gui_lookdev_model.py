@@ -132,6 +132,7 @@ def test_the_effects_block(app):
                                                                           ("dual_lobe", "Doppel-Glanz", True, True),
                                                                           ("thickness", "Durchleuchtung", True, True),
                                                                           ("cube", "Umgebungs-Cube", True, True),
+                                                                          ("regions", "Region-Materialien", True, True),
                                                                           ("maps", "Maps", True, True)]
     assert lm.EFFECTS_TITLE == "Effekte" and all(r.hint for r in st.effects)
     app.set_lookdev_effect("shadow", False)
