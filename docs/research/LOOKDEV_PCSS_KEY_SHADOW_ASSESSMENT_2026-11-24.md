@@ -5,8 +5,10 @@
 [`experiments/lookdev_pcss/`](../../experiments/lookdev_pcss/README.md), **kein Production-Code**.
 **Stopp hier:** Der Einbau in `src/` folgt erst nach Manus Referenz-PC-Zahlen und seinem Go.
 **Stand 2026-11-24, nach dem Referenz-PC-Lauf (§8.2):** Das Bild-Ergebnis gilt. Die Kosten verfehlen das Budget aber
-um das 3- bis 12-Fache. **K16c wird so nicht eingebaut.** Nächster Schritt ist ein Diagnose-Lauf (§8.3), danach
-entscheidet Manu den Weg (Q-PCSS-5).
+um das 3- bis 12-Fache. **K16c wird so nicht eingebaut.**
+**Diagnose-Lauf erledigt (§8.4):** Der Haut-Pass ist mit PCSS rechengebunden, nicht von den Texturabfragen begrenzt.
+Die günstigste Form kostet in der Nahansicht noch +2.6 bis +3.3 ms. Weg (a) erreicht die Schwelle nicht. Die
+Empfehlung ist Weg (b), ein vorgefilterter Prototyp; Manu entscheidet (Q-PCSS-5).
 **Basis:** AD-039 §23 (S8 „Weiches Licht“, `22a34b0`) und §23.6 (Manus Befund, `ab286c4`); Bewertung
 [LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24](LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24.md)
 §3 und §6.1–§6.3.
@@ -443,6 +445,27 @@ Auswertung, so vorab festgelegt:
   Weichheit Bildqualität; das wäre Manus Abwägung.
 - **Sonst:** Q-PCSS-5 b oder c.
 
+### 8.4 Diagnose-Lauf gemessen (Manu, 2026-11-24, `9e6d51109a`) [M-RPC]
+
+Alle Zeilen: [RESULTS_REFERENCE_PC_2026-11-24](../../experiments/lookdev_pcss/RESULTS_REFERENCE_PC_2026-11-24.md),
+zweiter Lauf. Mittel gegen P bei 1024 × 768 (Käfig / SubD 1 × framed / face, Größe 0.45):
+
+| K16c | -nb | -lean | -lean-nb | K8c/8-lean-nb | -nofetch | -nb-nofetch | -search | -pcf | -uall | -unone | -cap12 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| +3.26 | +2.26 | +3.65 | +2.60 | +2.27 | +4.87 | +3.04 | +1.57 | +3.92 | +3.41 | +3.02 | +3.21 |
+
+Nach den Regeln aus §8.3:
+- **`nofetch` ≥ K16c in jedem Block:** Der Pass ist rechengebunden. Die Rechnung pro Abfrage kostet: Ebene oder Höhe,
+  Kegel, Mischung, Vergleichswert, Einblendung, multipliziert mit 48 Abfragen.
+- **Die zwei PCF tragen den größten Teil** (`pcf` +3.92, `search` +1.57 ms).
+- **Kein Cache-Problem** (`cap12` ≈ K16c), **kein verlässlicher Gewinn** durch Entrollung oder die schlanke Form.
+- **Bestwerte:** framed +0.53 bis +0.80 ms; face +2.61 ms (Käfig, K8/8, im Bild schwächer) bzw. +3.25 ms (SubD 1).
+- Die Schwelle für (a) (≤ +0.7 ms framed und ≤ +1.5 ms face) ist **nicht erreicht**.
+
+**Folgerung:** Eine Pro-Pixel-PCSS dieser Art passt nicht auf die 9800 GTX, sobald die Haut den Bildschirm füllt. Ein
+tragfähiger Weg braucht wenige Abfragen **und** wenig Rechnung pro Pixel, also Vorfilterung im Karten-Pass mit
+Ereigniskosten (Q-PCSS-5 b).
+
 ## 9. Empfehlung
 
 **Nach §8.2 gilt diese Empfehlung für das Bild, nicht für den Einbau.** Der Einbau wartet auf §8.3 und Q-PCSS-5.
@@ -531,7 +554,12 @@ Auswertung, so vorab festgelegt:
     - Bekanntes Risiko: Lichtdurchschlag (light bleeding) bei überlappenden Werfern, also genau die
       §16.7-Klasse von Fehlern. Das prüft der Prototyp wie hier gegen REF.
   - **(c) Verzicht:** „Weiches Licht“ bleibt mit dem harten Schatten. Der Keil bleibt ein bekannter Befund.
-  - Vorschlag: zuerst §8.3 (kostet dich ~10 Minuten). Zeigt er eine Form ≤ ~+1 ms framed, dann (a); sonst (b).
+  - **Nach §8.4: Vorschlag (b)** als nächster Prototyp in einer frischen Session.
+    - Bild-Ziel: K16c (dieselbe REF, dieselben Regionen, dieselben Lecktests).
+    - Kosten-Ziel: ≤ +0.5–1 ms bei 1024 × 768 face.
+    - Bench-Zeilen gegen P **und** gegen die gemessenen K-Formen.
+  - (a) bleibt möglich, wenn Manu den weichen Schatten früher will: Kosten dann ≈ +0.5–0.8 ms framed und +2.6–3.3 ms
+    face, als Effekt standardmäßig aus.
 - Unverändert offen aus S8: Q-S8-1 (Standard an?), Q-S8-2 (σ(1) = 40° oder 30°; gilt jetzt auch für den Schatten).
 
 ## Grenzen

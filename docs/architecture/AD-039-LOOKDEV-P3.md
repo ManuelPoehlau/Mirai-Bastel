@@ -2013,3 +2013,12 @@ Q-PCSS-5:
 - (a) the cheapest K form as an opt-in effect with a deliberate budget exception;
 - (b) a prefiltered prototype with event-time cost (min-depth pyramid + filtered moment map);
 - (c) none.
+
+**Cost diagnosis (Manu, 2026-11-24, `9e6d51109a`) [M-RPC]:** with PCSS the skin pass is ALU-bound, not fetch-bound:
+- replacing every fetch by ~5 ALU ops costs more (`nofetch` mean +4.87 vs +3.26 ms);
+- the two PCFs carry most of it (+3.92 ms; the search alone +1.57 ms);
+- neither the texture cache nor unrolling is the cause.
+
+The cheapest form is still +2.6 to +3.3 ms in the close-up "face" at 1024 × 768. The threshold for way (a) is not met.
+The assessment §8.4 recommends way (b), a prefiltered prototype with event-time cost, in a fresh session. Manu decides
+(Q-PCSS-5).

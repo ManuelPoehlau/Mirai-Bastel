@@ -88,3 +88,66 @@ unten enthalten jede gemessene Median-Zeile.
 K16c wird so **nicht** eingebaut. Nächster Lauf: die Kosten-Diagnose `bench.py --set diag`, in der Bewertung §8.3
 beschrieben. Sie trennt Shader-Größe, Suche, PCF, Schleifen-Entrollung und Texture-Cache und misst die schlanke Form
 (gleiches Bild).
+
+## Zweiter Lauf: Kosten-Diagnose (`--set diag`, Commit `9e6d51109a`, gleicher Rechner)
+
+Aufruf:
+
+```powershell
+& $py experiments\lookdev_pcss\bench.py --set diag --key-sizes 0.45
+& $py experiments\lookdev_pcss\bench.py --set diag --key-sizes 0.45 --size 1920 1080
+```
+
+`glGetError` jeweils `0x0000`. Die Bezugszeilen P, K16c und K16c-nb weichen höchstens ±0.1 ms vom ersten Lauf ab,
+die Messung ist also reproduzierbar.
+
+### Diagnose 1024 × 768: GPU p50 gegen P (ms; P absolut), Key-Größe 0.45
+
+| Fläche / Ansicht | P | K16c | K16c-nb | K16c-lean | K16c-lean-nb | K8c/8-lean-nb | K16c-nofetch | K16c-nb-nofetch | K16c-search | K16c-pcf | K16c-uall | K16c-unone | K16c-cap12 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| cage framed | 4.54 | +2.35 | +0.80 | +1.64 | +1.34 | +1.16 | +2.90 | +1.02 | +0.88 | +1.98 | +2.65 | +1.07 | +2.18 |
+| cage face | 12.26 | +6.13 | +4.12 | +4.31 | +4.46 | +2.61 | +7.04 | +5.63 | +1.56 | +4.23 | +5.69 | +5.20 | +5.82 |
+| SubD 1 framed | 6.66 | +1.29 | +0.80 | +2.50 | +0.53 | +1.74 | +2.38 | +1.07 | +1.41 | +3.18 | +1.74 | +1.04 | +1.59 |
+| SubD 1 face | 15.33 | +3.28 | +3.31 | +6.14 | +4.05 | +3.59 | +7.15 | +4.45 | +2.42 | +6.29 | +3.55 | +4.76 | +3.25 |
+| **Mittel** | | **+3.26** | **+2.26** | **+3.65** | **+2.60** | **+2.27** | **+4.87** | **+3.04** | **+1.57** | **+3.92** | **+3.41** | **+3.02** | **+3.21** |
+
+### Diagnose 1920 × 1080: GPU p50 gegen P (ms; P absolut), Key-Größe 0.45
+
+| Fläche / Ansicht | P | K16c | K16c-nb | K16c-lean | K16c-lean-nb | K8c/8-lean-nb | K16c-nofetch | K16c-nb-nofetch | K16c-search | K16c-pcf | K16c-uall | K16c-unone | K16c-cap12 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| cage framed | 6.63 | +3.55 | +1.76 | +2.47 | +3.07 | +1.86 | +4.59 | +2.27 | +1.29 | +3.07 | +3.48 | +1.81 | +3.41 |
+| cage face | 20.41 | +10.09 | +11.60 | +7.26 | +7.75 | +4.62 | +12.53 | +10.87 | +2.38 | +7.23 | +10.22 | +9.38 | +9.72 |
+| SubD 1 framed | 9.51 | +2.06 | +1.12 | +3.67 | +1.13 | +2.63 | +4.09 | +1.69 | +2.05 | +4.82 | +2.66 | +1.15 | +2.04 |
+| SubD 1 face | 24.17 | +4.62 | +6.89 | +9.62 | +9.54 | +5.96 | +14.77 | +8.93 | +3.43 | +9.92 | +7.36 | +8.74 | +4.32 |
+| **Mittel** | | **+5.08** | **+5.34** | **+5.75** | **+5.37** | **+3.77** | **+8.99** | **+5.94** | **+2.29** | **+6.26** | **+5.93** | **+5.27** | **+4.87** |
+
+### Befund
+
+Ausgewertet nach den vorab festgelegten Regeln der Bewertung §8.3:
+
+1. **`nofetch` ist teurer als K16c,** im Mittel +4.87 gegen +3.26 ms bei 1024 × 768. Ersetzt man jede Abfrage durch
+   eine kleine Rechnung (≈ 5 Operationen), steigen die Kosten. Der Haut-Pass ist mit PCSS also **rechengebunden
+   (ALU)**, nicht von den Texturabfragen begrenzt. Abfragen sparen hilft nur, wenn die Rechnung pro Abfrage mit
+   verschwindet.
+2. **Die zwei PCF sind der Hauptteil:**
+   - `K16c-pcf` (beide PCF, feste Breite, ohne Suche) kostet +3.92 ms;
+   - `K16c-search` (nur die Suche) kostet +1.57 ms.
+3. **Texture-Cache ist kein Faktor:** `cap12` liegt bei +3.21, K16c bei +3.26 ms.
+4. **Schleifen-Entrollung bringt keine verlässliche Ersparnis:** `uall` +3.41, `unone` +3.02 ms, je nach Block
+   verschieden.
+5. **Die schlanke Form ist nicht verlässlich billiger.** `lean` liegt bei +3.65 ms, `lean-nb` bei +2.60 ms. Bei
+   SubD 1 framed erreicht `lean-nb` +0.53 ms, bei SubD 1 face kostet es +4.05 ms.
+6. **Bestwerte je Block bei 1024 × 768:**
+   - framed: +0.53 ms (SubD 1, `lean-nb`) und +0.80 ms (Käfig, `nb`);
+   - face: +2.61 ms (Käfig, `K8c/8-lean-nb`) und +3.25 ms (SubD 1, `cap12`, praktisch K16c).
+7. **Frame-Budget:** Bei 1920 × 1080 reißen `lean`, `lean-nb`, `pcf` und `nofetch` in SubD 1 face die 33.3 ms.
+
+### Folgerung
+
+- Die Schwelle für Weg (a) aus §8.3 ist **nicht erreicht**: Gefordert waren ≤ +0.7 ms framed **und** ≤ +1.5 ms
+  face. Die günstigste Form braucht in der Nahansicht +2.6 bis +3.3 ms, das ist das 5- bis 7-Fache des Budgets, und
+  K8/8 ist im Bild schwächer.
+- Eine Pro-Pixel-PCSS mit Dutzenden Abfragen samt Rechnung passt nicht auf die 9800 GTX, wenn die Haut den Bildschirm
+  füllt.
+- Ein tragfähiger Weg braucht **wenige Abfragen und wenig Rechnung pro Pixel**. Das ist Weg (b) der Bewertung: die
+  Filterarbeit wird in den Karten-Pass verlegt, der nur bei Pose-, Licht- oder Weichheits-Änderung läuft.
