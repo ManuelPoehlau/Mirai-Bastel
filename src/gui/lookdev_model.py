@@ -53,7 +53,7 @@ class LightRow:
 EFFECTS_TITLE = "Effekte"
 EFFECT_LABELS = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz",
                  "thickness": "Durchleuchtung", "cube": "Umgebungs-Cube", "regions": "Region-Materialien",
-                 "maps": "Maps"}
+                 "maps": "Maps", "area_diffuse": "Weiches Licht"}
 EFFECT_HINTS = {"shadow": "Schatten des Key auf Haut und Zähnen (wird nur bei Pose-, Form- oder Key-Änderung neu "
                           "gerechnet); „Weichheit“ des Key macht die Kante weicher",
                 "eye_shadow": "Lider, Brauen und Nase werfen den Schatten des Key auf die Augen (braucht "
@@ -68,7 +68,8 @@ EFFECT_HINTS = {"shadow": "Schatten des Key auf Haut und Zähnen (wird nur bei P
                 "regions": "Eigene Materialien für Regionen (Polygroups) des Objekts, z. B. Mundinneres (wählen unter "
                            "„Bereich“ im Block Material); aus = ein Material je Objekt",
                 "maps": "Rauheit-, Normal- und Durchscheinen-Maps der Materialien (laden unter „Mehr“ im Block "
-                        "Material); aus = die Materialien ohne ihre Maps"}
+                        "Material); aus = die Materialien ohne ihre Maps",
+                "area_diffuse": "„Weichheit“ des Lichts macht auch den Übergang ins Dunkle weicher"}
 
 #: AD-039 §10 (S7): the material's maps under „Mehr“ - one row per map: its file, „Laden …“, „Entfernen“.
 MAPS_TITLE = "Maps (gespeichert)"

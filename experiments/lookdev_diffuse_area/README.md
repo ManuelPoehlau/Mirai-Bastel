@@ -1,6 +1,6 @@
 # LookDev: Diffuses Flächenlicht am Terminator (2026-11-24)
 
-**Status:** isoliertes Wegwerf-Experiment (Forschung, keine Production-Spezifikation). **Kein Eingriff in `src/`,
+**Status:** isoliertes Wegwerf-Experiment (Forschung, keine Production-Spezifikation). **Verfahren B ist seit 2026-11-24 Production** (S8 „Weiches Licht“, [AD-039 §23](../../docs/architecture/AD-039-LOOKDEV-P3.md)); `run_compare.py --production` prüft Production an/aus gegen B/A. **Kein Eingriff in `src/`,
 `tests/`, `config/` oder Szenen:** die Varianten werden nur *im eigenen Prozess* in den String des Haut-Fragment-
 Shaders gepatcht (`area_glsl.install`); der Augen-Shader und `LD_COMMON_SRC` bleiben unberührt.
 **Bewertung und Empfehlung:**

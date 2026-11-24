@@ -321,3 +321,47 @@ def test_the_regions_variant_picks_the_material_per_triangle():
 
     # pyglet cuts an array uniform's trailing digit (`u_slot_f0[0]` -> `u_slot_f`): no slot array may end in one
     assert not any(name[-1].isdigit() for name in LookDraw((0.5, 0.5, 0.5)).slot_uniforms())
+
+
+def test_the_soft_light_off_keeps_every_earlier_pin():
+    """AD-039 §23 (S8): `area_diffuse=False` = the sources before S8, character for character (every earlier pin)."""
+    maps = dict(roughness_map=True, normal_map=True, translucency_map=True)
+    every = dict(shadow=True, dual_lobe=True, thickness=True, **maps)
+    assert skin_sources_digest(area_diffuse=False) == (12, PINNED_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, area_diffuse=False) == (12, PINNED_S1_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, area_diffuse=False) == (12, PINNED_S3_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, thickness=True, area_diffuse=False) == (
+        12, PINNED_S4_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(area_diffuse=False, **every) == (12, PINNED_S7_SKIN_SOURCES_SHA256)
+    assert s5_skin_sources_digest(area_diffuse=False, **every) == (12, PINNED_S5_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(area_diffuse=True)[1] != PINNED_SKIN_SOURCES_SHA256
+
+
+def test_the_soft_light_variant_calls_the_area_term_for_the_lights_and_the_shadowed_key():
+    """AD-039 §23: `AREA_DIFFUSE` once, `LD_AREA_SRC` once right after the common library (it uses `ld_env_diffuse` and
+    the lights' uniforms); the body's diffuse through `ld_diffuse_area` in both `DUAL_LOBE` branches and the `SHADOW`
+    block's key wrap through `ld_area_wrap` with the key's size, under `vis_wrap`; no new uniform, no texture unit.
+    Off: no text left. The eye's library is untouched."""
+    import itertools
+
+    locations = {"position": 0, "normal": 1}
+    for albedo, env, shadow, dual, regions in itertools.product((False, True), repeat=5):
+        fs = ls.skin_sources(locations, albedo, env, shadow, dual, shadow, regions=regions, area_diffuse=True)[2][0]
+        assert fs.count("#define AREA_DIFFUSE 1\n") == 1 and fs.count(ls.LD_AREA_SRC) == 1
+        assert fs.index(ls.LD_COMMON_SRC) + len(ls.LD_COMMON_SRC) == fs.index(ls.LD_AREA_SRC)
+        body = fs[fs.index("void main()"):]
+        area = body.split("#ifdef AREA_DIFFUSE")[1:]
+        assert len(area) == (2 if dual else 1) + ((2 if dual else 1) if shadow else 0)
+        assert all("ld_diffuse_area(n, u_wrap)" in a.split("#else")[0] for a in area[:2 if dual else 1])
+        wraps = "(1.0 - vis_wrap) * (ld_area_wrap(ndl, u_wrap, u_ld_light_size[0]) - lambert))"
+        assert body.count(wraps) == ((2 if dual else 1) if shadow else 0)
+        assert not set(re_uniforms(ls.LD_AREA_SRC)) and "sampler" not in ls.LD_AREA_SRC
+        off = ls.skin_sources(locations, albedo, env, shadow, dual, shadow, regions=regions)[2][0]
+        assert "AREA_DIFFUSE" not in off and "ld_area_wrap" not in off and "ld_diffuse_area" not in off
+    assert "ld_area" not in ls.LD_COMMON_SRC and "AREA" not in ls.LD_COMMON_SRC
+    assert _defined_functions(ls.LD_AREA_SRC) == {"ld_area_wrap", "ld_diffuse_area"}
+    assert ls.SKIN_EFFECTS == ("SHADOW", "DUAL_LOBE", "THICKNESS")
+
+
+def re_uniforms(src: str) -> list[str]:
+    return re.findall(r"^uniform \w+ (\w+)", src, flags=re.M)

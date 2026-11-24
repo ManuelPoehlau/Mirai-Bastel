@@ -20,7 +20,11 @@ analytic): its reference-PC rows and practical test (§21.4–§21.5) are open. 
 LD-D8 (Q-P3-1): „A, Regionen wie vorgeschlagen”): region materials - a LookDev material per face region on the object
 (`core.RegionLook`, `SceneObject.look_regions`, ≤ 4, the later entry wins, by region name; format **v17**), drawn by
 per-triangle material slots on unit 12, the SubD surface through `face_parent`; regions off = S5 by pins; its
-reference-PC row and practical test (§22.4–§22.5) are open. With S6 every P3 slice is built.
+reference-PC row and practical test (§22.4–§22.5) are open. With S6 every P3 slice is built. **S8 „Weiches Licht“
+built 2026-11-24** (§23; Manu: „Verfahren B bauen, als neuer P3-Effekt vor LD-3“, after the
+[diffuse area-light assessment](../research/LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24.md)): each
+light's size as a finite emitter in the diffuse term (sin σ = size × sin 40°, `PROVISIONAL`), default off; effect off =
+every earlier pin; its practical test and the probe row (§23.4–§23.5) are open.
 **Why now:** Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“
 ([proposal §0.1](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md), [AD-038](AD-038-LOOKDEV-ROOM-M1.md)
 §13.6). P3 needs its own AD before any `src/` change and fixes the order of the P3 items.
@@ -68,6 +72,9 @@ container (a function check only), **[M-RPC]** measured on the reference PC, **[
   6. **S6 Region-Materialien**, nach LD-D8. **Gebaut 2026-11-24** (dein „A, Regionen wie vorgeschlagen“, §22).
   7. **S7 Maps** für Rauheit, Normalen und Durchscheinen, nach der Mal-Kanal-Entscheidung. **Gebaut 2026-11-24, vor S5
      und S6 vorgezogen** (dein „Map-Pfade“ und „S7 jetzt vorziehen“, §20).
+  8. **S8 „Weiches Licht“** (Nachtrag nach der Bewertung zum diffusen Flächenlicht): die „Weichheit“ jedes Lichts macht
+     auch den diffusen Übergang ins Dunkle weich. **Gebaut 2026-11-24** (dein „Verfahren B bauen, … vor LD-3“, §23);
+     Standard aus bis zu deinem Praxistest.
   - Gegenüber deinem Vorschlag kommen S2 und S4 dazu und stehen früh, weil sie nur S1 brauchen. Der Cube rückt hinter
     sie, weil er mit dem Studio als Inhalt sichtbar wenig ändert (§8).
 - **Core und Format:** keine Änderung in S1 bis S5.
@@ -1818,3 +1825,120 @@ Then open LookDev, select the head, material **Creature Skin**, SubD 1, view „
 Assumptions to correct in one sentence: a region's material has no maps of its own (the object's maps act on it);
 the later region wins on overlap; at most four per object; the „Bereich“ is not saved; a deleted region keeps its
 material until you reset it (shown as „Region fehlt“); the region edge is hard (one material per face, no blend).
+
+---
+
+## 23. Implementation note — S8 „Weiches Licht“ built (2026-11-24)
+
+**Decision:** Manu, 2026-11-24: Verfahren B bauen, als neuer P3-Effekt vor LD-3, wie in der Bewertung §9 vorgeschlagen
+([LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24](../research/LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24.md),
+prototype `experiments/lookdev_diffuse_area/`, reference-PC run
+[RESULTS_REFERENCE_PC_2026-11-24](../../experiments/lookdev_diffuse_area/RESULTS_REFERENCE_PC_2026-11-24.md)). S8 is
+a slice after the seven of §3, not part of the original AD: the assessment found a missing piece of the light model
+(the diffuse term treated every studio light as a point light; `StudioLight.size` reached only the highlight and the
+shadow map), and Manu placed its fix in P3, before LD-3, so LD-3 designs its knobs with the size's meaning settled.
+
+**Kurzfassung (Deutsch):** Neuer Effekt-Schalter **„Weiches Licht“** im Block „Effekte“ (Standard **aus**, bis zu
+deinem Praxistest). An: Die „Weichheit“ jedes Lichts (Key, Fill, Rim) macht jetzt auch den **diffusen Übergang ins
+Dunkle** weicher, wie unter einer Softbox, nicht nur Glanz und Schattenkante. Die Weichheit wird dafür als Winkelradius
+der Lichtquelle gelesen: sin σ = Weichheit × sin 40° (bei 1 also 40°, bei 0.25 etwa 9°; `PROVISIONAL`). Auf der
+Lichtseite ändert sich nichts, nur ein Band um den Terminator wird heller und läuft weich aus; bei Weichheit 0 ist das
+Bild wie vorher. Glanz, Schatten, Presets, gespeicherte Lichtwerte und das Szenenformat bleiben unverändert. Das Auge
+bleibt wie es ist. Kosten: reine Rechenarbeit, keine Textur, keine Uniform; auf dem Referenz-PC gemessen 0.13–0.45 ms
+bei 1024 × 768 (Prototyp, §23.4).
+
+### 23.1 What is built
+
+| Layer | Built |
+|---|---|
+| Shaders | `lookdev_shaders.AREA_SIN_MAX = sin 40°` (`PROVISIONAL`), `AREA_SIN_MIN = 1e-4`; new skin library string `LD_AREA_SRC`, appended right after `LD_COMMON_SRC` only with the define `AREA_DIFFUSE` (last in the define order): `ld_area_wrap(ndl, w, size)` - the sphere light's irradiance as the C1 horizon spline: x = n·l + w, s = max(size × `LD_AREA_SIN_MAX`, 1e-4), (max(x + s, 0))² / 4s below x = s and x above it (`mix` / `step`, no branch), then / (1 + w) - and `ld_diffuse_area(n, wrap)`, `ld_diffuse` with it, each light with its own `u_ld_light_size[i]`. `SKIN_BODY`: one `#ifdef AREA_DIFFUSE` block in each `DUAL_LOBE` branch (`ld_diffuse_area(n, u_wrap)` for `ld_diffuse(n, u_wrap)`) and one in each `SHADOW` statement (the key's wrap term `ld_area_wrap(ndl, u_wrap, u_ld_light_size[0])` for `ld_wrap(ndl, u_wrap)`, under `vis_wrap` as the wrap - the assessment's rule „lifted“, §6.2); `skin_sources(..., area_diffuse=False)`. No new uniform, no texture unit; `LD_COMMON_SRC` (the eye's pin) and `SKIN_EFFECTS` unchanged |
+| Twins | `lookdev_optics.ld_area_wrap`, `ld_diffuse_area`, `ld_key_shadowed(..., area=True)` |
+| Effects | `LookdevEffects.area_diffuse` (default **off**, last field; persistence by name, `view.lookdev.effects` read defensively as the others - a file without it keeps the current value); label „Weiches Licht“ (`EFFECT_LABEL`, `lookdev_model.EFFECT_LABELS`), hint „„Weichheit“ des Lichts macht auch den Übergang ins Dunkle weicher“; no feature, no dependency |
+| Pass / viewport | `LookdevPass.program_key(..., area_diffuse)`: 11 values with it (the 10 of S6 with the cube and regions flags spelled out + `AREA_DIFFUSE`), every key without it as before; `program(...)` / `draw(..., area_diffuse=False)`; `Viewport._lookdev_programs` and `_render_lookdev` pass `effects.area_diffuse` (the cube check reads index 8 as before) |
+| GUI | the effect row „Weiches Licht“ (generic: `lookdev_model._effects`, `lookdev_panel`) |
+| Probe | `probe_lookdev_room.py`: `EFFECT_ROWS["area_diffuse"] = ("lookdev +area", ("area_diffuse",))` against `lookdev` |
+| Experiment | `run_compare.py --production`: production with the effect on / off against B / A (the image check below) |
+
+Not touched: `LD_COMMON_SRC` and the eye shaders (`lit()` keeps `ld_diffuse`), the presets and `StudioLight` values,
+the scene format, `ld_lobe` (the highlight's mapping of the size), `shadow_resolution` (the map's), `SHADOW_WRAP_LIFT`
+and the §16.7 lookup, the Worklight, LD-3, `config/keymap.json` (no keys).
+
+### 23.2 Where the build differs from the assessment §9, and why
+
+| # | Assessment §9 | Built | Why |
+|---|---|---|---|
+| S8-1 | `const float LD_AREA_SIN_MAX = 0.6427876;` | the Python value's `repr` (`AREA_SIN_MAX`), and `LD_AREA_SIN_MIN` for the 1e-4 | one source for shader and twin (the S1 / S3 pattern of `{CONSTANT!r}`) |
+| S8-2 | §2.1 "a field joins with its slice, default on once the slice is built" | default **off** | Manu's decision (the assessment §9: off until his practical test; Q-S8-1 below) |
+| S8-3 | the `SHADOW` block: `ld_wrap(ndl, u_wrap)` → `ld_area_wrap(...)` | the `#ifdef` splits the statement's one line (in both `DUAL_LOBE` statements), so with the effect off the statements are S7's text | a whole duplicated statement would be four copies to keep in step; a directive inside an expression is plain GLSL |
+| S8-4 | program key "bekommt das Flag" | 11 values only with the effect on | the S2-1 / S7-3 / S5-4 / S6-6 pattern: every key and test before S8 stays as it was |
+
+The open finding of the assessment §6.3 (the lifted lookup grows with the key's size; from size 0.25 the nostril's
+inner wall glows with Creature Skin, effect on or off) is **not** changed here; it stays its own P3 correction proposal.
+The GL tests below met it as well (§23.3, „lifted strip“).
+
+### 23.3 Tests (container, llvmpipe, 2026-11-24)
+
+| # | Test |
+|---|---|
+| sources | `test_lookdev_shaders.py`: `test_the_soft_light_off_keeps_every_earlier_pin` (M1, S1, S3, S4, S7, S5 pins with `area_diffuse=False`; on changes the digest); `test_the_soft_light_variant_calls_the_area_term_for_the_lights_and_the_shadowed_key` (32 combinations of albedo / env / shadow / dual / regions: the define and `LD_AREA_SRC` once, right after `LD_COMMON_SRC`; `ld_diffuse_area` in each `DUAL_LOBE` branch, `ld_area_wrap(ndl, u_wrap, u_ld_light_size[0])` under `vis_wrap` in each `SHADOW` statement; no uniform, no sampler; off = no text; `LD_COMMON_SRC` untouched) |
+| twins | `test_lookdev_optics.py`: the mapping (sin 40°, the GLSL constant); point light = `ld_wrap` (within s / 4); the lit side x ≥ s bit-equal to `ld_wrap`; never below the wrap and C1; wider with the size at wrap 0 and 0.3; within 2 % of the dense cap reference (16,384 directions, the prototype's `area_reference`, sizes 0.25 / 0.5 / 1, wrap 0 / 0.3); `ld_diffuse_area` = SH9 + the three lights with their sizes; `ld_key_shadowed(..., area=True)` lit / full shadow / surface in shadow with the lifted point lit (the band stays), with and without the dual lobe; the effect's default, no feature, no dependency |
+| GPU parity | `test_gl_lookdev_parity.py::test_area_wrap_and_diffuse_area`: `ld_area_wrap` (2,048 random n·l, sizes 0–1, wraps 0–0.5; < 2e-6; size 0 = `ld_wrap` < 3e-5) and `ld_diffuse_area` (three lights at sizes 0.5 / 0.25 / 1; < 5e-6) against the twins |
+| real pass | `test_gl_lookdev_shadow.py`: `test_the_soft_light_without_the_shadow_matches_ld_diffuse_area` (`AREA_DIFFUSE` without `SHADOW`, with and without `DUAL_LOBE`: a plane under a 10° key of size 1 equals the twin within 2.5/255, the same frame without the effect equals the point-light twin, green and blue > 3/255 brighter in the band); `test_the_shadow_block_with_the_soft_light_matches_ld_key_shadowed` (`SHADOW` + `AREA_DIFFUSE`, with and without `DUAL_LOBE`: the plane in the light and in a low box's shadow equals `ld_key_shadowed(..., area=True)` within 2.5/255, the wrap / band term with the lifted point's analytic visibility; in the light green and blue > 2/255 brighter than the point light) |
+| shadow gates | `test_a_cast_shadow_at_a_grazing_key_keeps_the_wrap_and_the_highlight_dark` and `test_the_wrap_past_a_convex_terminator_is_not_cut` additionally with `area_diffuse` and key size 0.5 (the grazing one also at size 1 with a band of 0.08 for the 171-texel map's penumbra): the cast shadow stays black (p99 ≤ 2/255), the band past a convex terminator is not cut (median kept > 0.95) |
+| updated | the effect lists in `test_lookdev_optics.py`, `test_lookdev_room.py`, `test_gui_lookdev_model.py`, `test_lookdev_persistence.py` (+ `test_the_soft_light_survives_save_and_load_and_an_older_file_keeps_it_off`), `experiments/drag_cost/tests/test_probe_lookdev_room.py` (+ `lookdev +area`) |
+
+**Lifted strip (pre-existing, assessment §6.3):** the parity scene needed key size 1 at 10° to put the plane deep in the
+band. At the map's 171 texels the lifted lookup (4 × 1.5 texels up) leaves a low box's cast shadow a few centimetres
+behind the box and reads into it over a lit strip next to it - with the effect off exactly as on. The test gives the
+twin the lifted point's analytic visibility and judges the strips around both edges neither way.
+
+Runs (GL files each in their own process under xvfb):
+
+| Command | Result |
+|---|---|
+| `python -m pytest tests/test_lookdev_shaders.py tests/test_lookdev_optics.py tests/test_gui_lookdev_model.py tests/test_lookdev_persistence.py -q` | 122 passed |
+| `xvfb-run -a python -m pytest tests/test_lookdev_room.py tests/test_lookdev_session.py tests/test_view_state.py tests/test_gui_lookdev_window.py -q` | 28 passed |
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_shadow.py -q` | 34 passed |
+| `… tests/test_gl_lookdev_parity.py` / `test_gl_lookdev_pass.py` / `test_gl_lookdev_cube.py` / `test_gl_lookdev_maps.py` / `test_gl_lookdev_regions.py` | 9 / 13 / 13 / 9 / 9 passed |
+| `… tests/test_gl_eye_pass.py` | 135 passed (unchanged; the eye pins green) |
+| `xvfb-run -a python -m pytest experiments/lookdev_diffuse_area/tests experiments/drag_cost/tests/test_probe_lookdev_room.py -q` | 45 + 8 passed |
+
+**Image check (container):** `run_compare.py --scene gollum --variants A,B --ref 4 --production` (Gollum_Head_05,
+SubD 1, views „face“ and „framed“, Neutral and Creature Skin, key sizes 0 / 0.25 / 0.5 / 1, the study light of the
+assessment): production with „Weiches Licht“ **on** against the prototype's B and **off** against A, diffuse-only and
+beauty - all 64 comparisons (2 views × 2 materials × 4 sizes × 4 pairs) **0 in linear float and 0/255**: production
+is the prototype's B, and with the effect off it is A (today). By eye (Creature Skin, „face“): from size 0.5 the
+shadow side brightens strongly, at size 1 the face reads almost evenly lit - the look B showed in the assessment, the
+reason for Q-S8-2 below. (The `--ref 4` REF of this run is too coarse for the quality metrics; those stand in the
+assessment §4 / §6 with 32 directions.)
+
+### 23.4 Measurement
+
+**Reference PC, from the prototype (Manu, 2026-11-24, `bench.py`, the shader B is now production's text):** B's own GPU
+cost `(Bx16 − Ax16) / 16`: 0.129 / 0.370 / 0.198 / 0.448 ms at 1024 × 768 (cage framed / cage face / SubD 1 framed /
+SubD 1 face), 0.215–0.776 ms at 1920 × 1080; the whole LookDev frame with B at most 24.8 ms (SubD 1 face, 1080p), under
+33.3 ms. Within §2.5 at 1024 × 768 (≤ +0.5 ms per effect).
+
+**Container (llvmpipe, a function check only):** `probe_lookdev_room.py --effects area_diffuse --draws 3 --surfaces
+cage` compiled the `+area` program behind the status line, measured `lookdev` and `lookdev +area`, `glGetError` 0.
+
+**Reference PC (S8, with the open rows of S1–S7):** the same single command as §18.4 (`probe_lookdev_room.py`, every
+built row) now also measures `lookdev +area` against `lookdev`; target ≤ +0.3 ms (assessment §9), budget ≤ +0.5 ms.
+
+### 23.5 Practical test S8 (`scenes/Gollum_Head_05.mirai.json`, about 10 minutes; assessment §9)
+
+Open LookDev, studio **Dramatic**, the head's material **Creature Skin**, SubD 1, view „Gesicht“ / „¾“.
+1. **Key-Weichheit 0 / 0.25 / 0.5 / 1**, je mit **„Weiches Licht“ aus / an** (Block „Effekte“). Erwartet: bei 0 kein
+   Unterschied; ab 0.25 läuft der Übergang ins Dunkle breiter und gleichmäßiger, die Lichtseite bleibt gleich.
+2. **Wange und Schläfe:** wirkt der Terminator jetzt wie unter einer Softbox?
+3. **Nasenloch und Mundwinkel:** hellt es dort auf, wo es dunkel bleiben soll? (Bei großer Weichheit wird der
+   Nasenschatten auf der Schattenseite etwas weicher - erwartet, §6.2 der Bewertung. Das Glühen der Nasenloch-Innenwand
+   ab 0.25 gibt es auch mit „Weiches Licht“ aus - der getrennte Befund §6.3.)
+4. **Gesamthelligkeit:** wird der Kopf merklich heller? (Erwartet nur im Band: eine Kugel im Mittel +0.9 % bei 0.25,
+   +3.4 % bei 0.5, +13.8 % bei 1.)
+
+**Open questions for Manu [O]:**
+- **Q-S8-1:** „Weiches Licht“ als Standard **an**?
+- **Q-S8-2:** σ(1) = **40°** behalten oder kleiner (z. B. **30°**, `AREA_SIN_MAX`)?
+- (unchanged, separate) the §6.3 correction proposal for the lifted lookup; the eye (`lit`, the cornea softbox) on the
+  same meaning; renaming the material's „Weichheit“.

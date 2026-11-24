@@ -11,7 +11,8 @@ def test_effects_default_every_built_effect_and_none_measures_no_p3_row():
     from viewport.lookdev_optics import LookdevEffects
 
     assert room.parse_args([]).effects == LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness",
-                                                                         "cube", "regions", "maps")
+                                                                         "cube", "regions", "maps",
+                                                                         "area_diffuse")
     assert room.parse_args(["--effects", "none"]).effects == ()
     assert room.parse_args(["--effects", "shadow"]).effects == ("shadow",)
 
@@ -35,6 +36,12 @@ def test_the_dual_lobe_row_measures_it_alone():
     """AD-039 §6: `lookdev +dual` against `lookdev` (every effect off) is S3's cost."""
     assert room.EFFECT_ROWS["dual_lobe"] == ("lookdev +dual", ("dual_lobe",))
     assert room.parse_args(["--effects", "dual_lobe"]).effects == ("dual_lobe",)
+
+
+def test_the_soft_light_row_measures_it_alone():
+    """AD-039 §23 (S8): `lookdev +area` against `lookdev` (every effect off) is the soft light's cost (≤ +0.3 ms)."""
+    assert room.EFFECT_ROWS["area_diffuse"] == ("lookdev +area", ("area_diffuse",))
+    assert room.parse_args(["--effects", "area_diffuse"]).effects == ("area_diffuse",)
 
 
 def test_the_thickness_row_switches_the_shadow_too():

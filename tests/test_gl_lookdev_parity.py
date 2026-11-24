@@ -1,5 +1,7 @@
 """GPU parity of `lookdev_shaders` against `lookdev_optics` (AD-038 §6, E5): decode, tone curves and output, `sh9`,
-`ld_studio`, `ld_diffuse`, GGX (`direct_specular`, `ld_specular`; AD-039 S3: `ld_direct_dual`, `ld_specular_dual`), one fragment per input into an RGBA32F target.
+`ld_studio`, `ld_diffuse`, GGX (`direct_specular`, `ld_specular`; AD-039 S3: `ld_direct_dual`, `ld_specular_dual`; S8:
+`ld_area_wrap`, `ld_diffuse_area`), one fragment per input into an RGBA32F target. The `AREA_DIFFUSE` body blocks with and
+without `SHADOW` / `DUAL_LOBE` in the real pass: `tests/test_gl_lookdev_shadow.py`.
 
 Needs a real GL context, in its own process: `xvfb-run -a python -m pytest tests/test_gl_lookdev_parity.py -q`."""
 
@@ -20,7 +22,7 @@ from viewport import lookdev_shaders as ls  # noqa: E402
 
 N = 2048
 FUNCS = {"decode": 0, "output": 1, "sh9": 2, "studio": 3, "diffuse": 4, "direct": 5, "specular": 6, "direct_dual": 7,
-         "specular_dual": 8}
+         "specular_dual": 8, "area_wrap": 9, "diffuse_area": 10}
 
 BODY = """
 uniform samplerBuffer u_inputs;
@@ -44,6 +46,8 @@ void main() {
     else if (u_func == 6) o = ld_specular(a.xyz, b.xyz, c.x, c.y);
     else if (u_func == 7) o = vec3(ld_direct_dual(a.xyz, b.xyz, c.xyz, a.w, c.w, b.w));
     else if (u_func == 8) o = ld_specular_dual(a.xyz, b.xyz, c.x, c.y);
+    else if (u_func == 9) o = ld_area_wrap(a.x, b.xyz, a.y);
+    else if (u_func == 10) o = ld_diffuse_area(a.xyz, b.xyz);
     out_value = vec4(o, 1.0);
 }
 """
@@ -73,7 +77,8 @@ class _Parity:
 
         _register_sampler_buffer_uniform()
         self.gl = gl
-        fragment = "#version 330 core\n" + ls.LD_BRDF_SRC + ls.LD_COMMON_SRC + ls.LD_DUAL_LOBE_SRC + BODY
+        fragment = ("#version 330 core\n" + ls.LD_BRDF_SRC + ls.LD_COMMON_SRC + ls.LD_AREA_SRC + ls.LD_DUAL_LOBE_SRC
+                    + BODY)
         self.program = ShaderProgram(Shader(es.FULLSCREEN_VERTEX_SRC, "vertex"), Shader(fragment, "fragment"))
 
         def gen(fn) -> int:
@@ -234,3 +239,26 @@ def test_dual_lobe(parity):
     # the dual lobe is not the single one (a sharper peak, a broader tail)
     single = lo.ld_specular(_f32(n), _f32(v), _f32(rough), _f32(f0), values)
     assert np.abs(ref - single).max() > 1e-3
+
+
+def test_area_wrap_and_diffuse_area(parity):
+    """AD-039 §23 (S8): `ld_area_wrap` over the band and both sides of it (sizes 0 - 1, wraps 0 - 0.5) and
+    `ld_diffuse_area` with the frame's three lights at sizes 0.5 / 0.25 / 1 against their NumPy twins; size 0 is
+    `ld_wrap` on the GPU too."""
+    rng = np.random.default_rng(9)
+    ndl, size = rng.uniform(-1.0, 1.0, N), rng.uniform(0.0, 1.0, N)
+    size[:256] = 0.0
+    wrap = rng.uniform(0.0, 0.5, (N, 3))
+    values = lo.frame_uniforms(_state())
+    got = parity.run("area_wrap", _pack(np.c_[ndl, size, np.zeros(N), np.zeros(N)], wrap), values)
+    ref = lo.ld_area_wrap(_f32(ndl), _f32(wrap), _f32(size))  # per row: ndl, size and wrap broadcast row by row
+    assert np.abs(got - ref).max() < 2e-6
+    assert np.abs(got[:256] - lo.ld_wrap(_f32(ndl[:256]), _f32(wrap[:256]))).max() < 3e-5
+    values = lo.frame_uniforms(_state(key=lo.StudioLight(True, 1.6, 45.0, 30.0, 5600.0, 0.5),
+                                      fill=lo.StudioLight(True, 0.7, -60.0, 5.0, 6500.0, 0.25),
+                                      rim=lo.StudioLight(True, 1.4, -150.0, 25.0, 7500.0, 1.0)))
+    n = _unit(N, 10)
+    got = parity.run("diffuse_area", _pack(np.c_[n, np.zeros(N)], wrap), values)
+    ref = lo.ld_diffuse_area(_f32(n), _f32(wrap), values)
+    assert np.abs(got - ref).max() < 5e-6
+    assert np.abs(ref - lo.ld_diffuse(_f32(n), _f32(wrap), values)).max() > 1e-2  # the band is there

@@ -22,6 +22,11 @@ What it does (nothing in `src/` changes; the scene files are only read):
 - metrics against REF on the object's pixels (display values 0..255): mean |error|, and the share of pixels more than
   8/255 brighter (a leak, a bright rim) or darker (missing light) than REF.
 
+`--production` (2026-11-24, after AD-039 §23 built S8): per size also production itself with its effect „Weiches
+Licht“ (`area_diffuse`) on and off - variant A's patch only takes the specular / linear output levers, the diffuse
+term is the production shader's own (with the effect on the body calls `ld_diffuse_area`, which the patch does not
+touch) - and the largest difference "P-on vs B" and "P-off vs A" (diffuse-only and beauty), linear and in 8 bit.
+
 Scenes: `gollum` = scenes/Gollum_Head_05.mirai.json at SubD 1 (views "face": the front close-up of nose, mouth and
 eyes; "framed": the 3/4 view); `shapes` = a generated scene (sphere, cylinder, a concave panel with a bowl and a
 groove), cage = the drawn surface (they are dense already).
@@ -412,15 +417,39 @@ def run_scene(scene: str, args, out: Path, log) -> dict:
                     for name in args.variants:
                         img, mask = render_variant(window, app, capture, VARIANTS[name])
                         images[name] = display(img, mask)
+                    linear = {}
                     for name, variant in BEAUTY.items():
                         img, mask = render_variant(window, app, capture, variant)
                         images[name] = display(img, mask)
+                        linear[name] = img
+                    production = {}
+                    if args.production:
+                        for name in ("A", "B"):
+                            linear[name], _ = render_variant(window, app, capture, VARIANTS[name])
+                        for on in (True, False):  # ends off, as the variants ran
+                            app.set_lookdev_effect("area_diffuse", on)
+                            settle(window, app, capture)
+                            tag = "P-on" if on else "P-off"
+                            for suffix, variant in (("", VARIANTS["A"]), (" beauty", BEAUTY["A beauty"])):
+                                img, mask = render_variant(window, app, capture, variant)
+                                images[tag + suffix] = display(img, mask)
+                                linear[tag + suffix] = img
+                        for prod, var in (("P-on", "B"), ("P-off", "A"), ("P-on beauty", "B beauty"),
+                                          ("P-off beauty", "A beauty")):
+                            lin = float(np.abs(linear[prod] - linear[var]).max())
+                            eight = int(np.abs(images[prod].astype(int) - images[var].astype(int)).max())
+                            production[f"{prod} vs {var}"] = {"linear_max": lin, "display_max": eight}
                     ref, rmask = render_reference(window, app, capture, size, args.ref)
                     app.set_lookdev_light("key", size=size)
                     images["REF"] = display(ref, rmask)
                     key = f"{scene}/{view}/{material}/size {size:g}"
                     results[key] = {name: metrics(images[name], images["REF"], rmask) for name in args.variants}
+                    if production:
+                        results[key]["production"] = production
                     log(f"{key}  ({time.perf_counter() - t0:.0f} s)")
+                    for pair, d in production.items():
+                        log(f"    production {pair:<24} max |diff| linear {d['linear_max']:.2e}  "
+                            f"display {d['display_max']}/255")
                     for name in args.variants:
                         m = results[key][name]
                         log(f"    {name:<12} mae {m['mae']:5.2f}/255  brighter>8 {100 * m['brighter']:5.2f} %  "
@@ -456,6 +485,8 @@ def main(argv=None) -> int:
     parser.add_argument("--variants", default=",".join(VARIANTS))
     parser.add_argument("--ref", type=int, default=32, help="REF: key directions on the cap")
     parser.add_argument("--size", type=int, nargs=2, default=(1024, 768))
+    parser.add_argument("--production", action="store_true",
+                        help="also production with „Weiches Licht“ on / off against B / A (AD-039 §23)")
     args = parser.parse_args(argv)
     args.sizes = tuple(float(s) for s in args.sizes.split(","))
     args.variants = tuple(v for v in args.variants.split(",") if v)

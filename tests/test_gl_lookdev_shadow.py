@@ -308,15 +308,18 @@ def test_a_lit_sphere_does_not_shadow_its_lit_half(gl_window, key_el, size):
 WRAPPED = LookDraw((0.5, 0.5, 0.5), roughness=0.5, specular=0.5, wrap_rgb=(0.5, 0.3, 0.2))
 
 
-def test_a_cast_shadow_at_a_grazing_key_keeps_the_wrap_and_the_highlight_dark(gl_window):
+@pytest.mark.parametrize("size, area", [(0.0, False), (0.5, True), (1.0, True)])
+def test_a_cast_shadow_at_a_grazing_key_keeps_the_wrap_and_the_highlight_dark(gl_window, size, area):
     """Manu, 2026-11-22: „in der Nase und um die Mundwinkel entstehen sehr helle Ränder um die Schatten“ - a cast
     shadow on a surface the key grazes (n.l < 0.3) let the wrap and the highlight through. The box's footprint on the
-    plane under a 15° key is black (no fill, no environment)."""
+    plane under a 15° key is black (no fill, no environment). AD-039 §23 (S8): the same with the soft light on at the
+    key's size 0.5 (the cast shadow under the softer map; the plane's wrapped cosine 0.46 - 0.76 lies above the band)
+    and 1 (sin sigma 0.64: green and blue in the band) - the band joins the wrap's excess and stays dark with it."""
     camera = OrbitCamera(target=(0.0, 0.2, 0.0), distance=5.5, yaw=0.3, pitch=0.75)
     viewport = _viewport(gl_window, {"ground": _ground(), "box": _box(*BOX)}, camera)
     for key in ("ground", "box"):
         viewport.set_object_entry(key, viewport.object_entries[key].mesh, (0.5, 0.5, 0.5), look=WRAPPED)
-    state = _state(key_el=15.0)
+    state = _state(key_el=15.0, size=size, effects=lo.LookdevEffects(area_diffuse=area))
     viewport.set_shading("lookdev", state)
     pixels = _frame(gl_window, viewport).max(axis=-1)
     origin, direction = _rays(viewport)
@@ -326,7 +329,7 @@ def test_a_cast_shadow_at_a_grazing_key_keeps_the_wrap_and_the_highlight_dark(gl
     key = _key_dir(state)
     shaded, _ = _hits_box(point, np.broadcast_to(key, point.shape), *BOX)
     band = np.zeros_like(shaded)
-    for dx, dz in BAND * 0.05:
+    for dx, dz in BAND * (0.05 if size <= 0.5 else 0.08):  # at size 1 the map has 171 texels: a wider penumbra
         moved, _ = _hits_box(point + np.array([dx, 0.0, dz]), np.broadcast_to(key, point.shape), *BOX)
         band |= moved != shaded
     ground = (t > 0) & ~_grow(on_box, 2) & (np.abs(point[..., 0]) < 1.9) & (np.abs(point[..., 2]) < 1.9)
@@ -337,16 +340,19 @@ def test_a_cast_shadow_at_a_grazing_key_keeps_the_wrap_and_the_highlight_dark(gl
     _release(viewport)
 
 
-def test_the_wrap_past_a_convex_terminator_is_not_cut(gl_window):
+@pytest.mark.parametrize("size, area", [(0.0, False), (0.5, True)])
+def test_the_wrap_past_a_convex_terminator_is_not_cut(gl_window, size, area):
     """A sphere with a wide wrap: past the terminator (n.l in [-0.2, 0]) the wrap's light stays as without the shadow
-    (the convex surface's own shadow is left behind by the lifted lookup), while the lit half is untouched."""
+    (the convex surface's own shadow is left behind by the lifted lookup), while the lit half is untouched. AD-039 §23
+    (S8): the same with the soft light on and the key's size 0.5 (both frames with it) - the area band past the
+    terminator is not cut either (rule „lifted“)."""
     camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=3.0, yaw=1.2, pitch=0.2)
     viewport = _viewport(gl_window, {"sphere": _sphere()}, camera)
     viewport.set_object_entry("sphere", viewport.object_entries["sphere"].mesh, (0.5, 0.5, 0.5), look=WRAPPED)
-    state = _state(key_az=30.0, key_el=20.0, effects=OFF)
+    state = _state(key_az=30.0, key_el=20.0, size=size, effects=dataclasses.replace(OFF, area_diffuse=area))
     viewport.set_shading("lookdev", state)
     without = _frame(gl_window, viewport).astype(float)
-    viewport.set_shading("lookdev", dataclasses.replace(state, effects=lo.LookdevEffects()))
+    viewport.set_shading("lookdev", dataclasses.replace(state, effects=lo.LookdevEffects(area_diffuse=area)))
     with_shadow = _frame(gl_window, viewport).astype(float)
     origin, direction = _rays(viewport)
     b = np.sum(origin * direction, -1)
@@ -995,23 +1001,66 @@ def test_the_shadow_block_matches_ld_key_shadowed(gl_window, dual):
     state = _state(key_az=90.0, key_el=45.0, studio=studio, env_intensity=0.6,
                    fill=lo.StudioLight(True, 0.4, -60.0, 30.0, 6500.0, 0.2),
                    effects=lo.LookdevEffects(dual_lobe=dual))
-    look = LookDraw((0.6, 0.5, 0.4), roughness=0.5, specular=0.5, wrap_rgb=(0.2, 0.1, 0.05))
+    _assert_shadow_block_parity(gl_window, viewport, state, BOX, dual, False)
+
+
+#: S8's plane parity: the key at 10° with size 1 (sin sigma 0.64) - the plane's wrapped cosine (0.22 - 0.37) lies deep
+#: in the key's band; a low box standing on the plane casts its shadow into the view
+SOFT_KEY_EL = 10.0
+LOW_BOX = ((0.6, 0.0, -0.5), (1.0, 0.3, 0.5))
+SOFT_LOOK = LookDraw((0.6, 0.5, 0.4), roughness=0.5, specular=0.5, wrap_rgb=(0.2, 0.1, 0.05))
+
+
+@pytest.mark.parametrize("dual", [False, True])
+def test_the_shadow_block_with_the_soft_light_matches_ld_key_shadowed(gl_window, dual):
+    """AD-039 §23 (S8): the `SHADOW` block with the `AREA_DIFFUSE` blocks (with and without `DUAL_LOBE`) - in the
+    light the plane is `ld_key_shadowed(..., area=True)` at visibility 1 (the key's band visibly brighter than the
+    point light), in the full shadow at visibility 0. The wrap's excess and the band take the lifted lookup's answer
+    (4 normal offsets up, §16.7; at the map's 171 texels it leaves the low box's shadow a little behind the box -
+    assessment §6.3): the twin gets it from the lifted point, the strip around its edge is judged neither way."""
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=5.5, yaw=0.0, pitch=1.2)
+    viewport = _viewport(gl_window, {"ground": _ground(), "box": _box(*LOW_BOX)}, camera)
+    studio = lo.Studio((0.3, 0.3, 0.32), (0.2, 0.2, 0.2), (0.05, 0.05, 0.05))
+    state = _state(key_az=90.0, key_el=SOFT_KEY_EL, size=1.0, studio=studio, env_intensity=0.6,
+                   fill=lo.StudioLight(True, 0.4, -60.0, 30.0, 6500.0, 0.2),
+                   effects=lo.LookdevEffects(dual_lobe=dual, area_diffuse=True))
+    _assert_shadow_block_parity(gl_window, viewport, state, LOW_BOX, dual, True)
+
+
+def _assert_shadow_block_parity(gl_window, viewport, state, box, dual: bool, area: bool) -> None:
+    look = SOFT_LOOK
     for key in ("ground", "box"):
         viewport.set_object_entry(key, viewport.object_entries[key].mesh, (0.5, 0.5, 0.5), look=look)
     viewport.lookdev_pass.env_spec = False
     viewport.set_shading("lookdev", state)
     pixels = _frame(gl_window, viewport)
     origin, direction = _rays(viewport)
-    on_box, _ = _hits_box(origin, direction, *BOX)
+    on_box, _ = _hits_box(origin, direction, *box)
     on_box = _grow(on_box)
     t = -origin[..., 1] / direction[..., 1]
     point = origin + direction * t[..., None]
     key = _key_dir(state)
-    shaded, _ = _hits_box(point, np.broadcast_to(key, point.shape), *BOX)
+    shaded, _ = _hits_box(point, np.broadcast_to(key, point.shape), *box)
     band = np.zeros_like(shaded)
-    for dx, dz in BAND * 0.06:
-        moved, _ = _hits_box(point + np.array([dx, 0.0, dz]), np.broadcast_to(key, point.shape), *BOX)
+    for dx, dz in BAND * (0.2 if area else 0.06):  # at size 1 the map has 171 texels: a wider penumbra
+        moved, _ = _hits_box(point + np.array([dx, 0.0, dz]), np.broadcast_to(key, point.shape), *box)
         band |= moved != shaded
+    lifted_shaded = shaded
+    if area:  # the lifted lookup's point (the shader's `vis_wrap`): at 171 texels it leaves the box's shadow early
+        n_up = np.array([0.0, 1.0, 0.0])
+        offset = viewport.lookdev_pass.shadow.uniforms()["u_ld_shadow_offset"]
+        lifted = point + ((n_up - key * key[1]) + n_up * ls.SHADOW_WRAP_LIFT) * offset
+        lifted_shaded, _ = _hits_box(lifted, np.broadcast_to(key, point.shape), *box)
+        # the penumbra on the plane stretches along the key by 1 / sin(elevation): ~6x at 10°
+        along = np.array([key[0], 0.0, key[2]]) / math.hypot(key[0], key[2])
+        shifts = [np.array([dx, 0.0, dz]) for dx, dz in BAND * 0.2] + [along * a for a in np.linspace(-0.5, 0.5, 11)]
+        for shift in shifts:
+            for p0, inside in ((point, shaded), (lifted, lifted_shaded)):
+                moved, _ = _hits_box(p0 + shift, np.broadcast_to(key, point.shape), *box)
+                band |= moved != inside
+        # the box stands on the plane: the coarse map's fetches around its foot are judged neither way
+        band |= np.all((point[..., [0, 2]] > np.asarray(box[0])[[0, 2]] - 0.3)
+                       & (point[..., [0, 2]] < np.asarray(box[1])[[0, 2]] + 0.3), axis=-1)
     frame = viewport.lookdev_frame()
     n = np.array([0.0, 1.0, 0.0])
     albedo = lo.srgb_decode(look.base_color)
@@ -1023,9 +1072,52 @@ def test_the_shadow_block_matches_ld_key_shadowed(gl_window, dual):
         v = -direction[ys, xs]
         normals = np.broadcast_to(n, v.shape)
         linear = lo.ld_key_shadowed(albedo, normals, v, look.wrap_rgb, look.roughness, look.f0, frame,
-                                    np.full(len(ys), visibility), dual=dual)
+                                    np.full(len(ys), visibility), 1.0 - lifted_shaded[ys, xs], dual=dual, area=area)
         expected = lo.lookdev_output(linear) * 255
         assert np.abs(pixels[ys, xs] - expected).max() <= 2.5, (want, np.abs(pixels[ys, xs] - expected).max())
+        if area and not want:  # the band is really there: the point light's twin is darker in green and blue
+            point_light = lo.lookdev_output(lo.ld_key_shadowed(albedo, normals, v, look.wrap_rgb, look.roughness,
+                                                               look.f0, frame, np.ones(len(ys)), dual=dual)) * 255
+            assert (expected - point_light)[:, 1:].min() > 2
+    _release(viewport)
+
+
+@pytest.mark.parametrize("dual", [False, True])
+def test_the_soft_light_without_the_shadow_matches_ld_diffuse_area(gl_window, dual):
+    """AD-039 §23 (S8): `AREA_DIFFUSE` without `SHADOW` (with and without `DUAL_LOBE`) - the plane's colour equals
+    `lookdev_output(albedo x ld_diffuse_area + specular)`; the key at 10° with size 1 puts it deep in the key's band,
+    where the point light (the same frame without the effect) is darker."""
+    camera = OrbitCamera(target=(0.0, 0.0, 0.0), distance=5.5, yaw=0.0, pitch=1.2)
+    viewport = _viewport(gl_window, {"ground": _ground()}, camera)
+    studio = lo.Studio((0.3, 0.3, 0.32), (0.2, 0.2, 0.2), (0.05, 0.05, 0.05))
+    look = SOFT_LOOK
+    viewport.set_object_entry("ground", viewport.object_entries["ground"].mesh, (0.5, 0.5, 0.5), look=look)
+    viewport.lookdev_pass.env_spec = False
+    state = _state(key_az=90.0, key_el=SOFT_KEY_EL, size=1.0, studio=studio, env_intensity=0.6,
+                   fill=lo.StudioLight(True, 0.4, -60.0, 30.0, 6500.0, 0.2),
+                   effects=dataclasses.replace(OFF, dual_lobe=dual, area_diffuse=True))
+    viewport.set_shading("lookdev", state)
+    pixels = _frame(gl_window, viewport)
+    assert viewport.lookdev_pass.shadow is None or not viewport.lookdev_pass.shadow.renders
+    viewport.set_shading("lookdev", dataclasses.replace(state, effects=dataclasses.replace(OFF, dual_lobe=dual)))
+    point_pixels = _frame(gl_window, viewport)
+    origin, direction = _rays(viewport)
+    t = -origin[..., 1] / direction[..., 1]
+    point = origin + direction * t[..., None]
+    mask = (t > 0) & (np.abs(point[..., 0]) < 1.8) & (np.abs(point[..., 2]) < 1.8)
+    mask &= ~_grow(~mask, 2)
+    ys, xs = np.nonzero(mask)
+    assert len(ys) > 1000
+    v = -direction[ys, xs]
+    n = np.broadcast_to(np.array([0.0, 1.0, 0.0]), v.shape)
+    frame = viewport.lookdev_frame()
+    albedo = lo.srgb_decode(look.base_color)
+    specular = (lo.ld_specular_dual if dual else lo.ld_specular)(n, v, look.roughness, look.f0, frame)
+    expected = lo.lookdev_output(albedo * lo.ld_diffuse_area(n, look.wrap_rgb, frame) + specular) * 255
+    assert np.abs(pixels[ys, xs] - expected).max() <= 2.5, np.abs(pixels[ys, xs] - expected).max()
+    point_light = lo.lookdev_output(albedo * lo.ld_diffuse(n, look.wrap_rgb, frame) + specular) * 255
+    assert np.abs(point_pixels[ys, xs] - point_light).max() <= 2.5  # off: the point light, as before
+    assert (expected - point_light)[:, 1:].min() > 3  # green and blue lie deep in the band
     _release(viewport)
 
 

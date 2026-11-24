@@ -1,7 +1,9 @@
 # LookDev: endliche Lichtgröße und der diffuse Terminator — Bewertung
 
-**Status:** Forschung + isolierter Prototyp. **Keine Entscheidung, kein Production-Code geändert.** Wartet auf Manus
-Entscheidung (§8–§9).
+**Status:** Forschung + isolierter Prototyp. **Entschieden 2026-11-24 (Manu): „Verfahren B bauen, als neuer P3-Effekt
+vor LD-3“** - gebaut als S8 „Weiches Licht“, [AD-039 §23](../architecture/AD-039-LOOKDEV-P3.md) (Production = B
+bitgleich, Effekt aus = A). Offen: Praxistest, Default an?, σ(1) 40° / 30°, der getrennte Befund §6.3. Der Text unten
+ist der Stand vor der Entscheidung.
 **Datum:** 2026-11-24
 **Stand geprüft:** `main` @ `8f605ef` („S4 no red wash and no jagged black on the shadow side; scale 0.02“, AD-039
 §19.8), Branch auf diesen Stand vorgespult, `src/` unverändert.

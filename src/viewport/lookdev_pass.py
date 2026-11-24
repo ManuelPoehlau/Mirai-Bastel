@@ -176,14 +176,18 @@ class LookdevPass:
     @staticmethod
     def program_key(albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
                     thickness: bool = False, roughness_map: bool = False, normal_map: bool = False,
-                    translucency_map: bool = False, cube_env: bool = False, regions: bool = False) -> tuple:
+                    translucency_map: bool = False, cube_env: bool = False, regions: bool = False,
+                    area_diffuse: bool = False) -> tuple:
         """The skin program's cache key: the 5 values of S4, plus the three map flags when a map is drawn (S7), plus
         those and `CUBE_ENV` when the cube is (S5; only with `env_spec`), plus those, the cube flag and `REGIONS` when
-        region materials are (S6) - 5, 8, 9 or 10 values, so every key of a frame without the cube or regions stays as
-        it was."""
+        region materials are (S6), plus all of those and `AREA_DIFFUSE` when the soft light is on (S8) - 5, 8, 9, 10 or
+        11 values, so every key of a frame without the cube, regions or the soft light stays as it was. The key is
+        `skin_sources`' positional arguments after the locations."""
         key = (bool(albedo_map), bool(env_spec), bool(shadow), bool(dual_lobe), bool(thickness) and bool(shadow))
         maps = (bool(roughness_map), bool(normal_map), bool(translucency_map))
         cube = bool(cube_env) and bool(env_spec)
+        if area_diffuse:
+            return key + maps + (cube, bool(regions), True)
         if regions:
             return key + maps + (cube, True)
         if cube:
@@ -192,13 +196,14 @@ class LookdevPass:
 
     def program(self, albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
                 thickness: bool = False, roughness_map: bool = False, normal_map: bool = False,
-                translucency_map: bool = False, cube_env: bool = False, regions: bool = False):
+                translucency_map: bool = False, cube_env: bool = False, regions: bool = False,
+                area_diffuse: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore, _register_sampler_buffer_uniform
 
         key = self.program_key(albedo_map, env_spec, shadow, dual_lobe, thickness, roughness_map, normal_map,
-                               translucency_map, cube_env, regions)
+                               translucency_map, cube_env, regions, area_diffuse)
         program = self.programs.get(key)
         if program is None:
             _register_sampler_buffer_uniform()
@@ -213,14 +218,16 @@ class LookdevPass:
         return program
 
     def draw(self, render_mesh, look: LookDraw, frame: dict, shadow=None, dual_lobe: bool = False,
-             thickness: bool = False, maps: bool = False, cube=None, regions: bool = False) -> bool:
+             thickness: bool = False, maps: bool = False, cube=None, regions: bool = False,
+             area_diffuse: bool = False) -> bool:
         """Draw one object. False = nothing drawn (no VertexList / camera yet, or a Ghost): the caller draws it with the
         Worklight. `shadow` (AD-039 S1): a rendered `KeyShadow` the object receives (the `SHADOW` variant), else None;
         `dual_lobe` (S3): the `DUAL_LOBE` variant; `thickness` (S4): the `THICKNESS` variant, only with a shadow;
         `maps` (S7): the LookDraw's maps that load are drawn (one define each) - on a mesh with triangle UVs;
         `cube` (S5): a built `EnvCube` the studio's reflection reads (the `CUBE_ENV` variant, with `env_spec`), else
         None; `regions` (S6): the LookDraw's region materials by the RenderMesh's triangle slots (the `REGIONS`
-        variant, when the look has regions and the store holds slots), else the object's material everywhere."""
+        variant, when the look has regions and the store holds slots), else the object's material everywhere;
+        `area_diffuse` (S8): the `AREA_DIFFUSE` variant (the lights' diffuse term as finite emitters)."""
         from pyglet import gl
 
         from .gl_render_store import GLRenderStore
@@ -249,7 +256,7 @@ class LookdevPass:
         cube = cube if cube is not None and cube.ready and self.env_spec else None
         program = self.program(texture is not None, self.env_spec, shadow is not None, dual_lobe, thickness,
                                "roughness" in bound_maps, "normal" in bound_maps, "translucency" in bound_maps,
-                               cube is not None, regions)
+                               cube is not None, regions, area_diffuse)
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw
         model = store.uniform_data("model_uniforms")

@@ -222,9 +222,25 @@ def test_the_effects_survive_save_and_load(app, tmp_path):
     assert app.save_scene_file(path)
     assert json.loads(path.read_text())["view"]["lookdev"]["effects"] == {"shadow": False, "eye_shadow": True,
                                                                             "dual_lobe": True, "thickness": True,
-                                                                            "cube": True, "regions": True, "maps": True}
+                                                                            "cube": True, "regions": True, "maps": True,
+                                                                            "area_diffuse": False}
     fresh = _load(path)
     assert fresh.lookdev.studio == app.lookdev.studio and not fresh.lookdev.studio.effects.shadow
+
+
+def test_the_soft_light_survives_save_and_load_and_an_older_file_keeps_it_off(app, tmp_path):
+    """AD-039 §23 (S8): `area_diffuse` is view state like the other effects; a file from before S8 has no entry for
+    it and leaves it as it is (off by default)."""
+    assert not app.lookdev.studio.effects.area_diffuse
+    assert app.set_lookdev_effect("area_diffuse", True)
+    path = tmp_path / "soft.mirai.json"
+    assert app.save_scene_file(path)
+    data = json.loads(path.read_text())
+    assert data["view"]["lookdev"]["effects"]["area_diffuse"] is True
+    assert _load(path).lookdev.studio.effects.area_diffuse
+    del data["view"]["lookdev"]["effects"]["area_diffuse"]
+    path.write_text(json.dumps(data))
+    assert not _load(path).lookdev.studio.effects.area_diffuse
 
 
 def test_an_ld2_file_without_effects_keeps_its_studio_and_the_current_effects(app):

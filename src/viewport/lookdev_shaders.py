@@ -52,6 +52,13 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
   `ld_studio(d, 0)` into level 0 and a GGX importance-sampled prefilter of it (64 samples, the corner fix) into the
   rougher levels (`viewport.lookdev_cube.EnvCube`). Twins: `lookdev_optics.cube_texel_directions` /
   `prefilter_ggx` / `cube_lod`. The eye keeps the analytic studio (AD-039 §8).
+- `LD_AREA_SRC` (S8 „Weiches Licht“, AD-039 §23): the lights' diffuse term as a finite (sphere) emitter -
+  `ld_area_wrap`, the C1 horizon spline over the band |n.l + wrap| < sin sigma with sin sigma = size x
+  `AREA_SIN_MAX`, then / (1 + wrap) (size 0 = `ld_wrap`; outside the band nothing changes), and `ld_diffuse_area`, the
+  twin of `ld_diffuse` with it. The `AREA_DIFFUSE` blocks call it for the three lights and in the `SHADOW` block's key
+  term, where the band joins the wrap's excess under the lifted lookup (§16.7, rule „lifted“ of the assessment §6.2).
+  Twins: `lookdev_optics.ld_area_wrap` / `ld_diffuse_area` / `ld_key_shadowed(..., area=True)`. The eye keeps
+  `ld_diffuse` (`LD_COMMON_SRC` unchanged).
 
 Colour (AD-038 §5.5): every albedo is an sRGB artist value, decoded here; lights are linear; one `lookdev_output` per
 pixel. Directions are world space; `u_ld_env_rot` turns a world direction into the studio's frame (rotation, and the
@@ -59,6 +66,8 @@ camera's frame with "Licht folgt Kamera"), the lights arrive already turned (`lo
 """
 
 from __future__ import annotations
+
+import math
 
 from . import eye_shaders as es
 
@@ -125,6 +134,12 @@ THICKNESS_EDGE = 0.1 * THICKNESS_SCALE
 #: geometric normal, n_face . l >= 0) is rightly its own nearest surface - on a faceted cage with smooth normals the
 #: terminator's facets are. The rule fades out between n_face . l = -this and 0.
 THICKNESS_FACE = 0.1
+#: S8 (AD-039 §23): a light's size as its angular radius sigma, sin sigma = size x this (sigma 40° at size 1, a large
+#: softbox close to the face; `PROVISIONAL`, Manu's practical test decides 40° or 30°). Highlight (`ld_lobe`) and shadow
+#: (`lookdev_optics.shadow_resolution`) keep their own mappings of the size.
+AREA_SIN_MAX = math.sin(math.radians(40.0))
+#: Below this sin sigma the band is not widened further (the spline's 1 / 4s): a point light is `ld_wrap` within 2.5e-5.
+AREA_SIN_MIN = 1e-4
 
 
 def constant_src(name: str, library: str = es.EYE_LIB_SRC) -> str:
@@ -374,9 +389,18 @@ void main() {{
     albedo = srgb_decode(albedo);
 #ifdef DUAL_LOBE
     // AD-039 §6: the lights' highlight as two lobes, a sharp one and a broad tail
+#ifdef AREA_DIFFUSE
+    // AD-039 §23: the lights' diffuse term as finite emitters (each light's size softens its terminator)
+    vec3 colour = albedo * ld_diffuse_area(n, u_wrap) + ld_specular_dual(n, v, rough, u_f0);
+#else
     vec3 colour = albedo * ld_diffuse(n, u_wrap) + ld_specular_dual(n, v, rough, u_f0);
+#endif
+#else
+#ifdef AREA_DIFFUSE
+    vec3 colour = albedo * ld_diffuse_area(n, u_wrap) + ld_specular(n, v, rough, u_f0);
 #else
     vec3 colour = albedo * ld_diffuse(n, u_wrap) + ld_specular(n, v, rough, u_f0);
+#endif
 #endif
 #ifdef SHADOW
     // AD-039 §4 / §16.7: the key's own terms (ld_diffuse / ld_specular's i = 0) times (1 - visibility): the key in
@@ -395,11 +419,23 @@ void main() {{
         vec3 lambert = vec3(max(ndl, 0.0));
 #ifdef DUAL_LOBE
         colour -= u_ld_light_color[0]
+#ifdef AREA_DIFFUSE
+                // AD-039 §23: the key's area band joins the wrap's excess under the lifted lookup (rule „lifted“)
+                * (albedo * ((1.0 - vis) * lambert
+                             + (1.0 - vis_wrap) * (ld_area_wrap(ndl, u_wrap, u_ld_light_size[0]) - lambert))
+#else
                 * (albedo * ((1.0 - vis) * lambert + (1.0 - vis_wrap) * (ld_wrap(ndl, u_wrap) - lambert))
+#endif
                    + (1.0 - vis) * ld_direct_dual(n, v, u_ld_light_dir[0], rough, u_ld_light_size[0], u_f0));
 #else
         colour -= u_ld_light_color[0]
+#ifdef AREA_DIFFUSE
+                // AD-039 §23: the key's area band joins the wrap's excess under the lifted lookup (rule „lifted“)
+                * (albedo * ((1.0 - vis) * lambert
+                             + (1.0 - vis_wrap) * (ld_area_wrap(ndl, u_wrap, u_ld_light_size[0]) - lambert))
+#else
                 * (albedo * ((1.0 - vis) * lambert + (1.0 - vis_wrap) * (ld_wrap(ndl, u_wrap) - lambert))
+#endif
                    + (1.0 - vis) * direct_specular(n, v, u_ld_light_dir[0], ld_lobe(rough, u_ld_light_size[0]), u_f0));
 #endif
     }}
@@ -443,6 +479,28 @@ void main() {{
 }}
 """
 
+
+LD_AREA_SRC = f"""
+// -- LookDev P3 S8 (AD-039 §23): the lights' diffuse term as finite emitters - a sphere light of angular radius sigma,
+// sin sigma = size x LD_AREA_SIN_MAX
+const float LD_AREA_SIN_MAX = {AREA_SIN_MAX!r};  // sin 40° (PROVISIONAL)
+const float LD_AREA_SIN_MIN = {AREA_SIN_MIN!r};
+// light i's diffuse factor: the sphere light's irradiance as the C1 horizon spline ((x + s)² / 4s between x = -s and
+// +s, x above), the cosine shifted by the wrap and renormalized as ld_wrap; size 0 = ld_wrap, the lit side unchanged
+vec3 ld_area_wrap(float ndl, vec3 w, float size) {{
+    float s = max(size * LD_AREA_SIN_MAX, LD_AREA_SIN_MIN);
+    vec3 x = vec3(ndl) + w;
+    vec3 t = max(x + s, 0.0);
+    return mix(t * t / (4.0 * s), x, step(vec3(s), x)) / (vec3(1.0) + w);
+}}
+// ld_diffuse with ld_area_wrap: key, fill and rim, each with its own size, plus SH9
+vec3 ld_diffuse_area(vec3 n, vec3 wrap) {{
+    vec3 light = ld_env_diffuse(n);
+    for (int i = 0; i < LD_LIGHTS; ++i)
+        light += u_ld_light_color[i] * ld_area_wrap(dot(n, u_ld_light_dir[i]), wrap, u_ld_light_size[i]);
+    return light;
+}}
+"""
 
 LD_SHADOW_SRC = f"""
 // -- LookDev P3 S1 (AD-039 §4, §16.6): the key's shadow map, 3 x 3 bilinear-compare fetches one texel apart
@@ -686,12 +744,14 @@ def shadow_depth_sources(locations: dict[str, int]) -> list[tuple[str, str]]:
 def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, shadow: bool = False,
                  dual_lobe: bool = False, thickness: bool = False, roughness_map: bool = False,
                  normal_map: bool = False, translucency_map: bool = False,
-                 cube_env: bool = False, regions: bool = False) -> list[tuple[str, str]]:
+                 cube_env: bool = False, regions: bool = False,
+                 area_diffuse: bool = False) -> list[tuple[str, str]]:
     """The skin program (AD-038 §3.2): the textured Worklight program's vertex and geometry sources formatted with the
     Worklight program's attribute locations, the LookDev fragment source. Variants: `ALBEDO_MAP`, `ENV_SPEC`; P3
     (AD-039 §2.3): `SHADOW` (S1), `DUAL_LOBE` (S3), `THICKNESS` (S4, needs `shadow`); S7 (§10): `ROUGHNESS_MAP`,
     `NORMAL_MAP`, `TRANSLUCENCY_MAP` (with `LD_MAP_UV` for any of them); S5 (§8): `CUBE_ENV` (needs `env_spec`); S6 (§9):
-    `REGIONS` (the material per triangle from its slot). An effect that is off leaves no text behind
+    `REGIONS` (the material per triangle from its slot); S8 (§23): `AREA_DIFFUSE` (the lights' diffuse term as finite
+    emitters). An effect that is off leaves no text behind
     (its library string is not appended, its body blocks are resolved away), so every effect off = M1's sources."""
     from .eye_shaders import _without
     from .gl_render_store import TEXTURED_GEOMETRY_SRC, TEXTURED_VERTEX_SRC
@@ -704,14 +764,15 @@ def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, sh
     flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow), ("DUAL_LOBE", dual_lobe),
              ("THICKNESS", thickness), ("ROUGHNESS_MAP", roughness_map), ("NORMAL_MAP", normal_map),
              ("TRANSLUCENCY_MAP", translucency_map), ("LD_MAP_UV", maps), ("CUBE_ENV", cube_env),
-             ("REGIONS", regions))
+             ("REGIONS", regions), ("AREA_DIFFUSE", area_diffuse))
     defines = "".join(f"#define {name} 1\n" for name, on in flags if on)
     body = SKIN_BODY
     for name, on in flags[2:]:
         if not on:
             body = _without(body, name)
-    library = (LD_BRDF_SRC + LD_COMMON_SRC + (LD_SHADOW_SRC if shadow else "")
-               + (LD_DUAL_LOBE_SRC if dual_lobe else "") + (LD_THICKNESS_SRC if thickness else "")
+    library = (LD_BRDF_SRC + LD_COMMON_SRC + (LD_AREA_SRC if area_diffuse else "")
+               + (LD_SHADOW_SRC if shadow else "") + (LD_DUAL_LOBE_SRC if dual_lobe else "")
+               + (LD_THICKNESS_SRC if thickness else "")
                + (LD_NORMAL_MAP_SRC if normal_map else "") + (LD_CUBE_SRC if cube_env else ""))
     fragment = "#version 330 core\n" + defines + library + body
     return [(TEXTURED_VERTEX_SRC.format(**locations), "vertex"), (TEXTURED_GEOMETRY_SRC, "geometry"),

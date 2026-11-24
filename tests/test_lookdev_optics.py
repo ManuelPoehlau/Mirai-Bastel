@@ -130,13 +130,15 @@ def test_effects_default_on_and_dependencies_and_features():
     from viewport.lookdev_features import FeatureReport
 
     assert lo.LookdevEffects().shadow
-    assert lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness", "cube", "regions", "maps")
+    assert lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness", "cube", "regions", "maps",
+                                         "area_diffuse")
+    assert not lo.LookdevEffects().area_diffuse  # S8: off until Manu's practical test (AD-039 §23)
     assert lo.LookdevState("x", lo.EYE_STUDIO, lo.StudioLight(), lo.StudioLight(), lo.StudioLight()).effects \
         == lo.LookdevEffects()
     on = lo.LookdevEffects(shadow=True)
     assert lo.effective(on) == on  # nothing probed: nothing missing
     assert lo.effect_reasons(on) == {"shadow": None, "eye_shadow": None, "dual_lobe": None, "thickness": None,
-                                     "cube": None, "regions": None, "maps": None}
+                                     "cube": None, "regions": None, "maps": None, "area_diffuse": None}
     assert lo.effective(on, FeatureReport(depth_texture=True)) == on
     missing = FeatureReport(depth_texture=False)
     # S3 needs no feature and no other effect: it stays on without a depth texture
@@ -144,7 +146,7 @@ def test_effects_default_on_and_dependencies_and_features():
                                                           thickness=False)
     assert lo.effect_reasons(on, missing) == {"shadow": "Tiefentextur fehlt", "eye_shadow": "braucht Schatten",
                                               "dual_lobe": None, "thickness": "braucht Schatten", "cube": None,
-                                              "regions": None, "maps": None}
+                                              "regions": None, "maps": None, "area_diffuse": None}
     assert missing.status_lines() == ("LookDev: Schatten aus – Tiefentextur nicht verfügbar",)
     assert lo.effective(lo.LookdevEffects(shadow=False)) == lo.LookdevEffects(shadow=False, eye_shadow=False,
                                                                                thickness=False)
@@ -168,6 +170,11 @@ def test_effects_default_on_and_dependencies_and_features():
     assert no_cube.status_lines() == ("LookDev: Umgebungs-Cube aus – Cube-Ziel nicht verfügbar",)
     assert lo.effective(lo.LookdevEffects(shadow=False)).cube
     assert lo.effective(lo.LookdevEffects(shadow=False)).regions
+    # S8 needs no feature and no other effect: on stays on, without the shadow and with every feature missing
+    soft = lo.LookdevEffects(area_diffuse=True)
+    assert lo.effective(soft, FeatureReport(depth_texture=False, sampler_objects=False, cube_rgba16f=False,
+                                            texture_units=False)).area_diffuse
+    assert lo.effective(lo.LookdevEffects(shadow=False, area_diffuse=True)).area_diffuse
 
 
 # -- AD-039 S6: region materials ---------------------------------------------------------------------------------------
@@ -389,6 +396,114 @@ def test_pcf_visibility_and_the_shadowed_key():
     no_key = dict(values, u_ld_light_color=[(0.0, 0.0, 0.0)] + list(values["u_ld_light_color"][1:]))
     assert np.allclose(dark, albedo * lo.ld_diffuse(n, (0.2, 0.1, 0.0), no_key)
                        + lo.ld_specular(n, v, 0.5, 0.04, no_key))
+
+
+# -- AD-039 S8 (§23): „Weiches Licht“ - the lights' diffuse term as finite emitters ---------------------------------------
+
+_C = np.linspace(-1.0, 1.0, 2001)
+
+
+def _area_reference(c, s: float, w, count: int = 16384) -> np.ndarray:
+    """The diffuse factor of a sphere light (sin sigma = s) by `count` directions on its cap (a Vogel spiral, uniform in
+    solid angle), each wrapped cosine scaled by 2 / (1 + cos sigma) so the lit side stays Lambert - the dense reference
+    of the assessment's prototype (`experiments/lookdev_diffuse_area/area_math.area_reference`), the normal in the XZ
+    plane at acos(c) from the light's centre (+Z)."""
+    i = np.arange(count, dtype=np.float64)
+    u, phi = (i + 0.5) / count, i * math.pi * (3.0 - math.sqrt(5.0))
+    cos_sigma = math.sqrt(1.0 - s * s)
+    cos_a = 1.0 - u * (1.0 - cos_sigma)
+    sin_a = np.sqrt(np.maximum(1.0 - cos_a * cos_a, 0.0))
+    d = np.stack([sin_a * np.cos(phi), sin_a * np.sin(phi), cos_a], -1)
+    n = np.stack([np.sqrt(np.maximum(1.0 - c * c, 0.0)), np.zeros_like(c), c], -1)
+    ci = (n @ d.T) * (2.0 / (1.0 + cos_sigma))
+    return np.mean(np.maximum((ci + w) / (1.0 + w), 0.0), axis=-1)
+
+
+def _area(c, size, w=0.0) -> np.ndarray:
+    return lo.ld_area_wrap(c, (w, w, w), size)[..., 0]
+
+
+def test_the_area_mapping_is_provisionally_40_degrees():
+    assert ls.AREA_SIN_MAX == pytest.approx(math.sin(math.radians(40.0))) and ls.AREA_SIN_MIN == 1e-4
+    assert f"const float LD_AREA_SIN_MAX = {ls.AREA_SIN_MAX!r};" in ls.LD_AREA_SRC
+
+
+@pytest.mark.parametrize("w", [0.0, 0.3])
+def test_a_point_light_is_ld_wrap(w):
+    """Size 0: the floor s = 1e-4 leaves at most s / 4 between the spline and `ld_wrap`."""
+    assert np.abs(_area(_C, 0.0, w) - lo.ld_wrap(_C, (w, w, w))[..., 0]).max() <= 2.5e-5 + 1e-12
+
+
+@pytest.mark.parametrize("size", [0.25, 0.5, 1.0])
+@pytest.mark.parametrize("w", [0.0, 0.3])
+def test_the_lit_side_is_unchanged(size, w):
+    """Where the wrapped cosine is at or above sin sigma the light is fully above the horizon: exactly `ld_wrap`."""
+    lit = _C + w >= size * ls.AREA_SIN_MAX
+    assert np.array_equal(_area(_C, size, w)[lit], lo.ld_wrap(_C, (w, w, w))[..., 0][lit])
+
+
+@pytest.mark.parametrize("size", [0.1, 0.5, 1.0])
+@pytest.mark.parametrize("w", [0.0, 0.3])
+def test_the_spline_is_never_below_the_wrap_and_c1(size, w):
+    y = _area(_C, size, w)
+    assert np.all(y >= lo.ld_wrap(_C, (w, w, w))[..., 0] - 1e-12)
+    slope = np.gradient(y, _C)
+    assert np.max(np.abs(np.diff(slope))) < 0.01  # no kink (the wrap's knee is one: 1 / (1 + w) at once)
+
+
+@pytest.mark.parametrize("w", [0.0, 0.3])
+def test_a_larger_light_widens_the_band_even_without_wrap(w):
+    past = math.cos(math.radians(100.0)) - w  # 10 degrees past the (wrapped) terminator
+    values = [float(_area(np.array(past), size, w)) for size in (0.0, 0.25, 0.5, 1.0)]
+    assert values[0] == 0.0 and values[1] < values[2] < values[3]
+    assert values[3] > 0.05
+
+
+@pytest.mark.parametrize("size", [0.25, 0.5, 1.0])
+@pytest.mark.parametrize("w", [0.0, 0.3])
+def test_the_spline_is_within_two_percent_of_the_dense_reference(size, w):
+    s = size * ls.AREA_SIN_MAX
+    assert np.abs(_area(_C, size, w) - _area_reference(_C, s, w)).max() < 0.02
+
+
+def test_ld_diffuse_area_is_ld_diffuse_with_each_lights_size():
+    values = lo.frame_uniforms(_state())
+    n = _unit(256, 3)
+    wrap = (0.2, 0.1, 0.05)
+    want = values["u_ld_env_intensity"] * lo.sh9_eval(values["u_ld_sh"], n @ np.asarray(values["u_ld_env_rot"])
+                                                      .reshape(3, 3))
+    for d, c, size in zip(values["u_ld_light_dir"], values["u_ld_light_color"], values["u_ld_light_size"]):
+        want = want + np.asarray(c) * lo.ld_area_wrap(n @ np.asarray(d), wrap, size)
+    assert np.allclose(lo.ld_diffuse_area(n, wrap, values), want)
+    point = dict(values, u_ld_light_size=[0.0, 0.0, 0.0])
+    assert np.abs(lo.ld_diffuse_area(n, wrap, point) - lo.ld_diffuse(n, wrap, point)).max() < 1e-4
+    assert np.any(np.abs(lo.ld_diffuse_area(n, wrap, values) - lo.ld_diffuse(n, wrap, values)) > 1e-3)
+
+
+@pytest.mark.parametrize("dual", [False, True])
+def test_the_shadowed_key_with_the_soft_light(dual):
+    """`ld_key_shadowed(..., area=True)`: lit = the plain sum with `ld_diffuse_area`; in the key's full shadow the key's
+    area term is gone; with the surface in shadow and the lifted point lit only the Lambert part goes - the band past
+    the terminator stays with the wrap's excess (rule „lifted“)."""
+    values = lo.frame_uniforms(_state(key=lo.StudioLight(True, 2.0, 45.0, 30.0, 5600.0, 0.5)))
+    n, v = _unit(64, 1), _unit(64, 2)
+    v = eo.normalize(n + 0.5 * v)
+    albedo, wrap, rough = np.array([0.4, 0.3, 0.25]), (0.2, 0.1, 0.05), 0.4
+    spec = (lo.ld_specular_dual if dual else lo.ld_specular)(n, v, rough, 0.04, values)
+    lit = lo.ld_key_shadowed(albedo, n, v, wrap, rough, 0.04, values, np.ones(64), dual=dual, area=True)
+    assert np.allclose(lit, albedo * lo.ld_diffuse_area(n, wrap, values) + spec)
+    d, c, size = values["u_ld_light_dir"][0], np.asarray(values["u_ld_light_color"][0]), values["u_ld_light_size"][0]
+    ndl = n @ np.asarray(d)
+    key_spec = (lo.ld_direct_dual(n, v, d, rough, size, 0.04) if dual
+                else lo.direct_specular(n, v, d, lo.ld_lobe(rough, size), 0.04))
+    dark = lo.ld_key_shadowed(albedo, n, v, wrap, rough, 0.04, values, np.zeros(64), dual=dual, area=True)
+    assert np.allclose(dark, lit - c * (albedo * lo.ld_area_wrap(ndl, wrap, size) + key_spec[:, None]))
+    lifted = lo.ld_key_shadowed(albedo, n, v, wrap, rough, 0.04, values, np.zeros(64), np.ones(64), dual=dual,
+                                area=True)
+    assert np.allclose(lifted, lit - c * (albedo * np.maximum(ndl, 0.0)[:, None] + key_spec[:, None]))
+    # area off: the S1 / S3 twin as before
+    assert np.allclose(lo.ld_key_shadowed(albedo, n, v, wrap, rough, 0.04, values, np.ones(64), dual=dual),
+                       albedo * lo.ld_diffuse(n, wrap, values) + spec)
 
 
 # -- AD-039 S4: the key's light through thin parts ------------------------------------------------------------------

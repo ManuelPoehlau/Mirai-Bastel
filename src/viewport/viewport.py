@@ -581,7 +581,8 @@ class Viewport:
                 regions = effects.regions and bool(look.regions)
                 skin.append(LookdevPass.program_key(look.albedo_source(regions) is not None and uvs, env_spec, shadow,
                                                     effects.dual_lobe, effects.thickness, "roughness" in maps,
-                                                    "normal" in maps, "translucency" in maps, cube, regions))
+                                                    "normal" in maps, "translucency" in maps, cube, regions,
+                                                    effects.area_diffuse))
         eye_shadow = shadow and effects.eye_shadow and any(self._casts_key_shadow(rm, look) for rm, look in drawn)
         return sorted(set(skin)), sorted(set(e + (eye_shadow,) for e in eyes))
 
@@ -1388,7 +1389,8 @@ class Viewport:
         roughness, normal and translucency maps. AD-039 S5: `cube` reads the studio's reflection on the skin from its
         prefiltered cube, brought up to date before the background (prefiltered only on a studio content change).
         AD-039 S6: `regions` draws the objects' region materials (each drawn RenderMesh's triangle slots brought up to
-        date first; off = one material per object, the slots freed)."""
+        date first; off = one material per object, the slots freed). AD-039 S8: `area_diffuse` draws the lights' diffuse
+        term on the skin as finite emitters (the eyes keep theirs)."""
         camera = self.render_mesh.camera
         frame = self.lookdev_frame()
         passes = self.lookdev_pass
@@ -1428,7 +1430,7 @@ class Viewport:
                 rm = self.entry_surface_render_meshes.get(eye_key, self.object_entries[eye_key])
                 look = self._entry_looks.get(eye_key)
             if look is None or not passes.draw(rm, look, frame, shadow, effects.dual_lobe, effects.thickness,
-                                               effects.maps, cube, effects.regions):
+                                               effects.maps, cube, effects.regions, effects.area_diffuse):
                 rm.render(camera)
 
     def wire_drawn(self) -> bool:

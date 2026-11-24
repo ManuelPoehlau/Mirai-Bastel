@@ -19,7 +19,9 @@ pattern (parity: `tests/test_gl_lookdev_parity.py`, `tests/test_lookdev_optics.p
   `map_roughness`, the twins of `lookdev_shaders.LD_NORMAL_MAP_SRC` and the `ROUGHNESS_MAP` block; S5 (§8):
   `cube_face_direction`, `cube_texel_directions`, `prefilter_ggx` and `cube_lod`, the twins of
   `lookdev_shaders.CUBE_PREFILTER_SRC` and `LD_CUBE_SRC`; S6 (§9): `face_material_slots` (the slot each face draws,
-  later region wins) and `region_slot`, the twin of the `REGIONS` block's slot pick.
+  later region wins) and `region_slot`, the twin of the `REGIONS` block's slot pick; S8 (§23): `ld_area_wrap` and
+  `ld_diffuse_area`, the twins of `lookdev_shaders.LD_AREA_SRC` (`ld_key_shadowed(..., area=True)` for the `SHADOW`
+  block with `AREA_DIFFUSE`).
 
 World frame as `light_rig` (Y up, the model faces +Z, azimuth from +Z toward +X). The studio's frame turns by
 `rotation` degrees about Y; with "Licht folgt Kamera" it is the camera's (`right`, `up`, `-forward`), as
@@ -35,7 +37,7 @@ import numpy as np
 
 from . import eye_optics as eo
 from .light_rig import kelvin_to_rgb
-from .lookdev_shaders import (CUBE_LEVELS, CUBE_SAMPLES, DUAL_LOBE_MIX, DUAL_LOBE_SCALES, MAX_STUDIO, NORMAL_MAP_ZERO,
+from .lookdev_shaders import (AREA_SIN_MAX, AREA_SIN_MIN, CUBE_LEVELS, CUBE_SAMPLES, DUAL_LOBE_MIX, DUAL_LOBE_SCALES, MAX_STUDIO, NORMAL_MAP_ZERO,
                               SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT, THICKNESS_EDGE, THICKNESS_FACE, THICKNESS_SCALE,
                               TONE_CURVES)
 
@@ -78,8 +80,10 @@ class LookdevEffects:
     eyes receive it (the lids' shadow from the geometry), needs `shadow`; `dual_lobe` (S3): the skin's highlight from the
     three lights as two lobes; `thickness` (S4): the key's light through thin parts, from the key's map, needs `shadow`;
     `cube` (S5): the skin's studio reflection from the studio's prefiltered cube; `regions` (S6): the objects' region
-    materials (off = one material per object); `maps` (S7): the materials' roughness, normal and translucency maps.
-    The fields stand in the AD's slice order (S5, S6 before S7; persistence is by name)."""
+    materials (off = one material per object); `maps` (S7): the materials' roughness, normal and translucency maps;
+    `area_diffuse` (S8, „Weiches Licht“): the lights' diffuse term as finite emitters, each light's size softening its
+    terminator - **off** by default until Manu's practical test (AD-039 §23). The fields stand in the AD's slice order
+    (S5, S6 before S7; persistence is by name)."""
 
     shadow: bool = True
     eye_shadow: bool = True
@@ -88,6 +92,7 @@ class LookdevEffects:
     cube: bool = True
     regions: bool = True
     maps: bool = True
+    area_diffuse: bool = False
 
     @classmethod
     def names(cls) -> tuple[str, ...]:
@@ -106,7 +111,7 @@ FEATURE_REASON = {"depth_texture": "Tiefentextur fehlt", "sampler_objects": "Sam
                   "cube_rgba16f": "Cube-Ziel fehlt", "texture_units": "zu wenige Textureinheiten"}
 EFFECT_LABEL = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz",
                 "thickness": "Durchleuchtung", "cube": "Umgebungs-Cube", "regions": "Region-Materialien",
-                "maps": "Maps"}
+                "maps": "Maps", "area_diffuse": "Weiches Licht"}
 
 
 def effect_reasons(effects: LookdevEffects, features=None) -> dict[str, str | None]:
@@ -337,6 +342,18 @@ def ld_wrap(ndl, w) -> np.ndarray:
     return np.maximum((ndl + w) / (1.0 + w), 0.0)
 
 
+def ld_area_wrap(ndl, w, size) -> np.ndarray:
+    """GLSL `ld_area_wrap` (S8, AD-039 §23): a sphere light of sin sigma = size x `AREA_SIN_MAX` - the C1 horizon
+    spline (x + s)² / 4s over the band |x| < s of the wrapped cosine x = n.l + w, x above it, then / (1 + w). Size 0 is
+    `ld_wrap` (within s / 4 = 2.5e-5 at the floor `AREA_SIN_MIN`); where x >= s it is `ld_wrap` exactly."""
+    ndl = np.asarray(ndl, dtype=np.float64)[..., None]
+    w = np.asarray(w, dtype=np.float64)
+    s = np.maximum(np.asarray(size, dtype=np.float64) * AREA_SIN_MAX, AREA_SIN_MIN)[..., None]
+    x = ndl + w
+    t = np.maximum(x + s, 0.0)
+    return np.where(x >= s, x, t * t / (4.0 * s)) / (1.0 + w)
+
+
 def ld_diffuse(n, wrap, values: dict) -> np.ndarray:
     """GLSL `ld_diffuse` from a frame dict: SH9 (rotated, scaled) + the three lights with a per-channel wrap."""
     n = np.asarray(n, dtype=np.float64)
@@ -344,6 +361,16 @@ def ld_diffuse(n, wrap, values: dict) -> np.ndarray:
     out = values["u_ld_env_intensity"] * sh9_eval(values["u_ld_sh"], n @ rot.T)
     for d, c in zip(values["u_ld_light_dir"], values["u_ld_light_color"]):
         out = out + np.asarray(c) * ld_wrap(np.sum(n * np.asarray(d), -1), wrap)
+    return out
+
+
+def ld_diffuse_area(n, wrap, values: dict) -> np.ndarray:
+    """GLSL `ld_diffuse_area` (S8): `ld_diffuse` with `ld_area_wrap`, each light with its own size."""
+    n = np.asarray(n, dtype=np.float64)
+    rot = np.asarray(values["u_ld_env_rot"], dtype=np.float64).reshape(3, 3).T  # column-major -> row-major
+    out = values["u_ld_env_intensity"] * sh9_eval(values["u_ld_sh"], n @ rot.T)
+    for d, c, size in zip(values["u_ld_light_dir"], values["u_ld_light_color"], values["u_ld_light_size"]):
+        out = out + np.asarray(c) * ld_area_wrap(np.sum(n * np.asarray(d), -1), wrap, size)
     return out
 
 
@@ -536,23 +563,26 @@ def pcf_visibility(depth: np.ndarray, sp, scale: float = 1.0, slope=(0.0, 0.0)) 
 
 
 def ld_key_shadowed(albedo, n, v, wrap, roughness, f0, values: dict, visibility, wrap_visibility=None,
-                    dual: bool = False) -> np.ndarray:
+                    dual: bool = False, area: bool = False) -> np.ndarray:
     """The skin's light with the `SHADOW` block (AD-039 §4 / §16.7): albedo x `ld_diffuse` + `ld_specular`, minus the
     key's own term in shadow - its Lambert part and highlight times (1 - visibility), the wrap's excess past Lambert
     times (1 - wrap_visibility), the map's answer at the point lifted out along the normal (`shadow_coords(...,
-    lift=SHADOW_WRAP_LIFT)`; None = `visibility`). `dual` (S3): the highlights as two lobes (`DUAL_LOBE`)."""
+    lift=SHADOW_WRAP_LIFT)`; None = `visibility`). `dual` (S3): the highlights as two lobes (`DUAL_LOBE`). `area` (S8):
+    the diffuse term as finite emitters (`AREA_DIFFUSE`); the key's band past its terminator joins the wrap's excess
+    under `wrap_visibility` (AD-039 §23, rule „lifted“)."""
     albedo = np.asarray(albedo, dtype=np.float64)
     n = np.asarray(n, dtype=np.float64)
     vis = np.asarray(visibility, dtype=np.float64)[..., None]
     vis_wrap = vis if wrap_visibility is None else np.asarray(wrap_visibility, dtype=np.float64)[..., None]
     specular = ld_specular_dual if dual else ld_specular
-    colour = albedo * ld_diffuse(n, wrap, values) + specular(n, v, roughness, f0, values)
+    colour = albedo * (ld_diffuse_area if area else ld_diffuse)(n, wrap, values) + specular(n, v, roughness, f0, values)
     d, c, s = values["u_ld_light_dir"][0], values["u_ld_light_color"][0], values["u_ld_light_size"][0]
     ndl = np.sum(n * np.asarray(d), -1)
     lambert = np.maximum(ndl, 0.0)[..., None]
     key_specular = (ld_direct_dual(n, v, d, roughness, s, f0) if dual
                     else direct_specular(n, v, d, ld_lobe(roughness, s), f0))
-    key = np.asarray(c) * (albedo * ((1.0 - vis) * lambert + (1.0 - vis_wrap) * (ld_wrap(ndl, wrap) - lambert))
+    key_wrap = ld_area_wrap(ndl, wrap, s) if area else ld_wrap(ndl, wrap)
+    key = np.asarray(c) * (albedo * ((1.0 - vis) * lambert + (1.0 - vis_wrap) * (key_wrap - lambert))
                            + (1.0 - vis) * key_specular[..., None])
     return colour - key
 
