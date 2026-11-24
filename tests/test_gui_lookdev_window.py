@@ -100,7 +100,7 @@ def test_the_material_maps_rows_draw_in_the_window(tmp_path):
         before = snapshot_gl_state()
         _tick(app, window, 1)
         assert snapshot_gl_state() == before
-        assert any(len(k) == 8 and k[5] and k[6] for k in app.viewport.lookdev_pass.programs)
+        assert any(len(k) >= 8 and k[5] and k[6] for k in app.viewport.lookdev_pass.programs)  # 9 with the cube (S5)
     finally:
         layer.close()
         window.close()
