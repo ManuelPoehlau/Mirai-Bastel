@@ -822,6 +822,22 @@ runs ([LD-0](../../experiments/drag_cost/RESULTS_LOOKDEV_REFERENCE_PC_2026-11-19
 
 - LD-D15 (References / Ghosts in the room), LD-D8, LD-D16 — as before (§15.5).
 - The preset values (studios, materials) are `PROVISIONAL`: which to retune after the practical test.
+  - **Manu, 2026-11-20:** „Die Licht und Materialpresets würde ich tatsächlich erstmal so lassen. Erst mit der
+    Möglichkeit, die Werte per Textur/Masken steuern zu können, kann man wahrscheinlich erst richtig einschätzen, wie
+    gut die Shader auf einem Gollum Kopf funktionieren? Bisher sieht alles noch nach ‚eingecremter Babypopo‘ aus.“
+  - So the M1 values stay unchanged. The skin is judged again once maps steer it (P3 §9.2: roughness / specular,
+    normal / detail, translucency).
+  - [H, agent] The uniform look has four causes: one roughness and one specular over the whole head; no
+    pore- or wrinkle-scale normal detail to break the highlight; no cavity darkening (M1 has no shadows, and SH9 fills
+    the creases evenly); the wrap diffuse.
+    The first two are exactly the P3 maps; a parameter retune cannot replace them.
+  - **Manu, 2026-11-20 (order after M1):** „Regionsmaterialien können noch warten. Material speichern mit Platz für
+    Masken. Einen detaillierten Zbrush Gollum habe ich noch nicht, daher denke ich bringen grobe Masken für
+    Roughness, Weichheit wahrscheinlich für den Look erstmal mehr als eine Normalmap für Fältchen oder Poren?!“
+    - **LD-2** saves the material (`SceneObject.look`, format v15) with a place for masks from the start.
+    - The **first masks** are coarse painted UV-space masks for `roughness` (Rauheit) and `wrap` (the material's
+      „Weichheit“). They are pulled ahead of the rest of P3.
+    - Normal / detail maps wait for a detailed ZBrush sculpt. LD-D8 (region materials) waits as well.
 - I-3 / I-4 / I-6 (rim on the eye, Lambert sclera in LookDev) — keep, or give the sclera its own softness later?
 - A filmic tone candidate after the Reinhard / Clamp comparison (no architecture change, §15 Q2).
 - LD-2 (`SceneObject.look`, format v15, `view.lookdev`) only after the M1 verdict.
