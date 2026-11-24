@@ -36,6 +36,14 @@ Three strings, each with its NumPy twin in `lookdev_optics` (GPU parity: `tests/
   key light travels inside the mesh to the fragment, `ld_key_transmission` its `exp(-thickness / scale)` (0 outside the
   map). The `THICKNESS` block replaces M1's view-rim backscatter proxy with it. Needs `LD_SHADOW_SRC` (the effect needs
   the shadow). Twins: `lookdev_optics.bilinear_depth` / `key_transmission` / `ld_backscatter`.
+- S7 (AD-039 §10 / §20): the material's image maps, one define each - `ROUGHNESS_MAP` (a linear grey value multiplying
+  the roughness before the specular AA), `NORMAL_MAP` (a tangent-space map in the frame of the screen derivatives of
+  position and UV: no tangent buffer; `LD_NORMAL_MAP_SRC`, twins `lookdev_optics.normal_map_tangent` /
+  `cotangent_frame` / `ld_normal_mapped`), `TRANSLUCENCY_MAP` (a grey value multiplying the backscatter: S4's
+  transmission, or M1's proxy without S4). `LD_MAP_UV` is set with any of them: the body's block that reads the
+  fragment's UV from the triangle UVs in uniform control flow (`map_on` 0 on a triangle without UVs: no map applies).
+  With a normal map the key map's lookups (shadow, thickness) keep the geometric normal (`n_geo`). Units 9-11
+  (`MAP_UNITS`).
 
 Colour (AD-038 §5.5): every albedo is an sRGB artist value, decoded here; lights are linear; one `lookdev_output` per
 pixel. Directions are world space; `u_ld_env_rot` turns a world direction into the studio's frame (rotation, and the
@@ -63,8 +71,15 @@ ALBEDO_UNIT = 4
 SHADOW_UNIT = 6
 #: AD-039 §2.4: the same map's raw depth through a sampler object without compare mode, S4.
 SHADOW_RAW_UNIT = 7
+#: AD-039 §2.4 / §10: the material's roughness, normal and translucency maps, S7.
+MAP_UNITS = {"roughness": 9, "normal": 10, "translucency": 11}
 #: The P3 defines in their fixed order (the skin program key, AD-039 §2.3 point 4).
 SKIN_EFFECTS = ("SHADOW", "DUAL_LOBE", "THICKNESS")
+#: S7's defines, one per map (AD-039 §10), in the key's order after `SKIN_EFFECTS`.
+SKIN_MAPS = ("ROUGHNESS_MAP", "NORMAL_MAP", "TRANSLUCENCY_MAP")
+#: S7: a map's 8-bit value 128 is its zero (a flat normal map is (128, 128, 255): no tilt), so the decode is
+#: value x 255 / 128 - 1 (`PROVISIONAL`; twin `lookdev_optics.normal_map_tangent`).
+NORMAL_MAP_ZERO = 128.0 / 255.0
 #: The compare's depth bias in the map's [0, 1] depth (`PROVISIONAL`, AD-039 §4; twin `lookdev_optics.pcf_visibility`).
 SHADOW_DEPTH_BIAS = 0.0005
 #: The receiver-plane slope's limit (depth per UV, both in the map's units: 10 = 84° from the key).
@@ -214,6 +229,22 @@ uniform vec3 u_backscatter_color;
 uniform samplerBuffer u_triangle_uvs;
 uniform sampler2D u_albedo;
 #endif
+#ifdef LD_MAP_UV
+#ifndef ALBEDO_MAP
+uniform samplerBuffer u_triangle_uvs;
+#endif
+#endif
+#ifdef ROUGHNESS_MAP
+uniform sampler2D u_roughness_map;
+#endif
+#ifdef NORMAL_MAP
+uniform sampler2D u_normal_map;
+uniform float u_normal_strength;
+uniform float u_normal_green;  // 1 OpenGL (green up), -1 DirectX (green down)
+#endif
+#ifdef TRANSLUCENCY_MAP
+uniform sampler2D u_translucency_map;
+#endif
 out vec4 out_color;
 
 const float SPEC_AA_K = {SPEC_AA_K!r};
@@ -231,8 +262,32 @@ void main() {{
         vec3 camera = -transpose(mat3(u_view)) * u_view[3].xyz;
         v = normalize(camera - v_world_pos);
     }}
+#ifdef LD_MAP_UV
+    // AD-039 §10: the fragment's UV for the material's maps, in uniform control flow (the normal map's frame takes its
+    // derivatives, a map's mip level its own); map_on 0 on a triangle without UVs - no map applies there
+    int map_t = gl_PrimitiveID * 3;
+    vec2 map_a = texelFetch(u_triangle_uvs, map_t).xy;
+    float map_on = float(map_a.x > -1.0e29);
+    vec2 map_uv = map_on > 0.5 ? map_a * g_bary.x + texelFetch(u_triangle_uvs, map_t + 1).xy * g_bary.y
+                                 + texelFetch(u_triangle_uvs, map_t + 2).xy * g_bary.z : vec2(0.0);
+#endif
+#ifdef NORMAL_MAP
+    // AD-039 §10: the normal map tilts the shading normal; the key map's lookups keep the geometric one
+    vec3 n_geo = n;
+    {{
+        vec3 mapped = ld_normal_mapped(n, v_world_pos, map_uv, texture(u_normal_map, map_uv).rgb, u_normal_strength,
+                                       u_normal_green);
+        n = map_on > 0.5 ? mapped : n;
+    }}
+#endif
     float nv = max(dot(n, v), 1e-4);
+#ifdef ROUGHNESS_MAP
+    // AD-039 §10: the roughness map (a linear grey value) multiplies the material's roughness, before the specular AA
+    float alpha = u_roughness * mix(1.0, texture(u_roughness_map, map_uv).r, map_on);
+    alpha *= alpha;
+#else
     float alpha = u_roughness * u_roughness;
+#endif
     alpha = sqrt(clamp(alpha * alpha + SPEC_AA_K * (dot(dndx, dndx) + dot(dndy, dndy)), 1e-6, 1.0));
     float rough = sqrt(alpha);
     vec3 albedo = u_base_color;
@@ -261,8 +316,13 @@ void main() {{
     // convex surface's own facets do not cut the wrap while a cast shadow in a crease keeps it dark
     {{
         float ndl = dot(n, u_ld_light_dir[0]);
+#ifdef NORMAL_MAP
+        float vis = ld_key_visibility(v_world_pos, n_geo, u_ld_light_dir[0]);
+        float vis_wrap = ld_key_visibility_lifted(v_world_pos, n_geo, u_ld_light_dir[0]);
+#else
         float vis = ld_key_visibility(v_world_pos, n, u_ld_light_dir[0]);
         float vis_wrap = ld_key_visibility_lifted(v_world_pos, n, u_ld_light_dir[0]);
+#endif
         vec3 lambert = vec3(max(ndl, 0.0));
 #ifdef DUAL_LOBE
         colour -= u_ld_light_color[0]
@@ -281,9 +341,17 @@ void main() {{
 #ifdef THICKNESS
     // AD-039 §7: the key's light through thin parts (ears, nostril wings) - how far it travelled inside the mesh, from
     // the key's depth map - in place of M1's view-rim proxy
+#ifdef NORMAL_MAP
+    float back = ld_key_transmission(v_world_pos, n_geo, u_ld_light_dir[0]) * max(-dot(n, u_ld_light_dir[0]), 0.0);
+#else
     float back = ld_key_transmission(v_world_pos, n, u_ld_light_dir[0]) * max(-dot(n, u_ld_light_dir[0]), 0.0);
+#endif
 #else
     float back = (1.0 - nv) * (1.0 - nv) * (1.0 - nv) * max(-dot(n, u_ld_light_dir[0]), 0.0);
+#endif
+#ifdef TRANSLUCENCY_MAP
+    // AD-039 §10: the translucency map (a linear grey value) scales the light through thin parts
+    back *= mix(1.0, texture(u_translucency_map, map_uv).r, map_on);
 #endif
     colour += u_backscatter * back * srgb_decode(u_backscatter_color) * albedo * u_ld_light_color[0];
     out_color = vec4(lookdev_output(colour), 1.0);
@@ -385,6 +453,35 @@ float ld_key_transmission(vec3 p, vec3 n, vec3 l) {{
 }}
 """
 
+LD_NORMAL_MAP_SRC = f"""
+// -- LookDev P3 S7 (AD-039 §10): a tangent-space normal map without a tangent buffer - the frame from the screen
+// derivatives of world position and UV (per triangle: a 2 x 2 quad never spans two triangles), orthogonal to the
+// interpolated normal
+const float LD_NORMAL_ZERO = {NORMAL_MAP_ZERO!r};
+// the map's texel -> the tangent-space normal (128 = 0), its tilt times strength, green flipped for a DirectX map
+vec3 ld_normal_tangent(vec3 texel, float strength, float green) {{
+    vec3 t = texel / LD_NORMAL_ZERO - 1.0;
+    return vec3(t.x * strength, t.y * strength * green, max(t.z, 0.0));
+}}
+// the cotangent frame of normal n from the screen derivatives of position (dp1, dp2) and UV (duv1, duv2): tangent and
+// bitangent scaled together (their ratio is the UV's stretch), n itself; a degenerate UV gives a zero frame
+mat3 ld_cotangent_frame(vec3 n, vec3 dp1, vec3 dp2, vec2 duv1, vec2 duv2) {{
+    vec3 dp2perp = cross(dp2, n);
+    vec3 dp1perp = cross(n, dp1);
+    vec3 t = dp2perp * duv1.x + dp1perp * duv2.x;
+    vec3 b = dp2perp * duv1.y + dp1perp * duv2.y;
+    float m = max(dot(t, t), dot(b, b));
+    float s = m > 1e-30 ? inversesqrt(m) : 0.0;
+    return mat3(t * s, b * s, n);
+}}
+// the shading normal at world point p with UV uv: n tilted by the map's texel (call in uniform control flow)
+vec3 ld_normal_mapped(vec3 n, vec3 p, vec2 uv, vec3 texel, float strength, float green) {{
+    mat3 frame = ld_cotangent_frame(n, dFdx(p), dFdy(p), dFdx(uv), dFdy(uv));
+    vec3 m = frame * ld_normal_tangent(texel, strength, green);
+    return dot(m, m) > 1e-12 ? normalize(m) : n;
+}}
+"""
+
 #: The depth pass from the key (`KeyShadow`): its own minimal program - the position at the store's location, the
 #: object's model matrix and the key's view-projection; an empty fragment stage (depth only).
 SHADOW_DEPTH_VERTEX_SRC = """#version 330 core
@@ -403,25 +500,30 @@ def shadow_depth_sources(locations: dict[str, int]) -> list[tuple[str, str]]:
 
 
 def skin_sources(locations: dict[str, int], albedo_map: bool, env_spec: bool, shadow: bool = False,
-                 dual_lobe: bool = False, thickness: bool = False) -> list[tuple[str, str]]:
+                 dual_lobe: bool = False, thickness: bool = False, roughness_map: bool = False,
+                 normal_map: bool = False, translucency_map: bool = False) -> list[tuple[str, str]]:
     """The skin program (AD-038 §3.2): the textured Worklight program's vertex and geometry sources formatted with the
     Worklight program's attribute locations, the LookDev fragment source. Variants: `ALBEDO_MAP`, `ENV_SPEC`; P3
-    (AD-039 §2.3): `SHADOW` (S1), `DUAL_LOBE` (S3), `THICKNESS` (S4, needs `shadow`). An effect that is off leaves no text behind (its library string is not appended, its
-    body blocks are resolved away), so every effect off = M1's sources."""
+    (AD-039 §2.3): `SHADOW` (S1), `DUAL_LOBE` (S3), `THICKNESS` (S4, needs `shadow`); S7 (§10): `ROUGHNESS_MAP`,
+    `NORMAL_MAP`, `TRANSLUCENCY_MAP` (with `LD_MAP_UV` for any of them). An effect that is off leaves no text behind
+    (its library string is not appended, its body blocks are resolved away), so every effect off = M1's sources."""
     from .eye_shaders import _without
     from .gl_render_store import TEXTURED_GEOMETRY_SRC, TEXTURED_VERTEX_SRC
 
     if thickness and not shadow:
         raise ValueError("THICKNESS reads the key's map: it needs SHADOW (AD-039 §2.1)")
+    maps = roughness_map or normal_map or translucency_map
     flags = (("ALBEDO_MAP", albedo_map), ("ENV_SPEC", env_spec), ("SHADOW", shadow), ("DUAL_LOBE", dual_lobe),
-             ("THICKNESS", thickness))
+             ("THICKNESS", thickness), ("ROUGHNESS_MAP", roughness_map), ("NORMAL_MAP", normal_map),
+             ("TRANSLUCENCY_MAP", translucency_map), ("LD_MAP_UV", maps))
     defines = "".join(f"#define {name} 1\n" for name, on in flags if on)
     body = SKIN_BODY
     for name, on in flags[2:]:
         if not on:
             body = _without(body, name)
     library = (LD_BRDF_SRC + LD_COMMON_SRC + (LD_SHADOW_SRC if shadow else "")
-               + (LD_DUAL_LOBE_SRC if dual_lobe else "") + (LD_THICKNESS_SRC if thickness else ""))
+               + (LD_DUAL_LOBE_SRC if dual_lobe else "") + (LD_THICKNESS_SRC if thickness else "")
+               + (LD_NORMAL_MAP_SRC if normal_map else ""))
     fragment = "#version 330 core\n" + defines + library + body
     return [(TEXTURED_VERTEX_SRC.format(**locations), "vertex"), (TEXTURED_GEOMETRY_SRC, "geometry"),
             (fragment, "fragment")]

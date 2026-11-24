@@ -10,7 +10,10 @@ shadow, „Augen-Schatten“; eye shadow off = S1 by pin and pixels): its refere
 are open. **S3 built 2026-11-23** (§18: dual-lobe specular on the lights, „Doppel-Glanz“; dual lobe off = S1 / S2 by
 pins; the §6 energy claim corrected, §18.2): its reference-PC row and practical test (§18.4–§18.5) are open. **S4 built
 2026-11-23** (§19: the key's light through thin parts, „Durchleuchtung“; thickness off = S3 by pins; the scale in world
-units, the unit question open, §19.2 S4-1): its reference-PC row and practical test (§19.4–§19.5) are open; S5 next.
+units, the unit question open, §19.2 S4-1): its reference-PC row and practical test (§19.4–§19.5) are open. **S7 built
+2026-11-24, ahead of S5 / S6** (§20; Manu on Q-P3-2: „Map-Pfade“, and „S7 jetzt vorziehen“): roughness, normal and
+translucency maps as image paths on the material (`core.LookMaps`, `LookMaterial.maps`, format **v16**; S6 takes v17);
+no map = S4 by pins; its reference-PC row and practical test (§20.4–§20.5) are open. S5 next.
 **Why now:** Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“
 ([proposal §0.1](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md), [AD-038](AD-038-LOOKDEV-ROOM-M1.md)
 §13.6). P3 needs its own AD before any `src/` change and fixes the order of the P3 items.
@@ -56,12 +59,13 @@ container (a function check only), **[M-RPC]** measured on the reference PC, **[
   5. **S5 Cube-Umgebung** mit GPU-Vorfilter. Inhalt ist das analytische Studio der Vorlage, also weiter ohne
      HDRI-Dateien (D-L4).
   6. **S6 Region-Materialien**, nach LD-D8.
-  7. **S7 Maps** für Rauheit, Normalen und Durchscheinen, nach der Mal-Kanal-Entscheidung.
+  7. **S7 Maps** für Rauheit, Normalen und Durchscheinen, nach der Mal-Kanal-Entscheidung. **Gebaut 2026-11-24, vor S5
+     und S6 vorgezogen** (dein „Map-Pfade“ und „S7 jetzt vorziehen“, §20).
   - Gegenüber deinem Vorschlag kommen S2 und S4 dazu und stehen früh, weil sie nur S1 brauchen. Der Cube rückt hinter
     sie, weil er mit dem Studio als Inhalt sichtbar wenig ändert (§8).
 - **Core und Format:** keine Änderung in S1 bis S5.
   - S6 bringt `SceneObject.look_regions` (Format v16).
-  - S7 bringt `LookMaterial.maps` (die nächste Version).
+  - S7 bringt `LookMaterial.maps` (die nächste Version; gebaut als v16, S6 wird damit v17).
   - Beide werden nur geschrieben, wenn sie belegt sind.
 - **Sonde P3-0 jetzt fertig:** `probe_lookdev.py --p3` misst:
   - den Tiefen-Durchgang allein (512² bis 2048², mit und ohne Augen als Werfer);
@@ -318,6 +322,8 @@ wall 11.6 / 12.6 ms (AD-038 §17.4).
 | **S6** | Region materials | **LD-D8** (Q-P3-1) | needs a Core field and Manu's choice |
 | **S7** | Roughness, normal, translucency maps | **the paint channel decision** (Q-P3-2) | needs authoring and a Core field |
 
+- **Re-ordered 2026-11-24 (Manu: „S7 jetzt vorziehen“, with Q-P3-2 „Map-Pfade“):** S7 is built before S5 and S6. It
+  depends on neither; only the format number moves (S7 = v16, S6 = v17). S5 and S6 keep their order after it.
 - **Deviation from Manu's proposed order:** S2 and S4 are added, and both come right after S1 because they reuse its
   map. The cube moves behind them.
 - S3 and S5 have no dependency. They can swap with any neighbour if the practical test (§12 point 3) says so.
@@ -599,6 +605,8 @@ It is not a separate mouth object.
 
 ## 10. S7 — maps: roughness, normal, translucency (after the paint channel decision)
 
+**Decided 2026-11-24 (Manu, Q-P3-2): „Map-Pfade“** - the recommendation below; built in §20.
+
 **Recommended answer to the paint channel decision (proposal §6.1) [P → O]:** **map paths first.** Each map is an
 imported image path on `LookMaterial` (ZBrush or external painting), scene-relative and copied into `<scene>_textures/`
 on Save As (the AD-026 §7 / AD-035 rule). **Painted channels** (a paint stack per channel in the Paint Room) come later
@@ -769,7 +777,7 @@ A slice that misses its target (§2.5) takes the levers in their order. It does 
 4. **After S1 (+S2):** a practical test (shadow look, softness, the eyes under the lids, the teeth), a reference-PC
    run, and the M1 / LD-2 verdicts if they exist by then.
 5. **LD-D8** before S6, **the paint channel decision** before S7. Each needs Manu's word and the CORE_V1_FREEZE §7 entry
-   in the slice's commit.
+   in the slice's commit. *S7: given 2026-11-24 („Map-Pfade“), the entry is in S7's commit (§20).*
 6. **Keys:** none (D-L9).
 7. **LD-3** after P3: one AD or AD section with the full knob set (cube size, shadow size, PCF fetches) and the feature
    report of §2.2.
@@ -782,7 +790,7 @@ A slice that misses its target (§2.5) takes the levers in their order. It does 
 |---|---|---|
 | **Q-P3-0** | Accept the slice order S1 → S7 (§3), with S2 and S4 added after the shadow map? | yes; the practical test may re-order (§12 point 3) |
 | **Q-P3-1 (LD-D8)** | Region materials: face regions with a material per region on the object, or a separate mouth object? | **face regions** (§9): `SceneObject.look_regions`, ≤ 4 per object, later entry wins on overlap, keyed by name; format v16. The separate object stays a no-code fallback |
-| **Q-P3-2 (paint channel)** | Roughness / normal / translucency: a map path on the material, or a second paint stack per channel? | **map paths first** (§10), `LookMaterial.maps`, imported images; painted channels later as their own AD-037 phase |
+| **Q-P3-2 (paint channel)** | Roughness / normal / translucency: a map path on the material, or a second paint stack per channel? | **map paths first** (§10), `LookMaterial.maps`, imported images; painted channels later as their own AD-037 phase. **Decided 2026-11-24 (Manu): „Map-Pfade“; built §20** |
 | **Q-P3-3** | Shadow map size and PCF | **1024², 3 × 3 bilinear-compare fetches, softness from the key's „Weichheit“**; P3-0 confirms or moves it (§11.1). 2048² and 4 × 4 become LD-3 knobs |
 | **Q-P3-4** | What is in the cube of the studio presets? | **the preset's own analytic studio** (D-L4: reproducible, no HDRI files). If you want real environments, the next step is an `.hdr` (Radiance) import of your own files as a separate small item. That needs your word, because it lifts D-L4 |
 | **Q-P3-5** | Eyes cast shadows? | **no** (they receive in S2) |
@@ -1370,3 +1378,105 @@ Open LookDev, SubD 1, material **Creature Skin** (or **Mundinneres** for a stron
 
 Assumptions to correct in one sentence: the thickness is on by default; it needs the shadow; it only changes materials
 with a backscatter; the value is in this scene's world units (0.05).
+
+---
+
+## 20. Implementation note — S7 built (2026-11-24)
+
+**Decision:** Manu, 2026-11-24, on Q-P3-2: „Map-Pfade“ (the recommendation of §10), and on the order: „S7 jetzt
+vorziehen“ (before S5 / S6; S7 takes v16, S6 v17). This is the paint channel decision and the go for the Core field
+(§12 point 5); the CORE_V1_FREEZE §7.1 entry is in this commit.
+
+**Kurzfassung (Deutsch):** Ein LookDev-Material kann jetzt drei Bild-Maps tragen, als Pfad am Material (ZBrush oder
+extern gemalt), in den UVs des Objekts: **Rauheit** (grau, mal der Rauheit des Materials; weiß = unverändert),
+**Normal** (Tangentenraum, OpenGL „Grün oben“; „Grün unten (DirectX)“ und „Normal-Stärke“ 0–2 im Panel) und
+**Durchscheinen** (grau, mal dem Durchscheinen: mit „Durchleuchtung“ die Dicke aus S4, ohne sie M1s Rand-Schimmer).
+Laden / Entfernen im Panel unter „Mehr“ im Block Material, je ein Undo-Schritt; eine Vorlage behält die Maps,
+„Zurücksetzen“ entfernt sie mit dem Material. Beim Speichern werden die Bilder nach `<Szene>_textures/` kopiert und
+relativ gespeichert (Szenenformat **v16**, nur mit Maps; sonst bleibt die Datei wie vorher). Neuer Effekt-Schalter
+„Maps“ (Standard an). Ohne Map = S4, Zeichen für Zeichen. Die Normal-Map braucht keinen Tangenten-Puffer: der Rahmen
+kommt aus den Bildschirm-Ableitungen von Position und UV, je Dreieck. Bilder: PNG, JPEG, BMP bis 4096².
+
+### 20.1 What is built
+
+| Layer | Built |
+|---|---|
+| Core | `core.LookMaps(roughness, normal, translucency, normal_strength=1.0, normal_green_down=False)` (frozen; each map a non-empty path or None, at least one; strength in [0, 2]); `LookMaterial.maps: LookMaps \| None = None` (absent in the dict = none, the `EyeLook.iris` pattern); `LOOK_MAP_FIELDS`, `LOOK_NORMAL_STRENGTH_MAX`; `serialization.LOOK_MAPS_FORMAT_VERSION = 16` by content, reads 2–16, a `"maps"` key below 16 refuses the file; CORE_V1_FREEZE §7.1 entry |
+| App | `mirai/look_maps.py` (the size policy from the file header: PNG / JPEG / BMP up to `MAX_SIZE` 4096, a hint above 2048; `drawable`, `status_text`); `lookdev_material.with_map`, `keep_maps`, `MAP_VALUES` through `with_values` (never „angepasst“); `Application.set_lookdev_map(kind, path)` (one Undo step on the material targets, refused with the reason; a target without a look gets Neutral with the map; a target without UVs keeps it, the status line says it is not drawn); `set_lookdev_material` keeps the maps; `set_lookdev_material_values(normal_strength=…, normal_green_down=…)`; load resolves the paths against the scene, save copies them into `<stem>_textures/` (`_copy_look_maps`, the AD-035 S-10 rule: content name, never overwrites, never deletes, a missing image keeps its path) and writes them scene-relative; `LookdevRoom.look_draw` hands the drawable maps on an object with UVs |
+| Effects / features | `LookdevEffects.maps` (default on, the fifth field), `EFFECT_FEATURE["maps"] = "texture_units"`; `FeatureReport.texture_units` (`GL_MAX_TEXTURE_IMAGE_UNITS` ≥ 12), status line „LookDev: Maps aus – zu wenige Textureinheiten“; the check runs only when a drawn LookDraw has a map (`Viewport._lookdev_maps`) |
+| Shaders | `MAP_UNITS` 9 / 10 / 11, `SKIN_MAPS`, `NORMAL_MAP_ZERO = 128/255`; defines `ROUGHNESS_MAP`, `NORMAL_MAP`, `TRANSLUCENCY_MAP`, and `LD_MAP_UV` with any of them; `LD_NORMAL_MAP_SRC` (`ld_normal_tangent`, `ld_cotangent_frame`, `ld_normal_mapped`) appended only with the normal map; `skin_sources(..., roughness_map, normal_map, translucency_map)` |
+| Body blocks | `LD_MAP_UV`: the triangle UVs (declared under `#ifndef ALBEDO_MAP` when the albedo has not) read in uniform control flow, `map_on` 0 on a triangle without UVs; `NORMAL_MAP`: `n_geo = n`, then `n` tilted (only where `map_on`); `ROUGHNESS_MAP`: `alpha = u_roughness × map` before the specular AA; `TRANSLUCENCY_MAP`: `back ×= map`; inside `SHADOW` and `THICKNESS`, a nested `NORMAL_MAP` block gives the key map's lookups `n_geo` (the `#else` lines are S4's) |
+| Pass | `LookDraw` gains `roughness_map`, `normal_map`, `translucency_map`, `normal_strength`, `normal_green_down`, `map_paths()`, `needs_uvs`, `map_uniforms()`; `LookdevPass.program_key` = S4's 5 values, plus the three map flags only when a map is drawn; `draw(..., maps=False)` binds the triangle UVs even without an albedo map, each loadable map through `GLRenderStore.texture` (mipmapped, repeating) on its unit, unbinds them after the draw |
+| Viewport | the UV request follows `LookDraw.needs_uvs`; `_lookdev_programs` adds the map flags for a mesh with UVs (so `prepare_lookdev` compiles them behind the status line); `_render_lookdev` hands `effects.maps` to every skin draw. Eyes untouched |
+| Twins | `lookdev_optics.normal_map_tangent`, `cotangent_frame`, `ld_normal_mapped`, `map_roughness` |
+| GUI | `lookdev_model`: the effect row „Maps“, `MapRow`s, `load_map`; `lookdev_panel.draw_maps` under „Mehr“ in the material block: per map its file (or why it is not drawn), „Laden …“ (the file browser), „Entfernen“; for the normal map „Normal-Stärke“ (held = preview, release = one step) and „Grün unten (DirectX)“ |
+| Probe | `probe_lookdev_room.py`: `EFFECT_ROWS["maps"] = ("lookdev +maps", ("maps",))` against `lookdev`, with three generated 2048² maps (`probe_map_images`; a temporary folder, set in memory) |
+
+Not touched: `LD_COMMON_SRC`, `LD_SHADOW_SRC`, `LD_THICKNESS_SRC`, the depth pass, `eye_shaders.py`, `eye_pass.py`,
+`main.py`, `config/keymap.json`, `Mesh`, `ObjectMaterial`, the presets' values.
+
+### 20.2 Where the build differs from §2 / §10, and why
+
+| # | AD | Built | Why |
+|---|---|---|---|
+| S7-1 | §10 "a 2 × 2 pixel quad across a UV seam gets a wrong frame on the seam's pixels [E]" | no seam error; the frame is constant per triangle | a fragment quad never spans two triangles (GL rasterises quads per primitive, helper pixels extrapolate), so the derivatives of position and UV are the triangle's own. The limit is the other way round: the tangent is per triangle (orthogonalised against the smooth normal), so on a coarse mesh with a strong map a faint facet line can show along a triangle edge where the UV's direction turns. The seam test image is replaced by the GPU parity of the frame and the half-UV plane (§20.3) |
+| S7-2 | §2.3 one define per effect | plus `LD_MAP_UV` | the three maps share one UV read; a fourth define keeps "an effect off leaves no text" true for each map |
+| S7-3 | §2.3 point 4 the key "depends on the object (whether it has maps)" | 5 values without a map, 8 with one | the S2-1 pattern: every key and test before S7 stays as it was |
+| S7-4 | (not stated) | with a normal map the shadow's and the thickness's lookups use the geometric normal | the mapped normal's detail would move the shadow's normal offset and receiver-plane slope per texel (blotches, §16.6); lighting (n·l, the highlight, the backscatter's n·l) uses the mapped normal |
+| S7-5 | (not stated) | 128 / 255 is a map's zero (`texel × 255 / 128 − 1`) | 8-bit has no exact 0.5: a flat map (128, 128, 255) must not tilt (`a flat normal map = no change`). Maps that treat 127 as zero tilt by 0.8 % |
+| S7-6 | §10 "Panel: … under „Mehr“" | under „Mehr“ in the material block, with the normal map's two values | as the AD; the strength and the DirectX flag are only shown with a normal map |
+| S7-7 | (not stated) | PNG / JPEG / BMP up to 4096², a hint above 2048 (`PROVISIONAL`) | the sclera map's header reader (no decoder); ZBrush exports BMP / PNG. 16-bit and TIFF / TGA are refused with the reason. 4096² with mips is 85 MiB per map on a 512 MiB card - the hint says so |
+| S7-8 | (not stated) | a preset keeps the maps; „Zurücksetzen“ removes them with the look | a preset carries no maps (like an eye preset keeps its images); reset = no LookDev material at all |
+| S7-9 | (not stated) | the texture-unit check runs only when a drawn material has a map | S1's gate "every effect off: nothing probed" (`test_the_shadow_off_draws_m1_and_creates_nothing`) must hold with the maps switch on and no map |
+| S7-10 | §2.3 point 5 (compile behind the status line) | a map assigned while the room is open compiles its variant in the next frame (≈ 50 ms on llvmpipe, no status line) | the same as an albedo-source switch today: `prepare_lookdev` covers the room's entry and the effect switches, not material edits. The variant is cached for the session; a scene opened with maps compiles them on entry |
+
+### 20.3 Tests (container, llvmpipe, 2026-11-24)
+
+| # | Test |
+|---|---|
+| Core | `tests/test_look_maps_format.py` (12): value rules, defaults, exact keys, `"maps": null` refused, v16 round trip on the JSON text, without maps the v15 text again, "maps" below 16 and 17 refused, invalid groups refuse the file, several objects; the five "first unknown version" assertions now say 17 |
+| App | `tests/test_look_maps.py` (11): load / replace / remove with Undo / Redo, refusals with the reason, a preset keeps the maps and reset drops them, the normal values preview and commit (not „angepasst“), `with_map` / `with_values` rules, the LookDraw carries only drawable maps and only with UVs, the panel rows, save copies (one copy for one image, relative, the material points at the copy, nothing deleted), load resolves, saved again = no second copy, without maps v15 again, a missing map keeps its path, Duplicate carries them |
+| sources | `test_lookdev_shaders.py`: new `PINNED_S4_SKIN_SOURCES_SHA256` (the 4 `shadow + dual_lobe + thickness` variants, taken from `50c69cd` before the change) holds with no map; M1 / S1 / S3 pins unchanged; each map's define and only its text, the UV declared once per albedo case, `n_geo` in the key lookups only with the normal map |
+| twins | `test_lookdev_optics.py`: the flat map does not tilt, strength and green, the cotangent frame follows the UV (mirrored UV flips it, degenerate keeps `n`), the roughness map; the `maps` effect and its feature |
+| GL | `tests/test_gl_lookdev_maps.py` (9): a flat normal map and white grey maps change no pixel (≤ 1/255), the effect off = no maps; a tilted constant normal map lights the plane as the twin (≤ 2/255), DirectX flips it, strength 0.5 between, 0 = none; a grey roughness map = the material's roughness × 128/255; the translucency map scales the backscatter; a face without UVs reads no map (half-UV plane), no UVs = 5-value keys; units 3 and 9–11 unbound after the frame; `texture_units` stubbed false = the no-map frame with the status line; the check passes on llvmpipe; GPU parity of `ld_cotangent_frame` / `ld_normal_tangent` against the twin over 1,024 random frames (max < 2e-4) |
+| headless | effect lists in persistence / room / panel tests gain `maps`; `test_probe_lookdev_room.py` (`lookdev +maps`, the probe's images) |
+
+Runs (GL files each in their own process under xvfb):
+
+| Command | Result |
+|---|---|
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_maps.py -q` | 9 passed |
+| `… tests/test_gl_lookdev_shadow.py` / `test_gl_lookdev_pass.py` / `test_gl_lookdev_parity.py` / `test_gl_eye_pass.py` | 25 / 13 / 8 / 135 passed |
+| `… test_gl_face_data_layout.py` / `test_gl_shading.py` / `test_gl_texture.py` (E1) / `test_gl_gpu_picking.py` / `test_gl_morph_picking.py` (E15) | 16 / 19 / 10 / 37 / 16 passed |
+| `… test_gui_imgui_window.py` / `test_gui_lookdev_window.py` (new: the map rows under „Mehr“) | 18 / 2 passed |
+| `python -m pytest experiments/lookdev_eye_lab/tests` / `experiments/drag_cost/tests` | 206 / 107 passed |
+| `xvfb-run -a python -m pytest tests -q` (a Core slice, §14) | see the follow-up note below |
+
+**Sight check (container):** `Gollum_Head_05`, SubD 1, Creature Skin, the probe's 1024² bump normal map: 18,968 px
+change, the bumps follow the UVs smoothly over the whole head, no black (NaN) pixel.
+
+### 20.4 Measurement
+
+Container (llvmpipe, a function check only): `probe_lookdev_room.py --effects maps --draws 3 --surfaces cage` set the
+three 2048² probe maps on the head, ran `lookdev` and `lookdev +maps`, `glGetError` 0.
+
+**Reference PC (S7, with S1–S4's open run):** the same single command as §18.4 (`probe_lookdev_room.py`, every built
+row). What it decides for S7: `lookdev +maps` against `lookdev` ≤ +1.2 ms for the three maps (§2.5: ≤ +0.4 ms per
+map); above it, the levers of §2.5 (a smaller map is the artist's; the effect's on/off).
+
+### 20.5 Practical test S7 (`scenes/Gollum_Head_05.mirai.json`, about 15 minutes)
+
+You need a normal map of Gollum's head in its UVs (ZBrush: *Normal Map* from the subdivided sculpt to the lowest level,
+"Tangent", "Flip G" off, export as PNG / BMP), optionally a roughness or cavity map (grey).
+Open LookDev, select the head, material **Creature Skin**, view „¾“, SubD 1.
+1. **Normal-Map laden:** Material → „Mehr“ → Normal-Map „Laden …“. Erwartet: Poren / Falten aus ZBrush erscheinen im
+   Licht, die Silhouette bleibt (es ist nur Shading). Sieht es eingedrückt statt erhaben aus → „Grün unten (DirectX)“.
+2. **„Normal-Stärke“** 0 / 1 / 2: 0 = ohne Map, 1 = wie exportiert. Passt 1?
+3. **Key drehen:** wandern die Details mit dem Licht, ohne Flecken im Schatten (der Schatten nimmt die Geometrie, nicht
+   die Map)? Siehst du feine Kanten entlang der Dreiecke (S7-1)?
+4. **Rauheit-Map** (falls vorhanden): dunkle Stellen glänzen schärfer, weiße bleiben beim Material-Wert.
+5. **Speichern unter …** in einen neuen Ordner, neu laden: die Maps sind da und liegen in `<Szene>_textures/`.
+6. **Effekt „Maps“ aus / an:** aus = das Bild ohne Maps.
+
+Assumptions to correct in one sentence: maps are images in the object's UVs, not painted in Mirai (painted channels
+are a later AD-037 phase); OpenGL green-up by default; a preset keeps the maps; at most 4096², PNG / JPEG / BMP.

@@ -11,7 +11,10 @@
 - P3 (AD-039): the pass owns the effects' resources - S1's `KeyShadow` (created on the first frame with the shadow on,
   deleted in `release()`) - and the context's `FeatureReport` (`lookdev_features.probe`, once, the first time an effect
   needs it). With the shadow the map is bound on unit 6 for the draw and unbound after it; with the thickness (S4) also
-  on unit 7 through its raw-depth sampler object, unbound (texture and sampler) after it.
+  on unit 7 through its raw-depth sampler object, unbound (texture and sampler) after it. S7 (AD-039 §10): a
+  LookDraw's maps through the shared texture cache (`GLRenderStore.texture`, mipmapped) on units 9-11
+  (`MAP_UNITS`), with the triangle UVs on unit 3 even without an albedo map; unbound after the draw. A program's key
+  gains the three map flags only when a map is drawn (every key without maps stays the 5 values of S4).
 - GL state as `EyePass`: during the draw depth test and write on, blend off, back faces culled, polygon offset (1, 1)
   when `store.polygon_offset`; afterwards offset, cull and depth test off, units 3 / 4 unbound, unit 0 active, program
   stopped. No FBO, no float target (the RGBA8 default framebuffer).
@@ -26,7 +29,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .lookdev_shaders import ALBEDO_UNIT, SHADOW_RAW_UNIT, SHADOW_UNIT, UV_UNIT, background_sources, skin_sources
+from .lookdev_shaders import (ALBEDO_UNIT, MAP_UNITS, SHADOW_RAW_UNIT, SHADOW_UNIT, UV_UNIT, background_sources,
+                              skin_sources)
 
 _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
@@ -35,7 +39,8 @@ _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 
 class LookDraw:
     """One object in the LookDev pass: the organic material's values (sRGB artist colours; `specular` is the level,
     F0 = 0.08 x level; `roughness` perceptual, alpha = r²) and its albedo source - a path, a `LiveTexture` or None
-    (the base colour)."""
+    (the base colour). AD-039 S7: the material's map paths the pass may load (`roughness_map`, `normal_map`,
+    `translucency_map`; None = none), the normal map's strength and its green direction."""
 
     base_color: tuple[float, float, float]
     roughness: float = 0.6
@@ -44,10 +49,30 @@ class LookDraw:
     backscatter: float = 0.0
     backscatter_color: tuple[float, float, float] = (1.0, 1.0, 1.0)
     albedo: object = None
+    roughness_map: str | None = None
+    normal_map: str | None = None
+    translucency_map: str | None = None
+    normal_strength: float = 1.0
+    normal_green_down: bool = False
 
     @property
     def f0(self) -> float:
         return 0.08 * float(self.specular)
+
+    def map_paths(self) -> dict[str, str]:
+        """AD-039 S7: {"roughness" / "normal" / "translucency": path} of the maps it has."""
+        paths = {"roughness": self.roughness_map, "normal": self.normal_map, "translucency": self.translucency_map}
+        return {kind: path for kind, path in paths.items() if path is not None}
+
+    @property
+    def needs_uvs(self) -> bool:
+        """An albedo map or any map reads the triangle UVs (AD-038 §4.1, AD-039 §10)."""
+        return self.albedo is not None or bool(self.map_paths())
+
+    def map_uniforms(self) -> dict:
+        return {"u_roughness_map": MAP_UNITS["roughness"], "u_normal_map": MAP_UNITS["normal"],
+                "u_translucency_map": MAP_UNITS["translucency"], "u_normal_strength": float(self.normal_strength),
+                "u_normal_green": -1.0 if self.normal_green_down else 1.0}
 
     def uniforms(self) -> dict:
         return {"u_base_color": tuple(float(c) for c in self.base_color), "u_roughness": float(self.roughness),
@@ -104,13 +129,24 @@ class LookdevPass:
             self.shadow = KeyShadow()
         return self.shadow
 
+    @staticmethod
+    def program_key(albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
+                    thickness: bool = False, roughness_map: bool = False, normal_map: bool = False,
+                    translucency_map: bool = False) -> tuple:
+        """The skin program's cache key: the 5 values of S4, plus the three map flags only when a map is drawn (S7)."""
+        key = (bool(albedo_map), bool(env_spec), bool(shadow), bool(dual_lobe), bool(thickness) and bool(shadow))
+        maps = (bool(roughness_map), bool(normal_map), bool(translucency_map))
+        return key + maps if any(maps) else key
+
     def program(self, albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
-                thickness: bool = False):
+                thickness: bool = False, roughness_map: bool = False, normal_map: bool = False,
+                translucency_map: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore, _register_sampler_buffer_uniform
 
-        key = (bool(albedo_map), bool(env_spec), bool(shadow), bool(dual_lobe), bool(thickness) and bool(shadow))
+        key = self.program_key(albedo_map, env_spec, shadow, dual_lobe, thickness, roughness_map, normal_map,
+                               translucency_map)
         program = self.programs.get(key)
         if program is None:
             _register_sampler_buffer_uniform()
@@ -125,10 +161,11 @@ class LookdevPass:
         return program
 
     def draw(self, render_mesh, look: LookDraw, frame: dict, shadow=None, dual_lobe: bool = False,
-             thickness: bool = False) -> bool:
+             thickness: bool = False, maps: bool = False) -> bool:
         """Draw one object. False = nothing drawn (no VertexList / camera yet, or a Ghost): the caller draws it with the
         Worklight. `shadow` (AD-039 S1): a rendered `KeyShadow` the object receives (the `SHADOW` variant), else None;
-        `dual_lobe` (S3): the `DUAL_LOBE` variant; `thickness` (S4): the `THICKNESS` variant, only with a shadow."""
+        `dual_lobe` (S3): the `DUAL_LOBE` variant; `thickness` (S4): the `THICKNESS` variant, only with a shadow;
+        `maps` (S7): the LookDraw's maps that load are drawn (one define each) - on a mesh with triangle UVs."""
         from pyglet import gl
 
         from .gl_render_store import GLRenderStore
@@ -138,14 +175,21 @@ class LookdevPass:
         camera = store.uniform_data("camera_uniforms") if vlist is not None else []
         if vlist is None or len(camera) != 32 or getattr(store, "alpha", 1.0) < 1.0:
             return False
-        uvs = look.albedo is not None and store.bind_triangle_uvs(UV_UNIT)
+        paths = look.map_paths() if maps else {}
+        uvs = (look.albedo is not None or bool(paths)) and store.bind_triangle_uvs(UV_UNIT)
         texture = GLRenderStore.texture_binding(look.albedo) if uvs else None
-        if uvs and texture is None:
+        bound_maps = {}
+        for kind, path in paths.items() if uvs else ():
+            image = GLRenderStore.texture(path)
+            if image is not None:
+                bound_maps[kind] = (image.target, image.id)
+        if uvs and texture is None and not bound_maps:
             GLRenderStore.unbind_triangle_uvs(UV_UNIT)
             uvs = False
         shadow = shadow if shadow is not None and shadow.ready else None
         thickness = bool(thickness) and shadow is not None
-        program = self.program(texture is not None, self.env_spec, shadow is not None, dual_lobe, thickness)
+        program = self.program(texture is not None, self.env_spec, shadow is not None, dual_lobe, thickness,
+                               "roughness" in bound_maps, "normal" in bound_maps, "translucency" in bound_maps)
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw
         model = store.uniform_data("model_uniforms")
@@ -157,6 +201,12 @@ class LookdevPass:
         if texture is not None:
             gl.glActiveTexture(gl.GL_TEXTURE0 + ALBEDO_UNIT)
             gl.glBindTexture(*texture)
+            gl.glActiveTexture(gl.GL_TEXTURE0)
+        if bound_maps:
+            set_uniforms(program, look.map_uniforms(), active)
+            for kind, binding in bound_maps.items():
+                gl.glActiveTexture(gl.GL_TEXTURE0 + MAP_UNITS[kind])
+                gl.glBindTexture(*binding)
             gl.glActiveTexture(gl.GL_TEXTURE0)
         if shadow is not None:
             set_uniforms(program, shadow.uniforms(), active)
@@ -181,6 +231,10 @@ class LookdevPass:
             gl.glActiveTexture(gl.GL_TEXTURE0 + ALBEDO_UNIT)
             gl.glBindTexture(texture[0], 0)
             gl.glActiveTexture(gl.GL_TEXTURE0)
+        for kind, (target, _name) in bound_maps.items():
+            gl.glActiveTexture(gl.GL_TEXTURE0 + MAP_UNITS[kind])
+            gl.glBindTexture(target, 0)
+        gl.glActiveTexture(gl.GL_TEXTURE0)
         if uvs:
             GLRenderStore.unbind_triangle_uvs(UV_UNIT)
         if shadow is not None:

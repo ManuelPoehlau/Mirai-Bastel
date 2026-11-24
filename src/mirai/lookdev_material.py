@@ -2,7 +2,10 @@
 
 Since LD-2 (2026-11-21) the value itself is the Core type `core.LookMaterial` on `SceneObject.look` (saved with the
 scene, format v15; changed by `ObjectLookCommand`, one Undo step). This module keeps what is `src/mirai`'s: the presets,
-the Neutral fallback, F0 from the level and the "angepasst" rule (`with_values`).
+the Neutral fallback, F0 from the level and the "angepasst" rule (`with_values`). Since AD-039 S7 (2026-11-24) a
+material may carry image maps (`core.LookMaps`, `LookMaterial.maps`; format v16): `with_map` sets or removes one, the
+normal map's values go through `with_values` (`MAP_VALUES`, never "angepasst": the maps are not preset values), and a
+preset pick keeps the maps (`keep_maps`), like an eye preset keeps its images.
 
 `LookMaterial` is one value bundle of the one organic shading model (`viewport.lookdev_pass`, proposal §4): an sRGB
 artist colour, where the albedo comes from (`texture`: the object's shown texture or paint composite; `color`: the
@@ -19,8 +22,12 @@ from __future__ import annotations
 
 import dataclasses
 
-from core import LookMaterial
+from core import LookMaps, LookMaterial
 from core.scene import LOOK_ALBEDO_SOURCES as ALBEDO_SOURCES
+from core.scene import LOOK_MAP_FIELDS
+
+#: AD-039 §10: the map values `with_values` takes (they change `LookMaterial.maps`, and only when it has maps).
+MAP_VALUES = ("normal_strength", "normal_green_down")
 
 
 def f0(material: LookMaterial) -> float:
@@ -33,7 +40,11 @@ def wrap_rgb(material: LookMaterial) -> tuple[float, float, float]:
 
 
 def with_values(material: LookMaterial, **changes) -> LookMaterial:
-    """A copy with `changes`; a value change marks it "angepasst" (the preset name stays)."""
+    """A copy with `changes`; a value change marks it "angepasst" (the preset name stays). `MAP_VALUES` change the
+    maps (a material without maps keeps none) and do not mark it."""
+    map_changes = {k: changes.pop(k) for k in MAP_VALUES if k in changes}
+    if map_changes and material.maps is not None:
+        material = dataclasses.replace(material, maps=dataclasses.replace(material.maps, **map_changes))
     values = {k: v for k, v in changes.items() if k not in ("preset", "adjusted")}
     for name in ("base_color", "wrap_tint", "backscatter_color"):
         if name in values:
@@ -43,6 +54,28 @@ def with_values(material: LookMaterial, **changes) -> LookMaterial:
     if "preset" in changes:
         values["preset"] = changes["preset"]
     return dataclasses.replace(material, **values, adjusted=adjusted)
+
+
+def with_map(material: LookMaterial, kind: str, path: str | None) -> LookMaterial:
+    """A copy whose `kind` map ("roughness" / "normal" / "translucency") is `path` (None removes it; without any map
+    left `maps` is None again, the v15 material)."""
+    if kind not in LOOK_MAP_FIELDS:
+        raise ValueError(f"LookDev map: one of {', '.join(LOOK_MAP_FIELDS)}, not {kind!r}")
+    maps = material.maps
+    if maps is None:
+        if path is None:
+            return material
+        return dataclasses.replace(material, maps=LookMaps(**{kind: path}))
+    paths = {name: getattr(maps, name) for name in LOOK_MAP_FIELDS} | {kind: path}
+    if all(value is None for value in paths.values()):
+        return dataclasses.replace(material, maps=None)
+    return dataclasses.replace(material, maps=dataclasses.replace(maps, **{kind: path}))
+
+
+def keep_maps(material: LookMaterial, before: LookMaterial | None) -> LookMaterial:
+    """A picked preset with the maps the object had (a preset has none)."""
+    maps = before.maps if before is not None else None
+    return material if maps is None else dataclasses.replace(material, maps=maps)
 
 
 NEUTRAL = "Neutral"

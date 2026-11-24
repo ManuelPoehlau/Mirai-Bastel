@@ -4,7 +4,8 @@
 The values are data only; presets, the Neutral fallback, F0 and the drawing live in `src/mirai` / `src/viewport`.
 Pinned here: the value rules, a scene without looks is written exactly as before (same text, same version), v15 only
 with a look and the older version again without it, versions below 15 read with `look = None`, a "look" key below 15
-and any invalid material refuse the file, 16 is the first unknown version.
+and any invalid material refuse the file, 17 is the first unknown version (16: the maps, AD-039 §10,
+`tests/test_look_maps_format.py`).
 """
 
 from __future__ import annotations
@@ -139,14 +140,14 @@ def test_the_version_follows_the_content():
 # -- older versions and invalid files --------------------------------------------------------------------------------
 
 
-def test_versions_2_to_14_read_without_looks_and_16_is_refused():
+def test_versions_2_to_14_read_without_looks_and_17_is_refused():
     plain = scene_to_dict(Scene())
-    for version in range(2, 16):
+    for version in range(2, 17):
         data = json.loads(json.dumps(plain))
         data["version"] = version
         assert all(obj.look is None for obj in scene_from_dict(data).objects.values())
     data = json.loads(json.dumps(plain))
-    data["version"] = 16  # the first unknown
+    data["version"] = 17  # the first unknown (16: the maps, AD-039 §10)
     with pytest.raises(ValueError):
         scene_from_dict(data)
 

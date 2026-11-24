@@ -418,7 +418,7 @@ class Viewport:
                 self._entry_looks.pop(key, None)
             else:
                 self._entry_looks[key] = look
-            self._request_uvs(key, look is not None and look.albedo is not None)
+            self._request_uvs(key, look is not None and look.needs_uvs)
             changed = True
         return changed
 
@@ -427,7 +427,7 @@ class Viewport:
         if look == self._edit_look:
             return False
         self._edit_look = look
-        self._request_uvs(EDIT_KEY, look is not None and look.albedo is not None)
+        self._request_uvs(EDIT_KEY, look is not None and look.needs_uvs)
         return True
 
     def set_shading(self, shading: str, state=None) -> None:
@@ -454,11 +454,19 @@ class Viewport:
         if effects is None:
             effects = self.lookdev_state.effects if self.lookdev_state is not None else LookdevEffects()
         features = None
-        if any(getattr(effects, name) for name in EFFECT_FEATURE) and hasattr(self.render_mesh.store, "vertex_list"):
+        # AD-039 §2.2: the maps need their check only when a drawn material has a map (else nothing is probed)
+        needed = [name for name in EFFECT_FEATURE
+                  if getattr(effects, name) and (name != "maps" or self._lookdev_maps())]
+        if needed and hasattr(self.render_mesh.store, "vertex_list"):
             features = self.lookdev_pass.feature_report()
         elif self._lookdev_pass is not None:
             features = self._lookdev_pass.features
         return effective(effects, features)
+
+    def _lookdev_maps(self) -> bool:
+        """AD-039 §10: a LookDraw (the edit object's or an entry's) has a map path."""
+        looks = [self._edit_look, *self._entry_looks.values()]
+        return any(look is not None and look.map_paths() for look in looks)
 
     def lookdev_features(self):
         """This context's P3 feature report, or None before an effect needed it (the panel's reasons)."""
@@ -486,9 +494,12 @@ class Viewport:
         return look is not None and getattr(rm.store, "alpha", 1.0) >= 1.0
 
     def _lookdev_programs(self) -> tuple[list, list]:
-        """The programs the next LookDev frame draws: ([skin (albedo map, env spec, shadow, dual lobe, thickness)], [eye
-        program arguments + (ld_shadow,)]). AD-039 §5: the eyes receive the key's shadow when `shadow` and `eye_shadow`
-        are in force and something casts it."""
+        """The programs the next LookDev frame draws: ([skin program keys (albedo map, env spec, shadow, dual lobe,
+        thickness[, roughness map, normal map, translucency map])], [eye program arguments + (ld_shadow,)]). AD-039 §5:
+        the eyes receive the key's shadow when `shadow` and `eye_shadow` are in force and something casts it. AD-039
+        §10: a LookDraw's maps with `maps` in force on a mesh with UVs."""
+        from .lookdev_pass import LookdevPass
+
         skin, eyes = [], []
         env_spec = self._lookdev_pass.env_spec if self._lookdev_pass is not None else True
         effects = self.lookdev_effects()
@@ -503,8 +514,11 @@ class Viewport:
                           self._entry_looks.get(key)))
         for rm, look in drawn:
             if look is not None:
-                skin.append((look.albedo is not None and rm.mesh.has_face_uvs(), env_spec, shadow,
-                             effects.dual_lobe, effects.thickness))
+                uvs = rm.mesh.has_face_uvs()
+                maps = look.map_paths() if effects.maps and uvs else {}
+                skin.append(LookdevPass.program_key(look.albedo is not None and uvs, env_spec, shadow,
+                                                    effects.dual_lobe, effects.thickness, "roughness" in maps,
+                                                    "normal" in maps, "translucency" in maps))
         eye_shadow = shadow and effects.eye_shadow and any(self._casts_key_shadow(rm, look) for rm, look in drawn)
         return sorted(set(skin)), sorted(set(e + (eye_shadow,) for e in eyes))
 
@@ -1286,7 +1300,8 @@ class Viewport:
         to date before the background (re-rendered only on a change, `KeyShadow.key`); skin and teeth cast and receive.
         AD-039 S2: with `eye_shadow` as well the eyes receive it (they never cast) - when something casts. AD-039 S3:
         `dual_lobe` draws the skin's highlight with two lobes (the eyes keep theirs). AD-039 S4: `thickness` reads the
-        key's map a second time on the skin (the light through thin parts)."""
+        key's map a second time on the skin (the light through thin parts). AD-039 S7: `maps` draws the materials'
+        roughness, normal and translucency maps."""
         camera = self.render_mesh.camera
         frame = self.lookdev_frame()
         passes = self.lookdev_pass
@@ -1317,7 +1332,8 @@ class Viewport:
                     continue
                 rm = self.entry_surface_render_meshes.get(eye_key, self.object_entries[eye_key])
                 look = self._entry_looks.get(eye_key)
-            if look is None or not passes.draw(rm, look, frame, shadow, effects.dual_lobe, effects.thickness):
+            if look is None or not passes.draw(rm, look, frame, shadow, effects.dual_lobe, effects.thickness,
+                                               effects.maps):
                 rm.render(camera)
 
     def wire_drawn(self) -> bool:

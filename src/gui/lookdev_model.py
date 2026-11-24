@@ -3,7 +3,8 @@
 The panel reads the room's state (`state(app)`) and calls `Application` (`set_lookdev_studio_preset`,
 `set_lookdev_studio`, `set_lookdev_light`, `set_lookdev_material`, `set_lookdev_material_values`, `frame_lookdev`,
 `close_lookdev`, `preview_lookdev_material_values`, `reset_lookdev_material`, `save_lookdev_image`,
-`set_lookdev_effect`); it holds no document state. Since LD-2 (AD-038 §18) the material is document data (`SceneObject.look`, saved, one Undo step per change: a
+`set_lookdev_effect`, AD-039 S7 `set_lookdev_map`); it holds no document state. Since LD-2 (AD-038 §18) the material
+is document data (`SceneObject.look`, saved, one Undo step per change: a
 held slider or colour previews, the release commits - `MaterialEdit`); the studio is view state saved in
 `view.lookdev` (no Undo). About 15 controls are visible; the rest sits under "Mehr". Labels German, every layout choice
 `PROVISIONAL` (proposal §3).
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from mirai import look_maps
 from mirai.lookdev_material import PRESET_NAMES as MATERIAL_PRESETS
 from mirai.lookdev_presets import PRESET_NAMES as STUDIO_PRESETS
 
@@ -48,7 +50,7 @@ class LightRow:
 #: AD-039 §2.1: the block „Effekte“ - one checkbox per built P3 effect, in slice order.
 EFFECTS_TITLE = "Effekte"
 EFFECT_LABELS = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz",
-                 "thickness": "Durchleuchtung"}
+                 "thickness": "Durchleuchtung", "maps": "Maps"}
 EFFECT_HINTS = {"shadow": "Schatten des Key auf Haut und Zähnen (wird nur bei Pose-, Form- oder Key-Änderung neu "
                           "gerechnet); „Weichheit“ des Key macht die Kante weicher",
                 "eye_shadow": "Lider, Brauen und Nase werfen den Schatten des Key auf die Augen (braucht "
@@ -56,7 +58,29 @@ EFFECT_HINTS = {"shadow": "Schatten des Key auf Haut und Zähnen (wird nur bei P
                 "dual_lobe": "Glanz der Haut aus zwei Anteilen: eine schärfere Spitze und ein weicher Saum (Lichter "
                              "Key, Fill, Rim; die Studio-Spiegelung bleibt einfach)",
                 "thickness": "Licht des Key scheint durch dünne Stellen (Ohren, Nasenflügel), wenn der Key von hinten "
-                             "kommt; Stärke und Farbe aus „Backscatter“ des Materials (braucht „Schatten“)"}
+                             "kommt; Stärke und Farbe aus „Backscatter“ des Materials (braucht „Schatten“)",
+                "maps": "Rauheit-, Normal- und Durchscheinen-Maps der Materialien (laden unter „Mehr“ im Block "
+                        "Material); aus = die Materialien ohne ihre Maps"}
+
+#: AD-039 §10 (S7): the material's maps under „Mehr“ - one row per map: its file, „Laden …“, „Entfernen“.
+MAPS_TITLE = "Maps (gespeichert)"
+MAP_LABELS = look_maps.LABELS
+MAP_LOAD = "Laden …"
+MAP_REMOVE = "Entfernen"
+MAPS_HINT = ("Bilder in den UVs des Objekts (z. B. aus ZBrush): Rauheit und Durchscheinen grau (weiß = Wert des "
+             "Materials), Normal-Map im Tangentenraum. Höchstens 4096²; beim Speichern neben die Szene kopiert.")
+NORMAL_STRENGTH = "Normal-Stärke"
+NORMAL_GREEN_DOWN = "Grün unten (DirectX)"
+
+
+@dataclass(frozen=True)
+class MapRow:
+    """One map of the first target's material: its kind, label, path (None = none) and the text the panel shows."""
+
+    kind: str
+    label: str
+    path: str | None
+    text: str
 
 
 @dataclass(frozen=True)
@@ -93,6 +117,12 @@ class MaterialRow:
     eye_selected: bool
     #: a target has its own look (`SceneObject.look`); False = all draw the Neutral fallback ("Zurücksetzen" has nothing)
     has_look: bool = False
+    #: AD-039 S7: the first target's maps (one row per kind) and the normal map's values
+    maps: tuple[MapRow, ...] = ()
+    normal_strength: float = 1.0
+    normal_green_down: bool = False
+    #: the first target has no UVs: maps are kept but not drawn
+    no_uvs: bool = False
 
 
 @dataclass(frozen=True)
@@ -130,9 +160,14 @@ def _material(app) -> MaterialRow | None:
                                                          0.0, 0.0, (1.0, 1.0, 1.0), True)
     first = targets[0]
     m = room.material(first)
+    maps = m.maps
+    rows = tuple(MapRow(kind, MAP_LABELS[kind], getattr(maps, kind) if maps else None,
+                        look_maps.status_text(getattr(maps, kind) if maps else None)) for kind in look_maps.KINDS)
     return MaterialRow(tuple(obj.name for obj in targets), m.preset, m.adjusted, m.base_color, m.albedo_source,
                        _albedo_label(app, first), m.roughness, m.specular, m.wrap, m.backscatter, m.backscatter_color,
-                       eye_selected, any(obj.look is not None for obj in targets))
+                       eye_selected, any(obj.look is not None for obj in targets), rows,
+                       maps.normal_strength if maps else 1.0, maps.normal_green_down if maps else False,
+                       not first.mesh.has_face_uvs())
 
 
 def _effects(app, s) -> tuple[EffectRow, ...]:
@@ -185,6 +220,18 @@ class MaterialEdit:
             app.end_lookdev_material_preview()
 
 
+def load_map(app, kind: str, text: str | None) -> bool:
+    """AD-039 S7: a picked (or typed) image path becomes the targets' `kind` map (quotes and blanks stripped; empty =
+    nothing); None removes it. One Undo step; refused with the reason in the status line."""
+    if text is None:
+        return app.set_lookdev_map(kind, None)
+    path = str(text).strip().strip('"').strip()
+    if not path:
+        app.set_status(f"LookDev {MAP_LABELS.get(kind, kind)}: erst einen Pfad wählen")
+        return False
+    return app.set_lookdev_map(kind, path)
+
+
 def menu_label(app) -> str:
     """The SPACE menu row: LookDev can open on any state (it shows pose, morph and SubD as they are, R-1)."""
     return MENU_CLOSE if app.lookdev_open else MENU_OPEN
@@ -211,7 +258,9 @@ def targets_label(row: MaterialRow) -> str:
     return names + (f"  ({EYE_NOTE})" if row.eye_selected else "")
 
 
-__all__ = ["EFFECTS_TITLE", "EFFECT_HINTS", "EFFECT_LABELS", "EYE_NOTE", "EffectRow", "LIGHTS", "LIGHT_LABELS", "MATERIAL_PRESETS", "MENU_CLOSE", "MENU_OPEN", "RESET", "RESET_HINT",
+__all__ = ["EFFECTS_TITLE", "EFFECT_HINTS", "EFFECT_LABELS", "EYE_NOTE", "EffectRow", "LIGHTS", "MAPS_HINT", "MAPS_TITLE",
+           "MAP_LABELS", "MAP_LOAD", "MAP_REMOVE", "MapRow", "NORMAL_GREEN_DOWN", "NORMAL_STRENGTH", "load_map",
+           "LIGHT_LABELS", "MATERIAL_PRESETS", "MENU_CLOSE", "MENU_OPEN", "RESET", "RESET_HINT",
            "SAVED", "SAVE_IMAGE", "SAVE_IMAGE_HINT", "STUDIO_PRESETS", "TITLE", "TONE_LABELS", "VIEWS", "LightRow",
            "LookdevPanelState", "MaterialEdit", "MaterialRow", "material_label", "menu_label", "preset_label", "state",
            "targets_label", "toggle"]

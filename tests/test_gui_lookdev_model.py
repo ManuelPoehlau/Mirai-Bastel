@@ -130,7 +130,8 @@ def test_the_effects_block(app):
     assert [(r.name, r.label, r.on, r.available) for r in st.effects] == [("shadow", "Schatten", True, True),
                                                                           ("eye_shadow", "Augen-Schatten", True, True),
                                                                           ("dual_lobe", "Doppel-Glanz", True, True),
-                                                                          ("thickness", "Durchleuchtung", True, True)]
+                                                                          ("thickness", "Durchleuchtung", True, True),
+                                                                          ("maps", "Maps", True, True)]
     assert lm.EFFECTS_TITLE == "Effekte" and all(r.hint for r in st.effects)
     app.set_lookdev_effect("shadow", False)
     rows = lm.state(app).effects

@@ -56,6 +56,7 @@ from core import (
 )
 from core.operations import CollapseRefused, MeshDeltaCommand
 from core.serialization import scene_from_dict, scene_to_dict
+from core.scene import LOOK_MAP_FIELDS
 
 from viewport import Viewport  # Gate 7: V0.2 Rendering-Viewport (unabhängig von mirai)
 from viewport.resource_store import ResourceStore, TraceStore
@@ -388,6 +389,14 @@ EYE_IMPORT_DIR = Path(__file__).resolve().parents[2] / "eye_import"
 #: AD-038 §18 (LD-2): "Bild speichern" of a scene that has no file yet (gitignored; with a file: `<stem>_lookdev/`
 #: beside it).
 LOOKDEV_IMAGE_DIR = Path(__file__).resolve().parents[2] / "lookdev_images"
+
+
+def _look_maps_resolved(look, scene_dir: Path):
+    """AD-039 §10: a material's map paths as read from a scene file in `scene_dir` -> absolute in memory."""
+    maps = look.maps
+    paths = {kind: texture_files.resolve(getattr(maps, kind), scene_dir) for kind in LOOK_MAP_FIELDS
+             if getattr(maps, kind) is not None}
+    return dataclasses.replace(look, maps=dataclasses.replace(maps, **paths))
 
 
 class Application:
@@ -759,6 +768,8 @@ class Application:
                         obj.eye, sclera_texture=texture_files.resolve(obj.eye.sclera_texture, scene_path.parent))
                 if obj.paint is not None:  # AD-037: the paint layers' images likewise
                     obj.paint = paint_files.resolve_stack(obj.paint, scene_path.parent)
+                if obj.look is not None and obj.look.maps is not None:  # AD-039 §10: the LookDev maps likewise
+                    obj.look = _look_maps_resolved(obj.look, scene_path.parent)
             replace_scene(self.scene, loaded)
             self.scene_path = scene_path
             # View state (`mirai.view_state`) rides in the file beside the core envelope; `load_scene` applies it.
@@ -1470,9 +1481,52 @@ class Application:
         if targets is None:
             return False
         self._lookdev.preview.clear()
-        changed = self._objects.commit_looks([(obj, obj.look, material) for obj in targets], f"LookDev {name}")
+        # AD-039 §10: a preset has no maps; the object's maps stay (like an eye preset keeps its images)
+        changed = self._objects.commit_looks(
+            [(obj, obj.look, lookdev_material.keep_maps(material, obj.look)) for obj in targets], f"LookDev {name}")
         if changed:
             self._set_status(f"LookDev material {name!r}: {', '.join(repr(o.name) for o in targets)}")
+        return changed
+
+    def set_lookdev_map(self, kind: str, path: str | Path | None) -> bool:
+        """AD-039 §10 (S7): the material targets' `kind` map ("roughness" / "normal" / "translucency") is the image at
+        `path` (stored absolute, copied beside the scene on save), None removes it; one Undo step for all targets. A
+        target without a look gets the Neutral fallback with the map. Refused with the reason (status line) for a
+        missing file, an unknown format or an image above `look_maps.MAX_SIZE`. The maps use the object's UVs; an
+        object without UVs keeps the map but draws without it. True = changed."""
+        from . import look_maps, lookdev_material
+
+        if kind not in look_maps.KINDS:
+            self._set_status(f"LookDev map: one of {', '.join(look_maps.KINDS)}, not {kind!r}")
+            return False
+        label = look_maps.LABELS[kind]
+        note = ""
+        if path is not None:
+            path = Path(os.path.abspath(path))
+            if not path.is_file():
+                self._set_status(f"LookDev {label}: {path} nicht gefunden")
+                return False
+            result = look_maps.check(path)
+            if not result.usable:
+                self._set_status(f"LookDev {label}: {path.name}: {result.problem}")
+                return False
+            note = f" ({result.note})" if result.note else ""
+        targets = self._lookdev_material_targets_or_status()
+        if targets is None:
+            return False
+        room = self._lookdev
+        room.preview.clear()
+        value = None if path is None else str(path)
+        changes = [(obj, obj.look, lookdev_material.with_map(room.committed(obj), kind, value)) for obj in targets]
+        changes = [(obj, before, after) for obj, before, after in changes if (before.maps if before else None)
+                   != after.maps]
+        changed = self._objects.commit_looks(changes, f"LookDev {label}")
+        if changed:
+            names = ", ".join(repr(obj.name) for obj, _, _ in changes)
+            what = "entfernt" if path is None else path.name + note
+            no_uvs = [obj.name for obj, _, _ in changes if not obj.mesh.has_face_uvs()]
+            self._set_status(f"LookDev {label} {what}: {names}"
+                             + (f" - ohne UVs nicht sichtbar: {', '.join(no_uvs)}" if no_uvs else ""))
         return changed
 
     def _lookdev_values(self, targets: list, changes: dict) -> dict | None:
@@ -1488,8 +1542,9 @@ class Application:
 
     def set_lookdev_material_values(self, **changes) -> bool:
         """Change values of the targets' material (`base_color`, `albedo_source`, `roughness`, `specular`, `wrap`,
-        `backscatter`, `backscatter_color`); the preset name stays, marked "angepasst". One Undo step (a slider's
-        release); a held preview ends. True = changed."""
+        `backscatter`, `backscatter_color`; AD-039 §10 the normal map's `normal_strength` and `normal_green_down`, on
+        targets that have maps); the preset name stays, marked "angepasst" (not for the map values). One Undo step (a
+        slider's release); a held preview ends. True = changed."""
         targets = self._lookdev_material_targets_or_status()
         if targets is None:
             self.end_lookdev_material_preview()
@@ -2178,6 +2233,7 @@ class Application:
         path.parent.mkdir(parents=True, exist_ok=True)
         # OSError: nothing written, nothing changed
         copies, sclera_copies, missing = self._copy_eye_images(document, path)
+        map_copies = self._copy_look_maps(document, path, missing)  # AD-039 §10: the LookDev maps likewise
         paint = paint_files.prepare_save(document.objects.values(), self.paint, path)  # AD-037: layer PNGs first
         data = scene_to_dict(document)
         data[view_state.VIEW_KEY] = view_state.capture(self)
@@ -2199,6 +2255,11 @@ class Application:
                                                               path.parent)
             if raw.get("paint") is not None:
                 raw["paint"] = paint.file_stack(raw["id"], path.parent)
+            maps = (raw.get("look") or {}).get("maps")
+            if maps is not None:  # AD-039 §10: the LookDev maps, scene-relative
+                for kind in LOOK_MAP_FIELDS:
+                    if maps.get(kind) is not None:
+                        maps[kind] = texture_files.to_file(map_copies.get((raw["id"], kind), maps[kind]), path.parent)
         text = json.dumps(data, indent=2)
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")
@@ -2210,8 +2271,11 @@ class Application:
                 obj.texture = copies[int(obj.id)]
             if int(obj.id) in sclera_copies:
                 obj.eye = dataclasses.replace(obj.eye, sclera_texture=sclera_copies[int(obj.id)])
+            moved = {kind: copy for (oid, kind), copy in map_copies.items() if oid == int(obj.id)}
+            if moved:  # the same images; an Undo restores the old paths, which still exist
+                obj.look = dataclasses.replace(obj.look, maps=dataclasses.replace(obj.look.maps, **moved))
         paint.apply(self.paint)
-        if copies or sclera_copies:
+        if copies or sclera_copies or map_copies:
             self._objects.sync_views()  # the entries draw from the copy from now on
         self.scene_path = path
         notes = []
@@ -2220,6 +2284,9 @@ class Application:
             notes.append(f"iris image copied to {folder}/")
         if sclera_copies:
             notes.append(f"sclera image copied to {folder}/")
+        if map_copies:
+            count = len(set(map_copies.values()))
+            notes.append(f"LookDev map{'s' if count != 1 else ''} copied to {folder}/")
         if missing:
             notes.append(f"image not found, path kept: {', '.join(sorted(missing))}")
         if paint.written or paint.flats:
@@ -2254,6 +2321,30 @@ class Application:
                     done[image] = str(texture_files.copy_into(image, directory))
                 out[int(obj.id)] = done[image]
         return copies, sclera_copies, missing
+
+    def _copy_look_maps(self, document, path: Path, missing: set[str]) -> dict[tuple[int, str], str]:
+        """AD-039 §10 (the AD-035 S-10 rule): every LookDev map not yet in the scene's own `<stem>_textures/` is copied
+        there byte for byte under its content name (`texture_files.copy_into`; never overwrites, never deletes).
+        Returns {(object id, map kind): the copy}; a map that does not exist keeps its path and its name goes into
+        `missing`. `OSError` when a copy fails (the caller writes nothing then)."""
+        directory = texture_files.scene_texture_dir(path)
+        copies: dict[tuple[int, str], str] = {}
+        done: dict[str, str] = {}
+        for obj in document.objects.values():
+            maps = obj.look.maps if obj.look is not None else None
+            if maps is None:
+                continue
+            for kind in LOOK_MAP_FIELDS:
+                image = getattr(maps, kind)
+                if image is None or texture_files.inside(image, directory):
+                    continue
+                if image not in done:
+                    if not os.path.isfile(image):
+                        missing.add(Path(image).name)
+                        continue
+                    done[image] = str(texture_files.copy_into(image, directory))
+                copies[(int(obj.id), kind)] = done[image]
+        return copies
 
     def dispatch_command(
         self, command: str, context: Optional[dict] = None, **params

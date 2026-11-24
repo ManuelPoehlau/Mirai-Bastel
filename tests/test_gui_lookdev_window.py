@@ -69,3 +69,38 @@ def test_lookdev_room_in_the_window():
     finally:
         layer.close()
         window.close()
+
+
+def test_the_material_maps_rows_draw_in_the_window(tmp_path):
+    """AD-039 §10 (S7): under „Mehr“ the material block draws a row per map; with a normal map its strength and DirectX
+    rows too; frames leave the GL state as found."""
+    import numpy as np
+
+    from mirai.iris_import import encode_png
+
+    try:
+        window, app, layer = run.build(argv=["cube"])
+    except Exception as exc:
+        pytest.skip(f"kein GL/Display: {exc}")
+    try:
+        mesh = app.scene.mesh
+        for i, fid in enumerate(mesh.all_face_ids()):
+            mesh.set_face_uvs(fid, [(i / 6 + du / 6, dv) for du, dv in ((0, 0), (1, 0), (1, 1), (0, 1))])
+        image = np.full((8, 8, 4), 128, np.uint8)
+        image[..., 2:] = 255
+        path = tmp_path / "normal.png"
+        path.write_bytes(encode_png(image))
+        assert lm.toggle(app)
+        _tick(app, window, 3)
+        layer.lookdev.more = True
+        assert app.set_lookdev_map("normal", path) and app.set_lookdev_map("roughness", path)
+        _tick(app, window, 3)  # the map programs compile in a frame here (no room entry): fine for the test
+        row = lm.state(app).material
+        assert [r.path for r in row.maps] == [str(path), str(path), None]
+        before = snapshot_gl_state()
+        _tick(app, window, 1)
+        assert snapshot_gl_state() == before
+        assert any(len(k) == 8 and k[5] and k[6] for k in app.viewport.lookdev_pass.programs)
+    finally:
+        layer.close()
+        window.close()

@@ -128,19 +128,21 @@ def test_ld_diffuse_and_specular_twins():
 def test_effects_default_on_and_dependencies_and_features():
     from viewport.lookdev_features import FeatureReport
 
-    assert lo.LookdevEffects().shadow and lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness")
+    assert lo.LookdevEffects().shadow
+    assert lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness", "maps")
     assert lo.LookdevState("x", lo.EYE_STUDIO, lo.StudioLight(), lo.StudioLight(), lo.StudioLight()).effects \
         == lo.LookdevEffects()
     on = lo.LookdevEffects(shadow=True)
     assert lo.effective(on) == on  # nothing probed: nothing missing
-    assert lo.effect_reasons(on) == {"shadow": None, "eye_shadow": None, "dual_lobe": None, "thickness": None}
+    assert lo.effect_reasons(on) == {"shadow": None, "eye_shadow": None, "dual_lobe": None, "thickness": None,
+                                     "maps": None}
     assert lo.effective(on, FeatureReport(depth_texture=True)) == on
     missing = FeatureReport(depth_texture=False)
     # S3 needs no feature and no other effect: it stays on without a depth texture
     assert lo.effective(on, missing) == lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=True,
                                                           thickness=False)
     assert lo.effect_reasons(on, missing) == {"shadow": "Tiefentextur fehlt", "eye_shadow": "braucht Schatten",
-                                              "dual_lobe": None, "thickness": "braucht Schatten"}
+                                              "dual_lobe": None, "thickness": "braucht Schatten", "maps": None}
     assert missing.status_lines() == ("LookDev: Schatten aus – Tiefentextur nicht verfügbar",)
     assert lo.effective(lo.LookdevEffects(shadow=False)) == lo.LookdevEffects(shadow=False, eye_shadow=False,
                                                                                thickness=False)
@@ -150,6 +152,12 @@ def test_effects_default_on_and_dependencies_and_features():
     assert lo.effect_reasons(on, no_samplers)["thickness"] == "Sampler-Objekte fehlen"
     assert no_samplers.status_lines() == ("LookDev: Durchleuchtung aus – Sampler-Objekte nicht verfügbar",)
     assert lo.effective(lo.LookdevEffects(dual_lobe=False)) == lo.LookdevEffects(dual_lobe=False)
+    # S7 needs enough texture units, nothing else: without them only the maps are off
+    few_units = FeatureReport(texture_units=False)
+    assert lo.effective(on, few_units) == lo.LookdevEffects(maps=False)
+    assert lo.effect_reasons(on, few_units)["maps"] == "zu wenige Textureinheiten"
+    assert few_units.status_lines() == ("LookDev: Maps aus – zu wenige Textureinheiten",)
+    assert lo.effective(lo.LookdevEffects(shadow=False)).maps
 
 
 # -- AD-039 S3: dual-lobe specular ------------------------------------------------------------------------------------
@@ -361,3 +369,38 @@ def test_ld_backscatter_proxy_and_transmission():
     thick = lo.ld_backscatter(albedo, n, v, values, 0.15, bcol, transmission=np.array([0.5]))
     assert np.allclose(thick[0], 0.15 * 0.5 * lo.srgb_decode(bcol) * albedo * colour)
     assert np.allclose(lo.ld_backscatter(albedo, key[None], v, values, 0.15, bcol, np.array([1.0])), 0.0)
+
+
+# -- S7: the maps' twins (AD-039 §10) ---------------------------------------------------------------------------------
+
+
+def test_a_flat_normal_map_does_not_tilt_and_strength_and_green_scale_the_tilt():
+    flat = np.array([128.0, 128.0, 255.0]) / 255.0
+    t = lo.normal_map_tangent(flat)
+    assert t[0] == 0.0 and t[1] == 0.0 and t[2] > 0.99
+    tilted = np.array([200.0, 90.0, 230.0]) / 255.0
+    one, half, down = (lo.normal_map_tangent(tilted, s, g) for s, g in ((1.0, False), (0.5, False), (1.0, True)))
+    assert np.allclose(half[:2], one[:2] * 0.5) and half[2] == one[2]
+    assert down[0] == one[0] and down[1] == -one[1]
+    assert np.allclose(lo.normal_map_tangent(tilted, 0.0)[:2], 0.0)
+
+
+def test_the_cotangent_frame_follows_the_uv_and_a_flat_map_keeps_the_normal():
+    n = np.array([0.0, 0.0, 1.0])
+    # screen x moves along world +x and u, screen y along world +y and v: tangent +x, bitangent +y
+    frame = lo.cotangent_frame(n, [0.01, 0.0, 0.0], [0.0, 0.01, 0.0], [0.02, 0.0], [0.0, 0.02])
+    assert np.allclose(frame[:, 0], [1.0, 0.0, 0.0]) and np.allclose(frame[:, 1], [0.0, 1.0, 0.0])
+    assert np.allclose(frame[:, 2], n)
+    flat = np.array([128.0, 128.0, 255.0]) / 255.0
+    assert np.allclose(lo.ld_normal_mapped(n, [0.01, 0, 0], [0, 0.01, 0], [0.02, 0], [0, 0.02], flat), n)
+    # a map tilted toward +u tilts the normal toward the tangent, a mirrored UV (u running against x) away from it
+    texel = np.array([1.0, 128.0 / 255.0, 1.0])
+    toward = lo.ld_normal_mapped(n, [0.01, 0, 0], [0, 0.01, 0], [0.02, 0], [0, 0.02], texel)
+    mirrored = lo.ld_normal_mapped(n, [0.01, 0, 0], [0, 0.01, 0], [-0.02, 0], [0, 0.02], texel)
+    assert toward[0] > 0.5 and mirrored[0] < -0.5 and np.isclose(np.linalg.norm(toward), 1.0)
+    # a degenerate UV (no change across the pixel) keeps the normal
+    assert np.allclose(lo.ld_normal_mapped(n, [0.01, 0, 0], [0, 0.01, 0], [0, 0], [0, 0], texel), n)
+
+
+def test_the_roughness_map_multiplies_the_roughness():
+    assert np.allclose(lo.map_roughness(0.6, [1.0, 0.5, 0.0]), [0.6, 0.3, 0.0])

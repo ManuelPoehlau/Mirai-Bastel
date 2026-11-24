@@ -108,6 +108,14 @@ additiv: ein Objekt mit LookDev-Material trägt `"look": {"preset", "base_color"
 ablehnt, statt die Materialien beim Speichern still zu verlieren. Gelesen werden 2-15. Ungültig (die Datei wird
 abgelehnt): ein `"look"` in einer Datei unter 15 und jedes ungültige Material.
 
+Version 16 (LookDev-Maps, AD-039 §10 S7, Manu 2026-11-24 „Map-Pfade“ auf Q-P3-2, CORE_V1_FREEZE §7.1) ist additiv: ein
+LookDev-Material mit Maps trägt `"maps": {["roughness"], ["normal"], ["translucency"], "normal_strength",
+"normal_green_down"}` (die Werte von `core.scene.LookMaps`; nur die gesetzten Maps, mindestens eine; fehlt = keine). Nur
+geschrieben, wenn ein Material Maps hat (sonst 4-15 wie bisher, Byte für Byte gleich), damit ein älterer Build die Datei
+ablehnt, statt die Maps still zu verlieren. Gelesen werden 2-16. Ungültig (die Datei wird abgelehnt): ein `"maps"` in
+einer Datei unter 16 und jede ungültige Map-Gruppe. Was ein Map-Pfad bedeutet (relativ zur Szene, `<Szene>_textures/`),
+entscheidet `src/mirai` (`mirai.texture_files`).
+
 Selection und History werden bewusst NICHT mitgespeichert - beides ist
 transienter UI-/Session-Zustand, kein persistenter Scene-Inhalt. Das
 Edit-Objekt dagegen ist Scene-Zustand und wird gespeichert (AD-021 §2).
@@ -146,6 +154,8 @@ BONE_LINK_FORMAT_VERSION = 13
 PAINT_FORMAT_VERSION = 14
 #: Written when any object has a LookDev material (`SceneObject.look`, AD-038 §18).
 LOOK_FORMAT_VERSION = 15
+#: Written when any LookDev material has maps (`LookMaterial.maps`, AD-039 §10 S7).
+LOOK_MAPS_FORMAT_VERSION = 16
 
 
 def scene_to_dict(scene: Scene) -> dict:
@@ -157,7 +167,9 @@ def scene_to_dict(scene: Scene) -> dict:
         obj.state is ObjectState.GROUP or obj.hidden or obj.parent is not None for obj in scene.objects.values()
     ) or (scene.rig is not None and bool(scene.rig.hidden_ids()))
     looks = [obj.eye.look for obj in objects if obj.eye is not None and obj.eye.look is not None]
-    if any(obj.look is not None for obj in objects):
+    if any(obj.look is not None and obj.look.maps is not None for obj in objects):
+        version = LOOK_MAPS_FORMAT_VERSION
+    elif any(obj.look is not None for obj in objects):
         version = LOOK_FORMAT_VERSION
     elif any(obj.paint is not None for obj in objects):
         version = PAINT_FORMAT_VERSION
@@ -200,7 +212,7 @@ def scene_from_dict(data: dict) -> Scene:
     version = data.get("version")
     if version in (2, 3, FORMAT_VERSION, LAYERS_FORMAT_VERSION, UV_FORMAT_VERSION, RIG_FORMAT_VERSION, GROUP_FORMAT_VERSION,
                    EYE_FORMAT_VERSION, EYE_LOOK_FORMAT_VERSION, EYE_IRIS_FORMAT_VERSION, EYE_SCLERA_FORMAT_VERSION,
-                   BONE_LINK_FORMAT_VERSION, PAINT_FORMAT_VERSION, LOOK_FORMAT_VERSION):
+                   BONE_LINK_FORMAT_VERSION, PAINT_FORMAT_VERSION, LOOK_FORMAT_VERSION, LOOK_MAPS_FORMAT_VERSION):
         scene = Scene.from_objects(
             (_object_from_dict(raw, version) for raw in data["objects"]),
             edit_object_id=ObjectId(data["edit_object"]),
@@ -266,7 +278,7 @@ def _object_to_dict(obj: SceneObject) -> dict:
     if obj.paint is not None:
         out["paint"] = obj.paint.to_dict()  # version 14 (AD-037)
     if obj.look is not None:
-        out["look"] = obj.look.to_dict()  # version 15 (AD-038 §18)
+        out["look"] = obj.look.to_dict()  # version 15 (AD-038 §18), "look.maps" 16 (AD-039 §10)
     return out
 
 
@@ -276,6 +288,9 @@ def _look_from(raw: dict, version: int) -> LookMaterial | None:
         return None
     if version < LOOK_FORMAT_VERSION:
         raise ValueError(f"Objekt {raw.get('id')!r}: \"look\" erst ab Version {LOOK_FORMAT_VERSION}, Datei {version}")
+    if isinstance(value, dict) and "maps" in value and version < LOOK_MAPS_FORMAT_VERSION:
+        raise ValueError(
+            f"Objekt {raw.get('id')!r}: \"look.maps\" erst ab Version {LOOK_MAPS_FORMAT_VERSION}, Datei {version}")
     return LookMaterial.from_dict(value)
 
 

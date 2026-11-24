@@ -15,7 +15,8 @@ pattern (parity: `tests/test_gl_lookdev_parity.py`, `tests/test_lookdev_optics.p
   `lookdev_shaders.LD_SHADOW_SRC` and the `SHADOW` block; S3 (§6): `ld_direct_dual` / `ld_specular_dual`, the twins of
   `lookdev_shaders.LD_DUAL_LOBE_SRC` (`ld_key_shadowed(..., dual=True)` for the `SHADOW` block with `DUAL_LOBE`);
   S4 (§7): `bilinear_depth`, `key_transmission` and `ld_backscatter`, the twins of `lookdev_shaders.LD_THICKNESS_SRC`
-  and the `THICKNESS` block.
+  and the `THICKNESS` block; S7 (§10): `normal_map_tangent`, `cotangent_frame`, `ld_normal_mapped` and
+  `map_roughness`, the twins of `lookdev_shaders.LD_NORMAL_MAP_SRC` and the `ROUGHNESS_MAP` block.
 
 World frame as `light_rig` (Y up, the model faces +Z, azimuth from +Z toward +X). The studio's frame turns by
 `rotation` degrees about Y; with "Licht folgt Kamera" it is the camera's (`right`, `up`, `-forward`), as
@@ -31,8 +32,8 @@ import numpy as np
 
 from . import eye_optics as eo
 from .light_rig import kelvin_to_rgb
-from .lookdev_shaders import (DUAL_LOBE_MIX, DUAL_LOBE_SCALES, MAX_STUDIO, SHADOW_DEPTH_BIAS, SHADOW_WRAP_LIFT,
-                              THICKNESS_SCALE, TONE_CURVES)
+from .lookdev_shaders import (DUAL_LOBE_MIX, DUAL_LOBE_SCALES, MAX_STUDIO, NORMAL_MAP_ZERO, SHADOW_DEPTH_BIAS,
+                              SHADOW_WRAP_LIFT, THICKNESS_SCALE, TONE_CURVES)
 
 LUMA = np.array([0.2126, 0.7152, 0.0722])
 SH_DIRECTIONS = 4096
@@ -71,12 +72,14 @@ class LookdevEffects:
     """The P3 effects' on/off (view state, `view.lookdev.effects`, no Undo). A field joins with its slice, default on
     once the slice is built (AD-039 §2.1). `shadow` (S1): the key's shadow map on skin and teeth; `eye_shadow` (S2): the
     eyes receive it (the lids' shadow from the geometry), needs `shadow`; `dual_lobe` (S3): the skin's highlight from the
-    three lights as two lobes; `thickness` (S4): the key's light through thin parts, from the key's map, needs `shadow`."""
+    three lights as two lobes; `thickness` (S4): the key's light through thin parts, from the key's map, needs `shadow`;
+    `maps` (S7): the materials' roughness, normal and translucency maps."""
 
     shadow: bool = True
     eye_shadow: bool = True
     dual_lobe: bool = True
     thickness: bool = True
+    maps: bool = True
 
     @classmethod
     def names(cls) -> tuple[str, ...]:
@@ -87,13 +90,13 @@ class LookdevEffects:
 
 
 #: The feature each effect needs (`viewport.lookdev_features`), and the effect it depends on (AD-039 §2.1 / §2.2).
-EFFECT_FEATURE = {"shadow": "depth_texture", "thickness": "sampler_objects"}
+EFFECT_FEATURE = {"shadow": "depth_texture", "thickness": "sampler_objects", "maps": "texture_units"}
 EFFECT_NEEDS: dict[str, str] = {"eye_shadow": "shadow", "thickness": "shadow"}
 #: The panel's reasons for a greyed effect (German, the panel's language).
 FEATURE_REASON = {"depth_texture": "Tiefentextur fehlt", "sampler_objects": "Sampler-Objekte fehlen",
                   "cube_rgba16f": "Cube-Ziel fehlt", "texture_units": "zu wenige Textureinheiten"}
 EFFECT_LABEL = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz",
-                "thickness": "Durchleuchtung"}
+                "thickness": "Durchleuchtung", "maps": "Maps"}
 
 
 def effect_reasons(effects: LookdevEffects, features=None) -> dict[str, str | None]:
@@ -588,6 +591,44 @@ def ld_backscatter(albedo, n, v, values: dict, backscatter: float, backscatter_c
     else:
         back = np.asarray(transmission, dtype=np.float64) * behind
     return backscatter * back[..., None] * srgb_decode(backscatter_color) * np.asarray(albedo) * c
+
+
+# -- S7: the material's maps (AD-039 §10) ------------------------------------------------------------------------------
+
+def normal_map_tangent(texel, strength: float = 1.0, green_down: bool = False) -> np.ndarray:
+    """A normal map's texel (..., 3) in [0, 1] -> the tangent-space normal, unnormalised: 128 / 255 is zero (a flat
+    map's (128, 128, 255) does not tilt), the tilt times `strength`, green flipped for a DirectX map (`green_down`)."""
+    t = np.asarray(texel, dtype=np.float64) / NORMAL_MAP_ZERO - 1.0
+    green = -1.0 if green_down else 1.0
+    return np.stack([t[..., 0] * strength, t[..., 1] * strength * green, np.maximum(t[..., 2], 0.0)], axis=-1)
+
+
+def cotangent_frame(n, dp1, dp2, duv1, duv2) -> np.ndarray:
+    """The frame (..., 3, 3) whose columns are tangent, bitangent and `n`, from the screen derivatives of position
+    (`dp1`, `dp2`) and UV (`duv1`, `duv2`): tangent and bitangent scaled together by the larger one's length; a
+    degenerate UV gives zero columns."""
+    n, dp1, dp2 = (np.asarray(x, dtype=np.float64) for x in (n, dp1, dp2))
+    duv1, duv2 = np.asarray(duv1, dtype=np.float64), np.asarray(duv2, dtype=np.float64)
+    dp2perp = np.cross(dp2, n)
+    dp1perp = np.cross(n, dp1)
+    t = dp2perp * duv1[..., :1] + dp1perp * duv2[..., :1]
+    b = dp2perp * duv1[..., 1:2] + dp1perp * duv2[..., 1:2]
+    m = np.maximum(np.sum(t * t, axis=-1), np.sum(b * b, axis=-1))[..., None]
+    scale = np.where(m > 1e-30, 1.0 / np.sqrt(np.maximum(m, 1e-300)), 0.0)
+    return np.stack([t * scale, b * scale, n], axis=-1)
+
+
+def ld_normal_mapped(n, dp1, dp2, duv1, duv2, texel, strength: float = 1.0, green_down: bool = False) -> np.ndarray:
+    """The shading normal: `n` tilted by the map's texel in the cotangent frame (the `NORMAL_MAP` block)."""
+    frame = cotangent_frame(n, dp1, dp2, duv1, duv2)
+    m = np.einsum("...ij,...j->...i", frame, normal_map_tangent(texel, strength, green_down))
+    length = np.linalg.norm(m, axis=-1, keepdims=True)
+    return np.where(length * length > 1e-12, m / np.maximum(length, 1e-300), np.asarray(n, dtype=np.float64))
+
+
+def map_roughness(roughness: float, grey) -> np.ndarray:
+    """The `ROUGHNESS_MAP` block: the perceptual roughness times the map's grey value (alpha = its square)."""
+    return float(roughness) * np.asarray(grey, dtype=np.float64)
 
 
 # -- S2: the eye in the key's shadow (AD-039 §5) -----------------------------------------------------------------------

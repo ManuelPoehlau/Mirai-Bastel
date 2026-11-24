@@ -16,7 +16,8 @@ It holds:
 
 R-1 (§2.2) by construction: opening and closing write only these and the display fields in `saved_view`.
 `look_draw` resolves an object's `LookDraw` from the object (never from the Worklight packet: no selection tint,
-independent of the texture toggle, §3.3).
+independent of the texture toggle, §3.3). AD-039 S7: with the material's maps that pass `look_maps.drawable` - on an
+object with UVs only.
 """
 
 from __future__ import annotations
@@ -81,8 +82,16 @@ class LookdevRoom:
     def look_draw(self, obj):
         from viewport.lookdev_pass import LookDraw
 
+        from .. import look_maps
+
         material = self.material(obj)
         albedo = self.albedo_source(obj) if material.albedo_source == "texture" else None
+        maps = material.maps if material.maps is not None and obj.mesh.has_face_uvs() else None
+        extra = {}
+        if maps is not None:
+            extra = dict(roughness_map=look_maps.drawable(maps.roughness), normal_map=look_maps.drawable(maps.normal),
+                         translucency_map=look_maps.drawable(maps.translucency),
+                         normal_strength=maps.normal_strength, normal_green_down=maps.normal_green_down)
         return LookDraw(base_color=material.base_color, roughness=material.roughness, specular=material.specular,
                         wrap_rgb=wrap_rgb(material), backscatter=material.backscatter,
-                        backscatter_color=material.backscatter_color, albedo=albedo)
+                        backscatter_color=material.backscatter_color, albedo=albedo, **extra)

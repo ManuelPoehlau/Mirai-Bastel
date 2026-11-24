@@ -39,7 +39,8 @@ Architekturvertrag:
 - LookDev-Material (`LookMaterial`, `SceneObject.look`; AD-038 §18 LD-2, CORE_V1_FREEZE §7.1 2026-11-21): reine
   Daten - das organische Material des LookDev-Raums (Vorlage, Farbe, Albedo-Quelle, Rauheit, Glanz, Weichheit,
   Durchscheinen); unabhängig vom Worklight-`ObjectMaterial`. Zeichnung, Vorlagen und Undo leben in `src/mirai` /
-  `src/viewport`.
+  `src/viewport`. Seit AD-039 S7 (CORE_V1_FREEZE §7.1 2026-11-24) optional mit Bild-Maps (`LookMaps`,
+  `LookMaterial.maps`): Rauheit, Normalen, Durchscheinen als Bildpfade.
 - Augen (`EyeSpec`, `SceneObject.eye`; AD-033 §4, CORE_V1_FREEZE §7.1 2026-11-15): reine Daten. Seit 2026-11-16
   (Eye LookDev Phase 3, Manu I-5 "Core Change erlaubt") trägt ein Auge optional eine verschachtelte Look-Gruppe
   (`EyeLook`, `EyeSpec.look`; `None` = neutral, wie bisher); Bedeutung und Zeichnung leben in `src/viewport`.
@@ -502,6 +503,57 @@ def _look_colour(value: object, what: str) -> Vec3:
     return tuple(_look_unit(c, what) for c in values)  # type: ignore[return-value]
 
 
+#: AD-039 §10 (S7): the map fields of `LookMaps` (each an image path or None) and the normal map's strength range.
+LOOK_MAP_FIELDS = ("roughness", "normal", "translucency")
+LOOK_NORMAL_STRENGTH_MAX = 2.0
+
+
+@dataclass(frozen=True)
+class LookMaps:
+    """The image maps of a LookDev material (AD-039 §10, S7; Manu 2026-11-24 Q-P3-2 "Map-Pfade"): data only. Each of
+    `roughness` (a grey value multiplying the material's roughness), `normal` (a tangent-space normal map) and
+    `translucency` (a grey value multiplying the light through thin parts) is a plain image path like
+    `SceneObject.texture` (its meaning - scene-relative on disk, the copy beside the scene - is `src/mirai`'s) or None.
+    `normal_strength` in [0, `LOOK_NORMAL_STRENGTH_MAX`] scales the map's tilt; `normal_green_down` = a DirectX map
+    (green points down; the default is OpenGL's green up). At least one map is set: no map = `LookMaterial.maps`
+    None."""
+
+    roughness: str | None = None
+    normal: str | None = None
+    translucency: str | None = None
+    normal_strength: float = 1.0
+    normal_green_down: bool = False
+
+    def __post_init__(self) -> None:
+        for name in LOOK_MAP_FIELDS:
+            value = getattr(self, name)
+            if value is not None:
+                _clean_text(value, f"look map {name}")
+        if all(getattr(self, name) is None for name in LOOK_MAP_FIELDS):
+            raise ValueError("look maps: at least one map (no map = LookMaterial.maps None)")
+        strength = self.normal_strength
+        if isinstance(strength, bool) or not isinstance(strength, numbers.Real):
+            raise ValueError(f"look map normal_strength: expected a number, got {strength!r}")
+        strength = float(strength)
+        if not (math.isfinite(strength) and 0.0 <= strength <= LOOK_NORMAL_STRENGTH_MAX):
+            raise ValueError(f"look map normal_strength: in [0, {LOOK_NORMAL_STRENGTH_MAX:g}], got {strength!r}")
+        object.__setattr__(self, "normal_strength", strength)
+        if not isinstance(self.normal_green_down, bool):
+            raise ValueError(f"look map normal_green_down: expected true or false, got {self.normal_green_down!r}")
+
+    def to_dict(self) -> dict:
+        """Only the maps that are set (absent = none) and every value."""
+        out = {name: getattr(self, name) for name in LOOK_MAP_FIELDS if getattr(self, name) is not None}
+        return out | {"normal_strength": self.normal_strength, "normal_green_down": self.normal_green_down}
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "LookMaps":
+        values = ("normal_strength", "normal_green_down")
+        if not isinstance(raw, dict) or not set(values) <= set(raw) or set(raw) - set(values) - set(LOOK_MAP_FIELDS):
+            raise ValueError(f"look maps: expected {list(values)} and some of {list(LOOK_MAP_FIELDS)}, got {raw!r}")
+        return cls(**raw)
+
+
 @dataclass(frozen=True)
 class LookMaterial:
     """The organic LookDev material of one object (AD-038 §7 / §18, LD-2; proposal §4): data only. `preset` names the
@@ -510,7 +562,9 @@ class LookMaterial:
     `src/mirai`'s / `src/viewport`'s business), `wrap` with its per-channel `wrap_tint`, `backscatter` with its colour,
     `adjusted` = a value changed after the preset was picked. Every number in [0, 1]; invalid values are refused, not
     clamped. `None` at the object = no LookDev material (the room draws its Neutral fallback). Independent of
-    `ObjectMaterial`, the Worklight material (nothing is mapped between them, proposal §4.3)."""
+    `ObjectMaterial`, the Worklight material (nothing is mapped between them, proposal §4.3). `maps` (AD-039 §10, S7,
+    scene format v16) is the optional `LookMaps`; `None` = no maps, the material as before S7 (the `EyeLook.iris`
+    pattern: absent in the file)."""
 
     preset: str
     base_color: Vec3
@@ -522,6 +576,7 @@ class LookMaterial:
     backscatter: float = 0.0
     backscatter_color: Vec3 = (1.0, 1.0, 1.0)
     adjusted: bool = False
+    maps: LookMaps | None = None
 
     def __post_init__(self) -> None:
         _clean_text(self.preset, "look preset")
@@ -533,22 +588,27 @@ class LookMaterial:
             object.__setattr__(self, name, _look_colour(getattr(self, name), name))
         if not isinstance(self.adjusted, bool):
             raise ValueError(f"look adjusted: expected true or false, got {self.adjusted!r}")
+        if self.maps is not None and not isinstance(self.maps, LookMaps):
+            raise ValueError(f"look maps: expected a LookMaps or None, got {self.maps!r}")
 
     def to_dict(self) -> dict:
-        out = {f.name: getattr(self, f.name) for f in fields(self)}
+        out = {f.name: getattr(self, f.name) for f in fields(self) if f.name != "maps"}
         for name in ("base_color", "wrap_tint", "backscatter_color"):
             out[name] = list(out[name])
-        return out
+        return out | ({} if self.maps is None else {"maps": self.maps.to_dict()})  # absent = none: v15 looks stay
 
     @classmethod
     def from_dict(cls, raw: dict) -> "LookMaterial":
-        names = [f.name for f in fields(cls)]
-        if not isinstance(raw, dict) or set(raw) != set(names):
-            raise ValueError(f"look: expected exactly {names}, got {raw!r}")
+        names = [f.name for f in fields(cls) if f.name != "maps"]
+        if not isinstance(raw, dict) or set(raw) - {"maps"} != set(names):
+            raise ValueError(f"look: expected exactly {names} (and maybe \"maps\"), got {raw!r}")
         for name in ("base_color", "wrap_tint", "backscatter_color"):
             if not isinstance(raw[name], list):
                 raise ValueError(f"look {name}: expected a list of three numbers, got {raw[name]!r}")
-        return cls(**raw)
+        maps = raw.get("maps", None)
+        if "maps" in raw and maps is None:
+            raise ValueError("look maps: absent, not null, when there is none")
+        return cls(**{n: raw[n] for n in names}, maps=None if maps is None else LookMaps.from_dict(maps))
 
 
 @dataclass(frozen=True)

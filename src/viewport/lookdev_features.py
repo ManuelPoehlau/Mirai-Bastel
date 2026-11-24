@@ -7,7 +7,8 @@ one status line; the check does not retry in the session. The report is a plain 
 
 S1 adds `depth_texture`: a DEPTH_COMPONENT24 texture with `GL_COMPARE_REF_TO_TEXTURE` attached to an FBO -
 `glCheckFramebufferStatus == COMPLETE` and `glGetError` 0. S4 adds `sampler_objects`: `glGenSamplers` succeeds and
-`glGetError` stays 0. The later slices add theirs here (`cube_rgba16f`, `texture_units`).
+`glGetError` stays 0. S7 adds `texture_units`: `GL_MAX_TEXTURE_IMAGE_UNITS` covers the highest unit the skin binds
+(`lookdev_shaders.MAP_UNITS`, 11) + 1. S5 adds `cube_rgba16f` here.
 """
 
 from __future__ import annotations
@@ -16,7 +17,8 @@ from dataclasses import dataclass, fields
 
 #: The status line of a feature that is missing (German, the app's status language).
 FEATURE_STATUS = {"depth_texture": "LookDev: Schatten aus – Tiefentextur nicht verfügbar",
-                  "sampler_objects": "LookDev: Durchleuchtung aus – Sampler-Objekte nicht verfügbar"}
+                  "sampler_objects": "LookDev: Durchleuchtung aus – Sampler-Objekte nicht verfügbar",
+                  "texture_units": "LookDev: Maps aus – zu wenige Textureinheiten"}
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,7 @@ class FeatureReport:
 
     depth_texture: bool = True
     sampler_objects: bool = True
+    texture_units: bool = True
 
     def missing(self) -> tuple[str, ...]:
         return tuple(f.name for f in fields(self) if not getattr(self, f.name))
@@ -88,8 +91,21 @@ def _sampler_objects() -> bool:
     return made and gl.glGetError() == gl.GL_NO_ERROR
 
 
+def _texture_units() -> bool:
+    """`GL_MAX_TEXTURE_IMAGE_UNITS` (fragment units) above the highest unit the skin pass binds (AD-039 §2.4)."""
+    import ctypes
+
+    from pyglet import gl
+
+    from .lookdev_shaders import MAP_UNITS
+
+    units = gl.GLint()
+    gl.glGetIntegerv(gl.GL_MAX_TEXTURE_IMAGE_UNITS, ctypes.byref(units))
+    return units.value >= max(MAP_UNITS.values()) + 1
+
+
 #: The checks, by feature (a test replaces one with a stub to force its failure, AD-039 §2.2).
-CHECKS = {"depth_texture": _depth_texture, "sampler_objects": _sampler_objects}
+CHECKS = {"depth_texture": _depth_texture, "sampler_objects": _sampler_objects, "texture_units": _texture_units}
 
 
 def probe() -> FeatureReport:

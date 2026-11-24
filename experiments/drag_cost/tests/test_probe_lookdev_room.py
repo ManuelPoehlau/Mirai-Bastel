@@ -10,7 +10,8 @@ from drag_cost import probe_lookdev_room as room
 def test_effects_default_every_built_effect_and_none_measures_no_p3_row():
     from viewport.lookdev_optics import LookdevEffects
 
-    assert room.parse_args([]).effects == LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness")
+    assert room.parse_args([]).effects == LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness",
+                                                                         "maps")
     assert room.parse_args(["--effects", "none"]).effects == ()
     assert room.parse_args(["--effects", "shadow"]).effects == ("shadow",)
 
@@ -42,3 +43,16 @@ def test_the_thickness_row_switches_the_shadow_too():
 
     label, names = room.EFFECT_ROWS["thickness"]
     assert label == "lookdev +shadow +thick" and set(names) == {"thickness", EFFECT_NEEDS["thickness"]}
+
+
+def test_the_maps_row_measures_them_alone_with_three_generated_maps():
+    """AD-039 §10: `lookdev +maps` against `lookdev` is S7's cost; the probe's maps are deterministic RGBA images and a
+    flat region of the normal map decodes to no tilt (128)."""
+    import numpy as np
+
+    assert room.EFFECT_ROWS["maps"] == ("lookdev +maps", ("maps",))
+    images = room.probe_map_images(64)
+    assert set(images) == {"roughness", "normal", "translucency"}
+    assert all(im.shape == (64, 64, 4) and im.dtype == np.uint8 for im in images.values())
+    assert tuple(images["normal"][1, 1, :3]) == (128, 128, 255)  # a bump's top: no tilt
+    assert np.array_equal(room.probe_map_images(64)["roughness"], images["roughness"])

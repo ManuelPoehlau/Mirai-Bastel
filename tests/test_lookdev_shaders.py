@@ -141,3 +141,49 @@ def test_the_thickness_variant_replaces_the_rim_proxy_and_needs_the_shadow():
     assert "THICKNESS" not in fs and "ld_key_transmission" not in fs and "u_ld_shadow_depth" not in fs
     with pytest.raises(ValueError):
         ls.skin_sources(locations, True, True, False, True, True)
+
+
+#: AD-039 §10 / §20 (S7): the 4 S4 skin variants with every effect before S7 on (`shadow`, `dual_lobe`, `thickness`),
+#: taken from the code before S7 changed `lookdev_shaders.py` (`50c69cd`). With no map, the frame's programs stay
+#: exactly S4's.
+PINNED_S4_SKIN_SOURCES_SHA256 = "934cf4517e997b6399a9f298bf8db83dfa680fcdbf85fb70dc7cdc4d203bb093"
+
+
+def test_no_map_keeps_the_m1_to_s4_sources():
+    """AD-039 §10: every map off = the sources before S7, character for character."""
+    off = dict(roughness_map=False, normal_map=False, translucency_map=False)
+    assert skin_sources_digest(**off) == (12, PINNED_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, **off) == (12, PINNED_S1_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, **off) == (12, PINNED_S3_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, thickness=True) == (12, PINNED_S4_SKIN_SOURCES_SHA256)
+    assert skin_sources_digest(shadow=True, dual_lobe=True, thickness=True, **off) == (12,
+                                                                                      PINNED_S4_SKIN_SOURCES_SHA256)
+
+
+def test_each_map_has_its_define_and_only_its_text():
+    """AD-039 §10: one define per map, `LD_MAP_UV` with any of them, the normal map's library only with it; the
+    triangle UVs declared once with or without the albedo map; with the normal map the key map's lookups take the
+    geometric normal `n_geo`."""
+    import itertools
+
+    locations = {"position": 0, "normal": 1}
+    assert ls.SKIN_MAPS == ("ROUGHNESS_MAP", "NORMAL_MAP", "TRANSLUCENCY_MAP")
+    assert ls.MAP_UNITS == {"roughness": 9, "normal": 10, "translucency": 11}
+    assert set(ls.MAP_UNITS.values()).isdisjoint({0, ls.UV_UNIT, ls.ALBEDO_UNIT, 5, ls.SHADOW_UNIT,
+                                                  ls.SHADOW_RAW_UNIT, 8, 12})
+    for albedo, rough, normal, trans in itertools.product((False, True), repeat=4):
+        if not (rough or normal or trans):
+            continue
+        fs = ls.skin_sources(locations, albedo, True, True, True, True, rough, normal, trans)[2][0]
+        assert fs.count("#define LD_MAP_UV 1\n") == 1
+        for name, on in (("ROUGHNESS_MAP", rough), ("NORMAL_MAP", normal), ("TRANSLUCENCY_MAP", trans)):
+            assert (f"#define {name} 1\n" in fs) == on
+            assert (f"#ifdef {name}" in fs) == on  # an off map's blocks are resolved away
+        assert fs.count(ls.LD_NORMAL_MAP_SRC) == (1 if normal else 0)
+        assert fs.count("uniform samplerBuffer u_triangle_uvs;") == 2  # once per #ifdef / #ifndef ALBEDO_MAP
+        body = fs[fs.index("void main()"):]
+        assert ("ld_key_visibility(v_world_pos, n_geo, u_ld_light_dir[0])" in body) == normal
+        assert ("ld_key_transmission(v_world_pos, n_geo, u_ld_light_dir[0])" in body) == normal
+        assert ("texture(u_roughness_map, map_uv)" in body) == rough
+        assert ("texture(u_translucency_map, map_uv)" in body) == trans
+    assert "NORMAL_MAP" not in ls.LD_COMMON_SRC and "map_uv" not in ls.LD_COMMON_SRC

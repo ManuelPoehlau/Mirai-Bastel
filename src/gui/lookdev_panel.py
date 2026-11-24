@@ -5,11 +5,15 @@ goes through `Application`. Studio and lights are view state (saved in `view.loo
 them at once (rotation, intensity and exposure are uniforms; no projection). The material is document data since LD-2
 (AD-038 §18): a held slider or colour previews (`MaterialEdit.hold`), the release is one Undo step.
 About 15 controls are visible; the tone curve, softness, "Licht folgt Kamera" and backscatter sit under "Mehr".
+AD-039 S7: the material's maps sit under "Mehr" too - one row per map (file, „Laden …“ through the file browser,
+„Entfernen“; one Undo step each), the normal map's strength (held = preview, release = one step) and its green
+direction.
 """
 
 from __future__ import annotations
 
 from . import lookdev_model as lm
+from .file_browser_model import ALL_FILTER, IMAGE_FILTER
 
 
 class LookdevPanel:
@@ -136,6 +140,7 @@ class LookdevPanel:
                                                     imgui.ColorEditFlags_.no_inputs)
                 if changed:
                     self.edit.hold(app, backscatter_color=tuple(colour))
+                self.draw_maps(row)
             imgui.begin_disabled(not row.has_look)
             if imgui.button(lm.RESET):
                 self.edit.drop(app)
@@ -175,3 +180,43 @@ class LookdevPanel:
             changed, on = imgui.checkbox("Licht folgt Kamera", st.follow_camera)
             if changed:
                 app.set_lookdev_studio(follow_camera=on)
+
+    def browse_map(self, kind: str) -> None:
+        """„Laden …“: the file browser (`gui.file_browser`) for a map image; the pick loads it (one Undo step)."""
+        menus = getattr(self.layer, "menus", None)
+        if menus is None:
+            self.app.set_status("Datei-Browser: nicht verfügbar")
+            return
+        menus.browser.request("image", f"{lm.MAP_LABELS[kind]} wählen", (IMAGE_FILTER, ALL_FILTER),
+                              lambda path: lm.load_map(self.app, kind, str(path)))
+
+    def draw_maps(self, row: lm.MaterialRow) -> None:
+        """AD-039 §10 (S7): the material's maps (`PROVISIONAL` layout)."""
+        imgui, app = self.imgui, self.app
+        imgui.text_disabled(lm.MAPS_TITLE)
+        if imgui.is_item_hovered():
+            imgui.set_tooltip(lm.MAPS_HINT)
+        if row.no_uvs:
+            imgui.text_disabled("Objekt ohne UVs: Maps werden nicht gezeigt")
+        for map_row in row.maps:
+            imgui.push_id(map_row.kind)
+            imgui.text(f"{map_row.label}: {map_row.text}")
+            if map_row.path is not None and imgui.is_item_hovered():
+                imgui.set_tooltip(map_row.path)
+            if imgui.small_button(lm.MAP_LOAD):
+                self.edit.drop(app)
+                self.browse_map(map_row.kind)
+            if map_row.path is not None:
+                imgui.same_line()
+                if imgui.small_button(lm.MAP_REMOVE):
+                    self.edit.drop(app)
+                    lm.load_map(app, map_row.kind, None)
+            if map_row.kind == "normal" and map_row.path is not None:
+                changed, value = self._slider(lm.NORMAL_STRENGTH, row.normal_strength, 0.0, 2.0)
+                if changed:
+                    self.edit.hold(app, normal_strength=value)
+                changed, on = imgui.checkbox(lm.NORMAL_GREEN_DOWN, row.normal_green_down)
+                if changed:
+                    self.edit.drop(app)
+                    app.set_lookdev_material_values(normal_green_down=on)
+            imgui.pop_id()
