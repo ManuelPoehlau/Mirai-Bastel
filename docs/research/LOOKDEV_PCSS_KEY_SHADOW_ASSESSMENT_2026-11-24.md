@@ -4,15 +4,17 @@
 **Status:** Bewertung mit Empfehlung. Forschung plus isolierter Prototyp in
 [`experiments/lookdev_pcss/`](../../experiments/lookdev_pcss/README.md), **kein Production-Code**.
 **Stopp hier:** Der Einbau in `src/` folgt erst nach Manus Referenz-PC-Zahlen und seinem Go.
+**Stand 2026-11-24, nach dem Referenz-PC-Lauf (§8.2):** Das Bild-Ergebnis gilt. Die Kosten verfehlen das Budget aber
+um das 3- bis 12-Fache. **K16c wird so nicht eingebaut.** Nächster Schritt ist ein Diagnose-Lauf (§8.3), danach
+entscheidet Manu den Weg (Q-PCSS-5).
 **Basis:** AD-039 §23 (S8 „Weiches Licht“, `22a34b0`) und §23.6 (Manus Befund, `ab286c4`); Bewertung
 [LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24](LOOKDEV_DIFFUSE_AREA_LIGHT_TERMINATOR_ASSESSMENT_2026-11-24.md)
 §3 und §6.1–§6.3.
 **Evidenz:**
 - **[M-C]** im Container gemessen (llvmpipe, Bilder und Kennzahlen; gleicher Shader-Text wie auf der GPU).
 - **[E]** geschätzt.
+- **[M-RPC]** auf Manus Referenz-PC gemessen (GeForce 9800 GTX).
 - **[O]** Entscheidung von Manu.
-
-Die Kosten auf der GeForce 9800 GTX sind **noch nicht gemessen**; Befehl in §8.
 
 ## Kurzfassung
 
@@ -37,19 +39,27 @@ statt gegen die Ebene des Empfängers. Nur nahe der Mitte gilt die Ebene wie heu
 **gehobenen Lookup, der mit σ wächst** (0.23 · R · s³ statt heute linear über die Texelgröße). Das löst innerhalb des
 neuen Effekts auch den Befund §6.3 (Nasenloch-Glühen).
 
-**Kosten [E]:**
-- Lichtseite: 16 Rohtiefe-Abfragen statt 18 Vergleichs-Abfragen wie heute (Frühabbruch).
-- Im Halbschatten: 16 + 2 × 16 = 48 Abfragen.
+**Kosten [M-RPC] (§8.2):** K16c kostet bei 1024 × 768 +1.4 bis +6.1 ms (Mittel +3.2), bei 1920 × 1080 im Mittel
++5.1 ms. Erlaubt sind ≤ +0.5 ms. Teuer ist die Nahansicht „face“, in der die Haut den Bildschirm füllt.
+- Die Kosten folgen **nicht** der Zahl der Abfragen: 8, 16 oder 24 Such-Abfragen, 16 oder 32 PCF-Abfragen und ein
+  3 × 3-Gitter kosten im Mittel alle +3.2 bis +3.5 ms.
+- Der Frühabbruch kostet mehr, als er spart (ohne: Mittel +2.3 ms).
+- Volle Auflösung allein kostet nichts (+0.04 ms).
+- Vermutung [E]: Der größere Haut-Shader senkt die Auslastung der G92 (Register), oder die Verzweigung divergiert.
+  Weniger Abfragen sind also kein wirksamer Hebel.
 
-Ob das in ≤ +0.5 ms passt, entscheidet der Referenz-PC.
+**Empfehlung (revidiert):**
+- K16c ist **im Bild** das richtige Verfahren, wird aber **so nicht eingebaut**.
+- Erst der Diagnose-Lauf `bench.py --set diag` (§8.3, wenige Minuten). Er trennt Shader-Größe, Suche, PCF,
+  Schleifen-Entrollung und Texture-Cache und misst eine schlanke Form mit gleichem Bild.
+- Danach drei Wege (Q-PCSS-5):
+  - die günstigste K-Form mit einer bewussten Budget-Ausnahme für einen Effekt, der standardmäßig aus ist;
+  - ein vorgefilterter Ansatz mit Ereigniskosten statt Frame-Kosten (neuer Prototyp);
+  - Verzicht.
+- Unverändert für jeden späteren Einbau: eigener Schalter „Weicher Schatten“ (braucht „Schatten“), Standard aus;
+  aus = alle Pins bitgleich; das Auge bleibt beim alten Lookup (§7).
 
-**Empfehlung:**
-- K16c als neuer P3-Effekt **„Weicher Schatten“** mit eigenem Schalter (braucht „Schatten“), **Standard aus** bis zu
-  Manus Praxistest.
-- Aus = alle Pins bitgleich.
-- Das Auge bleibt beim alten Lookup und braucht keinen eigenen Weg (§7).
-
-**Offene Entscheidungen:** Q-PCSS-1 bis Q-PCSS-4 am Ende.
+**Offene Entscheidungen:** Q-PCSS-1 bis Q-PCSS-5 am Ende.
 
 ## 1. Ausgangslage (geprüft am Code, `ab286c4`)
 
@@ -325,6 +335,8 @@ Gegen Production (= REF bei Größe 0):
 
 ## 8. Kosten und Referenz-PC-Lauf
 
+### 8.1 Schätzung vor dem Lauf (überholt durch §8.2)
+
 - **Abfragen [E]:**
   - Lichtseite: 16 Rohtiefe-Abfragen (heute 18 Vergleichs-Abfragen).
   - Halbschatten, Schatten und hinter dem Terminator: 48.
@@ -366,7 +378,67 @@ Gemessen wird:
 
 Bitte die ganze Ausgabe zurückgeben. Entscheidend sind `K16c`, `K8c/16`, `K24c/16` und `K16c-nb` gegen `P`.
 
+### 8.2 Gemessen auf dem Referenz-PC (Manu, 2026-11-24, `dd9505fba0`) [M-RPC]
+
+Alle Zeilen: [RESULTS_REFERENCE_PC_2026-11-24](../../experiments/lookdev_pcss/RESULTS_REFERENCE_PC_2026-11-24.md).
+GPU p50 gegen P, Mittel über Käfig / SubD 1 × framed / face × Größe 0.45 / 1:
+
+| | F | K8c/16 | K16c | K24c/16 | K16c/32 | K16c/9g | K16c-nb | K16c-eff |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1024 × 768 | +0.04 | +3.49 | +3.16 | +3.53 | +3.50 | +3.19 | +2.30 | +3.65 |
+| 1920 × 1080 | +0.04 | +4.74 | +5.13 | +6.31 | +6.36 | +4.32 | +5.37 | +5.03 |
+
+Spannweite und Frame:
+- K16c bei 1024 × 768: +1.38 ms (SubD 1, framed) bis +6.10 ms (Käfig, face).
+- K16c-nb bei 1024 × 768 framed: +0.77 bis +0.83 ms.
+- Ganzer Frame mit K16c bei 1920 × 1080 face: 30.6 ms (Käfig) / 28.9 ms (SubD 1). P liegt dort bei 20.4 / 24.2 ms.
+- Das Budget ≤ +0.5 ms ist in keinem Block erreicht; der Frame bleibt unter 33.3 ms.
+
+Lesart:
+- Die Kosten hängen nicht an der Zahl der Abfragen: Alle Muster liegen im Mittel gleich.
+- K8c/16 ist bei SubD 1 sogar teurer als K16c; K16c/32 ist im Käfig-framed-Fall billiger als K16c.
+- Das zeigt auf feste Kosten pro Hautpixel, die von der Form des übersetzten Shaders abhängen (Registerdruck →
+  Auslastung, Entrollung, Verzweigung), nicht auf die Textureinheit [E].
+- Der Frühabbruch spart auf der Lichtseite nicht, sondern kostet. Die Verzweigung divergiert an jeder
+  Schattenkante.
+- Volle Auflösung und Tiefen-Pass sind kein Kostenfaktor.
+
+### 8.3 Nächster Lauf: Kosten-Diagnose (vorbereitet, Container-geprüft)
+
+`bench.py --set diag` misst 13 Zeilen gegen P. Alle kompilieren im Container, `glGetError` 0; die schlanken Formen
+liefern im Container das Bild von K16c (Mittel 1.90 statt 1.89/255).
+
+| Zeile | misst |
+|---|---|
+| `K16c`, `K16c-nb` | Bezug zum ersten Lauf |
+| `K16c-nofetch`, `K16c-nb-nofetch` | jede Abfrage durch eine billige Rechnung ersetzt: Ist das so teuer wie K16c, liegen die Kosten in der Größe des Shaders, nicht in der Textureinheit |
+| `K16c-search` / `K16c-pcf` | nur die Suche / nur die zwei PCF mit festem Radius |
+| `K16c-uall` / `K16c-unone` | NVIDIA-Schleifen-Entrollung erzwungen an / aus (`#pragma optionNV(unroll …)`): Register gegen Befehle |
+| `K16c-cap12` | Radius auf 12 Texel gekappt: Ist das viel billiger, belasten breite Kerne den Texture-Cache (im Bild bei Größe 1 schlechter, Mittel 2.27) |
+| `K16c-lean`, `K16c-lean-nb`, `K8c/8-lean-nb` | weniger Rechnung je Abfrage: Mischung Ebene/Höhe und Kegellänge je Fragment statt je Abfrage, Längen als Konstanten. K16c-lean hat das gleiche Bild; K8/8 verliert in der Rinne |
+
+```powershell
+& $py experiments\lookdev_pcss\bench.py --set diag --key-sizes 0.45
+```
+
+```powershell
+& $py experiments\lookdev_pcss\bench.py --set diag --key-sizes 0.45 --size 1920 1080
+```
+
+Die Größe hat im ersten Lauf die Kosten nicht verändert (0.45 gegen 1 fast gleich), deshalb nur 0.45.
+
+Auswertung, so vorab festgelegt:
+- **`nofetch` ≈ K16c:** Die Kosten liegen in der Shader-Größe. Abfragen sparen bringt dann nichts. Hebel sind
+  `unone` und `lean`, sonst der vorgefilterte Ansatz (Q-PCSS-5 b).
+- **Beste Form (`lean-nb`, `unone`, …) ≤ +0.7 ms framed und ≤ +1.5 ms face bei 1024 × 768:** Einbau dieser Form ist
+  möglich, aber nur mit einer bewussten Budget-Ausnahme für einen Effekt, der standardmäßig aus ist (Q-PCSS-5 a).
+- **`cap12` viel billiger:** Der Texture-Cache ist der Engpass. Ein kleinerer Höchstradius kostet bei großer
+  Weichheit Bildqualität; das wäre Manus Abwägung.
+- **Sonst:** Q-PCSS-5 b oder c.
+
 ## 9. Empfehlung
+
+**Nach §8.2 gilt diese Empfehlung für das Bild, nicht für den Einbau.** Der Einbau wartet auf §8.3 und Q-PCSS-5.
 
 1. **Verfahren K16c** (§4): 16 Suchabfragen zur Mitte verdichtet, 16 PCF auf der Vogel-Scheibe, volle Auflösung,
    eine gemeinsame Suche für beide Lookups, Frühabbruch, Band-Lift 0.23 R s³. **K24c/16**, falls der Referenz-PC Luft
@@ -434,12 +506,25 @@ Bitte die ganze Ausgabe zurückgeben. Entscheidend sind `K16c`, `K8c/16`, `K24c/
     - Er braucht σ aus S8; ohne „Weiches Licht“ ist der Terminator härter als der Schatten.
     - Ein Schalter mehr.
   - Nach dem Praxistest kann er in „Weiches Licht“ aufgehen, wenn beide nur zusammen Sinn ergeben.
-- **Q-PCSS-2 — Variante nach den Referenz-PC-Zahlen:** K16c (Vorschlag), K24c/16 (wenn Luft) oder K8c/16 (wenn
-  K16c > +0.5 ms).
+- **Q-PCSS-2 — Variante nach den Referenz-PC-Zahlen:** Erledigt durch §8.2. Keine K-Form erreicht +0.5 ms, und
+  weniger Abfragen helfen nicht. Die Wahl folgt aus §8.3.
 - **Q-PCSS-3 — Größe 0 bitgleich zu heute?** Vorschlag: nein (Abweichung ≤ 0.4 MAE, einzelne Kantenpixel, §5.5).
   Sonst bekommt der Shader einen uniformen Zweig für σ ≈ 0.
 - **Q-PCSS-4 — §6.3 ohne PCSS:** Mit diesem Weg wird die eigene Lift-Korrektur der Bewertung §6.3 für „Weicher
   Schatten aus“ nicht gebaut; §6.3 bleibt dort ein bekannter Befund. Einverstanden?
+- **Q-PCSS-5 — der Weg nach dem Diagnose-Lauf (§8.3):**
+  - **(a) Budget-Ausnahme:** Die günstigste K-Form wird eingebaut, als Effekt „Weicher Schatten“, Standard aus, mit
+    bekannten Kosten. Grob geschätzt +0.8 bis +3 ms bei 1024 × 768 je nach Ansicht; die Zahl liefert §8.3.
+  - **(b) Vorgefilterter Ansatz (neuer Prototyp):**
+    - Beim Rendern der Karte (also nur bei Pose-, Licht- oder Weichheits-Änderung) entstehen zusätzlich eine
+      Min-Tiefen-Pyramide für die Blocker-Schätzung und eine gefilterte Momenten-Karte (VSM/ESM-artig, mit Mip-Stufen)
+      für den variablen Radius.
+    - Pro Pixel sind das etwa 3–4 Abfragen und wenig Rechnung, der Nahbereich bleibt der heutige 3 × 3-Lookup.
+    - Das Ziel ≤ +0.5–1 ms ist plausibel [E].
+    - Bekanntes Risiko: Lichtdurchschlag (light bleeding) bei überlappenden Werfern, also genau die
+      §16.7-Klasse von Fehlern. Das prüft der Prototyp wie hier gegen REF.
+  - **(c) Verzicht:** „Weiches Licht“ bleibt mit dem harten Schatten. Der Keil bleibt ein bekannter Befund.
+  - Vorschlag: zuerst §8.3 (kostet dich ~10 Minuten). Zeigt er eine Form ≤ ~+1 ms framed, dann (a); sonst (b).
 - Unverändert offen aus S8: Q-S8-1 (Standard an?), Q-S8-2 (σ(1) = 40° oder 30°; gilt jetzt auch für den Schatten).
 
 ## Grenzen

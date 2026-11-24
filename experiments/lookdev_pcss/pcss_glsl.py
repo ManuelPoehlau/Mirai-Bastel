@@ -122,6 +122,15 @@ class Pcss:
     search_min: float = 1.0
     #: the blocker search's pattern ("" = `kind`; "centre" = denser near the centre)
     search_kind: str = ""
+    #: cost diagnostics (bench only, 2026-11-24 after the reference-PC run): "" = the lookup; "nofetch" = every fetch
+    #: replaced by a cheap data-dependent ALU term (the cost without the texture unit); "search" = the blocker search
+    #: alone (no PCF); "pcf" = the two PCFs alone at the search radius (no search, no branch)
+    probe: str = ""
+    #: NVIDIA loop pragma: "" (driver default), "all" or "none" (`#pragma optionNV(unroll ...)`)
+    unroll: str = ""
+    #: fewer ALU per fetch: the plane / level blend and the cone length per fragment from the radius, the taps'
+    #: lengths as constants, no per-tap smoothstep / length
+    lean: bool = False
     level: float = 0.5
 
     def label(self) -> str:
@@ -139,12 +148,19 @@ class Pcss:
                 + ("" if not self.fade else f"-f{self.fade:g}") + ("" if not self.near else f"-n{self.near:g}")
                 + ("" if not self.chord else f"-ch{self.chord:g}")
                 + ("" if self.search_min == 1.0 else f"-sm{self.search_min:g}")
-                + ("" if not self.search_kind else f"-{self.search_kind}"))
+                + ("" if not self.search_kind else f"-{self.search_kind}")
+                + ("" if not self.probe else f"-{self.probe}") + ("" if not self.unroll else f"-u{self.unroll}")
+                + ("-lean" if self.lean else ""))
 
 
 def _array(name: str, points) -> str:
     rows = ",\n    ".join(f"vec2({x!r}, {y!r})" for x, y in points)
     return f"const vec2 {name}[{len(points)}] = vec2[](\n    {rows});\n"
+
+
+def _floats(name: str, values) -> str:
+    rows = ", ".join(f"{float(v)!r}" for v in values)
+    return f"const float {name}[{len(values)}] = float[]({rows});\n"
 
 
 def library(p: Pcss) -> str:
@@ -176,12 +192,29 @@ def library(p: Pcss) -> str:
                 ldx_pcf(spl, slope_l, ldx_penumbra(spl.z, found_l, rmin), ldx_level(spl.z, found_l)));"""
     else:
         raise ValueError(p.search_at)
+    if p.probe == "search":
+        body = """    vec2 found = ldx_blockers(sp, slope, rs);
+    return vec2(1.0 - found.y / float(LDX_NB), clamp(found.x, 0.0, 1.0));"""
+    elif p.probe == "pcf":
+        body = """    float lv = 0.01 * sp.z;
+    return vec2(ldx_pcf(sp, slope, rs, lv), ldx_pcf(spl, slope_l, rs, lv));"""
+    elif p.probe not in ("", "nofetch"):
+        raise ValueError(p.probe)
+    fetch = ("#define LDX_RAW(uv) fract(dot(uv, vec2(12.9898, 78.233)) * 43.75)\n"
+             "#define LDX_CMP(c) step(0.5, fract(dot(c, vec3(12.9898, 78.233, 37.719)) * 43.75))\n"
+             if p.probe == "nofetch" else
+             "#define LDX_RAW(uv) textureLod(u_ld_shadow_depth, uv, 0.0).r\n"
+             "#define LDX_CMP(c) textureLod(u_ld_shadow, c, 0.0)\n")
+    pragma = f"#pragma optionNV(unroll {p.unroll})\n" if p.unroll else ""
+    lengths = (_floats("LDX_BL", [math.hypot(x, y) for x, y in pattern(p.search_kind or p.kind, p.blocker)])
+               if p.lean else "")
     plane = (("#define LDX_PLANE_NORMAL 1\n" if p.plane == "normal" else "")
              + ("#define LDX_SEARCH_CONE 1\n" if p.search_test == "cone" else "")
              + ("#define LDX_SEARCH_BOTH 1\n" if p.search_test == "both" else "")
              + ("#define LDX_BACK_FLAT 1\n" if p.back_flat else "")
              + ("#define LDX_NEAR_ON 1\n" if p.near else "")
-             + {"plane": "", "level": "#define LDX_PCF_LEVEL 1\n", "min": "#define LDX_PCF_MIN 1\n"}[p.pcf_test])
+             + {"plane": "", "level": "#define LDX_PCF_LEVEL 1\n", "min": "#define LDX_PCF_MIN 1\n"}[p.pcf_test]
+             + ("#define LDX_LEAN 1\n" if p.lean else "") + pragma + fetch)
     return f"""
 // -- experiment lookdev_pcss: {p.label()} - blocker search + PCF with the penumbra of a disc light (AD-039 §23.6)
 uniform sampler2D u_ld_shadow_depth;  // S4's raw depth (unit 7); with THICKNESS its own declaration is removed
@@ -200,7 +233,7 @@ const float LDX_MIN_TEXELS = {float(p.min_texels)!r};
 const float LDX_MAX_TEXELS = {float(p.max_texels)!r};
 const int LDX_NB = {p.blocker};
 const int LDX_NP = {p.pcf};
-{_array("LDX_B", pattern(p.search_kind or p.kind, p.blocker))}{_array("LDX_P", pattern(p.kind, p.pcf))}
+{_array("LDX_B", pattern(p.search_kind or p.kind, p.blocker))}{_array("LDX_P", pattern(p.kind, p.pcf))}{lengths}
 float ldx_tan_sigma() {{
     float s = u_ld_light_size[0] * LDX_SIN_MAX;
     return s / sqrt(max(1.0 - s * s, 1e-6));
@@ -216,10 +249,16 @@ float ldx_far(vec2 o) {{
 // key than the receiver's own plane at the fetch (the receiver-plane bias of the PCF)
 vec2 ldx_blockers(vec3 sp, vec2 slope, float r) {{
     vec2 acc = vec2(0.0);
+#if defined(LDX_LEAN)
+    float rc = r * ldx_cone();
+    float fw = smoothstep(LDX_NEAR, 2.5 * LDX_NEAR, 0.5 * r * u_ld_shadow_scale / u_ld_shadow_radius);
+#endif
     for (int k = 0; k < LDX_NB; ++k) {{
         vec2 o = LDX_B[k] * r;
-        float d = textureLod(u_ld_shadow_depth, (sp.xy + o) * u_ld_shadow_scale, 0.0).r;
-#if defined(LDX_NEAR_ON)
+        float d = LDX_RAW((sp.xy + o) * u_ld_shadow_scale);
+#if defined(LDX_LEAN)
+        float b = step(d, sp.z - 2.0 * LD_SHADOW_BIAS + mix(dot(slope, o), -LDX_BL[k] * rc, fw));
+#elif defined(LDX_NEAR_ON)
         float b = step(d, sp.z - 2.0 * LD_SHADOW_BIAS + mix(dot(slope, o), -length(o) * ldx_cone(), ldx_far(o)));
 #elif defined(LDX_SEARCH_BOTH)
         float b = step(d, sp.z - 2.0 * LD_SHADOW_BIAS + min(dot(slope, o), -length(o) * ldx_cone()));
@@ -243,9 +282,14 @@ float ldx_penumbra(float z, vec2 found, float rmin) {{
 }}
 float ldx_pcf(vec3 sp, vec2 slope, float r, float lift) {{
     float sum = 0.0;
+#if defined(LDX_LEAN)
+    float fw = smoothstep(LDX_NEAR, 2.5 * LDX_NEAR, 0.5 * r * u_ld_shadow_scale / u_ld_shadow_radius);
+#endif
     for (int k = 0; k < LDX_NP; ++k) {{
         vec2 o = LDX_P[k] * r;
-#if defined(LDX_NEAR_ON)
+#if defined(LDX_LEAN)
+        float ref = sp.z - LD_SHADOW_BIAS + mix(dot(slope, o), -lift, fw);
+#elif defined(LDX_NEAR_ON)
         float ref = sp.z - LD_SHADOW_BIAS + mix(dot(slope, o), -lift, ldx_far(o));
 #elif defined(LDX_PCF_LEVEL)
         float ref = sp.z - LD_SHADOW_BIAS - lift;
@@ -254,7 +298,7 @@ float ldx_pcf(vec3 sp, vec2 slope, float r, float lift) {{
 #else
         float ref = sp.z - LD_SHADOW_BIAS + dot(slope, o);
 #endif
-        sum += textureLod(u_ld_shadow, vec3((sp.xy + o) * u_ld_shadow_scale, ref), 0.0);
+        sum += LDX_CMP(vec3((sp.xy + o) * u_ld_shadow_scale, ref));
     }}
     float inside = float(all(greaterThanEqual(sp, vec3(0.0))) && all(lessThanEqual(sp, vec3(1.0))));
     return mix(1.0, sum / float(LDX_NP), inside);

@@ -13,8 +13,10 @@ Augen-Shader, `LD_COMMON_SRC` und `LD_SHADOW_SRC` bleiben unberührt.
 
 **Bewertung und Empfehlung:**
 [`docs/research/LOOKDEV_PCSS_KEY_SHADOW_ASSESSMENT_2026-11-24.md`](../../docs/research/LOOKDEV_PCSS_KEY_SHADOW_ASSESSMENT_2026-11-24.md).
-Der Container-Lauf liefert Bilder und Funktionsprüfung mit llvmpipe, aber **keine** 9800-GTX-Messung. Der
-Referenz-PC-Lauf mit `bench.py` ist offen.
+Der Container-Lauf liefert Bilder und Funktionsprüfung mit llvmpipe, aber **keine** 9800-GTX-Messung.
+**Referenz-PC gemessen (2026-11-24):** [`RESULTS_REFERENCE_PC_2026-11-24.md`](RESULTS_REFERENCE_PC_2026-11-24.md).
+K16c verfehlt das Budget um das 3- bis 12-Fache, und die Kosten folgen nicht der Zahl der Abfragen. Offen ist der
+Diagnose-Lauf `--set diag` (unten).
 
 ## Frage
 
@@ -82,9 +84,19 @@ $py = (Resolve-Path .\.venv312\Scripts\python.exe).Path; git rev-parse --short=1
 & $py experiments\lookdev_pcss\bench.py --size 1920 1080
 ```
 
-Ein Lauf dauert ungefähr 5 bis 10 Minuten je Auflösung: Käfig und SubD 1, „framed“ und „face“, Key-Größe 0.45 und 1,
+Erster Lauf (erledigt, Ergebnis in `RESULTS_REFERENCE_PC_2026-11-24.md`). Er dauert ungefähr 5 bis 10 Minuten je Auflösung: Käfig und SubD 1, „framed“ und „face“, Key-Größe 0.45 und 1,
 9 Zeilen. Entscheidend sind die Zeilen `K16c`, `K8c/16` und `K16c/9g` gegen `P`, jeweils je Fläche, Ansicht und
 Key-Größe. Das Budget ist AD-039 §2.5: pro Effekt ≤ +0.5 ms bei 1024 × 768.
+
+Diagnose-Lauf (offen; Bewertung §8.3). 13 Zeilen, Key-Größe 0.45, wenige Minuten je Auflösung:
+
+```powershell
+& $py experiments\lookdev_pcss\bench.py --set diag --key-sizes 0.45
+```
+
+```powershell
+& $py experiments\lookdev_pcss\bench.py --set diag --key-sizes 0.45 --size 1920 1080
+```
 
 ## Grenzen
 

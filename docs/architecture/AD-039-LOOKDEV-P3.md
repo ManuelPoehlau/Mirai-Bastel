@@ -1997,3 +1997,19 @@ The eye keeps the old lookup: on the eye pixels the full-resolution map moves th
   off = every pin bit-equal.
 
 Not changed here: `src/`, `tests/`, the presets, the scene format.
+
+**Reference PC (Manu, 2026-11-24, `dd9505fba0`) [M-RPC]:** the budget is missed by 3–12×. K16c costs +1.38 to +6.10 ms
+at 1024 × 768 (mean +3.16; the close-up "face" is the dear case) and a mean +5.13 ms at 1920 × 1080. The cost does
+not follow the fetch count:
+- 8 / 16 / 24 search fetches, 16 / 32 PCF fetches and a 3 × 3 grid all cost a mean +3.2 to +3.5 ms;
+- the early out costs more than it saves (without it: a mean +2.3 ms);
+- the full-resolution map alone costs +0.04 ms.
+
+Rows: [RESULTS_REFERENCE_PC_2026-11-24](../../experiments/lookdev_pcss/RESULTS_REFERENCE_PC_2026-11-24.md).
+
+**K16c is not built as is.** Next is the cost diagnosis `bench.py --set diag` (assessment §8.3: shader size vs.
+texture unit, search vs. PCF, unrolling, texture cache, a lean form with the same image). Then Manu picks the way,
+Q-PCSS-5:
+- (a) the cheapest K form as an opt-in effect with a deliberate budget exception;
+- (b) a prefiltered prototype with event-time cost (min-depth pyramid + filtered moment map);
+- (c) none.

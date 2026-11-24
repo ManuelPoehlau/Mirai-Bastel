@@ -39,6 +39,16 @@ import area_glsl as ag  # noqa: E402
 import pcss_glsl as pg  # noqa: E402
 
 ROWS = ("P", "F", "K8c/16", "K16c", "K24c/16", "K16c/32", "K16c/9g", "K16c-nb", "K16c-eff")
+#: `--set diag` (2026-11-24, after the first reference-PC run: the cost did not follow the fetch count, the early out
+#: cost more than it saved): where the cost is and the cheaper forms. Read against P:
+#: - K16c-nofetch / K16c-nb-nofetch: every fetch replaced by ALU - if as dear as K16c, the cost is the shader's size
+#:   (registers / occupancy of the whole skin pass), not the texture unit;
+#: - K16c-search / K16c-pcf: the search alone / the two PCFs alone;
+#: - K16c-uall / K16c-unone: NVIDIA's loop unrolling forced on / off (`#pragma optionNV`): registers vs. instructions;
+#: - K16c-cap12: the radius capped at 12 texels - if much cheaper, wide kernels thrash the texture cache;
+#: - K16c-lean(-nb), K8c/8-lean-nb: fewer ALU per fetch (the image is K16c's within 0.01/255 mean; K8/8 a little worse).
+DIAG = ("P", "K16c", "K16c-nb", "K16c-lean", "K16c-lean-nb", "K8c/8-lean-nb", "K16c-nofetch", "K16c-nb-nofetch",
+        "K16c-search", "K16c-pcf", "K16c-uall", "K16c-unone", "K16c-cap12")
 EFFECTS = ("shadow", "eye_shadow", "dual_lobe", "thickness", "cube", "area_diffuse")
 AREA = ag.Variant("A")  # production's own diffuse (with area_diffuse on: S8's B) and specular
 WARMUP = 5
@@ -91,9 +101,11 @@ def main(argv=None) -> int:
     parser.add_argument("--surfaces", default="cage,subd1")
     parser.add_argument("--views", default="framed,face")
     parser.add_argument("--key-sizes", default="0.45,1")
-    parser.add_argument("--variants", default=",".join(ROWS))
+    parser.add_argument("--variants", default=None, help="rows (default: --set)")
+    parser.add_argument("--set", default="candidates", choices=("candidates", "diag"),
+                        help="candidates: the first run's rows; diag: the cost diagnostics (with --key-sizes 0.45)")
     args = parser.parse_args(argv)
-    names = [n for n in args.variants.split(",") if n]
+    names = [n for n in (args.variants or ",".join(DIAG if args.set == "diag" else ROWS)).split(",") if n]
     if "P" not in names:
         names.insert(0, "P")
 

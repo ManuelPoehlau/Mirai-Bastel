@@ -32,10 +32,14 @@ VARIANTS = [pg.Pcss(b, p, kind, full, search_at=at, early=early)
 K = dict(search_test="cone", cone=2.0, pcf_test="level", level=0.5, band_lift=0.15, fade=4.0)
 VARIANTS += [pg.Pcss(16, 16, "disc", **K), pg.Pcss(9, 9, "grid", full=False, **K),
              pg.Pcss(16, 16, "disc", search_at="each", early=False, **K),
-             pg.Pcss(16, 16, plane="normal", back_flat=True, search_test="both", pcf_test="min")]
+             pg.Pcss(16, 16, plane="normal", back_flat=True, search_test="both", pcf_test="min"),
+             # the cost diagnostics and the lean form (after the reference-PC run)
+             pg.Pcss(16, 16, "disc", near=1.5, lean=True, early=False, **K),
+             pg.Pcss(16, 16, "disc", probe="nofetch", unroll="none", **K),
+             pg.Pcss(16, 16, "disc", probe="search", unroll="all", **K), pg.Pcss(16, 16, "disc", probe="pcf", **K)]
 
 
-@pytest.mark.parametrize("p", VARIANTS[::3] + VARIANTS[-4:], ids=lambda p: p.label())
+@pytest.mark.parametrize("p", VARIANTS[::3] + VARIANTS[-8:], ids=lambda p: p.label())
 def test_every_variant_patches_every_effect_combination(p):
     for key, fragment in fragments():
         out = pg.patch_shadow(fragment, p)
@@ -45,7 +49,8 @@ def test_every_variant_patches_every_effect_combination(p):
         assert out.count("ldx_key_shadow(v_world_pos,") == (2 if key[3] else 1)
         assert "ld_key_visibility(v_world_pos" not in out and "ld_key_visibility_lifted(v_world_pos" not in out
         assert out.count("uniform sampler2D u_ld_shadow_depth;") == 1  # declared once, before its first use
-        assert out.index("uniform sampler2D u_ld_shadow_depth;") < out.index("u_ld_shadow_depth, (sp.xy")
+        assert out.index("uniform sampler2D u_ld_shadow_depth;") < out.index("LDX_RAW((sp.xy")
+        assert ("#define LDX_RAW(uv) textureLod" in out) == (p.probe != "nofetch")
 
 
 def test_patterns():
