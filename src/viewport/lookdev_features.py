@@ -8,7 +8,8 @@ one status line; the check does not retry in the session. The report is a plain 
 S1 adds `depth_texture`: a DEPTH_COMPONENT24 texture with `GL_COMPARE_REF_TO_TEXTURE` attached to an FBO -
 `glCheckFramebufferStatus == COMPLETE` and `glGetError` 0. S4 adds `sampler_objects`: `glGenSamplers` succeeds and
 `glGetError` stays 0. S7 adds `texture_units`: `GL_MAX_TEXTURE_IMAGE_UNITS` covers the highest unit the skin binds
-(`lookdev_shaders.MAP_UNITS`, 11) + 1. S5 adds `cube_rgba16f`: an RGBA16F cube of the production size with every level
++ 1 - since S6 the triangles' material slots (`lookdev_shaders.REGION_UNIT`, 12; the maps use 9-11), so 13; S6's region
+materials need it too. S5 adds `cube_rgba16f`: an RGBA16F cube of the production size with every level
 allocated, each face of each level attached to an FBO in turn - every attachment `GL_FRAMEBUFFER_COMPLETE`, `glGetError`
 0 (the LD-0 (c) check; it does not detect the reference PC's defect with sampling an FBO-rendered cube, which
 `viewport.lookdev_cube.EnvCube` works around by copying the cube, AD-039 §11.1 run 4 / 5).
@@ -22,7 +23,7 @@ from dataclasses import dataclass, fields
 FEATURE_STATUS = {"depth_texture": "LookDev: Schatten aus – Tiefentextur nicht verfügbar",
                   "sampler_objects": "LookDev: Durchleuchtung aus – Sampler-Objekte nicht verfügbar",
                   "cube_rgba16f": "LookDev: Umgebungs-Cube aus – Cube-Ziel nicht verfügbar",
-                  "texture_units": "LookDev: Maps aus – zu wenige Textureinheiten"}
+                  "texture_units": "LookDev: Maps und Region-Materialien aus – zu wenige Textureinheiten"}
 
 
 @dataclass(frozen=True)
@@ -146,11 +147,11 @@ def _texture_units() -> bool:
 
     from pyglet import gl
 
-    from .lookdev_shaders import MAP_UNITS
+    from .lookdev_shaders import MAP_UNITS, REGION_UNIT
 
     units = gl.GLint()
     gl.glGetIntegerv(gl.GL_MAX_TEXTURE_IMAGE_UNITS, ctypes.byref(units))
-    return units.value >= max(MAP_UNITS.values()) + 1
+    return units.value >= max(*MAP_UNITS.values(), REGION_UNIT) + 1
 
 
 #: The checks, by feature (a test replaces one with a stub to force its failure, AD-039 §2.2).

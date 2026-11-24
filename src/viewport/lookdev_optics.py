@@ -18,7 +18,8 @@ pattern (parity: `tests/test_gl_lookdev_parity.py`, `tests/test_lookdev_optics.p
   and the `THICKNESS` block; S7 (§10): `normal_map_tangent`, `cotangent_frame`, `ld_normal_mapped` and
   `map_roughness`, the twins of `lookdev_shaders.LD_NORMAL_MAP_SRC` and the `ROUGHNESS_MAP` block; S5 (§8):
   `cube_face_direction`, `cube_texel_directions`, `prefilter_ggx` and `cube_lod`, the twins of
-  `lookdev_shaders.CUBE_PREFILTER_SRC` and `LD_CUBE_SRC`.
+  `lookdev_shaders.CUBE_PREFILTER_SRC` and `LD_CUBE_SRC`; S6 (§9): `face_material_slots` (the slot each face draws,
+  later region wins) and `region_slot`, the twin of the `REGIONS` block's slot pick.
 
 World frame as `light_rig` (Y up, the model faces +Z, azimuth from +Z toward +X). The studio's frame turns by
 `rotation` degrees about Y; with "Licht folgt Kamera" it is the camera's (`right`, `up`, `-forward`), as
@@ -75,14 +76,16 @@ class LookdevEffects:
     once the slice is built (AD-039 §2.1). `shadow` (S1): the key's shadow map on skin and teeth; `eye_shadow` (S2): the
     eyes receive it (the lids' shadow from the geometry), needs `shadow`; `dual_lobe` (S3): the skin's highlight from the
     three lights as two lobes; `thickness` (S4): the key's light through thin parts, from the key's map, needs `shadow`;
-    `cube` (S5): the skin's studio reflection from the studio's prefiltered cube; `maps` (S7): the materials'
-    roughness, normal and translucency maps. The fields stand in the AD's slice order (S5 before S7)."""
+    `cube` (S5): the skin's studio reflection from the studio's prefiltered cube; `regions` (S6): the objects' region
+    materials (off = one material per object); `maps` (S7): the materials' roughness, normal and translucency maps.
+    The fields stand in the AD's slice order (S5, S6 before S7; persistence is by name)."""
 
     shadow: bool = True
     eye_shadow: bool = True
     dual_lobe: bool = True
     thickness: bool = True
     cube: bool = True
+    regions: bool = True
     maps: bool = True
 
     @classmethod
@@ -95,13 +98,14 @@ class LookdevEffects:
 
 #: The feature each effect needs (`viewport.lookdev_features`), and the effect it depends on (AD-039 §2.1 / §2.2).
 EFFECT_FEATURE = {"shadow": "depth_texture", "thickness": "sampler_objects", "cube": "cube_rgba16f",
-                  "maps": "texture_units"}
+                  "regions": "texture_units", "maps": "texture_units"}
 EFFECT_NEEDS: dict[str, str] = {"eye_shadow": "shadow", "thickness": "shadow"}
 #: The panel's reasons for a greyed effect (German, the panel's language).
 FEATURE_REASON = {"depth_texture": "Tiefentextur fehlt", "sampler_objects": "Sampler-Objekte fehlen",
                   "cube_rgba16f": "Cube-Ziel fehlt", "texture_units": "zu wenige Textureinheiten"}
 EFFECT_LABEL = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz",
-                "thickness": "Durchleuchtung", "cube": "Umgebungs-Cube", "maps": "Maps"}
+                "thickness": "Durchleuchtung", "cube": "Umgebungs-Cube", "regions": "Region-Materialien",
+                "maps": "Maps"}
 
 
 def effect_reasons(effects: LookdevEffects, features=None) -> dict[str, str | None]:
@@ -634,6 +638,28 @@ def ld_normal_mapped(n, dp1, dp2, duv1, duv2, texel, strength: float = 1.0, gree
 def map_roughness(roughness: float, grey) -> np.ndarray:
     """The `ROUGHNESS_MAP` block: the perceptual roughness times the map's grey value (alpha = its square)."""
     return float(roughness) * np.asarray(grey, dtype=np.float64)
+
+
+# -- S6: region materials (AD-039 §9) ---------------------------------------------------------------------------------
+
+def face_material_slots(region_faces, faces=None) -> dict:
+    """`{FaceId: slot}` of a LookDraw's regions (`region_faces[i]` = the faces of slot i + 1; slot 0 = the object's
+    material, not listed): on overlapping regions the later one wins (AD-039 §9). `faces` limits it to the faces a
+    RenderMesh draws (None = every face named)."""
+    out = {}
+    for slot, members in enumerate(region_faces, start=1):
+        for face in members:
+            if faces is None or face in faces:
+                out[face] = slot
+    return out
+
+
+def region_slot(texel, count: int) -> np.ndarray:
+    """The shader's slot pick (`REGIONS` block): the triangle's stored slot rounded and clamped to [0, count] - a slot
+    without a material (a free triangle slot, a stale value) draws the object's material (slot 0) instead of a
+    neighbour's."""
+    slot = np.floor(np.asarray(texel, dtype=np.float64) + 0.5).astype(np.int64)
+    return np.where((slot < 0) | (slot > count), 0, slot)
 
 
 # -- S5: the environment cube (AD-039 §8) ------------------------------------------------------------------------------

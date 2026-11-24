@@ -146,6 +146,7 @@ def replace_scene(scene: Scene, loaded: Scene) -> SceneObject:
         obj.bone = source.bone  # AD-036 (a BoneId of the file: the rig comes along unchanged)
         obj.paint = source.paint  # AD-037 (its layer images: the pixels load on first use)
         obj.look = source.look  # AD-038 §18 (LD-2)
+        obj.look_regions = source.look_regions  # AD-039 §9 (S6)
         new_ids[source.id] = obj.id
         if source.id == loaded.edit_object_id:
             edit = obj
@@ -463,19 +464,23 @@ class ObjectMaterialCommand:
 class ObjectLookCommand:
     """The LookDev material of one or more objects as one Undo step (AD-038 §18, LD-2; shaped like
     `ObjectMaterialCommand`). `changes` = `(obj, before, after)` per object (`None` = no look: the room's Neutral
-    fallback); sets only `obj.look`. The view follows through the highlight signature (it holds `obj.look`)."""
+    fallback); sets only `obj.look` - or, with `field="look_regions"` (AD-039 §9, S6), only the region materials (a
+    tuple of `RegionLook`). The view follows through the highlight signature (it holds both)."""
 
-    def __init__(self, changes: list, description: str) -> None:
+    def __init__(self, changes: list, description: str, field: str = "look") -> None:
+        if field not in ("look", "look_regions"):
+            raise ValueError(f"ObjectLookCommand: look or look_regions, not {field!r}")
         self.changes = list(changes)
         self.description = description
+        self.field = field
 
     def undo(self) -> None:
         for obj, before, _ in reversed(self.changes):
-            obj.look = before
+            setattr(obj, self.field, before)
 
     def redo(self) -> None:
         for obj, _, after in self.changes:
-            obj.look = after
+            setattr(obj, self.field, after)
 
 
 class ObjectEyeCommand:

@@ -232,18 +232,23 @@ class SubdSurfaceProvider:
         """Changes whenever `hidden_surface_faces` may differ (hidden set, topology or level rebuilt)."""
         return (self._hidden_version, self.topology_builds, self.level_builds)
 
-    def surface_face_tints(self, control_tints) -> dict:
-        """`{derived face: colour}` for the shown surface from `{control face: colour}` (saved regions): every derived
-        face takes the colour of the control face it was born in (`face_parent`), as ZBrush shows a polygroup."""
-        if not control_tints or self._surface is None or self._derived is None:
+    def surface_face_values(self, control_values) -> dict:
+        """`{derived face: value}` for the shown surface from `{control face: value}`: every derived face takes the
+        value of the control face it was born in (`face_parent`) - a saved region's colour, as ZBrush shows a
+        polygroup, or a LookDev region material's slot (AD-039 §9)."""
+        if not control_values or self._surface is None or self._derived is None:
             return {}
         face_ids = self._surface.topology.face_ids
         out = {}
         for i, parent in enumerate(self._derived.face_parent):
-            color = control_tints.get(face_ids[parent])
-            if color is not None:
-                out[self._derived_face_ids[i]] = color
+            value = control_values.get(face_ids[parent])
+            if value is not None:
+                out[self._derived_face_ids[i]] = value
         return out
+
+    def surface_face_tints(self, control_tints) -> dict:
+        """`{derived face: colour}` from `{control face: colour}` (saved regions; `surface_face_values`)."""
+        return self.surface_face_values(control_tints)
 
     def hidden_control_edges(self) -> frozenset:
         """Indices (into `control_edges()`) of the hidden cage edges: a hidden endpoint, or all faces hidden."""

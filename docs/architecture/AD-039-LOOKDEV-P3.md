@@ -16,8 +16,11 @@ translucency maps as image paths on the material (`core.LookMaps`, `LookMaterial
 no map = S4 by pins; its reference-PC row and practical test (§20.4–§20.5) are open. **S5 built 2026-11-24** (§21: the
 studio's environment cube, „Umgebungs-Cube“: the analytic studio prefiltered on the GPU, read back and uploaded - the
 reference PC's FBO-cube defect - on unit 8; cube off = S7 by pins; with the dual lobe two lookups; the eye stays
-analytic): its reference-PC rows and practical test (§21.4–§21.5) are open. **LD-D8 decided 2026-11-24 (Manu): „A,
-Regionen wie vorgeschlagen“** (face regions, §9; format v17). S6 next.
+analytic): its reference-PC rows and practical test (§21.4–§21.5) are open. **S6 built 2026-11-24** (§22; Manu on
+LD-D8 (Q-P3-1): „A, Regionen wie vorgeschlagen”): region materials - a LookDev material per face region on the object
+(`core.RegionLook`, `SceneObject.look_regions`, ≤ 4, the later entry wins, by region name; format **v17**), drawn by
+per-triangle material slots on unit 12, the SubD surface through `face_parent`; regions off = S5 by pins; its
+reference-PC row and practical test (§22.4–§22.5) are open. With S6 every P3 slice is built.
 **Why now:** Manu, 2026-11-21: „LookDev P3 vor LD-3 vorziehen“
 ([proposal §0.1](../design/LOOKDEV_P2_ARCHITECTURE_UX_PROPOSAL_2026-11-19.md), [AD-038](AD-038-LOOKDEV-ROOM-M1.md)
 §13.6). P3 needs its own AD before any `src/` change and fixes the order of the P3 items.
@@ -62,13 +65,13 @@ container (a function check only), **[M-RPC]** measured on the reference PC, **[
      - Das korrigiert den Vorschlag: Diese Dicke hängt **nicht** an der Mal-Kanal-Entscheidung (§1.2 C3).
   5. **S5 Cube-Umgebung** mit GPU-Vorfilter. Inhalt ist das analytische Studio der Vorlage, also weiter ohne
      HDRI-Dateien (D-L4). **Gebaut 2026-11-24** (§21).
-  6. **S6 Region-Materialien**, nach LD-D8.
+  6. **S6 Region-Materialien**, nach LD-D8. **Gebaut 2026-11-24** (dein „A, Regionen wie vorgeschlagen“, §22).
   7. **S7 Maps** für Rauheit, Normalen und Durchscheinen, nach der Mal-Kanal-Entscheidung. **Gebaut 2026-11-24, vor S5
      und S6 vorgezogen** (dein „Map-Pfade“ und „S7 jetzt vorziehen“, §20).
   - Gegenüber deinem Vorschlag kommen S2 und S4 dazu und stehen früh, weil sie nur S1 brauchen. Der Cube rückt hinter
     sie, weil er mit dem Studio als Inhalt sichtbar wenig ändert (§8).
 - **Core und Format:** keine Änderung in S1 bis S5.
-  - S6 bringt `SceneObject.look_regions` (Format v16).
+  - S6 bringt `SceneObject.look_regions` (gebaut als Format v17).
   - S7 bringt `LookMaterial.maps` (die nächste Version; gebaut als v16, S6 wird damit v17).
   - Beide werden nur geschrieben, wenn sie belegt sind.
 - **Sonde P3-0 jetzt fertig:** `probe_lookdev.py --p3` misst:
@@ -556,6 +559,9 @@ key.
 
 ## 9. S6 — region materials (after LD-D8)
 
+**Built 2026-11-24** (§22). LD-D8 decided by Manu, 2026-11-24: „A, Regionen wie vorgeschlagen“. The format number is v17
+(S7 took v16, §3); the build's deviations are in §22.2.
+
 **Recommended LD-D8 answer [P → O]:** **face regions** (AD-REGIONS-01): a LookDev material per region, on the object.
 It is not a separate mouth object.
 
@@ -785,7 +791,8 @@ A slice that misses its target (§2.5) takes the levers in their order. It does 
 4. **After S1 (+S2):** a practical test (shadow look, softness, the eyes under the lids, the teeth), a reference-PC
    run, and the M1 / LD-2 verdicts if they exist by then.
 5. **LD-D8** before S6, **the paint channel decision** before S7. Each needs Manu's word and the CORE_V1_FREEZE §7 entry
-   in the slice's commit. *S7: given 2026-11-24 („Map-Pfade“), the entry is in S7's commit (§20).*
+   in the slice's commit. *S7: given 2026-11-24 („Map-Pfade“), the entry is in S7's commit (§20). S6: given
+   2026-11-24 (LD-D8 „A, Regionen wie vorgeschlagen“), the entry is in S6's commit (§22).*
 6. **Keys:** none (D-L9).
 7. **LD-3** after P3: one AD or AD section with the full knob set (cube size, shadow size, PCF fetches) and the feature
    report of §2.2.
@@ -797,7 +804,7 @@ A slice that misses its target (§2.5) takes the levers in their order. It does 
 | # | Question | Proposal |
 |---|---|---|
 | **Q-P3-0** | Accept the slice order S1 → S7 (§3), with S2 and S4 added after the shadow map? | yes; the practical test may re-order (§12 point 3) |
-| **Q-P3-1 (LD-D8)** | Region materials: face regions with a material per region on the object, or a separate mouth object? | **face regions** (§9): `SceneObject.look_regions`, ≤ 4 per object, later entry wins on overlap, keyed by name; format v16 (**v17**, S7 took v16). The separate object stays a no-code fallback. **Decided 2026-11-24 (Manu): „A, Regionen wie vorgeschlagen“** |
+| **Q-P3-1 (LD-D8)** | Region materials: face regions with a material per region on the object, or a separate mouth object? | **face regions** (§9): `SceneObject.look_regions`, ≤ 4 per object, later entry wins on overlap, keyed by name; format v16. The separate object stays a no-code fallback. **Decided 2026-11-24 (Manu): „A, Regionen wie vorgeschlagen”; built §22 (format v17)** |
 | **Q-P3-2 (paint channel)** | Roughness / normal / translucency: a map path on the material, or a second paint stack per channel? | **map paths first** (§10), `LookMaterial.maps`, imported images; painted channels later as their own AD-037 phase. **Decided 2026-11-24 (Manu): „Map-Pfade“; built §20** |
 | **Q-P3-3** | Shadow map size and PCF | **1024², 3 × 3 bilinear-compare fetches, softness from the key's „Weichheit“**; P3-0 confirms or moves it (§11.1). 2048² and 4 × 4 become LD-3 knobs |
 | **Q-P3-4** | What is in the cube of the studio presets? | **the preset's own analytic studio** (D-L4: reproducible, no HDRI files). If you want real environments, the next step is an `.hdr` (Radiance) import of your own files as a separate small item. That needs your word, because it lifts D-L4 |
@@ -1591,3 +1598,119 @@ Open LookDev, SubD 1, material **Creature Skin**, then **Wet Skin**, view „¾�
 Assumptions to correct in one sentence: the cube is on by default; its content is the preset's analytic studio (no
 HDRI, Q-P3-4: an `.hdr` import of your own files is a separate item on your word); the eyes keep the analytic studio;
 the size is fixed (128², LD-3's knob later).
+
+---
+
+## 22. Implementation note — S6 built (2026-11-24)
+
+**Decision:** Manu, 2026-11-24, on LD-D8 (Q-P3-1): „A, Regionen wie vorgeschlagen“ - face regions at the object
+(`core.RegionLook`, `SceneObject.look_regions`, ≤ 4 entries, the later one wins on overlap, by region name, a rename
+carries the entry, a missing region is ignored). This is the go for the Core field (§12 point 5); the CORE_V1_FREEZE
+§7.1 entry is in this commit.
+
+**Kurzfassung (Deutsch):** Ein Objekt kann jetzt für bis zu **vier Regionen** (Polygroups) eigene LookDev-Materialien
+tragen, z. B. Mundinneres oder eine feuchte Lippenlinie - am selben Kopf, der gepost, gemorpht und unterteilt wird. Im
+Panel wählst du im Block Material unter **„Bereich“** „Ganzes Objekt“ oder eine Region; Vorlage, Werte und
+„Zurücksetzen“ wirken dann auf die Region (je ein Undo-Schritt). Eine Region ohne eigenes Material zeigt das des
+Objekts; Vorlage oder ein Wert legen ihr Material an (es startet mit dem, was sie gerade zeigt). Überlappen sich
+Regionen, gewinnt die **untere** in der Liste („nach oben / nach unten“). Die Maps bleiben die des ganzen Objekts (eine
+UV-Belegung), sie wirken auch auf die Regionen. Umbenennen einer Region (Ctrl+Alt+N) nimmt ihr Material im selben
+Undo-Schritt mit; eine gelöschte Region behält ihren Eintrag („Region fehlt“) und wird nicht gezeichnet. Neuer
+Effekt-Schalter **„Region-Materialien“** (Standard an); aus = ein Material je Objekt, Zeichen für Zeichen wie S5.
+Szenenformat **v17**, nur mit Region-Materialien (sonst bleibt die Datei wie vorher). Auf der SubD-Fläche folgen die
+Regionen den Käfig-Faces (`face_parent`).
+
+### 22.1 What is built
+
+| Layer | Built |
+|---|---|
+| Core | `core.RegionLook(region, look)` (frozen; a non-empty region name and a `LookMaterial`; exact dict keys); `LOOK_REGIONS_MAX = 4`; `SceneObject.look_regions: tuple[RegionLook, ...] = ()` as a property whose setter refuses anything but a tuple of `RegionLook`, more than four or a repeated name; `serialization.LOOK_REGIONS_FORMAT_VERSION = 17` by content (`"look_regions"`, a non-empty list; absent = none), reads 2–17, `"look_regions"` below 17 or an empty list refuses the file; CORE_V1_FREEZE §7.1 entry |
+| App | `lookdev_material.region_material` (no maps), `with_region` (set in place / add last / remove; a fifth refused with „höchstens 4 Region-Materialien je Objekt“), `moved_region`, `renamed_region`; `LookdevRoom.area` (the „Bereich“, view state, a scene load sets it back), `committed_area`, `area_material`, `drawn_regions` (the held preview of a region in its place), `look_draw` with the drawn regions and their faces; `Application.lookdev_area`, `lookdev_area_choices` (the targets' regions in mesh order, then entries whose region is gone), `set_lookdev_area`, `move_lookdev_region`; `set_lookdev_material`, `set_lookdev_material_values`, `preview_lookdev_material_values` and `reset_lookdev_material` act on the area (one Undo step: `ObjectLookCommand(..., field="look_regions")`, `ObjectsController.commit_looks(..., field=)`); the region rename (`REGION_NAME`) carries the edit object's entry as the mesh transaction's companion (one step); Duplicate, mirror copy, Detach, the scene import and the morph target's view copy `look_regions` with `look`; the highlight signature holds `look_regions` and, for an object with entries, its mesh's `face_regions` (a region edited in the room is redrawn) |
+| Effects / features | `LookdevEffects.regions` (default on; before `maps`, the AD's slice order - persistence is by name); `EFFECT_FEATURE["regions"] = "texture_units"`, label „Region-Materialien“; `texture_units` now checks `GL_MAX_TEXTURE_IMAGE_UNITS` ≥ 13 (unit 12) and runs only when a drawn LookDraw has a map or a region; status line „LookDev: Maps und Region-Materialien aus – zu wenige Textureinheiten“ |
+| Shaders | `REGION_UNIT = 12`, `REGION_SLOTS = 5` (the object's material and four regions); define `REGIONS` (last in the define order): `u_triangle_material` (an R32F buffer), the slot arrays `u_slot_base_color`, `u_slot_albedo`, `u_slot_roughness`, `u_slot_fresnel`, `u_slot_wrap`, `u_slot_backscatter`, `u_slot_backscatter_color`; the material values become globals named like the uniforms of the variant without regions (`#else` keeps those uniform lines), filled at the start of `main` from the triangle's slot (`texelFetch(u_triangle_material, gl_PrimitiveID)`, a slot outside 0–4 = slot 0); the albedo map reads only where the slot says so (`ld_slot_albedo`); no library string, `LD_COMMON_SRC` untouched |
+| Buffers | `RenderMesh.set_triangle_material_slots({FaceId: slot})` → `triangle_materials` (one float per triangle slot), allocated on the first non-empty map, freed on an empty one, rewritten only for changed faces, carried through full rebuilds and topology patches like the UVs; `GLRenderStore.declare_triangle_materials` / `bind_triangle_materials(unit)` - a pass buffer stored like face data but never uploaded or bound by the Worklight draw (`_pass_buffers`) |
+| Pass | `LookDraw.regions` (LookDraws of the region materials, their maps ignored) and `region_faces` (the FaceIds per slot); `albedo_source(regions)`, `slot_uniforms()`; `LookdevPass.program_key(..., regions)`: 10 values with regions (the 8 of S7 + the cube flag + `REGIONS`), every key without them as before; `draw(..., regions=False)` binds the slots on unit 12 and unbinds them after the draw |
+| Viewport | `_sync_material_slots(rm, look, on)` per drawn skin RenderMesh before the background: the slots by FaceId (`lookdev_optics.face_material_slots`, the later region wins) on the object's mesh and the ID-identical posed / morphed surfaces, through the provider's `surface_face_values` (`face_parent`) on a SubD surface; cached per RenderMesh (`WeakKeyDictionary`) by the regions, the mesh and the provider's `hidden_key`, so the SubD mapping runs only on a change; effect off or no regions: freed; `set_object_entry` / `set_edit_look` free the slots of a key whose LookDraw has no regions (closing the room frees everything); `_lookdev_programs` adds the regions flag; `_lookdev_cube_studio` reads the cube flag of 9- and 10-value keys |
+| SubD | `SubdSurfaceProvider.surface_face_values` (generalised from `surface_face_tints`, which now calls it), `SurfaceChain.surface_face_values` |
+| Twins | `lookdev_optics.face_material_slots` (the slot each face draws) and `region_slot` (the shader's pick and clamp) |
+| GUI | `lookdev_model`: `AreaRow`, `MaterialRow.area` / `areas`, `area_label`, the effect row „Region-Materialien“; `lookdev_panel.draw_area`: the combo „Bereich“ (Ganzes Objekt / regions with „eigenes Material“ / „Region fehlt“), „nach oben“ / „nach unten“ for a region with its own material; the map rows only in „Ganzes Objekt“; „Zurücksetzen“'s tooltip per area |
+| Probe | `probe_lookdev_room.py`: `EFFECT_ROWS["regions"] = ("lookdev +regions", ("regions",))` against `lookdev`; `probe_region` names the edit object's first polygroup „Mouth“ and gives it „Mundinneres“ (in memory, one Undo step) |
+
+Not touched: `Mesh` and its `face_regions`, `LookMaterial`, `LookMaps`, `LD_COMMON_SRC` and every P3 library string,
+`eye_shaders.py`, `eye_pass.py`, `KeyShadow`, `EnvCube`, `main.py`, `config/keymap.json` (no keys), the Worklight region
+tint (E1), the presets' values.
+
+### 22.2 Where the build differs from §2 / §9, and why
+
+| # | AD | Built | Why |
+|---|---|---|---|
+| S6-1 | §9 "Format v16 by content" | v17 | S7 took v16 (§3, re-order 2026-11-24) |
+| S6-2 | §9 hand-over `Viewport.set_face_material_slots(key, slots)` | the LookDraw carries the regions and their faces (`regions`, `region_faces`); the viewport derives each drawn RenderMesh's slots | one channel with the look: the slots can never belong to another material than the one drawn; the faces are the region's own frozensets, so comparing a LookDraw stays an identity check while nothing changed |
+| S6-3 | §9 "`u_region_look[4]` uniform arrays of the `LookDraw` values" | slot arrays of 5 (slot 0 = the object's material), the body's values as globals of the uniforms' names | the body reads the same names in both variants, so regions off leaves the S5 text (the `#else` keeps the uniform lines) and no body line changes but the albedo test |
+| S6-4 | §9 "each region may have its own albedo source, colour or the shared map" | built as said; **maps** stay the object's: a region's material carries no maps (`region_material`), the object's roughness / normal / translucency maps act on every slot with the slot's values | one UV layout, one set of map units; the panel shows the map rows only in „Ganzes Objekt“. A region's own maps would need more units - on Manu's word |
+| S6-5 | §2.2 `texture_units` for S6 and S7 | one check, ≥ 13, for both; the status line names both | unit 12 is the highest the skin binds; GL 3.3 guarantees 16 |
+| S6-6 | §2.3 point 4 (the key depends on the object) | 10 values only with regions (`key + maps + (cube, True)`) | the S2-1 / S7-3 / S5-4 pattern: every key and test before S6 stays as it was |
+| S6-7 | (not stated) | the F0 array is `u_slot_fresnel` | pyglet cuts an array uniform's trailing digit (`u_slot_f0[0]` became `u_slot_f`, F0 stayed 0: 2–4/255 off); a test now asserts no slot array name ends in a digit |
+| S6-8 | §9 "Panel: Bereich" | a new region entry starts from what the region shows (the object's material without maps) and goes last; a preset in a region keeps no maps | the first edit must not jump; last = it wins on overlap, as the AD's order rule |
+| S6-9 | §9 "Region fehlt" | a deleted region keeps its entry (shown as missing, not drawn); „Zurücksetzen“ in its area removes it; „Zurücksetzen“ in „Ganzes Objekt“ keeps the region entries | the AD's "a region that no longer exists is ignored"; an Undo of the delete brings it back drawn |
+| S6-10 | §9 "a rename of a region carries its entry in the same Undo step" | built for the region commands (`Ctrl+Alt+N`, the edit object's mesh); the panel's „Bereich“ follows the rename | the only rename path in the app; after an Undo of the rename the „Bereich“ keeps the new name (shown as „Region fehlt“) until another is picked; the entry itself is back under the old name |
+| S6-11 | (not stated) | a slot outside 0–4 draws the object's material | a stale value can never index past the arrays (twin `region_slot`) |
+
+### 22.3 Tests (container, llvmpipe, 2026-11-24)
+
+| # | Test |
+|---|---|
+| Core | `tests/test_look_regions_format.py` (29): value rules, ≤ 4 and unique names, the order kept, a refused value changes nothing, exact dict keys, a region's look may carry maps (data), without regions the v16 / v15 text and version, v17 round trip on the JSON text, several objects, "look_regions" below 17 and 18 refused, nine invalid groups refuse the file; the six "first unknown version" assertions now say 18 |
+| App | `tests/test_look_regions.py` (12): the area is view state and offers the regions; a preset / values / preview / reset in a region are one step on its entry (Undo / Redo), the object's material stays; new entries go last, four is the limit (refused with the reason, nothing changes), the order moves as one step; the LookDraw carries the drawn regions in order and skips a missing one, the panel says „Region fehlt“; the viewport gets the regions only while the room draws; a rename carries the entry in the same Undo step (Undo / Redo), without an entry it is a mesh step only; the `lookdev_material` helpers; Duplicate, mirror copy and Detach carry the entries; save / load (v17, without regions v15), the area is not saved |
+| sources | `test_lookdev_shaders.py`: new `PINNED_S5_SKIN_SOURCES_SHA256` (the 4 variants with every effect before S6, all three maps and the cube where it can be, taken from `dc4fe82` before the change); `test_the_regions_off_keep_the_m1_to_s5_sources` (every pin with `regions=False`); `test_the_regions_variant_picks_the_material_per_triangle` (the define once, the slot read before anything else, the globals, the albedo test, no text with it off, no slot array name ending in a digit) |
+| twins | `test_lookdev_optics.py`: `face_material_slots` (later wins, limited to the drawn faces), `region_slot` (rounding, the clamp); the `regions` effect, its feature and reason |
+| GL | `tests/test_gl_lookdev_regions.py` (9): two overlapping regions draw three materials on the **cage** and the **SubD 1** surface (each lit pixel one of the three references within 1/255, the quarter areas, the later region wins the overlap, swapped order swaps it), a region with the object's own material = the object's frame pixel for pixel; effect off = the one-material frame pixel for pixel, slots freed, no 10-value program; a stale slot 7 = the object's material; each slot's albedo source (the object textured with a coloured region, and the other way round); units 3 and 12 unbound, unit 0 active; `texture_units` stubbed false = the one-material frame with the status line, nothing probed before a region is drawn; the Worklight keeps no slot buffer (cage and SubD surface); `prepare_lookdev` compiles the regions program |
+| updated | the effect lists in persistence / room / panel / probe tests gain `regions`; `test_lookdev_optics.py` and `test_gl_lookdev_maps.py` the new status line; tests that mean "every effect off" or a state before S6 (`test_gl_lookdev_shadow.py` `OFF`, `test_gl_lookdev_cube.py` `CUBE_ONLY`, `test_gl_lookdev_maps.py` `MAPS_ONLY`) say `regions=False`; `experiments/drag_cost/tests/test_probe_lookdev_room.py` (`lookdev +regions`, `probe_region`) |
+
+Runs (GL files each in their own process under xvfb):
+
+| Command | Result |
+|---|---|
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_regions.py -q` | 9 passed |
+| `… tests/test_gl_lookdev_shadow.py` / `test_gl_lookdev_pass.py` / `test_gl_lookdev_parity.py` / `test_gl_lookdev_maps.py` / `test_gl_lookdev_cube.py` | 25 / 13 / 8 / 9 / 13 passed |
+| `… tests/test_gl_eye_pass.py` | 135 passed (unchanged; the eye pins green) |
+| `… test_gl_face_data_layout.py` / `test_gl_shading.py` / `test_gl_texture.py` (E1) / `test_gl_region_tint.py` (the Worklight region tint) / `test_gl_gpu_picking.py` / `test_gl_morph_picking.py` (E15) | 16 / 19 / 10 / 3 / 41 / 16 passed |
+| `… test_gui_imgui_window.py` / `test_gui_lookdev_window.py` | 18 / 2 passed |
+| `xvfb-run -a python -m pytest experiments/lookdev_eye_lab/tests experiments/drag_cost/tests -q` | 314 passed (206 + 108) |
+| `xvfb-run -a python -m pytest tests -q` (a Core slice, §14) | 8112 passed, 8 skipped, 3 failed - all pre-existing, failing the same on `dc4fe82` without S6: `test_scene_menu_local_tmp.py::test_probe_menu_wiring` (known) and `test_interaction_scenarios.py::test_box_paint_and_lasso_select_and_esc_cancels_a_box` with its `test_interaction_structure.py::test_iv_can_run_is_pure[...]` twin (Paint box select: 6 vertices instead of 5) |
+
+**Sight check (container):** `Gollum_Head_05`, framed ¾, Creature Skin on the head, effects as default. The head's
+`Group 4` and `Group 8` (the lip area) given „Zähne“ as region materials: 12,745 px change on the cage and 10,518 on
+SubD 1 (max 42/255), the region's edge follows the control faces on the SubD surface, no black pixel. `Group 2` (68
+faces, the probe's „Mouth“) lies inside the closed mouth: 0 px change in this view.
+
+### 22.4 Measurement
+
+Container (llvmpipe, a function check only): `probe_lookdev_room.py --effects regions --draws 3 --surfaces cage` named
+`Group 2` „Mouth“ (68 faces) with „Mundinneres“, ran `lookdev` and `lookdev +regions`, `glGetError` 0.
+
+**Reference PC (S6, with S1–S5's and S7's open run):** the same single command as §18.4 (`probe_lookdev_room.py`, every
+built row). What it decides for S6: `lookdev +regions` against `lookdev` ≤ +0.3 ms (§2.5). The slot upload is an event
+cost (a region or topology change), not per frame. Above it, the lever is the effect's on/off.
+
+### 22.5 Practical test S6 (`scenes/Gollum_Head_05.mirai.json`, about 10 minutes)
+
+The head has only unnamed polygroups (`Group 2` / `Group 4` / `Group 8`, V22). A region for the mouth:
+- **Mund-Region anlegen:** Face-Modus (`3`), die Faces des Mundinneren wählen, **Ctrl+G** (neue Gruppe „Group N“).
+  Optional **Ctrl+Alt+N** gibt ihr einen Namen aus der Liste (Brow, Upper Lip, Lower Lip, Eyelids, Jaw; nochmal = der
+  nächste). Eine vorhandene Gruppe geht auch: **Shift+G** wechselt die aktive Gruppe, **Alt+G** wählt ihre Faces.
+
+Then open LookDev, select the head, material **Creature Skin**, SubD 1, view „¾“.
+1. **Bereich wählen:** Material → „Bereich“ → deine Mund-Region. Erwartet: die Werte zeigen zuerst das Material des
+   Objekts. Vorlage **Mundinneres** wählen: nur die Region ändert sich (der Mund geöffnet oder von unten ansehen).
+2. **Werte:** Rauheit / Glanz / Farbe in der Region - je ein Undo-Schritt, das Objekt bleibt.
+3. **Zweite Region** (z. B. die Lippenlinie, **Wet Skin**), überlappend mit der ersten: „nach oben / nach unten“ ändert,
+   welche gewinnt (die untere).
+4. **Umbenennen** (Ctrl+Alt+N im Face-Modus): das Material bleibt an der Region; Ctrl+Z nimmt beides zurück.
+5. **Effekt „Region-Materialien“ aus / an:** aus = ein Material für den ganzen Kopf.
+6. **Speichern, neu laden:** die Region-Materialien sind da („Bereich“ startet wieder bei „Ganzes Objekt“).
+7. **Grenze bei SubD:** folgt die Grenze den Käfig-Faces sauber, oder stört die harte Kante an der Lippe?
+
+Assumptions to correct in one sentence: a region's material has no maps of its own (the object's maps act on it);
+the later region wins on overlap; at most four per object; the „Bereich“ is not saved; a deleted region keeps its
+material until you reset it (shown as „Region fehlt“); the region edge is hard (one material per face, no blend).

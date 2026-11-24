@@ -525,6 +525,7 @@ class MorphController:
         view_obj.pivot = base.pivot
         view_obj.material = base.material
         view_obj.look = base.look  # AD-038 §18: the view looks like its base in LookDev too
+        view_obj.look_regions = base.look_regions  # AD-039 §9: with its region materials
         self.view = TargetView(base, lid, view_obj)
         services.history.translate = self._translate
         shift = tuple(view_obj.transform.translation[i] - base.transform.translation[i] for i in range(3))

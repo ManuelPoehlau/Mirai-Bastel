@@ -40,7 +40,9 @@ Architekturvertrag:
   Daten - das organische Material des LookDev-Raums (Vorlage, Farbe, Albedo-Quelle, Rauheit, Glanz, Weichheit,
   Durchscheinen); unabhängig vom Worklight-`ObjectMaterial`. Zeichnung, Vorlagen und Undo leben in `src/mirai` /
   `src/viewport`. Seit AD-039 S7 (CORE_V1_FREEZE §7.1 2026-11-24) optional mit Bild-Maps (`LookMaps`,
-  `LookMaterial.maps`): Rauheit, Normalen, Durchscheinen als Bildpfade.
+  `LookMaterial.maps`): Rauheit, Normalen, Durchscheinen als Bildpfade. Seit AD-039 S6 (CORE_V1_FREEZE §7.1
+  2026-11-24) optional je Face-Region ein eigenes Material (`RegionLook`, `SceneObject.look_regions`, höchstens
+  `LOOK_REGIONS_MAX`, nach Regionsname; bei Überlappung gewinnt der spätere Eintrag).
 - Augen (`EyeSpec`, `SceneObject.eye`; AD-033 §4, CORE_V1_FREEZE §7.1 2026-11-15): reine Daten. Seit 2026-11-16
   (Eye LookDev Phase 3, Manu I-5 "Core Change erlaubt") trägt ein Auge optional eine verschachtelte Look-Gruppe
   (`EyeLook`, `EyeSpec.look`; `None` = neutral, wie bisher); Bedeutung und Zeichnung leben in `src/viewport`.
@@ -611,6 +613,49 @@ class LookMaterial:
         return cls(**{n: raw[n] for n in names}, maps=None if maps is None else LookMaps.from_dict(maps))
 
 
+#: AD-039 §9 (S6, LD-D8): at most this many region materials per object.
+LOOK_REGIONS_MAX = 4
+
+
+@dataclass(frozen=True)
+class RegionLook:
+    """The LookDev material of one face region of an object (AD-039 §9, S6; Manu 2026-11-24 LD-D8 „A, Regionen wie
+    vorgeschlagen“): data only. `region` is the name of a region of the object's mesh (`Mesh.face_regions`,
+    AD-REGIONS-01) - keyed by name, so whether that region exists, which faces it holds and how a rename carries the
+    entry are `src/mirai`'s business (a missing region is drawn as nothing). `look` is the material its faces draw
+    instead of the object's `look`."""
+
+    region: str
+    look: LookMaterial
+
+    def __post_init__(self) -> None:
+        _clean_text(self.region, "look region")
+        if not isinstance(self.look, LookMaterial):
+            raise ValueError(f"look region {self.region!r}: expected a LookMaterial, got {self.look!r}")
+
+    def to_dict(self) -> dict:
+        return {"region": self.region, "look": self.look.to_dict()}
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "RegionLook":
+        if not isinstance(raw, dict) or set(raw) != {"region", "look"}:
+            raise ValueError(f"look region: expected exactly ['region', 'look'], got {raw!r}")
+        return cls(raw["region"], LookMaterial.from_dict(raw["look"]))
+
+
+def _look_regions(value: object) -> tuple[RegionLook, ...]:
+    """`SceneObject.look_regions`' rule: a tuple of `RegionLook`, at most `LOOK_REGIONS_MAX`, region names unique.
+    The order is the meaning: on overlapping regions the later entry wins (AD-039 §9)."""
+    if not isinstance(value, tuple) or not all(isinstance(entry, RegionLook) for entry in value):
+        raise TypeError(f"erwartet ein Tupel aus RegionLook, nicht {value!r}")
+    if len(value) > LOOK_REGIONS_MAX:
+        raise ValueError(f"look regions: at most {LOOK_REGIONS_MAX}, got {len(value)}")
+    names = [entry.region for entry in value]
+    if len(set(names)) != len(names):
+        raise ValueError(f"look regions: region names must be unique, got {names!r}")
+    return value
+
+
 @dataclass(frozen=True)
 class MirrorPair:
     """Zwei Objekte, deren Platzierungen über die Weltebene `normal·x = offset` gekoppelt sind
@@ -672,7 +717,7 @@ class SceneObject:
     """
 
     __slots__ = ("_id", "mesh", "name", "transform", "pivot", "state", "material", "texture", "hidden", "parent", "eye",
-                 "bone", "paint", "look")
+                 "bone", "paint", "look", "_look_regions")
 
     def __init__(
         self,
@@ -691,6 +736,7 @@ class SceneObject:
         bone: BoneId | None = None,
         paint: PaintStack | None = None,
         look: LookMaterial | None = None,
+        look_regions: tuple[RegionLook, ...] = (),
     ) -> None:
         self._id = _require_object_id(object_id)
         self.mesh: Mesh = mesh
@@ -727,6 +773,16 @@ class SceneObject:
         if look is not None and not isinstance(look, LookMaterial):
             raise TypeError(f"erwartet ein LookMaterial oder None, nicht {look!r}")
         self.look: LookMaterial | None = look
+        # AD-039 §9 (S6): the materials of face regions, drawn over `look` (later entry wins); () = none.
+        self.look_regions = look_regions
+
+    @property
+    def look_regions(self) -> tuple[RegionLook, ...]:
+        return self._look_regions
+
+    @look_regions.setter
+    def look_regions(self, value: tuple[RegionLook, ...]) -> None:
+        self._look_regions = _look_regions(value)
 
     @property
     def id(self) -> ObjectId:

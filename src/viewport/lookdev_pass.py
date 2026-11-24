@@ -17,7 +17,11 @@
   gains the three map flags only when a map is drawn (every key without maps stays the 5 values of S4). S5 (AD-039 §8):
   the studio's prefiltered cube (`lookdev_cube.EnvCube`, created on the first frame with the effect on, deleted in
   `release()`) on unit 8 for a draw with `ENV_SPEC`, `GL_TEXTURE_CUBE_MAP_SEAMLESS` on only around that draw (restored
-  to what it was); a key with the cube is 9 values (S4's 5, the three map flags, `CUBE_ENV`).
+  to what it was); a key with the cube is 9 values (S4's 5, the three map flags, `CUBE_ENV`). S6 (AD-039 §9): a
+  LookDraw's region materials (`regions`, `region_faces`) - the RenderMesh's per-triangle slots
+  (`RenderMesh.set_triangle_material_slots`, set by the viewport) through `GLRenderStore.bind_triangle_materials` on
+  unit 12 (`REGION_UNIT`), the slots' values as uniform arrays; a key with regions is 10 values (the cube's 9 with the
+  cube flag False when it is off, then `REGIONS`), every key without regions stays as it was.
 - GL state as `EyePass`: during the draw depth test and write on, blend off, back faces culled, polygon offset (1, 1)
   when `store.polygon_offset`; afterwards offset, cull and depth test off, units 3 / 4 unbound, unit 0 active, program
   stopped. No FBO, no float target (the RGBA8 default framebuffer).
@@ -32,8 +36,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .lookdev_shaders import (ALBEDO_UNIT, CUBE_UNIT, MAP_UNITS, SHADOW_RAW_UNIT, SHADOW_UNIT, UV_UNIT,
-                              background_sources, skin_sources)
+from .lookdev_shaders import (ALBEDO_UNIT, CUBE_UNIT, MAP_UNITS, REGION_SLOTS, REGION_UNIT, SHADOW_RAW_UNIT,
+                              SHADOW_UNIT, UV_UNIT, background_sources, skin_sources)
 
 _IDENTITY_4 = (1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0)
 
@@ -43,7 +47,9 @@ class LookDraw:
     """One object in the LookDev pass: the organic material's values (sRGB artist colours; `specular` is the level,
     F0 = 0.08 x level; `roughness` perceptual, alpha = r²) and its albedo source - a path, a `LiveTexture` or None
     (the base colour). AD-039 S7: the material's map paths the pass may load (`roughness_map`, `normal_map`,
-    `translucency_map`; None = none), the normal map's strength and its green direction."""
+    `translucency_map`; None = none), the normal map's strength and its green direction. AD-039 S6: `regions` = the
+    materials of the object's face regions (LookDraws whose maps are ignored: the maps are the object's), slot i + 1
+    for `region_faces[i]` (the FaceIds of the object's mesh; on overlap the later region wins)."""
 
     base_color: tuple[float, float, float]
     roughness: float = 0.6
@@ -57,6 +63,12 @@ class LookDraw:
     translucency_map: str | None = None
     normal_strength: float = 1.0
     normal_green_down: bool = False
+    regions: tuple = ()
+    region_faces: tuple = ()
+
+    def __post_init__(self) -> None:
+        if len(self.regions) != len(self.region_faces) or len(self.regions) >= REGION_SLOTS:
+            raise ValueError(f"LookDraw: at most {REGION_SLOTS - 1} regions, each with its faces")
 
     @property
     def f0(self) -> float:
@@ -69,8 +81,27 @@ class LookDraw:
 
     @property
     def needs_uvs(self) -> bool:
-        """An albedo map or any map reads the triangle UVs (AD-038 §4.1, AD-039 §10)."""
-        return self.albedo is not None or bool(self.map_paths())
+        """An albedo map (the object's or a region's) or any map reads the triangle UVs (AD-038 §4.1, AD-039 §10)."""
+        return self.albedo_source() is not None or bool(self.map_paths())
+
+    def albedo_source(self, regions: bool = True):
+        """The albedo map the draw binds: the object's, or with `regions` the first region's that has one (they share
+        the object's UVs and its one source, AD-039 §9)."""
+        if self.albedo is not None or not regions:
+            return self.albedo
+        return next((r.albedo for r in self.regions if r.albedo is not None), None)
+
+    def slot_uniforms(self) -> dict:
+        """AD-039 S6: the `REGIONS` program's uniform arrays - slot 0 the object's values, slot i + 1 region i's, the
+        unused slots the object's again."""
+        slots = [self, *self.regions] + [self] * (REGION_SLOTS - 1 - len(self.regions))
+        return {"u_slot_base_color": [tuple(float(c) for c in d.base_color) for d in slots],
+                "u_slot_albedo": [1.0 if d.albedo is not None else 0.0 for d in slots],
+                "u_slot_roughness": [float(d.roughness) for d in slots], "u_slot_fresnel": [d.f0 for d in slots],
+                "u_slot_wrap": [tuple(float(c) for c in d.wrap_rgb) for d in slots],
+                "u_slot_backscatter": [float(d.backscatter) for d in slots],
+                "u_slot_backscatter_color": [tuple(float(c) for c in d.backscatter_color) for d in slots],
+                "u_triangle_material": REGION_UNIT}
 
     def map_uniforms(self) -> dict:
         return {"u_roughness_map": MAP_UNITS["roughness"], "u_normal_map": MAP_UNITS["normal"],
@@ -145,25 +176,29 @@ class LookdevPass:
     @staticmethod
     def program_key(albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
                     thickness: bool = False, roughness_map: bool = False, normal_map: bool = False,
-                    translucency_map: bool = False, cube_env: bool = False) -> tuple:
+                    translucency_map: bool = False, cube_env: bool = False, regions: bool = False) -> tuple:
         """The skin program's cache key: the 5 values of S4, plus the three map flags when a map is drawn (S7), plus
-        those and `CUBE_ENV` when the cube is (S5; only with `env_spec`) - 5, 8 or 9 values, so every key of a frame
-        without the cube stays as it was."""
+        those and `CUBE_ENV` when the cube is (S5; only with `env_spec`), plus those, the cube flag and `REGIONS` when
+        region materials are (S6) - 5, 8, 9 or 10 values, so every key of a frame without the cube or regions stays as
+        it was."""
         key = (bool(albedo_map), bool(env_spec), bool(shadow), bool(dual_lobe), bool(thickness) and bool(shadow))
         maps = (bool(roughness_map), bool(normal_map), bool(translucency_map))
-        if cube_env and env_spec:
+        cube = bool(cube_env) and bool(env_spec)
+        if regions:
+            return key + maps + (cube, True)
+        if cube:
             return key + maps + (True,)
         return key + maps if any(maps) else key
 
     def program(self, albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
                 thickness: bool = False, roughness_map: bool = False, normal_map: bool = False,
-                translucency_map: bool = False, cube_env: bool = False):
+                translucency_map: bool = False, cube_env: bool = False, regions: bool = False):
         from pyglet.graphics.shader import Shader, ShaderProgram
 
         from .gl_render_store import GLRenderStore, _register_sampler_buffer_uniform
 
         key = self.program_key(albedo_map, env_spec, shadow, dual_lobe, thickness, roughness_map, normal_map,
-                               translucency_map, cube_env)
+                               translucency_map, cube_env, regions)
         program = self.programs.get(key)
         if program is None:
             _register_sampler_buffer_uniform()
@@ -178,13 +213,14 @@ class LookdevPass:
         return program
 
     def draw(self, render_mesh, look: LookDraw, frame: dict, shadow=None, dual_lobe: bool = False,
-             thickness: bool = False, maps: bool = False, cube=None) -> bool:
+             thickness: bool = False, maps: bool = False, cube=None, regions: bool = False) -> bool:
         """Draw one object. False = nothing drawn (no VertexList / camera yet, or a Ghost): the caller draws it with the
         Worklight. `shadow` (AD-039 S1): a rendered `KeyShadow` the object receives (the `SHADOW` variant), else None;
         `dual_lobe` (S3): the `DUAL_LOBE` variant; `thickness` (S4): the `THICKNESS` variant, only with a shadow;
         `maps` (S7): the LookDraw's maps that load are drawn (one define each) - on a mesh with triangle UVs;
         `cube` (S5): a built `EnvCube` the studio's reflection reads (the `CUBE_ENV` variant, with `env_spec`), else
-        None."""
+        None; `regions` (S6): the LookDraw's region materials by the RenderMesh's triangle slots (the `REGIONS`
+        variant, when the look has regions and the store holds slots), else the object's material everywhere."""
         from pyglet import gl
 
         from .gl_render_store import GLRenderStore
@@ -195,8 +231,11 @@ class LookdevPass:
         if vlist is None or len(camera) != 32 or getattr(store, "alpha", 1.0) < 1.0:
             return False
         paths = look.map_paths() if maps else {}
-        uvs = (look.albedo is not None or bool(paths)) and store.bind_triangle_uvs(UV_UNIT)
-        texture = GLRenderStore.texture_binding(look.albedo) if uvs else None
+        regions = bool(regions) and bool(look.regions) and hasattr(store, "bind_triangle_materials") \
+            and store.bind_triangle_materials(REGION_UNIT)
+        albedo = look.albedo_source(regions)
+        uvs = (albedo is not None or bool(paths)) and store.bind_triangle_uvs(UV_UNIT)
+        texture = GLRenderStore.texture_binding(albedo) if uvs else None
         bound_maps = {}
         for kind, path in paths.items() if uvs else ():
             image = GLRenderStore.texture(path)
@@ -210,7 +249,7 @@ class LookdevPass:
         cube = cube if cube is not None and cube.ready and self.env_spec else None
         program = self.program(texture is not None, self.env_spec, shadow is not None, dual_lobe, thickness,
                                "roughness" in bound_maps, "normal" in bound_maps, "translucency" in bound_maps,
-                               cube is not None)
+                               cube is not None, regions)
         program.use()
         active = program.uniforms  # pyglet builds this dict on every access: once per draw
         model = store.uniform_data("model_uniforms")
@@ -219,6 +258,8 @@ class LookdevPass:
         set_uniforms(program, {"u_view": tuple(camera[0:16]), "u_proj": tuple(camera[16:32]),
                                "u_model": tuple(model) if len(model) == 16 else _IDENTITY_4,
                                "u_triangle_uvs": UV_UNIT, "u_albedo": ALBEDO_UNIT}, active)
+        if regions:
+            set_uniforms(program, look.slot_uniforms(), active)
         if texture is not None:
             gl.glActiveTexture(gl.GL_TEXTURE0 + ALBEDO_UNIT)
             gl.glBindTexture(*texture)
@@ -272,6 +313,8 @@ class LookdevPass:
             cube.unbind(CUBE_UNIT)
             if not seamless:
                 gl.glDisable(gl.GL_TEXTURE_CUBE_MAP_SEAMLESS)
+        if regions:
+            GLRenderStore.unbind_triangle_uvs(REGION_UNIT)  # a buffer texture like the UVs: the same unbind
         program.stop()
         self.draws += 1
         return True

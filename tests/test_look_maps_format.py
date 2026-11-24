@@ -2,8 +2,8 @@
 „Map-Pfade“ on Q-P3-2, „S7 jetzt vorziehen“) - contract tests (Core part).
 
 Pinned here: the value rules, a material without maps is written exactly as before (the v15 text, the same version),
-v16 only with maps and v15 again without them, a "maps" key below 16 and any invalid map group refuse the file, 17 is
-the first unknown version.
+v16 only with maps and v15 again without them, a "maps" key below 16 and any invalid map group refuse the file, 18 is
+the first unknown version (17: the region materials, AD-039 §9).
 """
 
 from __future__ import annotations
@@ -111,12 +111,12 @@ def test_without_maps_the_v15_text_again():
     assert scene_to_json(scene) == plain
 
 
-def test_maps_below_version_16_refuse_the_file_and_17_is_unknown():
+def test_maps_below_version_16_refuse_the_file_and_18_is_unknown():
     data = json.loads(scene_to_json(_scene(_look(maps=MAPS))))
     data["version"] = LOOK_FORMAT_VERSION
     with pytest.raises(ValueError):
         scene_from_dict(data)
-    data["version"] = 17
+    data["version"] = 18  # 17: the region materials (AD-039 §9)
     with pytest.raises(ValueError):
         scene_from_dict(data)
     plain = json.loads(scene_to_json(_scene(_look())))

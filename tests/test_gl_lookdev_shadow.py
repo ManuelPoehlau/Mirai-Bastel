@@ -34,7 +34,8 @@ from viewport.viewport import Viewport  # noqa: E402
 SIZE = 192
 GREY = LookDraw((0.5, 0.5, 0.5), roughness=1.0, specular=0.0)
 FLAT = lo.Studio((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-OFF = lo.LookdevEffects(shadow=False, dual_lobe=False, thickness=False, cube=False)  # every P3 effect off: M1
+OFF = lo.LookdevEffects(shadow=False, dual_lobe=False, thickness=False, cube=False,
+                        regions=False)  # every P3 effect off: M1
 
 
 @pytest.fixture(scope="module")

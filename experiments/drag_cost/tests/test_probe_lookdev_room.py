@@ -11,7 +11,7 @@ def test_effects_default_every_built_effect_and_none_measures_no_p3_row():
     from viewport.lookdev_optics import LookdevEffects
 
     assert room.parse_args([]).effects == LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness",
-                                                                         "cube", "maps")
+                                                                         "cube", "regions", "maps")
     assert room.parse_args(["--effects", "none"]).effects == ()
     assert room.parse_args(["--effects", "shadow"]).effects == ("shadow",)
 
@@ -56,3 +56,25 @@ def test_the_maps_row_measures_them_alone_with_three_generated_maps():
     assert all(im.shape == (64, 64, 4) and im.dtype == np.uint8 for im in images.values())
     assert tuple(images["normal"][1, 1, :3]) == (128, 128, 255)  # a bump's top: no tilt
     assert np.array_equal(room.probe_map_images(64)["roughness"], images["roughness"])
+
+
+def test_the_regions_row_names_a_polygroup_as_the_mouth_in_memory():
+    """AD-039 §9: `lookdev +regions` against `lookdev` is S6's cost; the probe names the edit object's first polygroup
+    "Mouth" and gives it "Mundinneres" as a region material (one Undo step, nothing saved)."""
+    from core import FaceRegion, FaceRegions
+    from mirai.application import Application
+
+    assert room.EFFECT_ROWS["regions"] == ("lookdev +regions", ("regions",))
+    assert room.parse_args(["--effects", "regions"]).effects == ("regions",)
+    app = Application()
+    app.init_scene("cube")
+    assert room.probe_region(app) is None  # no polygroup: nothing done
+    mesh = app.scene.mesh
+    faces = sorted(mesh.all_face_ids(), key=int)
+    mesh.face_regions = FaceRegions((FaceRegion("Group 2", frozenset(faces[:2])), FaceRegion("Group 4",
+                                                                                          frozenset(faces[2:3]))))
+    assert room.probe_region(app) == "'Group 2' -> 'Mouth' (2 faces), 'Mundinneres'"
+    obj = app.scene.edit_object
+    assert [r.name for r in mesh.face_regions.regions] == ["Mouth", "Group 4"]
+    assert [(e.region, e.look.preset) for e in obj.look_regions] == [("Mouth", "Mundinneres")]
+    assert app.lookdev_area is None and obj.look is None

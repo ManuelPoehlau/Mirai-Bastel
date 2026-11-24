@@ -130,13 +130,13 @@ def test_effects_default_on_and_dependencies_and_features():
     from viewport.lookdev_features import FeatureReport
 
     assert lo.LookdevEffects().shadow
-    assert lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness", "cube", "maps")
+    assert lo.LookdevEffects.names() == ("shadow", "eye_shadow", "dual_lobe", "thickness", "cube", "regions", "maps")
     assert lo.LookdevState("x", lo.EYE_STUDIO, lo.StudioLight(), lo.StudioLight(), lo.StudioLight()).effects \
         == lo.LookdevEffects()
     on = lo.LookdevEffects(shadow=True)
     assert lo.effective(on) == on  # nothing probed: nothing missing
     assert lo.effect_reasons(on) == {"shadow": None, "eye_shadow": None, "dual_lobe": None, "thickness": None,
-                                     "cube": None, "maps": None}
+                                     "cube": None, "regions": None, "maps": None}
     assert lo.effective(on, FeatureReport(depth_texture=True)) == on
     missing = FeatureReport(depth_texture=False)
     # S3 needs no feature and no other effect: it stays on without a depth texture
@@ -144,7 +144,7 @@ def test_effects_default_on_and_dependencies_and_features():
                                                           thickness=False)
     assert lo.effect_reasons(on, missing) == {"shadow": "Tiefentextur fehlt", "eye_shadow": "braucht Schatten",
                                               "dual_lobe": None, "thickness": "braucht Schatten", "cube": None,
-                                              "maps": None}
+                                              "regions": None, "maps": None}
     assert missing.status_lines() == ("LookDev: Schatten aus – Tiefentextur nicht verfügbar",)
     assert lo.effective(lo.LookdevEffects(shadow=False)) == lo.LookdevEffects(shadow=False, eye_shadow=False,
                                                                                thickness=False)
@@ -154,11 +154,12 @@ def test_effects_default_on_and_dependencies_and_features():
     assert lo.effect_reasons(on, no_samplers)["thickness"] == "Sampler-Objekte fehlen"
     assert no_samplers.status_lines() == ("LookDev: Durchleuchtung aus – Sampler-Objekte nicht verfügbar",)
     assert lo.effective(lo.LookdevEffects(dual_lobe=False)) == lo.LookdevEffects(dual_lobe=False)
-    # S7 needs enough texture units, nothing else: without them only the maps are off
+    # S7 / S6 need enough texture units, nothing else: without them only the maps and the region materials are off
     few_units = FeatureReport(texture_units=False)
-    assert lo.effective(on, few_units) == lo.LookdevEffects(maps=False)
+    assert lo.effective(on, few_units) == lo.LookdevEffects(regions=False, maps=False)
     assert lo.effect_reasons(on, few_units)["maps"] == "zu wenige Textureinheiten"
-    assert few_units.status_lines() == ("LookDev: Maps aus – zu wenige Textureinheiten",)
+    assert lo.effect_reasons(on, few_units)["regions"] == "zu wenige Textureinheiten"
+    assert few_units.status_lines() == ("LookDev: Maps und Region-Materialien aus – zu wenige Textureinheiten",)
     assert lo.effective(lo.LookdevEffects(shadow=False)).maps
     # S5 needs a complete RGBA16F cube target, nothing else: without it only the cube is off
     no_cube = FeatureReport(cube_rgba16f=False)
@@ -166,6 +167,24 @@ def test_effects_default_on_and_dependencies_and_features():
     assert lo.effect_reasons(on, no_cube)["cube"] == "Cube-Ziel fehlt"
     assert no_cube.status_lines() == ("LookDev: Umgebungs-Cube aus – Cube-Ziel nicht verfügbar",)
     assert lo.effective(lo.LookdevEffects(shadow=False)).cube
+    assert lo.effective(lo.LookdevEffects(shadow=False)).regions
+
+
+# -- AD-039 S6: region materials ---------------------------------------------------------------------------------------
+
+def test_face_material_slots_let_the_later_region_win():
+    """AD-039 §9: slot i + 1 for region i; a face in two regions takes the later one; `faces` limits the map."""
+    a, b = frozenset({1, 2, 3}), frozenset({3, 4})
+    assert lo.face_material_slots((a, b)) == {1: 1, 2: 1, 3: 2, 4: 2}
+    assert lo.face_material_slots((b, a)) == {1: 2, 2: 2, 3: 2, 4: 1}
+    assert lo.face_material_slots((a, b), faces={2, 3, 9}) == {2: 1, 3: 2}
+    assert lo.face_material_slots(()) == {}
+
+
+def test_region_slot_rounds_and_draws_slot_0_outside_the_slots():
+    """The `REGIONS` block's pick: the stored float rounded; below 0 or past the last slot = the object's material."""
+    texel = np.array([0.0, 1.0, 1.0001, 1.9999, 4.0, 5.0, -1.0, 2.49])
+    assert lo.region_slot(texel, 4).tolist() == [0, 1, 1, 2, 4, 0, 0, 2]
 
 
 # -- AD-039 S5: the environment cube -----------------------------------------------------------------------------------

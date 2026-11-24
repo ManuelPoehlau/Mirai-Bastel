@@ -1483,9 +1483,100 @@ class Application:
             return None
         return targets
 
+    # AD-039 §9 (S6): the panel's „Bereich“ - „Ganzes Objekt“ (None: `SceneObject.look`) or a face region of the targets
+    # (its entry in `SceneObject.look_regions`). The material controls edit the area; the maps stay the object's.
+
+    @property
+    def lookdev_area(self) -> str | None:
+        return self._lookdev.area
+
+    def lookdev_area_choices(self) -> list[tuple[str, bool, bool]]:
+        """The regions the „Bereich“ offers for the material targets: `(name, has an entry, missing)` - the targets'
+        mesh regions in their order, then entries whose region no target's mesh has any more (missing: kept, not
+        drawn)."""
+        room = self._lookdev
+        targets = self.lookdev_material_targets()
+        names: list[str] = []
+        for obj in targets:
+            regions = obj.mesh.face_regions
+            names += [r.name for r in (regions.regions if regions is not None else ()) if r.name not in names]
+        for obj in targets:
+            names += [entry.region for entry in obj.look_regions if entry.region not in names]
+        return [(name, any(room.region_entry(obj, name) is not None for obj in targets),
+                 not any(room.has_region(obj, name) for obj in targets)) for name in names]
+
+    def set_lookdev_area(self, name: str | None) -> bool:
+        """The „Bereich“ the material controls edit: None = „Ganzes Objekt“, else a region the targets have (or had:
+        an entry of a missing region). View state, no Undo; a held preview ends. True = changed."""
+        room = self._lookdev
+        if name is not None and name not in [choice[0] for choice in self.lookdev_area_choices()]:
+            self._set_status(f"LookDev Bereich: keine Region {name!r} an der Auswahl")
+            return False
+        if name == room.area:
+            return False
+        self.end_lookdev_material_preview()
+        room.area = name
+        self._objects.sync_views()
+        self._set_status("LookDev Bereich: Ganzes Objekt" if name is None else f"LookDev Bereich: Region {name!r}")
+        return True
+
+    def _lookdev_area_targets_or_status(self) -> list | None:
+        """The material targets of the current area: every target for „Ganzes Objekt“, else those whose mesh has the
+        region or that have its entry (None + status line when none)."""
+        targets = self._lookdev_material_targets_or_status()
+        area = self._lookdev.area
+        if targets is None or area is None:
+            return targets
+        room = self._lookdev
+        targets = [obj for obj in targets if room.has_region(obj, area) or room.region_entry(obj, area) is not None]
+        if not targets:
+            self._set_status(f"LookDev Bereich {area!r}: keine Auswahl hat diese Region")
+            return None
+        return targets
+
+    def _commit_lookdev(self, targets: list, make, label: str) -> bool:
+        """One Undo step for the current area: `make(obj)` is the area's new material (None = none: the object's look
+        removed, or the region's entry). A fifth region refuses the whole step with the reason."""
+        from . import lookdev_material
+
+        area = self._lookdev.area
+        if area is None:
+            return self._objects.commit_looks([(obj, obj.look, make(obj)) for obj in targets], label)
+        changes = []
+        for obj in targets:
+            try:
+                changes.append((obj, obj.look_regions, lookdev_material.with_region(obj.look_regions, area, make(obj))))
+            except ValueError as exc:
+                self._set_status(f"{exc} ({obj.name!r})")
+                self._objects.sync_views()
+                return False
+        return self._objects.commit_looks(changes, f"{label} · {area}", field="look_regions")
+
+    def move_lookdev_region(self, step: int) -> bool:
+        """AD-039 §9: the current area's entry one place up (`step` -1: drawn under the later ones) or down (+1: over
+        them) on every target that has it; one Undo step. True = changed."""
+        from . import lookdev_material
+
+        area = self._lookdev.area
+        if area is None:
+            self._set_status("LookDev: erst einen Bereich wählen")
+            return False
+        targets = self._lookdev_area_targets_or_status()
+        if targets is None:
+            return False
+        self._lookdev.preview.clear()
+        changes = [(obj, obj.look_regions, lookdev_material.moved_region(obj.look_regions, area, step))
+                   for obj in targets]
+        changed = self._objects.commit_looks(changes, f"LookDev Reihenfolge · {area}", field="look_regions")
+        if changed:
+            self._set_status(f"LookDev Bereich {area!r} {'nach oben' if step < 0 else 'nach unten'}"
+                             " (bei Überlappung gewinnt der untere)")
+        return changed
+
     def set_lookdev_material(self, name: str) -> bool:
         """Give the material targets the preset `name` (`mirai.lookdev_material`): `SceneObject.look`, one Undo step,
-        saved with the scene (AD-038 §18, LD-2). True = changed."""
+        saved with the scene (AD-038 §18, LD-2). AD-039 §9: in a region's „Bereich“ the region's entry (added last
+        when it has none; at most four). True = changed."""
         from . import lookdev_material
 
         try:
@@ -1493,15 +1584,18 @@ class Application:
         except ValueError as exc:
             self._set_status(str(exc))
             return False
-        targets = self._lookdev_material_targets_or_status()
+        targets = self._lookdev_area_targets_or_status()
         if targets is None:
             return False
         self._lookdev.preview.clear()
         # AD-039 §10: a preset has no maps; the object's maps stay (like an eye preset keeps its images)
-        changed = self._objects.commit_looks(
-            [(obj, obj.look, lookdev_material.keep_maps(material, obj.look)) for obj in targets], f"LookDev {name}")
+        area = self._lookdev.area
+        changed = self._commit_lookdev(
+            targets, (lambda obj: lookdev_material.keep_maps(material, obj.look)) if area is None else
+            (lambda obj: material), f"LookDev {name}")
         if changed:
-            self._set_status(f"LookDev material {name!r}: {', '.join(repr(o.name) for o in targets)}")
+            where = "" if area is None else f" (Region {area!r})"
+            self._set_status(f"LookDev material {name!r}{where}: {', '.join(repr(o.name) for o in targets)}")
         return changed
 
     def set_lookdev_map(self, kind: str, path: str | Path | None) -> bool:
@@ -1551,7 +1645,7 @@ class Application:
 
         room = self._lookdev
         try:
-            return {obj.id: with_values(room.committed(obj), **changes) for obj in targets}
+            return {obj.id: with_values(room.committed_area(obj, room.area), **changes) for obj in targets}
         except (TypeError, ValueError) as exc:
             self._set_status(f"LookDev material: {exc}")
             return None
@@ -1560,8 +1654,9 @@ class Application:
         """Change values of the targets' material (`base_color`, `albedo_source`, `roughness`, `specular`, `wrap`,
         `backscatter`, `backscatter_color`; AD-039 §10 the normal map's `normal_strength` and `normal_green_down`, on
         targets that have maps); the preset name stays, marked "angepasst" (not for the map values). One Undo step (a
-        slider's release); a held preview ends. True = changed."""
-        targets = self._lookdev_material_targets_or_status()
+        slider's release); a held preview ends. AD-039 §9: in a region's „Bereich“ its entry (created from what the region
+        shows). True = changed."""
+        targets = self._lookdev_area_targets_or_status()
         if targets is None:
             self.end_lookdev_material_preview()
             return False
@@ -1570,8 +1665,7 @@ class Application:
         if updated is None:
             self._objects.sync_views()
             return False
-        changed = self._objects.commit_looks([(obj, obj.look, updated[obj.id]) for obj in targets],
-                                             "LookDev material")
+        changed = self._commit_lookdev(targets, lambda obj: updated[obj.id], "LookDev material")
         if not changed:
             self._objects.sync_views()  # the preview (if any) is gone: the committed values again
         return changed
@@ -1583,6 +1677,9 @@ class Application:
         if self._lookdev_material_refusal() is not None:
             return False
         targets = self.lookdev_material_targets()
+        area, room = self._lookdev.area, self._lookdev
+        if area is not None:
+            targets = [obj for obj in targets if room.has_region(obj, area) or room.region_entry(obj, area) is not None]
         if not targets:
             return False
         updated = self._lookdev_values(targets, changes)
@@ -1606,14 +1703,18 @@ class Application:
 
     def reset_lookdev_material(self) -> bool:
         """"Zurücksetzen": the targets lose their look (`SceneObject.look = None`) and draw the Neutral fallback again;
-        one Undo step. True = changed."""
-        targets = self._lookdev_material_targets_or_status()
+        one Undo step. AD-039 §9: in a region's „Bereich“ the region loses its entry (it draws the object's material
+        again); the other regions' entries stay either way. True = changed."""
+        targets = self._lookdev_area_targets_or_status()
         if targets is None:
             return False
         self._lookdev.preview.clear()
-        changed = self._objects.commit_looks([(obj, obj.look, None) for obj in targets], "LookDev reset")
+        area = self._lookdev.area
+        changed = self._commit_lookdev(targets, lambda obj: None, "LookDev reset")
         if changed:
-            self._set_status(f"LookDev material: {', '.join(repr(o.name) for o in targets)} Neutral (kein Material)")
+            names = ", ".join(repr(o.name) for o in targets)
+            self._set_status(f"LookDev material: {names} Neutral (kein Material)" if area is None
+                             else f"LookDev Region {area!r}: {names} wieder mit dem Material des Objekts")
         return changed
 
     def lookdev_image_path(self) -> Path:
@@ -4069,11 +4170,22 @@ class Application:
             if new == name:
                 self._set_status(f"{name}: every set name is taken")
                 return False
+            # AD-039 §9: the edit object's region material follows the rename in the same Undo step
+            from . import lookdev_material
+            from .scene_objects import ObjectLookCommand
+
+            edit = self.scene.edit_object
+            carried = lookdev_material.renamed_region(edit.look_regions, name, new)
+            companion = None if carried == edit.look_regions else ObjectLookCommand(
+                [(edit, edit.look_regions, carried)], f"Name {name} {new}", "look_regions")
             self._mesh_transaction(
                 f"Name {name} {new}",
                 lambda m: setattr(m, "face_regions", face_regions_api.renamed(m.face_regions, name, new)),
                 moved_of=lambda _: set(),
+                companion=companion,
             )
+            if self._lookdev.area == name:
+                self._lookdev.area = new
             self._set_active_region(new)
             self._set_status(f"{name} saved as {new} (Ctrl+Alt+N again: next name)")
             return True

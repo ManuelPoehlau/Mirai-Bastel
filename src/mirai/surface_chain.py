@@ -116,6 +116,10 @@ class ChainedSurface:
         tints = self._of_output("surface_face_tints", None)
         return tints(control_tints) if tints is not None else {}
 
+    def surface_face_values(self, control_values) -> dict:
+        values = self._of_output("surface_face_values", None)
+        return values(control_values) if values is not None else {}
+
 
 class SurfaceChain:
     """The app's coordinator of the viewport's H7 slot (module docstring). Stages say whether they want

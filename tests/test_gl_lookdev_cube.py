@@ -39,7 +39,8 @@ STUDIO = lo.Studio((0.25, 0.22, 0.2), (0.12, 0.12, 0.13), (0.03, 0.03, 0.035),
                    (lo.Softbox(40.0, 25.0, 25.0, 18.0, (6.0, 5.8, 5.5)),
                     lo.Softbox(-120.0, 10.0, 5.0, 30.0, (3.0, 3.0, 3.2)),
                     lo.Softbox(180.0, 60.0, 30.0, 10.0, (1.0, 1.0, 1.0))))
-CUBE_ONLY = lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=False, thickness=False, cube=True, maps=False)
+CUBE_ONLY = lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=False, thickness=False, cube=True, regions=False,
+                             maps=False)
 NO_CUBE = dataclasses.replace(CUBE_ONLY, cube=False)
 GLOSSY = LookDraw((0.5, 0.45, 0.4), roughness=0.45, specular=1.0)
 

@@ -3,7 +3,9 @@
 The panel reads the room's state (`state(app)`) and calls `Application` (`set_lookdev_studio_preset`,
 `set_lookdev_studio`, `set_lookdev_light`, `set_lookdev_material`, `set_lookdev_material_values`, `frame_lookdev`,
 `close_lookdev`, `preview_lookdev_material_values`, `reset_lookdev_material`, `save_lookdev_image`,
-`set_lookdev_effect`, AD-039 S7 `set_lookdev_map`); it holds no document state. Since LD-2 (AD-038 §18) the material
+`set_lookdev_effect`, AD-039 S7 `set_lookdev_map`, S6 `set_lookdev_area` / `move_lookdev_region`); it holds no
+document state. AD-039 S6: the material block edits a „Bereich“ - „Ganzes Objekt“ or one face region of the targets
+(`AreaRow`; its own material saved on the object, the maps stay the object's). Since LD-2 (AD-038 §18) the material
 is document data (`SceneObject.look`, saved, one Undo step per change: a
 held slider or colour previews, the release commits - `MaterialEdit`); the studio is view state saved in
 `view.lookdev` (no Undo). About 15 controls are visible; the rest sits under "Mehr". Labels German, every layout choice
@@ -50,7 +52,8 @@ class LightRow:
 #: AD-039 §2.1: the block „Effekte“ - one checkbox per built P3 effect, in slice order.
 EFFECTS_TITLE = "Effekte"
 EFFECT_LABELS = {"shadow": "Schatten", "eye_shadow": "Augen-Schatten", "dual_lobe": "Doppel-Glanz",
-                 "thickness": "Durchleuchtung", "cube": "Umgebungs-Cube", "maps": "Maps"}
+                 "thickness": "Durchleuchtung", "cube": "Umgebungs-Cube", "regions": "Region-Materialien",
+                 "maps": "Maps"}
 EFFECT_HINTS = {"shadow": "Schatten des Key auf Haut und Zähnen (wird nur bei Pose-, Form- oder Key-Änderung neu "
                           "gerechnet); „Weichheit“ des Key macht die Kante weicher",
                 "eye_shadow": "Lider, Brauen und Nase werfen den Schatten des Key auf die Augen (braucht "
@@ -62,6 +65,8 @@ EFFECT_HINTS = {"shadow": "Schatten des Key auf Haut und Zähnen (wird nur bei P
                 "cube": "Spiegelung des Studios auf der Haut aus einer vorgefilterten Umgebung (genauer bei rauen "
                         "Materialien, schneller); wird nur bei einem Studio-Wechsel neu berechnet. Die Augen bleiben "
                         "beim analytischen Studio",
+                "regions": "Eigene Materialien für Regionen (Polygroups) des Objekts, z. B. Mundinneres (wählen unter "
+                           "„Bereich“ im Block Material); aus = ein Material je Objekt",
                 "maps": "Rauheit-, Normal- und Durchscheinen-Maps der Materialien (laden unter „Mehr“ im Block "
                         "Material); aus = die Materialien ohne ihre Maps"}
 
@@ -74,6 +79,34 @@ MAPS_HINT = ("Bilder in den UVs des Objekts (z. B. aus ZBrush): Rauheit und Durc
              "Materials), Normal-Map im Tangentenraum. Höchstens 4096²; beim Speichern neben die Szene kopiert.")
 NORMAL_STRENGTH = "Normal-Stärke"
 NORMAL_GREEN_DOWN = "Grün unten (DirectX)"
+
+
+#: AD-039 §9 (S6): the material block's „Bereich“ - the whole object or one face region of the targets.
+AREA = "Bereich"
+AREA_WHOLE = "Ganzes Objekt"
+AREA_OWN = "eigenes Material"
+AREA_MISSING = "Region fehlt"
+AREA_UP = "nach oben"
+AREA_DOWN = "nach unten"
+AREA_HINT = ("Material für eine Region (Polygroup) des Objekts: Vorlage oder Werte wählen legt es an (höchstens 4 je "
+             "Objekt). Bei Überlappung gewinnt die untere in der Liste. Maps gelten für das ganze Objekt.")
+AREA_ORDER_HINT = "Reihenfolge der Region-Materialien: bei Überlappung gewinnt die untere"
+AREA_RESET_HINT = "die Region zeigt wieder das Material des ganzen Objekts"
+
+
+@dataclass(frozen=True)
+class AreaRow:
+    """One region the „Bereich“ offers: its name, whether a target has its own material for it (`own`) and whether no
+    target's mesh has the region any more (`missing`: the entry is kept, not drawn)."""
+
+    name: str
+    own: bool
+    missing: bool
+
+    @property
+    def label(self) -> str:
+        notes = [note for note, on in ((AREA_OWN, self.own), (AREA_MISSING, self.missing)) if on]
+        return self.name + (f" ({', '.join(notes)})" if notes else "")
 
 
 @dataclass(frozen=True)
@@ -126,6 +159,9 @@ class MaterialRow:
     normal_green_down: bool = False
     #: the first target has no UVs: maps are kept but not drawn
     no_uvs: bool = False
+    #: AD-039 S6: the „Bereich“ (None = „Ganzes Objekt“; then `has_look` = the object's look, else the region's entry)
+    area: str | None = None
+    areas: tuple[AreaRow, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -161,16 +197,25 @@ def _material(app) -> MaterialRow | None:
     if not targets:
         return None if not eye_selected else MaterialRow((), None, False, (0.5, 0.5, 0.5), "color", "", 0.0, 0.0,
                                                          0.0, 0.0, (1.0, 1.0, 1.0), True)
+    area = room.area
+    areas = tuple(AreaRow(*choice) for choice in app.lookdev_area_choices())
+    if area is not None and area not in [a.name for a in areas]:
+        areas += (AreaRow(area, False, True),)
+    if area is not None:  # AD-039 §9: the targets of the region (the first of them shows its values)
+        targets = [obj for obj in targets if room.has_region(obj, area) or room.region_entry(obj, area) is not None] \
+            or targets
     first = targets[0]
-    m = room.material(first)
-    maps = m.maps
+    m = room.area_material(first)
+    maps = room.material(first).maps  # the maps are the object's (one UV layout), shown in „Ganzes Objekt“
     rows = tuple(MapRow(kind, MAP_LABELS[kind], getattr(maps, kind) if maps else None,
                         look_maps.status_text(getattr(maps, kind) if maps else None)) for kind in look_maps.KINDS)
+    has_look = any(obj.look is not None for obj in targets) if area is None else \
+        any(room.region_entry(obj, area) is not None for obj in targets)
     return MaterialRow(tuple(obj.name for obj in targets), m.preset, m.adjusted, m.base_color, m.albedo_source,
                        _albedo_label(app, first), m.roughness, m.specular, m.wrap, m.backscatter, m.backscatter_color,
-                       eye_selected, any(obj.look is not None for obj in targets), rows,
+                       eye_selected, has_look, rows if area is None else (),
                        maps.normal_strength if maps else 1.0, maps.normal_green_down if maps else False,
-                       not first.mesh.has_face_uvs())
+                       not first.mesh.has_face_uvs(), area, areas)
 
 
 def _effects(app, s) -> tuple[EffectRow, ...]:
@@ -254,6 +299,13 @@ def material_label(row: MaterialRow) -> str:
     return row.preset + (" (angepasst)" if row.adjusted else "")
 
 
+def area_label(row: MaterialRow) -> str:
+    """The „Bereich“ combo's text: „Ganzes Objekt“ or the region with its notes."""
+    if row.area is None:
+        return AREA_WHOLE
+    return next((a.label for a in row.areas if a.name == row.area), row.area)
+
+
 def targets_label(row: MaterialRow) -> str:
     if not row.targets:
         return EYE_NOTE
@@ -261,7 +313,8 @@ def targets_label(row: MaterialRow) -> str:
     return names + (f"  ({EYE_NOTE})" if row.eye_selected else "")
 
 
-__all__ = ["EFFECTS_TITLE", "EFFECT_HINTS", "EFFECT_LABELS", "EYE_NOTE", "EffectRow", "LIGHTS", "MAPS_HINT", "MAPS_TITLE",
+__all__ = ["AREA", "AREA_DOWN", "AREA_HINT", "AREA_MISSING", "AREA_ORDER_HINT", "AREA_OWN", "AREA_RESET_HINT",
+           "AREA_UP", "AREA_WHOLE", "AreaRow", "area_label", "EFFECTS_TITLE", "EFFECT_HINTS", "EFFECT_LABELS", "EYE_NOTE", "EffectRow", "LIGHTS", "MAPS_HINT", "MAPS_TITLE",
            "MAP_LABELS", "MAP_LOAD", "MAP_REMOVE", "MapRow", "NORMAL_GREEN_DOWN", "NORMAL_STRENGTH", "load_map",
            "LIGHT_LABELS", "MATERIAL_PRESETS", "MENU_CLOSE", "MENU_OPEN", "RESET", "RESET_HINT",
            "SAVED", "SAVE_IMAGE", "SAVE_IMAGE_HINT", "STUDIO_PRESETS", "TITLE", "TONE_LABELS", "VIEWS", "LightRow",

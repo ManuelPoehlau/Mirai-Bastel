@@ -31,7 +31,8 @@ from viewport.viewport import Viewport  # noqa: E402
 SIZE = 128
 HALF = 2.0
 FLAT = lo.Studio((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 0.0))
-MAPS_ONLY = lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=False, thickness=False, cube=False, maps=True)
+MAPS_ONLY = lo.LookdevEffects(shadow=False, eye_shadow=False, dual_lobe=False, thickness=False, cube=False, regions=False,
+                             maps=True)
 NO_MAPS = dataclasses.replace(MAPS_ONLY, maps=False)
 MATTE = LookDraw((0.5, 0.5, 0.5), roughness=1.0, specular=0.0)
 
@@ -272,7 +273,7 @@ def test_too_few_texture_units_turn_the_maps_off_with_a_status_line(gl_window, t
     viewport = _viewport(gl_window, _plane(), look)
     assert np.array_equal(_draw(gl_window, viewport, look, _state()), want)
     assert not viewport.lookdev_effects().maps
-    assert viewport.take_lookdev_notices() == ["LookDev: Maps aus – zu wenige Textureinheiten"]
+    assert viewport.take_lookdev_notices() == ["LookDev: Maps und Region-Materialien aus – zu wenige Textureinheiten"]
     _release(viewport)
 
 

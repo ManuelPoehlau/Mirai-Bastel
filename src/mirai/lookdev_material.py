@@ -5,7 +5,11 @@ scene, format v15; changed by `ObjectLookCommand`, one Undo step). This module k
 the Neutral fallback, F0 from the level and the "angepasst" rule (`with_values`). Since AD-039 S7 (2026-11-24) a
 material may carry image maps (`core.LookMaps`, `LookMaterial.maps`; format v16): `with_map` sets or removes one, the
 normal map's values go through `with_values` (`MAP_VALUES`, never "angepasst": the maps are not preset values), and a
-preset pick keeps the maps (`keep_maps`), like an eye preset keeps its images.
+preset pick keeps the maps (`keep_maps`), like an eye preset keeps its images. Since AD-039 S6 (2026-11-24) an object
+may carry region materials (`core.RegionLook`, `SceneObject.look_regions`; format v17): `with_region` sets, adds or
+removes one (at most `LOOK_REGIONS_MAX`, a new one last: the later entry wins on overlap), `moved_region` changes the
+order, `renamed_region` carries an entry with its region's rename; a region's material carries no maps (the maps are the
+object's, one UV layout: `region_material`).
 
 `LookMaterial` is one value bundle of the one organic shading model (`viewport.lookdev_pass`, proposal §4): an sRGB
 artist colour, where the albedo comes from (`texture`: the object's shown texture or paint composite; `color`: the
@@ -22,9 +26,9 @@ from __future__ import annotations
 
 import dataclasses
 
-from core import LookMaps, LookMaterial
+from core import LookMaps, LookMaterial, RegionLook
 from core.scene import LOOK_ALBEDO_SOURCES as ALBEDO_SOURCES
-from core.scene import LOOK_MAP_FIELDS
+from core.scene import LOOK_MAP_FIELDS, LOOK_REGIONS_MAX
 
 #: AD-039 §10: the map values `with_values` takes (they change `LookMaterial.maps`, and only when it has maps).
 MAP_VALUES = ("normal_strength", "normal_green_down")
@@ -76,6 +80,50 @@ def keep_maps(material: LookMaterial, before: LookMaterial | None) -> LookMateri
     """A picked preset with the maps the object had (a preset has none)."""
     maps = before.maps if before is not None else None
     return material if maps is None else dataclasses.replace(material, maps=maps)
+
+
+def region_material(material: LookMaterial) -> LookMaterial:
+    """A material as a region's (AD-039 §9): without maps - the maps are the object's (one UV layout), the region
+    draws the object's maps with its own values."""
+    return material if material.maps is None else dataclasses.replace(material, maps=None)
+
+
+def with_region(regions: tuple, name: str, material: LookMaterial | None) -> tuple:
+    """`regions` (`SceneObject.look_regions`) with region `name`'s material set (in its place), added (last: it wins
+    on overlap) or removed (`material` None). ValueError when a fifth one would be added."""
+    entries = list(regions)
+    index = next((i for i, entry in enumerate(entries) if entry.region == name), None)
+    if material is None:
+        return tuple(entries) if index is None else tuple(entries[:index] + entries[index + 1:])
+    entry = RegionLook(name, region_material(material))
+    if index is not None:
+        entries[index] = entry
+    elif len(entries) >= LOOK_REGIONS_MAX:
+        raise ValueError(f"LookDev: höchstens {LOOK_REGIONS_MAX} Region-Materialien je Objekt")
+    else:
+        entries.append(entry)
+    return tuple(entries)
+
+
+def moved_region(regions: tuple, name: str, step: int) -> tuple:
+    """`regions` with `name`'s entry moved `step` places (-1 = up: drawn under the next ones, +1 = down: over them);
+    clamped at the ends, unchanged when `name` has no entry."""
+    entries = list(regions)
+    index = next((i for i, entry in enumerate(entries) if entry.region == name), None)
+    if index is None:
+        return tuple(entries)
+    target = max(0, min(len(entries) - 1, index + int(step)))
+    entries.insert(target, entries.pop(index))
+    return tuple(entries)
+
+
+def renamed_region(regions: tuple, old: str, new: str) -> tuple:
+    """`regions` after region `old` became `new` (AD-039 §9: a rename carries its entry). An entry already under `new`
+    (the name was free in the mesh, so it was a missing region's) gives way to the carried one."""
+    if not any(entry.region == old for entry in regions):
+        return tuple(regions)
+    return tuple(RegionLook(new, entry.look) if entry.region == old else entry
+                 for entry in regions if entry.region != new)
 
 
 NEUTRAL = "Neutral"

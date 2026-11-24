@@ -138,6 +138,8 @@ TRIANGLE_FACES = "triangle_faces"
 #: AD-026: je Dreiecks-Slot die UVs seiner drei Ecken (nur mit Textur, Modul-Docstring).
 TRIANGLE_UVS = "triangle_uvs"
 TRIANGLE_UV_FLOATS = 6
+#: AD-039 §9 (S6): per triangle slot its LookDev material slot (one float; 0 = the object's material), only on request.
+TRIANGLE_MATERIALS = "triangle_materials"
 #: u einer Ecke ohne UVs (der Shader zeigt dort die Grundfarbe); endlich in float32.
 UNMAPPED_U = -1.0e30
 _UNMAPPED_TRIANGLE = (UNMAPPED_U, 0.0) * 3
@@ -292,6 +294,11 @@ class RenderMesh:
         declare_uvs = getattr(self.store, "declare_triangle_uvs", None)
         if declare_uvs is not None:
             declare_uvs(TRIANGLE_UVS)
+        declare_materials = getattr(self.store, "declare_triangle_materials", None)
+        if declare_materials is not None:
+            declare_materials(TRIANGLE_MATERIALS)
+        # AD-039 §9 (S6): the LookDev material slot of each face (`set_triangle_material_slots`); {} = no buffer.
+        self._material_slots: dict[FaceId, int] = {}
         # AD-026: ob `triangle_uvs` gerade existiert (Mesh mit UVs und Material mit Textur).
         self._uv_active = False
         # AD-038 §4.1: a pass other than the Worklight (LookDev) asks for the UVs without a Worklight texture.
@@ -724,6 +731,54 @@ class RenderMesh:
         elif self.store.has(TRIANGLE_UVS):
             self.store.destroy(TRIANGLE_UVS)
 
+    # -- LookDev material slots (AD-039 §9, S6) ----------------------------------------------------------------------
+
+    def set_triangle_material_slots(self, slots) -> None:
+        """`{FaceId: slot}` (slot >= 1; a face not named draws slot 0, the object's material) - the triangles of each
+        face carry its slot in `triangle_materials`, an R32F per-triangle buffer the LookDev pass reads by
+        `gl_PrimitiveID`. Allocated on the first non-empty map, freed on an empty one or None (the AD-038 §4.1 request
+        pattern: without regions nothing exists); a changed map rewrites only the triangles of the faces that changed.
+        Pending mesh changes are synced first, so the slots address the current layout."""
+        slots = dict(slots) if slots else {}
+        if slots == self._material_slots:
+            return
+        pending = self._watch.peek()
+        if pending.vertices or pending.edges or pending.faces:
+            self.mark_topology_dirty()
+            self.sync()
+        old, self._material_slots = self._material_slots, slots
+        if not slots:
+            if self.store.has(TRIANGLE_MATERIALS):
+                self.store.destroy(TRIANGLE_MATERIALS)
+            return
+        if not old or not self.store.has(TRIANGLE_MATERIALS):
+            data = self._triangle_materials_flat()
+            self.store.allocate(TRIANGLE_MATERIALS, len(data) * FLOAT_BYTES)
+            self.store.update(TRIANGLE_MATERIALS, 0, data, len(data) * FLOAT_BYTES)
+            return
+        changed = {f for f in old.keys() | slots.keys() if old.get(f) != slots.get(f)}
+        triangles = self._face_triangles
+        self._upload_triangle_materials([t for f in changed if f in triangles for t in triangles[f]])
+
+    @property
+    def triangle_material_slots(self) -> dict:
+        return self._material_slots
+
+    def _triangle_material_value(self, t: int) -> float:
+        if self._triangle_indices[t] is None:
+            return 0.0
+        return float(self._material_slots.get(self._row_face[self._triangle_face_rows[t]], 0))
+
+    def _triangle_materials_flat(self) -> list[float]:
+        return [self._triangle_material_value(t) for t in range(len(self._triangle_indices))]
+
+    def _upload_triangle_materials(self, slots) -> None:
+        if not self._material_slots or not slots:
+            return
+        for run in _runs(slots):
+            data = [self._triangle_material_value(t) for t in run]
+            self.store.update(TRIANGLE_MATERIALS, run[0], data, len(data) * FLOAT_BYTES)
+
     def _push_texture(self) -> None:
         set_texture = getattr(self.store, "set_texture", None)
         if set_texture is not None:
@@ -795,6 +850,8 @@ class RenderMesh:
             put(TRIANGLE_UVS, self._triangle_uvs_flat())
         elif self.store.has(TRIANGLE_UVS):
             self.store.destroy(TRIANGLE_UVS)
+        if self._material_slots:
+            put(TRIANGLE_MATERIALS, self._triangle_materials_flat())
 
         if self.material is not None:
             put("material_uniforms", self.material.uniform_packet())
@@ -1173,6 +1230,7 @@ class RenderMesh:
             data = [float(self._triangle_face_rows[t]) for t in run]
             self.store.update(TRIANGLE_FACES, run[0], data, len(data) * FLOAT_BYTES)
         self._upload_triangle_uvs(tri_slots)
+        self._upload_triangle_materials(tri_slots)
         self._upload_face_normals(normal_rows)
         self._upload_face_corners(corner_rows)
         self.content_revision += 1
