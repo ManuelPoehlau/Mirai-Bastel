@@ -1965,3 +1965,35 @@ penumbra from the receiver-to-blocker depth and σ, the map at full resolution s
 shadow proposal the assessment §6.1 deferred. Its cost on the reference PC (the skin pass is fetch-bound: +16-32
 fetches) is the material uncertainty. Open for Manu: Q-S8-3 (PCSS as the next step, prototype + reference-PC bench
 first?).
+
+### 23.7 Q-S8-3: the PCSS prototype (2026-11-24) — assessment, stop before the build
+
+Manu, 2026-11-24 („LookDev P3: Halbschatten des Key abhängig vom Abstand (PCSS) …“): prototype in the experiment, `src/`
+unchanged, then stop with a recommendation and a reference-PC command. Done:
+[LOOKDEV_PCSS_KEY_SHADOW_ASSESSMENT_2026-11-24](../research/LOOKDEV_PCSS_KEY_SHADOW_ASSESSMENT_2026-11-24.md),
+prototype [`experiments/lookdev_pcss/`](../../experiments/lookdev_pcss/README.md).
+
+**Result [M-C]:** the recommended lookup „K16c“ is closer to the 32-key area reference than production in all 24 image
+sets with size > 0 (mean error 1.89 vs 2.87 / 255; Manu's view at 0.45, Creature Skin adjusted: nose → cheek 7.1 vs 17.2).
+It works as follows:
+- a blocker search of 16 raw-depth fetches, denser near the centre, with a cone test;
+- a PCF of 16 fetches whose radius is the penumbra (z − blocker) · tan σ, compared against the blockers' level instead
+  of the per-triangle receiver plane beyond a few texels;
+- the map at full resolution;
+- the lifted lookup + 0.23 R s³, which also answers the assessment §6.3 within the effect.
+
+What does not work, and why, is recorded in the assessment §3:
+- the textbook receiver-plane PCSS (facets, black triangles at 9° key elevation);
+- a fixed-length lift;
+- a grid pattern;
+- the effective resolution.
+
+The eye keeps the old lookup: on the eye pixels the full-resolution map moves the error by ≤ 0.12/255.
+
+**Open:**
+- the reference-PC run (`experiments/lookdev_pcss/bench.py`, assessment §8);
+- Manu's go;
+- Q-PCSS-1 … 4: the proposal is its own effect „Weicher Schatten“ (`SOFT_SHADOW`), default off, needing „Schatten“;
+  off = every pin bit-equal.
+
+Not changed here: `src/`, `tests/`, the presets, the scene format.
