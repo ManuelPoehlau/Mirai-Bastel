@@ -10,7 +10,9 @@ Room (2026-11-18, container: TESTED; reference PC: P-A … P-G pass on the shown
 (2026-11-19, container: TESTED; reference PC: not run yet)** as built in §11; the P-13 refusal of a GoZ UV change is lifted.
 **Phase 4 (alpha brushes, stroke dynamics, brush presets): PROPOSED 2026-11-25, its decisions taken; IMPLEMENTED 4a
 (alpha tip, projection with the wrap fallback, world spacing, stamp queue; 2026-11-25, container: TESTED; reference PC:
-every 4a gate met after the same day's optimisation, §12.7; Praxistest open) as built in §12; 4b next** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
+every 4a gate met after the same day's optimisation, §12.7; **Praxistest passed, Manu 2026-11-25**: „Praxistest gut
+bestanden. Läuft flüssiger, als ich erwartet habe. Keine Verzerrungen auch über extreme winkel hinweg.“) as built in §12;
+4b next** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).
@@ -100,7 +102,8 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
   ein neuer Klick, SubD-Tasten, Speichern warten auf das Ende (der Rest ist klein) und laufen dann.
 - **Kontaktbogen** der acht Prüfstellen: `docs/research/alpha_brush_4a_assets_2026-11-25/`. Dein Lauf auf dem
   Referenz-PC (2026-11-25): erst war die 3 %-Alpha-Platzierung zu langsam (18 / 24 ms statt ≤ 16,7); am selben Tag
-  beschleunigt, im zweiten Lauf **14,1 / 16,0 ms – alle 4a-Grenzen eingehalten** (§12.7).
+  beschleunigt, im zweiten Lauf **14,1 / 16,0 ms – alle 4a-Grenzen eingehalten** (§12.7). **Praxistest bestanden**
+  (Manu 2026-11-25: „Läuft flüssiger, als ich erwartet habe. Keine Verzerrungen auch über extreme winkel hinweg.“).
 
 ## 1. Decisions (Manu, 2026-11-18)
 
@@ -858,7 +861,8 @@ The frame rows are llvmpipe (5.5–7 ms cage, 10–15 ms SubD 1; the reference P
 
 - **Reference PC: done** (second run, §12.7): every 4a gate met. SubD 1 at 3 % is tight - 0.7 ms margin for the alpha,
   0.3 ms for the round dab; 4b's jitter and spray must not add cost to a single-stamp placement.
-- **Praxistest open** (Manu: the contact sheets and the Praxistest „Alpha-Spitze“ below).
+- **Praxistest passed** (Manu, 2026-11-25, verbatim): „Praxistest gut bestanden. Läuft flüssiger, als ich erwartet habe.
+  Keine Verzerrungen auch über extreme winkel hinweg.“ 4a is closed; 4b next.
 - **The wrap's radius rule is object-relative:** `WRAP_FROM_PERCENT` is P-7's percent of the object's bounding radius,
   measured on the Gollum head. On a much larger object (a full body) 3 % is large against a face's features and stays
   planar - painting through there as the round dab does today. A curvature-relative rule (stamp radius against the
