@@ -88,7 +88,7 @@ estimate, **[O]** open for Manu.
 | `PINNED_SOURCES_SHA256` and its test | `tests/test_gl_eye_pass.py:1099`, `:1108–1124` |
 | Eye texture units 1 iris, 2 noise, 3 key table, 4 sclera map | `eye_pass.py:36–43` |
 | Program key of 8 values | `eye_pass.py:220–221` |
-| Paint Room saves and restores `mode`, `wire`, `texture`, `regions`; closes an open Eye Lab; refuses a posed or morph-mixed object (P-8) | `mirai/application.py:1070–1124`, `:1052–1068` |
+| Paint Room saves and restores `mode`, `wire`, `texture`, `regions`; closes an open Eye Lab; refuses a posed object (P-8; a morph mix is allowed since 2026-11-25) | `mirai/application.py:1070–1124`, `:1052–1068` |
 | A save inside the Paint Room writes the restored display | `application.py:1732–1736` |
 | A scene reset / load closes the Paint Room | `application.py:732–733` |
 | Eye Lab saves camera, isolation, tier | `application.py:1010–1043` |

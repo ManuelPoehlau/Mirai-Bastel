@@ -94,6 +94,22 @@ def test_lookdev_to_paint_room_in_a_pose_is_refused_and_changes_nothing(app):
     assert snapshot(app) == before
 
 
+def test_paint_room_opens_with_a_morph_mix_and_keeps_it(app):
+    """Manu 2026-11-25: a target dialled in (e.g. mouth open, to paint inside the mouth) does not block the room."""
+    head = app.scene.edit_object
+    assert app.set_morph_weight(40, morph_target_ids(head.mesh)[1]), app.status_message
+    _tick(app)
+    assert app._query_cage() is not None  # the mix is what the window shows
+    before = snapshot(app)
+    assert app.open_paint_room(), app.status_message
+    assert app.paint_room_open
+    _tick(app)
+    assert snapshot(app) == before
+    assert app.close_paint_room() and not app.paint_room_open
+    _tick(app)
+    assert snapshot(app) == before
+
+
 def test_lookdev_and_paint_room_at_rest(app):
     before = snapshot(app)
     assert app.open_lookdev()

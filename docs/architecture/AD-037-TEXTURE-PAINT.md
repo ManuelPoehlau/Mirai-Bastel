@@ -47,8 +47,8 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
 
 - **Öffnen:** SPACE → „Paint Room öffnen“ (nur mit UVs, kein Auge; keine Taste). Der Raum stellt Shaded + Textur ein,
   schaltet Drahtgitter und Gruppenfarben aus und stellt beim Schließen alles zurück; die Kamera bleibt, wo sie ist.
-  Abgelehnt bei Augen (P-14), ohne UVs, im Bearbeitungsfenster eines Morph-Ziels und **in einer Pose / mit eingeblendetem
-  Morph** (P-8 ist offen).
+  Abgelehnt bei Augen (P-14), ohne UVs, im Bearbeitungsfenster eines Morph-Ziels und **in einer Pose** (P-8 ist für die
+  Pose offen). Ein eingeblendeter Morph (z. B. mouth_open, um im Mund zu malen) ist erlaubt (Manu 2026-11-25).
 - **Malen:** LMB ziehen malt (P-6, vorläufig, keine Keymap-Zeile), Alt+LMB dreht weiter die Ansicht, Shift+Rad Radius,
   Alt+Rad Deckkraft, das Rad zoomt, Esc nimmt den laufenden Strich exakt zurück. Panel „Paint Room“: Malen / Radieren /
   Pipette, Farbe, Radius (Prozent des Objektradius, P-7), Deckkraft, Fluss, Härte, Kurve (die Soft-Kurven), Spiegeln an der
@@ -346,8 +346,10 @@ names it; no key and no `config/keymap.json` entry (CLAUDE.md, P-6).
 
 - **Entry:** the SPACE menu row „Paint Room öffnen“ / „… schließen“ (`gui.paint_model.menu_label`: shown with UVs and not on
   an eye), the panel's close box and „Schließen“. **Refused** with a status line (`paint_room_refusal`): an eye (P-14), no
-  UVs, another interaction running, a morph target's editing view, and a **deformed surface** - the edit object shown
-  posed or with a morph mix above 0 %: P-8 is open, so the room does not decide it (show the rest shape first).
+  UVs, another interaction running, a morph target's editing view, and a **posed surface** (P-8 stays open for the pose;
+  show the rest pose first). A **morph mix above 0 %** is allowed on entry (Manu 2026-11-25: „Es muss also erlaubt sein,
+  bei aktiviertem Target in den Paint Room zu wechseln“) - the room already painted on a mix dialled in inside it (the
+  texel map reads any `SurfacePositions`), so entering with one is the same state.
 - **View state** saved on entry and restored on leaving (`PaintRoomController.saved_view`): display mode → Shaded, wire
   overlay off, textures on, region colours off; the camera, SubD, the light and the UV check stay as they are. A save in the
   room writes the restored values into the scene's `"view"`, not the room's. Nothing is document state: no Undo step.
@@ -526,7 +528,7 @@ enter - neither blocks.
 ### 10.8 Not in Phase 2
 
 Several layers in the UI (only the top layer is painted; the stack format has several), blend modes (P-12), the undo
-budget (P-11: before-tiles only, compressed, unlimited), painting a posed / morphed surface (P-8, refused), eyes (P-14,
+budget (P-11: before-tiles only, compressed, unlimited), painting a posed surface (P-8, refused; a morph mix is allowed since 2026-11-25), eyes (P-14,
 refused), UV transfer (Phase 3; a GoZ UV change stays refused, P-13), smudge / blur / clone, lazy mouse, pressure (P-15:
 none), symmetry in a pose (P-9), a depth window for thin gaps beyond the facing test, a key for the room or the tools
 (after Manu's "Taste passt").
