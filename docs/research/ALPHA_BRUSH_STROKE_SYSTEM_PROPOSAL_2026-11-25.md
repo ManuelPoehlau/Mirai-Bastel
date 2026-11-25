@@ -1,8 +1,8 @@
 # Alpha Brush & Stroke System — Architecture and UX Proposal for AD-037 Phase 4 (2026-11-25)
 
-**Status:** **PROPOSAL — research and architecture only, no decision.** No change to `src/`, `tests/`, the keymap,
+**Status:** **PROPOSAL — research and architecture only; decisions P-18 … P-28 DECIDED (Manu, 2026-11-25: „P-18 bis P-28 zugestimmt“), §10.** No change to `src/`, `tests/`, the keymap,
 the scene format or the dependencies. Every value marked `PROVISIONAL` is an agent proposal; decisions P-18 … P-28
-(§10) are **open until Manu confirms them explicitly**.
+(§10) are decided as recommended (Manu, 2026-11-25).
 **State audited:** `main` @ `e583cee` (AD-037 Phases 1–3 built; P-8 lifted 2026-11-25).
 **Brief:** Manu, 2026-11-25, „AD-037 Phase 4 — Alpha-Based Brush & Stroke System, Architecture and UX Assessment —
 Planning Only“ (sections 1–10).
@@ -59,7 +59,7 @@ Artist decision for Manu · **[E]** established practice in other tools (named).
   Leistungs-Grenzen für Deinen PC und einem Praxistest.
 - **Alpha ist eine Eigenschaft der Pinselspitze**, kein eigener Pinsel-Modus: rund (wie heute) oder Alpha; Einzeln /
   Spray sind davon unabhängig. So gibt es Abstand, Zufall, Streuung und Spiegeln nur einmal.
-- **Deine Entscheidungen:** P-18 … P-28 in §10, jeweils mit Empfehlung.
+- **Deine Entscheidungen:** P-18 … P-28 in §10 — **zugestimmt 2026-11-25**.
 
 ---
 
@@ -589,21 +589,23 @@ Praxistest for Manu. Gates are for the **reference PC at 2048²** unless marked;
 Roughness / normal / translucency painting (a later AD-037 phase; the coverage interface of §3 is ready for it),
 vertex paint, weight paint, a sculpt framework, pressure (P-15), stencil / image projection, smudge / blur / clone.
 
-## 10. Decisions for Manu — recommendations, open until confirmed
+## 10. Decisions for Manu — **decided 2026-11-25**
+
+**Manu, 2026-11-25 (session chat, verbatim):** „P-18 bis P-28 zugestimmt“ — every recommendation below is the decision.
 
 | # | Question | Recommendation | Source | Status |
 |---|---|---|---|---|
-| P-18 | How is spacing measured? | **World arc length** along the surface, % of the stamp diameter | agent; review agrees | **offen** |
-| P-19 | Kreismaske default for imported alphas? | **Off** (the alpha defines its shape); the round tip keeps its falloff | review (changed the agent's first proposal "on") | **offen** |
-| P-20 | Do presets carry the brush size? | **Yes**, with a "Größe behalten" option | agent; review agrees | **offen** |
-| P-21 | Default orientation of alpha brushes? | **Strich folgen** | agent; review agrees | **offen** |
-| P-22 | Starter categories and import size limit | the categories of §6.5; **1024 px** at first; starter alphas adopted only after the contact-sheet check | agent + review | **offen** |
-| P-23 | UI layout | the compact layout of §7 with collapsed sections and the picker popup | agent; review agrees | **offen** |
-| P-24 | Slice order | **4a → 4b → 4c**, test alphas already in 4a | agent + review | **offen** |
-| P-25 | Is the colour part of a preset? | **No** | agent; review agrees | **offen** |
-| P-26 | Import source modes | **Alphakanal / Luminanz / Luminanz × Alphakanal**, auto-preselected, correctable in the preview | review | **offen** |
-| P-27 | Very fast strokes: catch-up or gaps? | **Catch-up** (the paint may trail the cursor briefly); never gaps, never a freeze on release | agent; review asked for the bounded release | **offen** |
-| P-28 | Spray while the mouse stands still? | **No** time-based „Airbrush“ emission: a click is one burst, holding still adds nothing (keeps the pattern independent of timing) | agent | **offen** |
+| P-18 | How is spacing measured? | **World arc length** along the surface, % of the stamp diameter | agent; review agrees | **entschieden 2026-11-25** |
+| P-19 | Kreismaske default for imported alphas? | **Off** (the alpha defines its shape); the round tip keeps its falloff | review (changed the agent's first proposal "on") | **entschieden 2026-11-25** |
+| P-20 | Do presets carry the brush size? | **Yes**, with a "Größe behalten" option | agent; review agrees | **entschieden 2026-11-25** |
+| P-21 | Default orientation of alpha brushes? | **Strich folgen** | agent; review agrees | **entschieden 2026-11-25** |
+| P-22 | Starter categories and import size limit | the categories of §6.5; **1024 px** at first; starter alphas adopted only after the contact-sheet check | agent + review | **entschieden 2026-11-25** |
+| P-23 | UI layout | the compact layout of §7 with collapsed sections and the picker popup | agent; review agrees | **entschieden 2026-11-25** |
+| P-24 | Slice order | **4a → 4b → 4c**, test alphas already in 4a | agent + review | **entschieden 2026-11-25** |
+| P-25 | Is the colour part of a preset? | **No** | agent; review agrees | **entschieden 2026-11-25** |
+| P-26 | Import source modes | **Alphakanal / Luminanz / Luminanz × Alphakanal**, auto-preselected, correctable in the preview | review | **entschieden 2026-11-25** |
+| P-27 | Very fast strokes: catch-up or gaps? | **Catch-up** (the paint may trail the cursor briefly); never gaps, never a freeze on release | agent; review asked for the bounded release | **entschieden 2026-11-25** |
+| P-28 | Spray while the mouse stands still? | **No** time-based „Airbrush“ emission: a click is one burst, holding still adds nothing (keeps the pattern independent of timing) | agent | **entschieden 2026-11-25** |
 
 Not a question for Manu (technical, agent-owned): the inner-disc frame, the depth window and fade values, the queue
 budgets, the cache sizes and the mip rule. They are `PROVISIONAL`, tuned against the gates and the §4.3 metrics, and
