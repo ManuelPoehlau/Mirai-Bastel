@@ -9,8 +9,8 @@ Room (2026-11-18, container: TESTED; reference PC: P-A … P-G pass on the shown
 **Phase 3 scope and P-12: Manu, 2026-11-19** (§1). **IMPLEMENTED Phase 3, several layers, Multiply and the UV transfer
 (2026-11-19, container: TESTED; reference PC: not run yet)** as built in §11; the P-13 refusal of a GoZ UV change is lifted.
 **Phase 4 (alpha brushes, stroke dynamics, brush presets): PROPOSED 2026-11-25, its decisions taken; IMPLEMENTED 4a
-(alpha tip, projection with the wrap fallback, world spacing, stamp queue; 2026-11-25, container: TESTED; reference PC:
-not run yet) as built in §12; 4b next** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
+(alpha tip, projection with the wrap fallback, world spacing, stamp queue; 2026-11-25, container: TESTED; reference PC
+run 2026-11-25: P-H 3 % failed, optimised the same day, §12.7, re-run open) as built in §12; 4b next** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).
@@ -88,16 +88,19 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
   (aus = das Alpha bestimmt seine Form, P-19), Härte/Kurve nur mit Kreismaske. „Abstand“ (für jede Spitze) in % des
   Stempeldurchmessers, gemessen **auf der Fläche** (P-18): rund 12,5 % (wie bisher), Alpha 100 %. Ausrichtung: „Strich
   folgen“ (P-21). Cursor: das gedrehte Rechteck, der Kreis gedimmt.
-- **Projektion:** je Stempel eine Tangentialebene (gemittelte Normale der inneren halben Scheibe). Wo die Fläche unter der
-  Ebene stark wegkippt (Nasenflügel, Nasenspitze bei 5 %, Lippe über Lippe), wickelt sich der Stempel stattdessen um die
-  Fläche (**Wrap**, automatisch): am Nasenflügel war der ebene Stempel 1,43 : 1 gestreckt (so wie heute der runde
-  Tupfer), gewickelt 1,29 / 1,19 : 1 (Käfig / SubD 1). Im Mundwinkel (Falte) bleibt er eben – dort ist das besser.
+- **Projektion:** je Stempel eine Tangentialebene (gemittelte Normale der inneren halben Scheibe). Ab **4 % Radius** wickelt
+  sich der Stempel dort, wo die Fläche unter der Ebene stark wegkippt, um die Fläche (**Wrap**, automatisch): so malt er
+  bei 4–8 % nicht mehr durch die Oberlippe auf die Unterlippe (der runde Tupfer tut das bei 5 %) und wird an Nasenflügel,
+  Nasenspitze und Lid nicht verschmiert. Bis 3 % bleibt er eben – dort besteht er alle Prüfungen, malt nirgends durch und
+  ist so schnell wie der runde Tupfer. Am Nasenflügel ist er bei 3 % so gestreckt wie heute der runde Tupfer (1,42 / 1,33
+  : 1); das kann dort kein treuer Stempel besser (Korrektur 2026-11-25, §12.7). Im Mundwinkel (Falte) bleibt er eben.
 - **Schnelle Striche ohne Lücken:** die Stempel kommen in eine Warteschlange, die pro Bild 10 ms arbeitet (mehr, wenn
   > 150 ms Arbeit hinter dem Cursor liegen); die Farbe kann dem Cursor kurz nachlaufen. **Loslassen friert nie ein**: der
   Rest wird über die nächsten Bilder fertig gemalt, dann kommt der Undo-Schritt. Esc nimmt auch dann exakt zurück; Strg+Z,
   ein neuer Klick, SubD-Tasten, Speichern warten auf das Ende (der Rest ist klein) und laufen dann.
-- **Kontaktbogen** der acht Prüfstellen: `docs/research/alpha_brush_4a_assets_2026-11-25/`. Auf Deinem PC bitte
-  `probe_paint.py --surfaces cage,subd1` laufen lassen (neue Zeilen P-H, P-I).
+- **Kontaktbogen** der acht Prüfstellen: `docs/research/alpha_brush_4a_assets_2026-11-25/`. Dein Lauf auf dem
+  Referenz-PC (2026-11-25): 3 %-Alpha-Platzierung zu langsam (18 / 24 ms statt ≤ 16,7) – am selben Tag beschleunigt, im
+  Container jetzt so schnell wie der runde Tupfer (§12.7); bitte `probe_paint.py --surfaces cage,subd1` noch einmal.
 
 ## 1. Decisions (Manu, 2026-11-18)
 
@@ -715,10 +718,11 @@ no scene-format change, no new dependency. The foundations (texel map, store, re
   the round tip, or an alpha id; `kreismaske`, off by default, P-19) and `dynamics: StrokeDynamics` (`spacing`,
   `orientation` "stroke", `angle`). `with_tip` switches tips; switching between round and alpha sets that kind's default
   spacing (round 12.5 %, alpha 100 %). Single emitter only (spray is 4b).
-- `alpha.AlphaImage`: uint8 grey (white = paint), a mip chain (2×2 box halving down to 4 px), `level_for` (the level whose
-  long side is closest to the stamp's diameter in texels, from the gather count) and a vectorised bilinear `sample` (four
-  `take`s, float32 only on the gathered texels, 0 outside the rectangle). The world radius (P-7) is the half-extent of the
-  alpha's long side.
+- `alpha.AlphaImage`: uint8 grey (white = paint), a mip chain (2×2 box halving down to 4 px while the short side keeps
+  2 px), `level_for` (the level whose long side is closest to the stamp's diameter in texels, from the gather count), a
+  vectorised bilinear `sample` / `sample_local` (one `take` of the four neighbours, float32 only on the gathered texels,
+  0 outside the rectangle) and `reach` (the farthest painting pixel from the centre, in stamp radii: the gather's
+  radius). The world radius (P-7) is the half-extent of the alpha's long side.
 - **Test alphas** (§9 "test-alpha chooser"): six procedural, deterministic images (`TEST_ALPHAS`: Poren, Ader, Kratzer,
   Fleck, Punkte, Quadrat; NumPy, fixed seeds, black border), generated on first use. No library, import, presets or
   thumbnails (4c). An unknown id resolves to the round tip.
@@ -728,20 +732,25 @@ no scene-format change, no new dependency. The foundations (texel map, store, re
 
 ### 12.2 The projection (§4.1–§4.4) — `mirai.paint.stamp`
 
-- Per placement: gather within `R = r · |half extents|` on triangles facing the hit's way; the **frame normal** is the
+- Per placement: gather within `R = r · reach` (where the alpha paints at all; ≤ the rectangle's corners
+  `r · |half extents|`, §12.7) on triangles facing the hit's way; the **frame normal** is the
   area-weighted mean of the triangle normals in the inner disc (`INNER_DISC` 0.5 r; `PaintSurface._texel_area` = a
   triangle's world area per texel); the **tangent** is the placement's stroke direction projected into the plane, else
   the view's up (a click without movement), turned by the angle offset; local `(a, β, h)` per texel.
 - **Planar** (the default): coverage = alpha × depth window (`|h|` full to 0.35, 0 from 0.5) × facing fade
   (`smoothstep(0.2, 0.5, n · n_tri)`) × [Kreismaske: the round falloff]. Texels with no coverage are not written.
 - **Wrap projection — built in 4a (deviation from "planar only"):** the §4.3 validation failed at the **nostril wing**
-  (planar aspect 1.43 cage / 1.36 SubD 1 at 3 %, > 1.3; reported before building, as agreed). Where the planar stamp is
-  *convexly stressed* (`WRAP_STRESS`: > 8 % of the stamp's texels below the plane beyond the depth window's full part or
-  on triangles the fade dims) and not in a crease (`SADDLE`: ≤ 4 % rising above it), the coordinates are **geodesic polar
-  coordinates** (a discrete exponential map, [E] Schmidt et al. 2006, Substance "Tangent | Wrap"): shortest edge paths
+  (planar aspect 1.43 cage / 1.36 SubD 1 at 3 %, > 1.3; reported before building, as agreed) — see the correction in
+  §12.7: a faithful wrap is no rounder there at 3 %; its real gains are from 4 % on. From `WRAP_FROM_PERCENT` = 4 % brush
+  radius (below it every placement is planar), where the planar stamp is
+  *convexly stressed* (`WRAP_STRESS`: > 8 % of the rectangle's texels below the plane beyond the depth window's full
+  part or on triangles the fade dims — counted over the whole rectangle `r · |half extents|`, gathered only when the
+  alpha's own reach shows > `PRECHECK` = 2 % at all) and not in a crease (`SADDLE`: ≤ 4 % rising above it), the
+  coordinates are **geodesic polar coordinates** (a discrete exponential map, [E] Schmidt et al. 2006, Substance "Tangent | Wrap"): shortest edge paths
   from the centre's triangle (Bellman-Ford rounds over the edges, vectorised), each vertex's 2D coordinate = its parent's
   + the edge projected into the frame turned onto the parent's tangent plane (length kept), summed along the tree by
-  pointer jumping, texels interpolating their triangle's corners; unreachable triangles get nothing. In the mouth corner
+  pointer jumping (the triangles within 1.1 × the gather's radius), texels interpolating their triangle's corners;
+  unreachable triangles get nothing. In the mouth corner
   (a crease) a geodesic disc grows beyond π r² (area 1.47) and the planar stamp is closer to the ideal, hence `SADDLE`.
   Per placement the choice is automatic; the mirror uses the main stamp's projection.
 - **Mirror:** the reflected frame (`reflect` of t, b, n: its handedness flips, an asymmetric alpha appears mirrored) at
@@ -786,23 +795,27 @@ no scene-format change, no new dependency. The foundations (texel map, store, re
 ### 12.4 Curvature validation (§4.3) — `tests/paint_alpha_regions.py`, `tests/test_paint_alpha.py`
 
 Fixed probe placements on the Gollum head (front-view rays): nose tip, nose ridge, nostril wing, lip edge, mouth corner,
-cheek, lid, the UV seam on the chin (the head's UV seam runs down the face's midline). A round test disc alpha, 3 %:
+cheek, lid, the UV seam on the chin (the head's UV seam runs down the face's midline). A round test disc alpha, the
+production projection rule (§12.7: planar below 4 %, chosen per placement from 4 %):
 
-| 2048², 3 % | stretch area / aspect, cage | SubD 1 | projection (cage / SubD 1) | round dab's aspect (cage / SubD 1) |
+| 2048² | 3 % area / aspect, cage | 3 %, SubD 1 | round dab's aspect at 3 % (cage / SubD 1) | 5 % area / aspect (cage / SubD 1), projection |
 |---|---|---|---|---|
-| nose tip | 0.98 / 1.02 | 1.04 / 1.01 | wrap / planar | 1.03 / 1.01 |
-| nose ridge | 1.01 / 1.01 | 1.01 / 1.02 | planar | 1.03 / 1.03 |
-| nostril wing | 1.02 / **1.29** | 1.05 / **1.19** | wrap (planar: 0.76 / 1.43 and 0.89 / 1.36) | 1.42 / 1.33 |
-| lip edge | 1.03 / 1.02 | 1.03 / 1.01 | planar | 1.02 / 1.02 |
-| mouth corner | 1.16 / 1.15 | 1.11 / 1.07 | planar | 1.02 / 1.06 |
-| cheek | 1.02 / 1.00 | 1.01 / 1.01 | planar | 1.00 / 1.00 |
-| lid | 1.08 / 1.01 | 1.05 / 1.01 | planar | 1.06 / 1.06 |
-| UV seam | 1.09 / 1.07 | 1.01 / 1.01 | planar | 1.03 / 1.01 |
+| nose tip | 1.06 / 1.03 | 1.03 / 1.01 | 1.03 / 1.01 | 0.95 / 1.04 · 0.96 / 1.02, wrap |
+| nose ridge | 1.01 / 1.01 | 1.01 / 1.02 | 1.03 / 1.03 | 1.01 / 1.01 · 1.02 / 1.01, planar |
+| nostril wing | 0.76 / **1.42** | 0.88 / **1.33** | **1.42 / 1.33** | 1.13 / 1.11 · 1.13 / 1.23, wrap (planar 1.34 / 1.50) |
+| lip edge | 1.03 / 1.01 | 1.03 / 1.01 | 1.02 / 1.02 | 1.01 / 1.04 · 1.00 / 1.05, wrap |
+| mouth corner | 1.15 / 1.15 | 1.10 / 1.07 | 1.02 / 1.06 | 1.15 / 1.29 · 1.30 / 1.16, planar |
+| cheek | 1.01 / 1.00 | 1.01 / 1.01 | 1.00 / 1.00 | 1.02 / 1.00 · 1.01 / 1.00, planar |
+| lid | 1.06 / 1.03 | 1.04 / 1.00 | 1.06 / 1.06 | 1.02 / 1.03 · 1.00 / 1.07, wrap |
+| UV seam | 1.07 / 1.06 | 1.01 / 1.01 | 1.03 / 1.01 | 1.08 / 1.03 · 1.03 / 1.01, planar |
 
-- **Stretch:** every region within area ±25 % and aspect ≤ 1.3 at 3 % on both surfaces (tested at 2048², the default).
-  At 5 % (for the record): the mouth corner's area is 1.17 / 1.32, its aspect 1.29 / 1.16; everything else passes.
-- **Leak:** no painted texel on a triangle unconnected to the centre within the reach (another sheet) at any region. The
-  planar 5 % stamp on the lip edge reached the lower lip (155 / 130 texels); the stressed placement wraps: 0 (pinned).
+- **Stretch at 3 %:** every region within area ±25 % and aspect ≤ 1.3 on both surfaces, **except the nostril wing's
+  aspect (1.42 / 1.33), which equals the round dab's there** — the wing is curved about as tightly as a 3 % stamp, and a
+  faithful stamp (planar or wrapped, §12.7) cannot be rounder in 3D; the test holds it to "no worse than the round dab".
+  At 5 % the wrap rounds it to 1.11 / 1.23. (Tested at 2048², the default.)
+- **Leak:** no painted texel on a triangle unconnected to the centre (another sheet) at any region at 3, 4, 5 and 8 %.
+  The planar stamp on the lip edge reaches the lower lip from 4 % (cage 88 texels at 4 %, 435 / 315 at 5 %; the round dab
+  531 / 385 at 5 %); from 4 % the stressed placement wraps and paints none there (pinned at 4, 5, 8 %).
 - **Seam:** a stamp centred on the midline seam paints both islands; across the seam neighbouring texels differ by no
   more than the alpha's own slope allows (a cone alpha; pinned).
 - **Frame jump** (scripted strokes at 100 % spacing: across the nose, over the lip, along the ridge, over the wing).
@@ -834,8 +847,8 @@ The frame rows are llvmpipe (5.5–7 ms cage, 10–15 ms SubD 1; the reference P
 | P-I 2-s stroke, Poren 100 % | 6.5 / 10.8 ms · 7.7 ms · 5.3 ms | 13.2 / 17.7 ms · 17.0 ms · 14.0 ms | same |
 | P-I flick 0.17 s, round (info) | 112 placements; release → History 186 ms, 5 finishing frames ≤ 40 ms | 109; 299 ms, 7 frames ≤ 48 ms | no gate |
 
-- The alpha placement costs **1.5–1.6×** the round dab on the CPU (the gather of the square's corners at `r √2`, the
-  frame, the sampling; 20–25 % of the placements on this stroke wrapped, the wrap costing ~1.5× a planar stamp).
+- *(First build; superseded by §12.7)* The alpha placement cost **1.5–1.6×** the round dab on the CPU (the gather of the
+  square's corners at `r √2`, the frame, the sampling; 20–25 % of the placements on this stroke wrapped).
 - The 2-s stroke keeps up: nothing is left at the release, every 4a stroke gate passes on the container.
 - Tests (container): `tests/` 8261 passed, 3 failed — the same 3 fail on `922d964` (the box-paint scenario and its
   `can_run` purity variant, `test_scene_menu_local_tmp::test_probe_menu_wiring`; pre-existing, not 4a), 8 skipped;
@@ -843,15 +856,57 @@ The frame rows are llvmpipe (5.5–7 ms cage, 10–15 ms SubD 1; the reference P
 
 ### 12.6 Not in 4a / open
 
-- **Reference-PC run open:** `python experiments/drag_cost/probe_paint.py --surfaces cage,subd1` (P-H, P-I are the 4a
-  rows). The 3 % alpha placement is the tight one: its CPU part is p95 6.4 / 7.8 ms (cage / SubD 1), 1.5–1.6× the round
-  dab of the same run (4.2 / 4.9 ms), which totalled 9–11 ms p95 on the RPC with its frame; scaled alike the alpha is
-  ≈ 14–17 ms p95 [H] against the 16.7 ms bar. If it misses: the wrap's share (20–25 % of the placements on this stroke)
-  and the gather of the square's corners (`R = r √2`) are the levers.
+- **Reference-PC re-run open** after §12.7: `python experiments/drag_cost/probe_paint.py --surfaces cage,subd1`.
+- **The wrap's radius rule is object-relative:** `WRAP_FROM_PERCENT` is P-7's percent of the object's bounding radius,
+  measured on the Gollum head. On a much larger object (a full body) 3 % is large against a face's features and stays
+  planar - painting through there as the round dab does today. A curvature-relative rule (stamp radius against the
+  local curvature radius, from the gather) is the follow-up if the practical test asks for it.
 - 4b: rotation / scale / flow jitter, scatter, the other orientation modes, spray, counter-based RNG (the queue's
   placements are already timing-independent). 4c: library, presets, picker, import, starter set. 4d: colour jitter.
 - The flick (the whole path in 0.17 s) leaves a backlog the room drains over the following frames (P-27: catch-up, never
   a freeze); its release → History is not a gate.
+
+### 12.7 The reference-PC run (Manu, 2026-11-25), the correction and the optimisation
+
+**The run** ([`RESULTS_PAINT_PHASE4A_REFERENCE_PC_2026-11-25.md`](../../experiments/drag_cost/RESULTS_PAINT_PHASE4A_REFERENCE_PC_2026-11-25.md), [RPC], at `da2af8a`):
+
+| Row | cage p50 / p95 | SubD 1 p50 / p95 | gate | |
+|---|---|---|---|---|
+| P-A round 3 % (dab · total) | 5.75 / 7.15 · 11.69 / 13.60 ms | 6.28 / 7.67 · 14.34 / 15.77 ms | ≤ 16.7 | PASS |
+| **P-H alpha 3 % (dab · total)** | 8.49 / 13.24 · 14.38 / **18.23** ms | 8.90 / 16.71 · 16.51 / **24.27** ms | ≤ 16.7 | **FAIL** |
+| P-H alpha 5 % (total) | 21.34 / 28.01 ms | 23.53 / 31.88 ms | ≤ 33 | PASS |
+| P-I 2-s stroke round / Poren: frame p95 · release → History | 18.8 / 16.4 ms · 10.8 / 10.5 ms | 21.1 / 18.8 ms · 13.2 / 11.3 ms | ≤ 33 · ≤ 250 | PASS |
+| P-I finishing frame max (all rows, flicks included) | ≤ 43.4 ms | ≤ 46.6 ms | ≤ 50 | PASS |
+
+**Why P-H 3 % failed:** the alpha's dab cost 1.9–2.2× the round dab at p95: a square alpha gathered out to its corners
+(`r √2`, twice the round dab's area) whatever it holds, and 20–25 % of the placements on this stroke wrapped - main and
+mirror each with its own shortest-path rounds. The round dab leaves 0.9 ms of the 16.7 ms on SubD 1, so the alpha had to
+cost about what the round dab costs.
+
+**A correction found on the way (§12.2, §12.4):** restricting the wrap's texels to where the alpha paints showed that the
+first build's wrapped wing (aspect 1.29 / 1.19 at 3 %) had painted texels 0.96–1.41 r away in 3D whose wrap coordinate
+was below 0.95 r. A faithful geodesic map cannot do that (a geodesic distance is never shorter than the straight one):
+the discrete exponential map compressed there, and that compression made the "pass". Painted only where the alpha
+reaches, the wrapped wing at 3 % is 1.41 / 1.36 — as stretched as the planar stamp (1.42 / 1.33) and the round dab
+(1.42 / 1.33). The §4.3 aspect gate is not reachable at that place by a faithful stamp; at 3 % the wrap bought nothing
+anywhere on the probe set, while from 4 % it does (the lip leak, the wing, nose tip and lid at 5 %).
+
+**The optimisation** (`mirai.paint.alpha`, `mirai.paint.stamp`; pixels at 3 % unchanged wherever the projection is the
+same; the curvature, leak, seam, frame, mirror and room tests re-run green):
+- the gather's radius is the alpha's `reach` (Poren: 0.99 r instead of 1.41 r; exact: beyond it the alpha is 0); the
+  wrap decision's statistics still cover the whole rectangle, gathered only when the alpha's own reach shows stress;
+- `WRAP_FROM_PERCENT` = 4 %: below it no stamp wraps (the measurements above), from it the decision as before;
+- the wrap's triangles end 1.1 × beyond the gather (paths may bend out of it) instead of at `r √2`;
+- fewer NumPy calls per stamp: one `take` for the four bilinear neighbours with the affine map folded in
+  (`sample_local`), the depth window and the facing fade only where a texel reaches them, the stress statistics only
+  where a choice is made, `np.cross` on 3-vectors written out.
+
+**Measured [C]** (container, the probe's stroke, best of 8 runs, evaluate + write per placement, 3 %): round 1.20 / 1.19 ms,
+alpha **before 2.04 / 2.24 ms (1.8–1.9×), after 1.38 / 1.39 ms (1.15–1.17×)** (cage / SubD 1); p95 1.80 / 1.71 ms
+against the round dab's 1.84 / 1.51 ms. In the probe of the same run (`RESULTS_PAINT_PHASE4A_CONTAINER_2026-11-25.md`,
+"after the optimisation"): P-H 3 % dab p50 / p95 2.39 / 3.00 ms (cage) and 2.54 / 3.23 ms (SubD 1) against P-A's round
+dab 2.31 / 2.86 and 2.68 / 3.58 ms, 0 % wrapped; P-H 5 % 10–15 % wrapped, total p95 13.5 / 18.1 ms (llvmpipe frame).
+**Expectation for the RPC [H]:** the alpha's 3 % row about the round dab's (13.6 / 15.8 ms p95), i.e. passing.
 
 ## Praxistest für Manu (Deutsch, ca. 5 Minuten, optional)
 
@@ -928,7 +983,8 @@ aufgelegt wurde. Sieht etwas gestreckt, abgeschnitten oder falsch aus?
 3. **Ader** und **Kratzer**: folgen sie Deiner Strichrichtung („Strich folgen“)? Mit „Winkel“ 90° quer stellen. Wirkt
    die Richtung über die Nase hinweg ruhig, oder dreht sie zu stark nach?
 4. **Nasenflügel, Nasenspitze, Lippen, Mundwinkel, Lid** mit Poren und Ader (3 % und 5 %): wird etwas durch die Lippe
-   auf die Unterlippe oder in das Nasenloch gemalt? Wirkt ein Stempel am Nasenflügel verzerrt?
+   auf die Unterlippe oder in das Nasenloch gemalt? Wirkt ein Stempel am Nasenflügel verzerrt? (Bei 3 % liegt er flach
+   auf, ab 4 % wickelt er sich an stark gekrümmten Stellen um die Fläche – sieht man einen Unterschied?)
 5. **Über die UV-Naht** (senkrecht durch die Gesichtsmitte, z. B. am Kinn): Bruch sichtbar?
 6. **Spiegeln** an: erscheint auf der anderen Seite das gespiegelte Rechteck, und ist die Ader dort spiegelbildlich?
 7. **Sehr schnell** quer über das Gesicht wischen und sofort loslassen: friert etwas ein? Läuft die Farbe kurz nach und

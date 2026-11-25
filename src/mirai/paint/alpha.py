@@ -1,13 +1,14 @@
 """Alpha images for the alpha tip (AD-037 §12 Phase 4a; proposal 2026-11-25 §4.4).
 
 An **alpha** is an 8-bit grey image, white = paint, row 0 at the top. `AlphaImage` holds it with a **mip chain** (2x2 box
-halving down to `MIP_MIN` px on the long side, built once) so a large alpha stamped over few texels does not alias into
-noise: a placement picks the level whose long side is closest to the stamp's diameter in texels (`level_for`). `sample`
-reads one level **bilinearly**, vectorised over the gathered texels (four `take`s and a lerp; uint8 becomes float32 only
-for those texels); outside the image's rectangle the value is 0.
+halving down to `MIP_MIN` px on the long side while the short side keeps 2 px, built once) so a large alpha stamped over
+few texels does not alias into noise: a placement picks the level whose long side is closest to the stamp's diameter in texels (`level_for`). `sample`
+reads one level **bilinearly**, vectorised over the gathered texels (one `take` of the four neighbours and a lerp; uint8
+becomes float32 only for those texels); outside the image's rectangle the value is 0.
 
 The stamp's world radius (P-7) is the half-extent of the alpha's **long** side; `half_extents` gives both half-extents
-in units of that radius (the long one is 1).
+in units of that radius (the long one is 1); `reach` how far from the centre the alpha paints at all (the gather's
+radius; a round pore patch ~1 instead of its square's √2).
 
 **Test alphas** (4a only, no library yet: §9 "test-alpha chooser"): six procedural images (`TEST_ALPHAS`: Poren, Ader,
 Kratzer, Fleck, Punkte, Quadrat), deterministic (fixed seeds, NumPy only, our own work), each with a black border,
@@ -44,6 +45,9 @@ class AlphaImage:
     name: str
     pixels: np.ndarray  # (h, w) uint8, row 0 at the top
     mips: tuple[np.ndarray, ...] = field(default=())
+    #: the farthest painting pixel's distance from the centre in units of the stamp radius (half a pixel added); the
+    #: stamp gathers only within it - beyond, the alpha is 0 (a round pore patch needs ~1, its square's corners √2)
+    reach: float = 0.0
 
     @classmethod
     def from_pixels(cls, id: str, name: str, pixels) -> "AlphaImage":
@@ -51,9 +55,18 @@ class AlphaImage:
         if pixels.ndim != 2 or min(pixels.shape) < 2:
             raise ValueError(f"an alpha is a 2D grey image, got shape {pixels.shape}")
         levels = [pixels]
-        while max(levels[-1].shape) > MIP_MIN and min(levels[-1].shape) > 1:
+        while max(levels[-1].shape) > MIP_MIN and min(levels[-1].shape) >= 4:  # every level at least 2 px wide
             levels.append(np.ascontiguousarray(_halve(levels[-1])))
-        return cls(id, name, pixels, tuple(levels))
+        h, w = pixels.shape
+        half = max(h, w) / 2.0
+        ys, xs = np.nonzero(pixels)
+        if ys.size:  # the farthest pixel's farthest corner from the centre
+            dx = np.maximum(np.abs(xs - w / 2.0), np.abs(xs + 1.0 - w / 2.0))
+            dy = np.maximum(np.abs(ys - h / 2.0), np.abs(ys + 1.0 - h / 2.0))
+            reach = float(np.hypot(dx, dy).max()) / half
+        else:
+            reach = 0.0
+        return cls(id, name, pixels, tuple(levels), reach)
 
     @property
     def size(self) -> int:
@@ -74,29 +87,43 @@ class AlphaImage:
         level = int(round(math.log2(max(self.size / diameter_texels, 1.0))))
         return min(max(level, 0), len(self.mips) - 1)
 
+    def sample_local(self, level: int, a: np.ndarray, beta: np.ndarray) -> np.ndarray:
+        """`sample` at a stamp's local coordinates (`a` along its width, `beta` up, in stamp radii; inside the rectangle
+        - the caller has cut it): the image coordinates' affine map folded into the read."""
+        image = self.mips[level]
+        h, w = image.shape
+        hw, hh = self.half_extents
+        x = np.asarray(a, dtype=np.float32) * np.float32(w / (2.0 * hw)) + np.float32(w / 2.0 - 0.5)
+        y = np.asarray(beta, dtype=np.float32) * np.float32(-h / (2.0 * hh)) + np.float32(h / 2.0 - 0.5)
+        return self._bilinear(image, x, y)
+
+    @staticmethod
+    def _bilinear(image: np.ndarray, x: np.ndarray, y: np.ndarray) -> np.ndarray:
+        h, w = image.shape
+        x = np.clip(x, 0.0, np.float32(w - 1), out=x)
+        y = np.clip(y, 0.0, np.float32(h - 1), out=y)
+        x0 = np.minimum(x.astype(np.int64), w - 2)
+        y0 = np.minimum(y.astype(np.int64), h - 2)
+        fx = (x - x0)[:, None]
+        fy = (y - y0)[:, None]
+        corners = image.reshape(-1).take((y0 * w + x0)[:, None] + np.array((0, 1, w, w + 1))).astype(np.float32)
+        top = corners[:, 0:1] + (corners[:, 1:2] - corners[:, 0:1]) * fx
+        bottom = corners[:, 2:3] + (corners[:, 3:4] - corners[:, 2:3]) * fx
+        return ((top + (bottom - top) * fy) * np.float32(1.0 / 255.0))[:, 0]
+
     def sample(self, level: int, u: np.ndarray, v: np.ndarray) -> np.ndarray:
         """Bilinear coverage in [0, 1] (float32) at image coordinates `u` (0 left - 1 right), `v` (0 top - 1 bottom) on
-        `level`; 0 outside [0, 1]²."""
+        `level`; 0 outside [0, 1]². The edge texels extend to the border (the coordinate is clamped, which reads the
+        same as clamping the four neighbours' indices); one `take` reads all four neighbours."""
         image = self.mips[level]
         h, w = image.shape
         u = np.asarray(u, dtype=np.float32)
         v = np.asarray(v, dtype=np.float32)
-        inside = (u >= 0.0) & (u <= 1.0) & (v >= 0.0) & (v <= 1.0)
-        x = u * np.float32(w) - np.float32(0.5)
-        y = v * np.float32(h) - np.float32(0.5)
-        x0 = np.floor(x)
-        y0 = np.floor(y)
-        fx = x - x0
-        fy = y - y0
-        x0 = x0.astype(np.int64)
-        y0 = y0.astype(np.int64)
-        xa, xb = np.clip(x0, 0, w - 1), np.clip(x0 + 1, 0, w - 1)
-        ya, yb = np.clip(y0, 0, h - 1), np.clip(y0 + 1, 0, h - 1)
-        flat = image.reshape(-1)
-        top = flat.take(ya * w + xa).astype(np.float32) * (1.0 - fx) + flat.take(ya * w + xb).astype(np.float32) * fx
-        bottom = flat.take(yb * w + xa).astype(np.float32) * (1.0 - fx) + flat.take(yb * w + xb).astype(np.float32) * fx
-        value = (top * (1.0 - fy) + bottom * fy) * np.float32(1.0 / 255.0)
-        return np.where(inside, value, np.float32(0.0)).astype(np.float32)
+        value = self._bilinear(image, u * np.float32(w) - np.float32(0.5), v * np.float32(h) - np.float32(0.5))
+        outside = (u < 0.0) | (u > 1.0) | (v < 0.0) | (v > 1.0)
+        if outside.any():
+            value[outside] = 0.0
+        return value
 
 
 # -- the test alphas (4a) ------------------------------------------------------------------------------------------

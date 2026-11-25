@@ -37,7 +37,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--size", type=int, default=2048)
-    parser.add_argument("--radius", type=float, default=3.0, help="brush radius in %% of the bounding radius")
+    parser.add_argument("--radius", type=float, default=3.0,
+                        help="brush radius in %% of the bounding radius (a step of brush.RADIUS_STEPS_PERCENT)")
     args = parser.parse_args(argv)
 
     import numpy as np
@@ -79,7 +80,9 @@ def main(argv=None) -> int:
         for name, (label, pixel) in regions.REGIONS.items():
             tiles = []
             for alpha_id, alpha_label in ALPHAS:
-                settings = brush.BrushSettings(colour=(0.42, 0.07, 0.07), opacity=0.9).with_tip(
+                # the brush's own radius step: it decides whether a placement may wrap (`stamp.projection_for`)
+                settings = brush.BrushSettings(colour=(0.42, 0.07, 0.07), opacity=0.9,
+                                               radius_step=brush.RADIUS_STEPS_PERCENT.index(args.radius)).with_tip(
                     brush.TipSettings(alpha_id))
                 image = alpha.generated_alpha(alpha_id)
                 recorder = store.begin_stroke(head, "Paint")

@@ -1,0 +1,157 @@
+# Paint Room Phase 4a — probe results, reference PC (Manu, 2026-11-25)
+
+**Probe:** `python experiments/drag_cost/probe_paint.py --surfaces cage,subd1` at `da2af8a` (Manu's working tree
+"MODIFIED"; the `src/` tree hash printed below), reference PC (Q9550, GeForce 9800 GTX, OpenGL 3.3, Python 3.12.10,
+NumPy 2.2.6). Output verbatim below (pasted by Manu in the session chat, 2026-11-25).
+
+**Reading** (AD-037 §12.5):
+- **P-H 3 % FAILED** on both surfaces: total p95 18.2 ms (cage) / 24.3 ms (SubD 1) against 16.7 ms. The dab alone was
+  p95 13.2 / 16.7 ms — 1.9–2.2× the round dab of the same run (7.2 / 7.7 ms), which passes with 13.6 / 15.8 ms. Cause:
+  the gather of the square's corners (`r √2`) and the wrap on ~20–25 % of the placements of this stroke (main and mirror,
+  each with its own shortest-path round). Worked on the same day (AD-037 §12.7); re-run open.
+- **P-H 5 % passes** (28.0 / 31.9 ms against 33 ms), tightly.
+- **P-I passes** everywhere: the 2-s stroke's frame p95 16.4–21.1 ms (≤ 33), release → History 10.5–13.2 ms (≤ 250),
+  finishing frames ≤ 8 ms. The flick (information, no bar) drains in 14–15 finishing frames of ≤ 47 ms: no freeze.
+- P-A … P-G unchanged from Phase 2/3 (P-D 1.52–1.61 s, P-F 1.78 s, P-C +0.08 ms, P-E same image).
+
+```
+(.venv312) PS C:\Users\Manuel\Mirai_Bastel> python experiments/drag_cost/probe_paint.py --surfaces cage,subd1
+Paint probe (AD-037 Phase 1e / 2) - commit da2af8a1f8, working tree MODIFIED, src/ tree 09dd8d3438
+python 3.12.10, numpy 2.2.6, size 2048^2, 40 dabs per stroke
+fixture: Gollum, 2234 faces, texture Gollum_cbf9c7702d.png, mirrored dab on
+
+P-G base image (the ZBrush texture the room reads; reference PC 2026-11-18: 6.35 s in P-F)
+  Gollum_cbf9c7702d.png: 470,628 bytes, 2048 x 2048, 8 bit, colour type 6, interlace 0, row filters none 0 sub 344 up 706 avg 0 paeth 998
+  file read 1 ms, decode 1223 ms (system (998 Average / Paeth rows)), total 1224 ms
+  second read (cached) 0.3 ms
+  plain re-read of the file 0.6 ms
+
+P-D room enter: paint surface build (texel map + tables), ms        bar <= 2000 ms
+  cage    2,234 faces    1611 ms  (2,787,212 texels, 48 MiB)  PASS
+         map split 36, map raster 905, map ownership 551, tables 83
+  subd1   9,002 faces    1523 ms  (2,787,155 texels, 48 MiB)  PASS
+         map split 103, map raster 808, map ownership 439, tables 139
+GL: GeForce 9800 GTX/9800 GTX+/PCIe/SSE2 / (3, 3)
+
+P-A dab + composite + frame per dab, cage, 2048^2, ms      p50      p95      max
+  radius  1.0 % (~409 texels with the mirror)
+    dab            4.07     5.96     9.69
+    composite      0.93     1.76     1.88
+    frame          3.92     5.70    13.70
+    total          9.01    12.55    24.97
+  radius  3.0 % (~3,854 texels with the mirror)
+    dab            5.75     7.15     7.64
+    composite      1.93     2.86     3.42
+    frame          4.21     4.81     5.06
+    total         11.69    13.60    14.51  bar p95 <= 16.7: PASS
+  radius  5.0 % (~11,146 texels with the mirror)
+    dab            9.76    11.42    12.62
+    composite      3.76     4.39     4.79
+    frame          4.66     5.32     5.76
+    total         17.99    19.74    21.64  bar p95 <= 33.0: PASS
+  radius 10.0 % (~40,863 texels with the mirror)
+    dab           29.25    31.93    32.44
+    composite      7.73    10.10    10.79
+    frame          4.75     6.82     7.09
+    total         42.73    46.20    47.40
+
+P-A dab + composite + frame per dab, subd1, 2048^2, ms      p50      p95      max
+  radius  1.0 % (~398 texels with the mirror)
+    dab            4.23     5.24     6.44
+    composite      0.73     1.87     1.92
+    frame          5.70     6.36     7.11
+    total         10.89    12.57    14.41
+  radius  3.0 % (~3,840 texels with the mirror)
+    dab            6.28     7.67     8.16
+    composite      1.96     2.98     3.00
+    frame          5.94     6.58     6.89
+    total         14.34    15.77    16.39  bar p95 <= 16.7: PASS
+  radius  5.0 % (~11,030 texels with the mirror)
+    dab           10.12    11.44    12.34
+    composite      3.69     4.61     4.95
+    frame          5.67     7.02     7.81
+    total         19.94    22.36    23.36  bar p95 <= 33.0: PASS
+  radius 10.0 % (~40,889 texels with the mirror)
+    dab           30.28    33.46    35.89
+    composite      7.83     9.66    10.40
+    frame          6.78     8.43     8.58
+    total         45.91    49.51    50.61
+
+P-H alpha placement (Poren, mirror) + composite + frame, cage, 2048^2, ms   p50      p95      max
+  radius  3.0 % (~982 texels with the mirror, 25 % wrapped)
+    dab            8.49    13.24    13.63
+    composite      1.55     2.84     2.95
+    frame          3.95     4.84     4.92
+    total         14.38    18.23    20.62  bar p95 <= 16.7: FAIL
+  radius  5.0 % (~2,418 texels with the mirror, 15 % wrapped)
+    dab           13.58    22.15    22.79
+    composite      3.01     4.18     4.26
+    frame          3.86     4.99     5.39
+    total         21.34    28.01    29.18  bar p95 <= 33.0: PASS
+
+P-H alpha placement (Poren, mirror) + composite + frame, subd1, 2048^2, ms   p50      p95      max
+  radius  3.0 % (~934 texels with the mirror, 20 % wrapped)
+    dab            8.90    16.71    16.96
+    composite      1.82     2.84     2.90
+    frame          5.73     6.60     6.83
+    total         16.51    24.27    25.14  bar p95 <= 16.7: FAIL
+  radius  5.0 % (~2,530 texels with the mirror, 10 % wrapped)
+    dab           13.59    23.44    26.18
+    composite      3.04     4.21     4.33
+    frame          6.44     7.04     7.28
+    total         23.53    31.88    33.62  bar p95 <= 33.0: PASS
+
+P-I 2-s fast stroke, round, 3 %, cage: 114 placements (12.5 % spacing), 120 frames + 1 finishing
+  stroke frame ms     14.07    18.80    22.68  bar p95 <= 33: PASS
+  release -> History   10.8 ms  bar <= 250: PASS;  finishing frame max 7.0 ms  bar <= 50: PASS
+
+P-I flick (10 frames), round, 3 %, cage: 112 placements (12.5 % spacing), 10 frames + 14 finishing
+  stroke frame ms     31.41    36.90    36.90  (info, no bar)
+  release -> History  542.5 ms  (info, no bar);  finishing frame max 43.4 ms  bar <= 50: PASS
+
+P-I 2-s fast stroke, Poren, 3 %, cage: 15 placements (100.0 % spacing), 120 frames + 1 finishing
+  stroke frame ms      6.25    16.38    18.15  bar p95 <= 33: PASS
+  release -> History   10.5 ms  bar <= 250: PASS;  finishing frame max 6.8 ms  bar <= 50: PASS
+
+P-I flick (10 frames), Poren, 3 %, cage: 14 placements (100.0 % spacing), 10 frames + 3 finishing
+  stroke frame ms     19.54    24.96    24.96  (info, no bar)
+  release -> History  112.8 ms  (info, no bar);  finishing frame max 41.5 ms  bar <= 50: PASS
+
+P-I 2-s fast stroke, round, 3 %, subd1: 110 placements (12.5 % spacing), 120 frames + 1 finishing
+  stroke frame ms     16.34    21.06    22.46  bar p95 <= 33: PASS
+  release -> History   13.2 ms  bar <= 250: PASS;  finishing frame max 8.0 ms  bar <= 50: PASS
+
+P-I flick (10 frames), round, 3 %, subd1: 109 placements (12.5 % spacing), 10 frames + 15 finishing
+  stroke frame ms     32.13    36.71    36.71  (info, no bar)
+  release -> History  605.0 ms  (info, no bar);  finishing frame max 46.6 ms  bar <= 50: PASS
+
+P-I 2-s fast stroke, Poren, 3 %, subd1: 14 placements (100.0 % spacing), 120 frames + 1 finishing
+  stroke frame ms      8.69    18.77    25.48  bar p95 <= 33: PASS
+  release -> History   11.3 ms  bar <= 250: PASS;  finishing frame max 6.2 ms  bar <= 50: PASS
+
+P-I flick (10 frames), Poren, 3 %, subd1: 14 placements (100.0 % spacing), 10 frames + 3 finishing
+  stroke frame ms     21.63    27.98    27.98  (info, no bar)
+  release -> History  107.7 ms  (info, no bar);  finishing frame max 40.8 ms  bar <= 50: PASS
+
+P-B mip policy, 3 % stroke (cage), frame ms      p50      p95      max
+  frame          5.08     5.59     6.61   stroke-end frame 2.71
+  deferred       3.94     4.75     6.52   stroke-end frame 3.45
+  none           3.75     4.85    36.79   stroke-end frame 2.81
+
+P-C orbit frame, ms                              p50      p95      max
+  file texture      3.18     4.02     4.88
+  live texture      3.26     3.73     3.74
+  live - file p50 +0.08 ms  bar <= +1 ms: PASS
+
+P-E Modeller frame (file texture) before / after a live texture existed
+  same image: PASS;  p50 before 3.88 ms, after 3.74 ms
+
+P-F save of a 4-layer stack (base image cache cleared: a cold read, as at the first save of a session)
+  first save 1778 ms (4 layers + 1 flat, 0.7 MiB)  bar <= 2000 ms: PASS
+    PNG encode (all files)            826 ms in 5 calls (max 173)
+      of it: layers                   653 ms in 4 calls (max 167)
+    write file                         11 ms in 5 calls (max 2)
+    read base                         245 ms in 1 call (max 245)
+    flatten (base + composite)        907 ms in 1 call (max 907)
+  second save 1 ms (0 layers, 0 flat)  nothing written: PASS
+```

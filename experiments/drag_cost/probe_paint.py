@@ -515,6 +515,8 @@ def main(argv=None) -> int:
         print(f"\nP-H alpha placement (Poren, mirror) + composite + frame, {kind}, {size}^2, ms   p50      p95      max")
         for pct in (3.0, 5.0):
             radius = bounding * pct / 100.0
+            # the brush's own radius step: it decides whether a placement may wrap (`stamp.projection_for`)
+            dab.settings = dab.settings.with_(radius_step=dab.brush.RADIUS_STEPS_PERCENT.index(pct))
             run_stroke(store, head, dab, rays[:3], radius, base, live, frame)  # warm-up
             dab.stamps.clear()
             rows = run_stroke(store, head, dab, rays, radius, base, live, frame)

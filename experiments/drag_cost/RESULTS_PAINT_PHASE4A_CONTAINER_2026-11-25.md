@@ -126,3 +126,112 @@ P-I flick (10 frames), Poren, 3 %, subd1: 14 placements (100.0 % spacing), 10 fr
   release -> History   13.5 ms  bar <= 250: PASS;  finishing frame max 10.7 ms  bar <= 50: PASS
 
 ```
+
+## After the optimisation (AD-037 §12.7, same day, container)
+
+```
+Paint probe (AD-037 Phase 1e / 2) - commit da2af8a1f8, working tree MODIFIED, src/ tree 6e8a701fbe
+python 3.13.18, numpy 2.2.6, size 2048^2, 40 dabs per stroke
+fixture: Gollum, 2234 faces, texture Gollum_cbf9c7702d.png, mirrored dab on
+
+P-A dab + composite + frame per dab, cage, 2048^2, ms      p50      p95      max
+  radius  1.0 % (~409 texels with the mirror)
+    dab            1.47     2.20     2.50
+    composite      0.30     0.61     0.80
+    frame          5.08     6.69    10.92
+    total          7.04     9.23    13.13
+  radius  3.0 % (~3,854 texels with the mirror)
+    dab            2.31     2.86     3.57
+    composite      0.78     1.23     1.27
+    frame          5.46     7.24    12.10
+    total          8.65    10.54    15.15  bar p95 <= 16.7: PASS
+  radius  5.0 % (~11,146 texels with the mirror)
+    dab            4.03     4.83     5.17
+    composite      1.29     1.73     1.77
+    frame          5.58     6.99    10.99
+    total         10.95    12.77    16.58  bar p95 <= 33.0: PASS
+  radius 10.0 % (~40,863 texels with the mirror)
+    dab           10.66    14.18    15.38
+    composite      2.53     3.61     5.13
+    frame          5.64     7.08    11.31
+    total         19.48    25.30    27.66
+
+P-A dab + composite + frame per dab, subd1, 2048^2, ms      p50      p95      max
+  radius  1.0 % (~398 texels with the mirror)
+    dab            1.61     2.14     2.57
+    composite      0.31     0.72     0.80
+    frame          9.29    11.73    14.01
+    total         11.31    13.97    16.80
+  radius  3.0 % (~3,840 texels with the mirror)
+    dab            2.68     3.58     4.55
+    composite      0.82     1.64     1.80
+    frame         10.08    12.54    14.47
+    total         13.66    17.11    17.87  bar p95 <= 16.7: FAIL
+  radius  5.0 % (~11,030 texels with the mirror)
+    dab            4.27     5.51     6.40
+    composite      1.32     1.89     2.26
+    frame         10.14    14.21    19.18
+    total         15.58    21.79    24.75  bar p95 <= 33.0: PASS
+  radius 10.0 % (~40,889 texels with the mirror)
+    dab           11.53    13.50    14.24
+    composite      2.74     3.48     3.73
+    frame          9.97    12.37    14.93
+    total         24.15    28.29    30.08
+
+P-H alpha placement (Poren, mirror) + composite + frame, cage, 2048^2, ms   p50      p95      max
+  radius  3.0 % (~966 texels with the mirror, 0 % wrapped)
+    dab            2.39     3.00     3.40
+    composite      0.62     1.09     1.16
+    frame          5.34     6.23    13.91
+    total          8.44     9.40    17.31  bar p95 <= 16.7: PASS
+  radius  5.0 % (~2,406 texels with the mirror, 15 % wrapped)
+    dab            4.24     6.43     7.32
+    composite      1.11     1.60     1.81
+    frame          5.23     6.60    11.08
+    total         10.98    13.53    15.74  bar p95 <= 33.0: PASS
+
+P-H alpha placement (Poren, mirror) + composite + frame, subd1, 2048^2, ms   p50      p95      max
+  radius  3.0 % (~946 texels with the mirror, 0 % wrapped)
+    dab            2.54     3.23     4.09
+    composite      0.65     1.02     1.11
+    frame          8.54    10.90    14.85
+    total         11.73    15.18    19.31  bar p95 <= 16.7: PASS
+  radius  5.0 % (~2,518 texels with the mirror, 10 % wrapped)
+    dab            3.89     7.85     9.62
+    composite      1.14     1.62     1.82
+    frame          9.23    11.09    13.44
+    total         14.68    18.11    20.71  bar p95 <= 33.0: PASS
+
+P-I 2-s fast stroke, round, 3 %, cage: 114 placements (12.5 % spacing), 120 frames + 1 finishing
+  stroke frame ms      8.96    12.01    15.95  bar p95 <= 33: PASS
+  release -> History    9.3 ms  bar <= 250: PASS;  finishing frame max 4.7 ms  bar <= 50: PASS
+
+P-I flick (10 frames), round, 3 %, cage: 112 placements (12.5 % spacing), 10 frames + 5 finishing
+  stroke frame ms     17.04    18.85    18.85  (info, no bar)
+  release -> History  193.7 ms  (info, no bar);  finishing frame max 41.4 ms  bar <= 50: PASS
+
+P-I 2-s fast stroke, Poren, 3 %, cage: 15 placements (100.0 % spacing), 120 frames + 1 finishing
+  stroke frame ms      6.04     9.23    11.48  bar p95 <= 33: PASS
+  release -> History    7.4 ms  bar <= 250: PASS;  finishing frame max 4.9 ms  bar <= 50: PASS
+
+P-I flick (10 frames), Poren, 3 %, cage: 14 placements (100.0 % spacing), 10 frames + 1 finishing
+  stroke frame ms     11.52    14.80    14.80  (info, no bar)
+  release -> History    7.2 ms  (info, no bar);  finishing frame max 4.7 ms  bar <= 50: PASS
+
+P-I 2-s fast stroke, round, 3 %, subd1: 110 placements (12.5 % spacing), 120 frames + 1 finishing
+  stroke frame ms     11.83    13.96    19.85  bar p95 <= 33: PASS
+  release -> History   10.4 ms  bar <= 250: PASS;  finishing frame max 7.9 ms  bar <= 50: PASS
+
+P-I flick (10 frames), round, 3 %, subd1: 109 placements (12.5 % spacing), 10 frames + 4 finishing
+  stroke frame ms     20.40    21.92    21.92  (info, no bar)
+  release -> History  162.1 ms  (info, no bar);  finishing frame max 41.4 ms  bar <= 50: PASS
+
+P-I 2-s fast stroke, Poren, 3 %, subd1: 14 placements (100.0 % spacing), 120 frames + 1 finishing
+  stroke frame ms     10.71    13.46    18.83  bar p95 <= 33: PASS
+  release -> History   11.2 ms  bar <= 250: PASS;  finishing frame max 8.8 ms  bar <= 50: PASS
+
+P-I flick (10 frames), Poren, 3 %, subd1: 14 placements (100.0 % spacing), 10 frames + 1 finishing
+  stroke frame ms     16.44    19.20    19.20  (info, no bar)
+  release -> History   10.1 ms  (info, no bar);  finishing frame max 7.7 ms  bar <= 50: PASS
+
+```
