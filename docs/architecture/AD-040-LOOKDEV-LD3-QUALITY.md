@@ -2,9 +2,10 @@
 
 **Status:** **ACCEPTED (2026-11-25, Manu):** „OK, ich gebe das Go und starte dann in einer neuen Session“. **LD-3a
 built 2026-11-25** (§14: quality manager, block „Qualität“, machine setting; no shader change, every pin kept; Hoch
-without refinement bit-identical to `1e5d751`); the reference-PC run (§11.1 / §14.4) and Manu's practical test
-(§14.5) are next; Q-LD3-1 … Q-LD3-3 stay open as §12.2 proposes (Q-LD3-1 / -2 decided by the §11.1 run). LD-3b only
-after §12.1 point 3.
+without refinement bit-identical to `1e5d751`); **reference-PC run done 2026-11-25 (§14.6):** E16 holds, S1–S9 each
+≤ +0.7 ms, Maximal +0.2 ms; Mittel is not a real tier, Auto's 12 ms is too strict, `every_2nd` gains nothing -
+proposals R-1 … R-4 (§14.6) and Manu's practical test (§14.5) are next; Q-LD3-1 … Q-LD3-3 open. LD-3b only after
+§12.1 point 3.
 Proposed 2026-11-25 (Architecture Gate). The number AD-040 follows
 AD-039. New class, file and panel names stay `PROVISIONAL` until built.
 **Decisions taken into it** (Manu, 2026-11-25, verbatim): „F-R1 bis F-R4 wie vorgeschlagen, F-R5 Bild speichern
@@ -663,3 +664,80 @@ LookDev öffnen, Studio Dramatic, SubD 1, „Weicher Schatten“ und „Weiches 
 
 **Open for Manu [O]:** Q-LD3-1 and Q-LD3-2 after the reference-PC run; Q-LD3-3 („Maximal“ before LD-3b, built
 selectable) and the practical test's verdict; then §12.1 point 3 (the LD-3b probe, §11.2) before any LD-3b work.
+
+### 14.6 Reference-PC run LD-3a (Manu, 2026-11-25; `lookdev_room_ld3a.txt`)
+
+Core 2 Quad Q9550, GeForce 9800 GTX (512 MiB), Windows 10, GL 3.3, Python 3.12.10; source `54a4877` (working tree
+modified on the PC, `src/` tree `d97191de8e`); `Gollum_Head_05`, framed ¾ view, 1024×768, 30 rounds after 5. „CPU“ in
+the rows is the probe's wall time of the draw + `glFinish` (`probe_lookdev.timed_frame`), without the app's tick and
+swap. `glGetError` 0 at the end.
+
+**Kurzfassung (Deutsch):**
+- **Gut:** Modelling Room unverändert (E16/Q4); jeder P3-Effekt einzeln ≤ +0.7 ms (S1–S9 erfüllt, AD-039 §24.4 damit
+  zu); „Weicher Schatten“ (S9) kostet hier messbar nichts; Maximal in Ruhe kostet dauerhaft +0.2 ms, nur der erste
+  Verfeinerungs-Frame hängt einmal (109 ms); Vorkompilieren beim ersten Betreten 0.54 s, danach 0 ms.
+- **Problem 1 – „Mittel“ ist keine Stufe:** Mittel (= Hoch ohne S9) ist so teuer wie Hoch. Auto fiele deshalb von Hoch
+  über ein nutzloses Mittel direkt auf Entwurf (ohne Schatten, Doppel-Glanz, Durchleuchtung, Weiches Licht).
+- **Problem 2 – die Effekte zusammen kosten viel mehr als einzeln:** einzeln zusammen ≈ +1.6 ms, alle zusammen
+  ≈ +6 ms (Nahansicht +15 ms). Welcher Effekt in der Kombination teuer ist, misst der Lauf nicht.
+- **Problem 3 – 12 ms ist zu streng:** SubD 1 framed Hoch liegt bei 12.4 ms GPU, das Bild hält aber 30 fps.
+- **Schatten beim Ziehen (Q-LD3-1):** „jedes 2. Frame“ bringt nichts – die schlechten Frames sind so teuer wie bei
+  „jedes Frame“, nur abwechselnd (Ruckeln). Es bleibt die Wahl jedes Frame / eingefroren.
+- **1920×1080:** übersprungen, das versteckte Fenster ließ sich unter Windows nicht vergrößern.
+
+| Row (ms; GPU p50 / CPU p50 unless the row names other values) | cage framed | cage close | SubD 1 framed | SubD 1 close |
+|---|---|---|---|---|
+| modelling / modelling after (GPU) | 2.99 / 2.99 | — | 5.18 / 5.19 | — |
+| lookdev (no effect) | 2.42 / 11.69 | — | 3.28 / 13.31 | — |
+| tier Entwurf (3 effects) | 2.38 / 13.24 | 5.81 / 15.77 | 3.17 / 13.25 | 6.90 / 18.27 |
+| tier Mittel (8 effects) | 8.52 / 19.40 | 21.09 / 32.21 | 13.87 / 25.24 | 28.25 / 40.68 |
+| tier Hoch (9 effects) | 8.30 / 20.57 | 20.65 / 31.63 | 12.42 / 22.50 | 27.25 / 39.27 |
+| drag every / every_2nd / frozen (Hoch, GPU p50) | 21.35 / 17.06 / 8.42 | — | 27.67 / 24.13 / 12.66 | — |
+| … their max | 23.19 / 23.06 / 16.13 | — | 30.75 / 30.64 / 26.53 | — |
+| … CPU p50 | 22.43 / 20.24 / 20.49 | — | 29.11 / 28.44 / 21.15 | — |
+| idle Hoch / Maximal (GPU) | 8.26 / 8.49 | — | 12.44 / 12.71 | — |
+
+**Findings:**
+
+1. **E16 / Q4 hold [M-RPC]:** `modelling` = `modelling after` within 0.01 ms on both surfaces.
+2. **S1–S9 (AD-039 §24.4) [M-RPC]:** each effect alone against `lookdev`: shadow +0.46 / +0.67, eye shadow +0.63 /
+   +0.67, dual lobe +0.20 / +0.31, thickness +0.18 / +0.28, cube −0.69 / −1.12, regions +0.04 / +0.05, maps +0.71 /
+   +1.41, area diffuse +0.10 / +0.16, soft shadow −0.01 / −0.01 (cage / SubD 1). S9 is within noise in every row
+   (Hoch vs Mittel too); K16c's expected +1.4–6 ms is not seen at this view [H: hidden behind the pass's other cost].
+   The cube prefilter per preset 39–45 ms wall (once per studio change).
+3. **The effects are superadditive [M-RPC]:** Entwurf (cube, regions, maps) is additive (2.38 against 2.48 summed).
+   The six it leaves out (shadow, eye shadow, thickness, dual lobe, S8, S9) sum to ≈ +1.6 / +2.1 ms alone but cost
+   +5.9 / +9.3 ms together (framed) and +14.8 / +20.4 ms (close). [H] The skin variant with all of them loses
+   occupancy on G92 (the pass is ALU-bound, PCSS diagnosis 2026-11-24); which effect tips it is not measured.
+4. **Mittel is not a tier [M-RPC]:** it differs from Hoch only by S9, which costs nothing here; Mittel ≥ Hoch in all
+   four views. With §4.3 Auto steps Hoch → Mittel → Entwurf, waits 2 s on the useless middle and cannot step up
+   again (Mittel's remembered p50 > 12 ms). §2.2's tier table (PROVISIONAL) needs a Mittel that removes a measured
+   share of finding 3.
+5. **Auto's 12 ms is too strict for this PC [M-RPC]:** the probe's wall time ≈ GPU + 10–12 ms in every static row
+   (the CPU side of the LookDev draw, which no tier touches; §4.2). 33.3 ms − 12 ms leaves ≈ 18–20 ms GPU. SubD 1
+   framed Hoch (12.4 GPU, 22.5 wall) holds 30 fps but would be stepped down at 12 ms; the close views (20.7 / 27.3
+   GPU, 31.6 / 39.3 wall) do not hold it and must step down.
+6. **The drag shadow (Q-LD3-1) [M-RPC]:** flush and ping-pong change nothing (AD-039 §11.1's remedies, both measured
+   in production now). `every_2nd`'s p50 lies between, its max equals `every`'s: the frames that render the map cost
+   the same, so it trades no peak for an alternating frame time. `frozen` = the static frame. **Wall:** `every` costs
+   +1.9 ms (cage) / +8.0 ms (SubD 1) over `frozen`, but **GPU** +12.9 / +15.0 ms. [H] `GL_TIME_ELAPSED` here includes
+   GPU idle time: the depth pass's FBO switch makes the driver start the GPU early, and it then waits for the rest of
+   the frame's Python submission (the pass alone took 0.5 ms in P3-0). Consequence for Auto: a drag with `every` reads
+   ≈ 21 / 28 ms and steps down although the frame grew by 2 / 8 ms.
+7. **Idle / Maximal [M-RPC]:** Maximal's converged frame +0.23 / +0.27 ms over Hoch; its first refine frame 108.8 ms
+   GPU / 113 ms wall on the cage (the 2048² map's creation + the 256-sample cube's 82.5 ms build), 18 ms on SubD 1
+   (already built); the 5-frame p50 ceiling (L4) does not drop anything. VRAM free 173 → 155 MiB (the 2048² map); no
+   ceiling drop, the 50 ms ceiling stays.
+8. **Entry [M-RPC]:** first entry 5 programs in 542 ms behind the status line, first LookDev frame 299 ms GPU; second
+   entry 0 programs, 34 ms wall. Within §5's estimate.
+9. **Probe gap:** `window.set_size` on the hidden window did not resize on Windows; the 1920×1080 tier rows are
+   missing. The close rows (≈ 2.5× the framed fragment load) stand in for them.
+
+**Proposals from this run [P, open for Manu]:**
+
+| # | For | Proposal |
+|---|---|---|
+| R-1 | Q-LD3-2 | `AUTO_TARGET_MS` 12 → **18**, `AUTO_UP_MS` 6 → **9** (half the target, as before); framed cage / SubD 1 stay Hoch, close-ups step down |
+| R-2 | §2.2 Mittel | defined from a **leave-one-out** probe row set (Hoch minus each of shadow, eye shadow, thickness, dual lobe, S8, S9; close, both surfaces) plus the 1080 rows through an offscreen FBO instead of a window resize; one more reference-PC run (≈ 5 min); then Mittel = Hoch minus the cheapest-to-lose effects that bring SubD 1 close under R-1's target |
+| R-3 | Q-LD3-1 | drop `every_2nd`; Hoch `every` (the shadow follows; the wall frame grows 2 / 8 ms and holds framed), Mittel `frozen`, Entwurf has no shadow. The practical test §14.5 point 4 confirms by feel |
+| R-4 | Auto's input (finding 6) | the same probe run times the depth pass alone (its own query) to confirm [H]; if confirmed, the app's timer skips the frames that rendered the key map (Auto measures the shading tier, not the bubble) |

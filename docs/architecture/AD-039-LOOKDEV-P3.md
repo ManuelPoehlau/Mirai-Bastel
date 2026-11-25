@@ -2122,6 +2122,8 @@ python experiments\drag_cost\probe_lookdev_room.py | Tee-Object -FilePath lookde
 
 `lookdev +shadow +soft` against `lookdev +shadow` is the effect's cost; expected as K16c above.
 (2026-11-25: folded into AD-040's LD-3a run, the same script with the LD-3a rows: AD-040 §14.4, `lookdev_room_ld3a.txt`.)
+**Result (2026-11-25, AD-040 §14.6):** `lookdev +shadow +soft` − `lookdev +shadow` = −0.01 ms (cage and SubD 1,
+framed): S9 is within noise on the reference PC; every other P3 row ≤ +0.7 ms alone (maps +1.41 on SubD 1).
 
 ### 24.5 Practical test S9 (`scenes/Gollum_Head_05.mirai.json`, about 10 minutes)
 
