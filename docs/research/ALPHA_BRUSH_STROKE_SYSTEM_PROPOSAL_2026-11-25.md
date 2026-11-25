@@ -1,7 +1,7 @@
 # Alpha Brush & Stroke System — Architecture and UX Proposal for AD-037 Phase 4 (2026-11-25)
 
 **Status:** **PROPOSAL — research and architecture only, no decision.** No change to `src/`, `tests/`, the keymap,
-the scene format or the dependencies. Every value marked `PROVISIONAL` is an agent proposal; decisions P-18 … P-27
+the scene format or the dependencies. Every value marked `PROVISIONAL` is an agent proposal; decisions P-18 … P-28
 (§10) are **open until Manu confirms them explicitly**.
 **State audited:** `main` @ `e583cee` (AD-037 Phases 1–3 built; P-8 lifted 2026-11-25).
 **Brief:** Manu, 2026-11-25, „AD-037 Phase 4 — Alpha-Based Brush & Stroke System, Architecture and UX Assessment —
@@ -57,7 +57,9 @@ Artist decision for Manu · **[E]** established practice in other tools (named).
 - **Reihenfolge:** 4a Alpha-Stempel + Projektion + Abstand + Warteschlange (mit ein paar Test-Alphas zum Ausprobieren am
   Gollum-Kopf) → 4b Zufall, Streuung, Spray → 4c Bibliothek, Presets, Import, Starter-Sammlung. Jede Stufe mit
   Leistungs-Grenzen für Deinen PC und einem Praxistest.
-- **Deine Entscheidungen:** P-18 … P-27 in §10, jeweils mit Empfehlung.
+- **Alpha ist eine Eigenschaft der Pinselspitze**, kein eigener Pinsel-Modus: rund (wie heute) oder Alpha; Einzeln /
+  Spray sind davon unabhängig. So gibt es Abstand, Zufall, Streuung und Spiegeln nur einmal.
+- **Deine Entscheidungen:** P-18 … P-28 in §10, jeweils mit Empfehlung.
 
 ---
 
@@ -69,6 +71,7 @@ Artist decision for Manu · **[E]** established practice in other tools (named).
 | What needs extending or replacing? | Extend `BrushSettings` and `_dab`; replace screen-px `SPACING` with world arc length and the 24-dab spread with a bounded stamp queue | §2 |
 | Data model? | Alpha · Brush (preset) · Stroke (dynamics + runtime state) · Paint channel (target), four separate types | §3 |
 | Alpha projection and sampling? | Per-placement planar tangent frame from an inner-disc normal, depth window, facing fade, uint8 mip chain, bilinear, vectorised | §4 |
+| Alpha as a brush mode or a stamp type? | Neither: a **tip** property (round tip or alpha tip); Single / Spray are emitters, orthogonal to the tip | §4.7 |
 | Spacing, randomisation, scatter, spray? | One pipeline: path sampler → placements → emitter (Single/Spray) → cluster evaluation in one gather → order-independent combine; counter-based RNG | §5 |
 | Alpha assets and presets? | Built-ins in the repo, user assets in `~/.mirai_bastel/paint/`, hash IDs, JSON presets, LRU cache, lazy thumbnails | §6 |
 | UI? | Five areas, a picker popup, collapsed stroke sections, no new keys | §7 |
@@ -239,7 +242,14 @@ the discrete exponential map]. It costs more per placement and is therefore not 
 - **Texel density across UV islands** (×3.4 spread on the Gollum head, audit §2.2) changes only which mip fits; the
   level is chosen per placement from all gathered texels. Documented limitation, no visible break expected [H].
 
-### 4.5 Surfaces
+### 4.5 Surfaces (and what stays untouched)
+**Unaffected by Phase 4** (brief §7):
+- symmetry (the mirror cluster, §5.7);
+- seam padding (runs at the end of the stroke as today);
+- picking and the surface hit (`PaintSurface.hit` unchanged);
+- Pick (§4.7);
+- scene persistence (no format change: strokes stay layer pixels; brushes and alphas are never saved in a scene).
+
 Cage, SubD (the shown level, P-10), a morph mix and a pose (P-8) all reach the gather as positions of the same texel map.
 The frame is computed from the shown positions, so an alpha is painted in the shape the artist sees. Nothing in Phase 4
 depends on which surface it is.
@@ -250,6 +260,18 @@ depends on which surface it is.
 - **Pre-rasterised transformed stamps** (a cached stamp image per rotation/scale): rotation and scale jitter differ per
   stamp, so the cache would rarely hit. Direct sampling in local coordinates is O(texels) either way.
 
+### 4.7 Alpha stamping: a tip property, not a separate brush mode (brief §2, last question)
+- **Recommendation:** the alpha is a property of the **tip** (`TipSettings.alpha`), and every brush has a tip: the
+  **round tip** (no alpha: today's falloff) or an **alpha tip**. The pipeline is the same for both. Stroke modes
+  (Single / Spray) are **emitters**, orthogonal to the tip: a round spray and an alpha single stamp are equally valid.
+- **Why not "alpha mode" as a separate brush type:** spacing, jitter, scatter, spray, mirror and the opacity/flow rule
+  would all have to exist twice, the "disconnected special cases" the brief warns against. The equivalence gate (§2)
+  shows that the round tip is just the case "no alpha".
+- **Extensible:** a later stamp type (a procedural tip, a texture-colour stamp, a stencil) is another tip kind that
+  returns coverage (and, for a colour stamp, a colour) per local coordinate. The stroke and the channel do not change.
+- Tools stay separate from tips: Paint and Erase use any tip; **Pick (eyedropper) does not use the tip at all and stays
+  unchanged**.
+
 ## 5. Stroke engine — spacing, randomisation, scatter, spray
 
 ### 5.1 Terms (review point 4; the UI tooltips use these exact definitions)
@@ -257,8 +279,8 @@ depends on which surface it is.
 | Term (UI) | Meaning | Unit |
 |---|---|---|
 | **Abstand** (spacing) | distance between successive **placements along the stroke** | % of the stamp diameter, world arc length |
-| **Streuung** (scatter) | offset of each stamp **from the stroke line**, along and across | multiples of the radius |
-| **Spray** | **several small stamps inside the brush disc** at each placement | density (stamps per placement) and stamp size (% of the radius) |
+| **Streuung** (scatter) | offset of each stamp **from the stroke line**: "quer" = across the stroke (the brief's *horizontal* scatter, perpendicular to the path), "längs" = along it (the brief's *vertical* scatter, forward/back on the path); two separate sliders | multiples of the radius |
+| **Spray** | **several small stamps inside the brush disc** at each placement | density (stamps per placement), stamp size (% of the radius), intensity (the spray stamps' flow, % of the brush flow) |
 | **Zufall** (jitter) | per-stamp variation of rotation, scale, flow (and later colour) | ± degrees / ± % |
 | **Ausrichtung** (orientation) | where a stamp's "up" points | mode + offset |
 
@@ -302,7 +324,9 @@ depends on which surface it is.
 ### 5.5 Emitters and the cluster evaluation
 - **Single:** one stamp per placement, offset by scatter.
 - **Spray:** `N` stamps per placement (density), each of size `s · r` (`PROVISIONAL` s = 10–30 %), uniformly placed in the
-  brush disc (area-uniform: `ρ = r·√u`).
+  brush disc (area-uniform: `ρ = r·√u`), each with flow `flow · intensity · flow_jitter`. A **click without movement**
+  emits one placement (one spray burst); holding still adds nothing (no time-based emission). A time-based "airbrush"
+  would make the pattern depend on timing, against §5.7.
 - **One gather per placement for all its stamps.** The cluster's texels get their local `(a, β, h)` once. Per stamp, only
   the texels inside that stamp's own bounding square are selected (a boolean mask on `(a, β)`), the alpha is sampled
   there, and `1 − flowₖ·cₖ` is multiplied into a per-cluster product. The loop runs over stamps (`K ≤ 64`,
@@ -579,6 +603,7 @@ vertex paint, weight paint, a sculpt framework, pressure (P-15), stencil / image
 | P-25 | Is the colour part of a preset? | **No** | agent; review agrees | **offen** |
 | P-26 | Import source modes | **Alphakanal / Luminanz / Luminanz × Alphakanal**, auto-preselected, correctable in the preview | review | **offen** |
 | P-27 | Very fast strokes: catch-up or gaps? | **Catch-up** (the paint may trail the cursor briefly); never gaps, never a freeze on release | agent; review asked for the bounded release | **offen** |
+| P-28 | Spray while the mouse stands still? | **No** time-based „Airbrush“ emission: a click is one burst, holding still adds nothing (keeps the pattern independent of timing) | agent | **offen** |
 
 Not a question for Manu (technical, agent-owned): the inner-disc frame, the depth window and fade values, the queue
 budgets, the cache sizes and the mip rule. They are `PROVISIONAL`, tuned against the gates and the §4.3 metrics, and
