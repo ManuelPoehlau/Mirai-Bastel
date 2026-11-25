@@ -366,8 +366,13 @@ def fast_stroke(head, store, surface, definition, base, live, frame, bounding, k
     name = "2-s fast stroke" if frames_n == 120 else f"flick ({frames_n} frames)"
     print(f"\nP-I {name}, {label}, 3 %, {kind}: {queue.evaluated} placements "
           f"({settings.dynamics.spacing * 100:.1f} % spacing), {len(stroke_frames)} frames + {len(finishing) - 1} finishing")
-    print(f"  stroke frame ms  {stats(stroke_frames)}  bar p95 <= 33: {'PASS' if p95 <= 33.0 else 'FAIL'}")
-    print(f"  release -> History {to_history:6.1f} ms  bar <= 250: {'PASS' if to_history <= 250.0 else 'FAIL'};"
+    gated = frames_n == 120  # the flick is information (P-27: it trails and catches up), not a gate
+
+    def verdict(ok: bool, bar: str) -> str:
+        return f"bar {bar}: {'PASS' if ok else 'FAIL'}" if gated else "(info, no bar)"
+
+    print(f"  stroke frame ms  {stats(stroke_frames)}  {verdict(p95 <= 33.0, 'p95 <= 33')}")
+    print(f"  release -> History {to_history:6.1f} ms  {verdict(to_history <= 250.0, '<= 250')};"
           f"  finishing frame max {worst:.1f} ms  bar <= 50: {'PASS' if worst <= 50.0 else 'FAIL'}")
 
 

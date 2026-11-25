@@ -1,4 +1,4 @@
-# AD-037 — Texture paint: storage, data model, foundations (Phase 1), the Paint Room (Phase 2), layers and UV transfer (Phase 3)
+# AD-037 — Texture paint: storage, data model, foundations (Phase 1), the Paint Room (Phase 2), layers and UV transfer (Phase 3), alpha tip and stroke queue (Phase 4a)
 
 **Status:** **DECIDED (Manu, 2026-11-18)**: „P-1 ja, P-2 ja, P-3 Go, P-4 ja, P-6 ja“ (the audit's addendum), the additive
 Core change and scene format v14 included. **IMPLEMENTED Phase 1 (2026-11-18, container: TESTED)** as built in §2–§6.
@@ -8,7 +8,9 @@ Core change and scene format v14 included. **IMPLEMENTED Phase 1 (2026-11-18, co
 Room (2026-11-18, container: TESTED; reference PC: P-A … P-G pass on the shown surfaces, §10.8e)** as built in §10: SPACE menu row, no key, no keymap entry.
 **Phase 3 scope and P-12: Manu, 2026-11-19** (§1). **IMPLEMENTED Phase 3, several layers, Multiply and the UV transfer
 (2026-11-19, container: TESTED; reference PC: not run yet)** as built in §11; the P-13 refusal of a GoZ UV change is lifted.
-**Phase 4 (alpha brushes, stroke dynamics, brush presets): PROPOSED 2026-11-25, its decisions taken; 4a next** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
+**Phase 4 (alpha brushes, stroke dynamics, brush presets): PROPOSED 2026-11-25, its decisions taken; IMPLEMENTED 4a
+(alpha tip, projection with the wrap fallback, world spacing, stamp queue; 2026-11-25, container: TESTED; reference PC:
+not run yet) as built in §12; 4b next** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).
@@ -78,6 +80,24 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
   (Abweichung im Mittel ≤ 2/255).
 - **Gespeichert** wird jede Ebene als PNG mit Name, Deckkraft, Sichtbarkeit und Mischmodus; das flache PNG für
   OBJ/ZBrush enthält alle sichtbaren Ebenen.
+
+**Phase 4a – Alpha-Spitze, Projektion, Welt-Abstand, Stempel-Warteschlange (gebaut 2026-11-25, §12):**
+
+- **Spitze** im Panel: „Rund“ (der Pinsel wie bisher, **bitgleich** nachgewiesen) oder eines von sechs Test-Alphas
+  (Poren, Ader, Kratzer, Fleck, Punkte, Quadrat). Mit Alpha: „Winkel“ (Drehung gegen die Strichrichtung), „Kreismaske“
+  (aus = das Alpha bestimmt seine Form, P-19), Härte/Kurve nur mit Kreismaske. „Abstand“ (für jede Spitze) in % des
+  Stempeldurchmessers, gemessen **auf der Fläche** (P-18): rund 12,5 % (wie bisher), Alpha 100 %. Ausrichtung: „Strich
+  folgen“ (P-21). Cursor: das gedrehte Rechteck, der Kreis gedimmt.
+- **Projektion:** je Stempel eine Tangentialebene (gemittelte Normale der inneren halben Scheibe). Wo die Fläche unter der
+  Ebene stark wegkippt (Nasenflügel, Nasenspitze bei 5 %, Lippe über Lippe), wickelt sich der Stempel stattdessen um die
+  Fläche (**Wrap**, automatisch): am Nasenflügel war der ebene Stempel 1,43 : 1 gestreckt (so wie heute der runde
+  Tupfer), gewickelt 1,29 / 1,19 : 1 (Käfig / SubD 1). Im Mundwinkel (Falte) bleibt er eben – dort ist das besser.
+- **Schnelle Striche ohne Lücken:** die Stempel kommen in eine Warteschlange, die pro Bild 10 ms arbeitet (mehr, wenn
+  > 150 ms Arbeit hinter dem Cursor liegen); die Farbe kann dem Cursor kurz nachlaufen. **Loslassen friert nie ein**: der
+  Rest wird über die nächsten Bilder fertig gemalt, dann kommt der Undo-Schritt. Esc nimmt auch dann exakt zurück; Strg+Z,
+  ein neuer Klick, SubD-Tasten, Speichern warten auf das Ende (der Rest ist klein) und laufen dann.
+- **Kontaktbogen** der acht Prüfstellen: `docs/research/alpha_brush_4a_assets_2026-11-25/`. Auf Deinem PC bitte
+  `probe_paint.py --surfaces cage,subd1` laufen lassen (neue Zeilen P-H, P-I).
 
 ## 1. Decisions (Manu, 2026-11-18)
 
@@ -398,7 +418,7 @@ a symmetry plane), the resolution of a new stack (2048² / 1024², P-5) until th
 ### 10.4 The stroke and the dab — `mirai.paint.brush`, `PaintRoomController.begin / step / end`
 
 - Dabs are spaced `SPACING` = 0.25 of the brush radius on screen; at most `MAX_DABS_PER_EVENT` = 24 per drag event, the
-  last sample always (audit §8.1). The falloff: full inside the hardness plateau, then the chosen Soft curve to 0 at the
+  last sample always (audit §8.1). **Replaced in Phase 4a** (§12.3): world arc-length spacing and the stamp queue. The falloff: full inside the hardness plateau, then the chosen Soft curve to 0 at the
   radius.
 - **Stroke buffer** (principle 4): per texel `S ← S + (1 − S) · flow · falloff`; the layer shows the stroke's start pixels
   with the colour at `opacity · S` (Normal, straight alpha, 8 bit) - opacity caps one stroke and does not build up inside
@@ -681,6 +701,158 @@ paint masks, the 2D UV view (all audit Phase 3, not chosen for this slice), laye
 (P-11: the layer steps hold compressed snapshots - 16 MiB raw per layer at 2048², a fraction compressed), a UV transfer
 for a later Mirai UV tool (the function takes any old / new UVs of one topology), keys (after "Taste passt").
 
+## 12. Phase 4a — built (2026-11-25): alpha tip, projection, world spacing, stamp queue
+
+Built on `claude/adoring-cerf-ey4n1n` from `922d964` (the proposal and its decisions). Basis: the
+[proposal](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) §1–§5, §8, §9 "4a", §10 (P-18 … P-28 decided,
+Manu 2026-11-25). Values marked `PROVISIONAL` are agent-set and tuned against the gates; still no key, no keymap entry,
+no scene-format change, no new dependency. The foundations (texel map, store, recorder, live texture, `seam_pad`,
+`mirror`, Pick) are unchanged; `PaintSurface.footprint` is the same computation behind a shared `_gather`.
+
+### 12.1 The tip (§4.7) — `mirai.paint.brush.TipSettings`, `mirai.paint.alpha`
+
+- `BrushSettings` gains two frozen sub-objects with "today's round brush" as defaults: `tip: TipSettings` (`alpha`: None =
+  the round tip, or an alpha id; `kreismaske`, off by default, P-19) and `dynamics: StrokeDynamics` (`spacing`,
+  `orientation` "stroke", `angle`). `with_tip` switches tips; switching between round and alpha sets that kind's default
+  spacing (round 12.5 %, alpha 100 %). Single emitter only (spray is 4b).
+- `alpha.AlphaImage`: uint8 grey (white = paint), a mip chain (2×2 box halving down to 4 px), `level_for` (the level whose
+  long side is closest to the stamp's diameter in texels, from the gather count) and a vectorised bilinear `sample` (four
+  `take`s, float32 only on the gathered texels, 0 outside the rectangle). The world radius (P-7) is the half-extent of the
+  alpha's long side.
+- **Test alphas** (§9 "test-alpha chooser"): six procedural, deterministic images (`TEST_ALPHAS`: Poren, Ader, Kratzer,
+  Fleck, Punkte, Quadrat; NumPy, fixed seeds, black border), generated on first use. No library, import, presets or
+  thumbnails (4c). An unknown id resolves to the round tip.
+- **The round tip through the new pipeline is bit-identical to the Phase 2 dab** — pinned first, before the rebuild,
+  against a frozen copy of `_dab` on the Gollum head's cage and SubD 1, mirror on and off, paint and erase
+  (`tests/test_paint_alpha.py`).
+
+### 12.2 The projection (§4.1–§4.4) — `mirai.paint.stamp`
+
+- Per placement: gather within `R = r · |half extents|` on triangles facing the hit's way; the **frame normal** is the
+  area-weighted mean of the triangle normals in the inner disc (`INNER_DISC` 0.5 r; `PaintSurface._texel_area` = a
+  triangle's world area per texel); the **tangent** is the placement's stroke direction projected into the plane, else
+  the view's up (a click without movement), turned by the angle offset; local `(a, β, h)` per texel.
+- **Planar** (the default): coverage = alpha × depth window (`|h|` full to 0.35, 0 from 0.5) × facing fade
+  (`smoothstep(0.2, 0.5, n · n_tri)`) × [Kreismaske: the round falloff]. Texels with no coverage are not written.
+- **Wrap projection — built in 4a (deviation from "planar only"):** the §4.3 validation failed at the **nostril wing**
+  (planar aspect 1.43 cage / 1.36 SubD 1 at 3 %, > 1.3; reported before building, as agreed). Where the planar stamp is
+  *convexly stressed* (`WRAP_STRESS`: > 8 % of the stamp's texels below the plane beyond the depth window's full part or
+  on triangles the fade dims) and not in a crease (`SADDLE`: ≤ 4 % rising above it), the coordinates are **geodesic polar
+  coordinates** (a discrete exponential map, [E] Schmidt et al. 2006, Substance "Tangent | Wrap"): shortest edge paths
+  from the centre's triangle (Bellman-Ford rounds over the edges, vectorised), each vertex's 2D coordinate = its parent's
+  + the edge projected into the frame turned onto the parent's tangent plane (length kept), summed along the tree by
+  pointer jumping, texels interpolating their triangle's corners; unreachable triangles get nothing. In the mouth corner
+  (a crease) a geodesic disc grows beyond π r² (area 1.47) and the planar stamp is closer to the ideal, hence `SADDLE`.
+  Per placement the choice is automatic; the mirror uses the main stamp's projection.
+- **Mirror:** the reflected frame (`reflect` of t, b, n: its handedness flips, an asymmetric alpha appears mirrored) at
+  the reflected centre; a texel in both counts once with the larger coverage (as the round tip).
+- `combine` / `PaintStroke.dab_product`: K stamps in one write as `S ← 1 − (1 − S) · Π(1 − flow_k · c_k)` (pinned equal to
+  one-by-one within float tolerance). In 4a every placement is one stamp (plus its mirror), so `dab` is used; the
+  product is ready for spray (4b).
+
+### 12.3 Spacing and the stamp queue (§5.2–§5.4, P-18, P-27) — `mirai.paint.dynamics`, the controller
+
+- **World arc length** (P-18): `spacing` in fractions of the stamp diameter (2–300 %), along the polyline of the hits of
+  the cursor's rays. Input events only add rays (`StrokeQueue.add_ray`, with a sample count from the screen distance over
+  a step of the spacing in pixels clamped to 2–6 px); the sampler hits the shown surface per sample, places stamps every
+  `spacing · 2r`, carries the remainder across events, ends a run at a hit gap (a miss, or a jump > max(2 r, 6 sample
+  steps): a silhouette). Placements are a pure function of the rays and sample counts (pinned: one run vs a run starved
+  to one step per frame give the same placements).
+- **"Strich folgen"** (P-21): placement k's tangent = the chord from k−1, smoothed **on the surface** (the previous
+  tangent turned by the minimal rotation between the two hit normals, the chord projected into the new plane) with a
+  weight per placement `α = 1 − exp(−spacing / 0.5 r)`. **Deviation:** the proposal's fixed α = 0.5 lagged 22–25° behind
+  the stroke across the nose at 100 % spacing (stamps 2 r apart need no jitter smoothing); the arc-length weight gives
+  α ≈ 0.63 at 25 % spacing (as dense as before) and 0.98 at 100 %. A run's first placement waits for the second (its
+  direction); a run that ends earlier takes its partial chord, or none (the view's up).
+- **The queue** (`StrokeQueue.run(budget)`, `PaintRoomController.frame()` from `Application.update_viewport` before the
+  paint display's update): sampling and evaluating within the frame budget (`frame_budget`: 10 ms; while more than
+  `BACKLOG_S` = 150 ms of work — priced from running means on this machine — trails the cursor, the excess at once up to
+  22 ms). The sampler runs only when the placement queue is empty: the backlog is the unsampled path, which trails the
+  cursor and catches up, never gaps.
+- **Release** never evaluates in the event: the stroke is **finishing** (`PaintRoomController.finishing`); the next
+  frames drain the rest (30 ms each), then `seam_pad` and one History step (`_commit`). Esc while finishing restores
+  exactly (also the first stroke's stack). Ctrl+Z / Ctrl+Y / Shift+S / the SubD keys while finishing: the session takes
+  the key, **finishes the stroke** (`settle`, bounded by the backlog) and lets the key run; the same for a new press,
+  saving, LookDev and closing the room. **Interpretation:** "warten wie beim Malen" became "wait for the finish, then
+  run" for these, because refusing a Ctrl+Z pressed 50 ms after a release would drop it; through the API (`dispatch_command`)
+  Undo is still refused while finishing, as while stroking, and `can_run` stays pure (pinned by `test_iv_can_run_is_pure`).
+  A brush change during a stroke no longer changes the running stroke's radius (it is taken at the press with the spacing).
+- **Cursor:** an alpha tip draws its rectangle, turned by the stroke's last direction (hover: the view's up) and the
+  angle, in the preview layer; the circle dimmed; the mirror's rectangle dimmed. The round tip: the circle as before.
+- **Panel** (`gui.paint_panel`): "Spitze" (a combo: Rund + the six test alphas), with an alpha "Winkel" and
+  "Kreismaske"; "Abstand" (logarithmic slider, every tip); hardness and curve only for the round tip or with the
+  Kreismaske. `Application.set_paint_tip`. The layout is `PROVISIONAL` until the 4c picker (P-23).
+
+### 12.4 Curvature validation (§4.3) — `tests/paint_alpha_regions.py`, `tests/test_paint_alpha.py`
+
+Fixed probe placements on the Gollum head (front-view rays): nose tip, nose ridge, nostril wing, lip edge, mouth corner,
+cheek, lid, the UV seam on the chin (the head's UV seam runs down the face's midline). A round test disc alpha, 3 %:
+
+| 2048², 3 % | stretch area / aspect, cage | SubD 1 | projection (cage / SubD 1) | round dab's aspect (cage / SubD 1) |
+|---|---|---|---|---|
+| nose tip | 0.98 / 1.02 | 1.04 / 1.01 | wrap / planar | 1.03 / 1.01 |
+| nose ridge | 1.01 / 1.01 | 1.01 / 1.02 | planar | 1.03 / 1.03 |
+| nostril wing | 1.02 / **1.29** | 1.05 / **1.19** | wrap (planar: 0.76 / 1.43 and 0.89 / 1.36) | 1.42 / 1.33 |
+| lip edge | 1.03 / 1.02 | 1.03 / 1.01 | planar | 1.02 / 1.02 |
+| mouth corner | 1.16 / 1.15 | 1.11 / 1.07 | planar | 1.02 / 1.06 |
+| cheek | 1.02 / 1.00 | 1.01 / 1.01 | planar | 1.00 / 1.00 |
+| lid | 1.08 / 1.01 | 1.05 / 1.01 | planar | 1.06 / 1.06 |
+| UV seam | 1.09 / 1.07 | 1.01 / 1.01 | planar | 1.03 / 1.01 |
+
+- **Stretch:** every region within area ±25 % and aspect ≤ 1.3 at 3 % on both surfaces (tested at 2048², the default).
+  At 5 % (for the record): the mouth corner's area is 1.17 / 1.32, its aspect 1.29 / 1.16; everything else passes.
+- **Leak:** no painted texel on a triangle unconnected to the centre within the reach (another sheet) at any region. The
+  planar 5 % stamp on the lip edge reached the lower lip (155 / 130 texels); the stressed placement wraps: 0 (pinned).
+- **Seam:** a stamp centred on the midline seam paints both islands; across the seam neighbouring texels differ by no
+  more than the alpha's own slope allows (a cone alpha; pinned).
+- **Frame jump** (scripted strokes at 100 % spacing: across the nose, over the lip, along the ridge, over the wing).
+  **Deviation in the metric:** literally (n and t between successive placements) the surface itself turns 45–80° per
+  placement on these strokes (2 r apart) — no frame can stay under 15°, a perfect one included. Measured instead is the
+  frame's **own** error: the normal jump beyond the turn of a smooth reference (the same inner-disc estimator on SubD 2)
+  and the tangent's angle from the stroke's own direction. Result: normal excess ≤ 11° on the cage and ≤ 12° on SubD 1,
+  **except at the lips' line on SubD 1: 17.5°** (a disc centred on the crease averages both lips; any point normal
+  differs from a disc's mean there) — the test allows 20° for that stroke only; tangent ≤ 13.7° everywhere.
+- **Mirror:** the asymmetric "Ader" at the cheek with the head's X plane: the mirror stamp's coverage at each texel
+  equals the main stamp's at the reflected point (mean difference < 0.06; the reflected frame is left-handed).
+- **Contact sheet** for Manu (`experiments/drag_cost/contact_sheet_paint_4a.py`): Poren, Ader and Kratzer at the eight
+  regions, cage and SubD 1, 3 % and 5 %:
+  [`docs/research/alpha_brush_4a_assets_2026-11-25/`](../research/alpha_brush_4a_assets_2026-11-25/)
+  (`contact_sheet_{cage,subd1}_{3,5}pct.png`). Each label names the projection the middle placement chose.
+
+### 12.5 Measurements [C] (container: Xeon, Python 3.13, NumPy 2.2.6, llvmpipe; `probe_paint.py`, 2048², mirror on)
+
+Verbatim in [`RESULTS_PAINT_PHASE4A_CONTAINER_2026-11-25.md`](../../experiments/drag_cost/RESULTS_PAINT_PHASE4A_CONTAINER_2026-11-25.md).
+The frame rows are llvmpipe (5.5–7 ms cage, 10–15 ms SubD 1; the reference PC drew 4–6 ms, §10.8e).
+
+| Row (2048², mirror on) | cage p50 / p95 | SubD 1 p50 / p95 | gate (reference PC) |
+|---|---|---|---|
+| P-H alpha 3 %: dab + composite (CPU) | 4.1 / 6.4 ms | 4.5 / 7.8 ms | — |
+| P-H alpha 3 %: total with the llvmpipe frame | 10.4 / 14.7 ms | 15.7 / 20.8 ms (FAIL here: the frame) | p95 ≤ 16.7 ms |
+| P-A round 3 % in the same run (CPU / total) | 3.1 / 4.2 · 8.7 / 10.6 ms | 3.5 / 4.9 · 13.2 / 17.9 ms (FAIL here) | (passed on the RPC: 9–11 ms) |
+| P-H alpha 5 %: dab + composite / total | 7.2 / 11.2 · 14.4 / 18.4 ms | 7.0 / 12.7 · 19.5 / 24.9 ms | p95 ≤ 33 ms |
+| P-I 2-s stroke, round 12.5 %: frame / release → History / finishing max | 9.5 / 12.8 ms · 8.4 ms · 5.3 ms | 15.1 / 20.7 ms · 12.7 ms · 10.2 ms | ≤ 33 · ≤ 250 · ≤ 50 ms |
+| P-I 2-s stroke, Poren 100 % | 6.5 / 10.8 ms · 7.7 ms · 5.3 ms | 13.2 / 17.7 ms · 17.0 ms · 14.0 ms | same |
+| P-I flick 0.17 s, round (info) | 112 placements; release → History 186 ms, 5 finishing frames ≤ 40 ms | 109; 299 ms, 7 frames ≤ 48 ms | no gate |
+
+- The alpha placement costs **1.5–1.6×** the round dab on the CPU (the gather of the square's corners at `r √2`, the
+  frame, the sampling; 20–25 % of the placements on this stroke wrapped, the wrap costing ~1.5× a planar stamp).
+- The 2-s stroke keeps up: nothing is left at the release, every 4a stroke gate passes on the container.
+- Tests (container): `tests/` 8261 passed, 3 failed — the same 3 fail on `922d964` (the box-paint scenario and its
+  `can_run` purity variant, `test_scene_menu_local_tmp::test_probe_menu_wiring`; pre-existing, not 4a), 8 skipped;
+  `tests/test_gl_*.py` alone 444 passed; `experiments/drag_cost/tests` 111 and `experiments/morph_lab/tests` 49 passed.
+
+### 12.6 Not in 4a / open
+
+- **Reference-PC run open:** `python experiments/drag_cost/probe_paint.py --surfaces cage,subd1` (P-H, P-I are the 4a
+  rows). The 3 % alpha placement is the tight one: its CPU part is p95 6.4 / 7.8 ms (cage / SubD 1), 1.5–1.6× the round
+  dab of the same run (4.2 / 4.9 ms), which totalled 9–11 ms p95 on the RPC with its frame; scaled alike the alpha is
+  ≈ 14–17 ms p95 [H] against the 16.7 ms bar. If it misses: the wrap's share (20–25 % of the placements on this stroke)
+  and the gather of the square's corners (`R = r √2`) are the levers.
+- 4b: rotation / scale / flow jitter, scatter, the other orientation modes, spray, counter-based RNG (the queue's
+  placements are already timing-independent). 4c: library, presets, picker, import, starter set. 4d: colour jitter.
+- The flick (the whole path in 0.17 s) leaves a backlog the room drains over the following frames (P-27: catch-up, never
+  a freeze); its release → History is not a gate.
+
 ## Praxistest für Manu (Deutsch, ca. 5 Minuten, optional)
 
 Phase 1 hat nur einen sichtbaren Teil, die UV-Prüfung:
@@ -740,3 +912,31 @@ Tasten, die Dir passen, bitte mit „Taste passt“ (für die Keymap); Panel-Auf
    Nähte)? Strg+Z: alte UVs und alte Bemalung zurück? Wie lange hat das Übernehmen gedauert?
 
 Panel-Aufbau, Beschriftungen und die Grenze von 8 Ebenen sind vorläufig.
+
+## Praxistest Alpha-Spitze (Phase 4a) für Manu (Deutsch, ca. 15 Minuten)
+
+Vorher bitte den **Kontaktbogen** ansehen: `docs/research/alpha_brush_4a_assets_2026-11-25/` – je Bild acht Stellen am
+Gollum-Kopf (Nasenspitze, Nasenrücken, Nasenflügel, Lippenkante, Mundwinkel, Wange, Lid, UV-Naht am Kinn) mit Poren, Ader
+und Kratzer, Käfig und SubD 1, Radius 3 % und 5 %. Die Beschriftung sagt, ob der Stempel **eben** oder **gewickelt**
+aufgelegt wurde. Sieht etwas gestreckt, abgeschnitten oder falsch aus?
+
+1. `Gollum_Head_rigging_test` öffnen, Kopf als Edit-Objekt, SPACE → **„Paint Room öffnen“**. Im Panel ist neu
+   **„Spitze“**. Erst mit **„Rund“** einen Strich malen: fühlt er sich an wie vorher (er soll gleich aussehen)?
+2. **Spitze → Poren**. „Abstand“ springt auf 100 %. Über dem Kopf zeigt der Cursor ein **Rechteck** (gedimmter Kreis
+   dazu). Ein paar Striche über die Wange und die Nase: sitzen die Poren auf der Haut, ohne Lücken und ohne Doppelungen?
+   Abstand 50 % / 200 % probieren: ändert sich die Dichte auf der Haut, egal wie nah Du herangezoomt bist?
+3. **Ader** und **Kratzer**: folgen sie Deiner Strichrichtung („Strich folgen“)? Mit „Winkel“ 90° quer stellen. Wirkt
+   die Richtung über die Nase hinweg ruhig, oder dreht sie zu stark nach?
+4. **Nasenflügel, Nasenspitze, Lippen, Mundwinkel, Lid** mit Poren und Ader (3 % und 5 %): wird etwas durch die Lippe
+   auf die Unterlippe oder in das Nasenloch gemalt? Wirkt ein Stempel am Nasenflügel verzerrt?
+5. **Über die UV-Naht** (senkrecht durch die Gesichtsmitte, z. B. am Kinn): Bruch sichtbar?
+6. **Spiegeln** an: erscheint auf der anderen Seite das gespiegelte Rechteck, und ist die Ader dort spiegelbildlich?
+7. **Sehr schnell** quer über das Gesicht wischen und sofort loslassen: friert etwas ein? Läuft die Farbe kurz nach und
+   wird dann fertig? Gibt es Lücken?
+8. Direkt nach dem Loslassen **Strg+Z**: ist genau dieser Strich weg? Mitten in einem schnellen Strich (noch beim
+   Nachlaufen) **Esc**: alles wie vorher?
+9. „Kreismaske“ an: wird das Alpha rund abgeschnitten (Härte/Kurve erscheinen)? Für Poren sinnvoll, für Adern nicht?
+10. **SubD an** (V), dasselbe nochmal: Unterschied zum Käfig?
+
+Rückmeldung am liebsten mit einem Satz je Punkt. Die Test-Alphas sind nur zum Ausprobieren (die Starter-Sammlung kommt in
+4c nach Deinem Blick auf einen eigenen Bildbogen); Panel-Aufbau und Werte sind vorläufig. Keine neue Taste.
