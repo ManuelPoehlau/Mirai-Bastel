@@ -890,7 +890,7 @@ The Gollum head at SubD 1 (≈ 9k faces) is about a tenth of that geometry.
 
 ### 12.3 Quality adaptation (LD-3, after P3 since 2026-11-21, §0.1) [P]
 
-> **Pointer 2026-11-25:** an activity state (Interactive / Settling / Refine), two budgets and progressive refinement are assessed in [LOOKDEV_LD3_ADAPTIVE_PROGRESSIVE_ASSESSMENT_2026-11-25](../research/LOOKDEV_LD3_ADAPTIVE_PROGRESSIVE_ASSESSMENT_2026-11-25.md) (research, not decided). The text below is unchanged.
+> **Pointer 2026-11-25:** an activity state (Interactive / Settling / Refine), two budgets and progressive refinement are assessed in [LOOKDEV_LD3_ADAPTIVE_PROGRESSIVE_ASSESSMENT_2026-11-25](../research/LOOKDEV_LD3_ADAPTIVE_PROGRESSIVE_ASSESSMENT_2026-11-25.md) (research). Its answers (Manu, 2026-11-25) are in [AD-040](../architecture/AD-040-LOOKDEV-LD3-QUALITY.md) (PROPOSED), which supersedes this section where they differ (AD-040 §13). The text below is unchanged.
 
 - **Capability detection on room entry, by feature and never by GPU name:**
   - compile the LookDev variants;

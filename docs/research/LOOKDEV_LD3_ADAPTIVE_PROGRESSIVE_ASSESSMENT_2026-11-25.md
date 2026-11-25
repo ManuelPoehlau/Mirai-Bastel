@@ -1,6 +1,6 @@
 # LD-3 extension: adaptive quality during interaction and progressive refinement when idle — assessment
 
-**Status:** ASSESSMENT (2026-11-25, English with a German summary; research, no decision, no code change). Asked by
+**Status:** ASSESSMENT (2026-11-25, English with a German summary; research, no decision, no code change). **Answered 2026-11-25** (Manu: „F-R1 bis F-R4 wie vorgeschlagen, F-R5 Bild speichern jederzeit möglich, schreib das AD“): the architecture is [AD-040](../architecture/AD-040-LOOKDEV-LD3-QUALITY.md) (PROPOSED). Asked by
 Manu before LD-3 starts: should the quality manager (LD-3) also lower quality during interaction and refine the image
 when the artist pauses, as Blender and Marmoset Toolbag do?
 **State inspected:** `main` @ `1e5d751` (P3 S9 „Weicher Schatten“ built). No `src/`, `tests/`, Core or scene-format
