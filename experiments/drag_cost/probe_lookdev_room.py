@@ -49,6 +49,19 @@ runs its preparation frames first, unmeasured):
 - `... drag pingpong`      the same with two maps used alternately (`KeyShadow(maps=2)`);
 each with `KeyShadow.renders` over the row's frames (warm-up included: every frame for a drag, 0 for a still pose).
 
+LD-3a rows (AD-040 §11.1; `--ld3a none` skips them). The room's quality manager runs as in the app (the probe's own
+`GL_TIME_ELAPSED` around each frame makes the room's timer skip, so Auto never moves: every tier is set explicitly):
+- `tier entwurf / mittel / hoch`  each tier with refinement off and the run's effects (S8 / S9 on when built), framed and
+                           close, at each size of `--ld3a-sizes` (default 1024x768 and 1920x1080; the window is resized) -
+                           Auto's 12 ms target and the tier table (Q-LD3-2);
+- `drag every / every_2nd / frozen` (+ ` flush`, ` pingpong`)  Hoch with a morph weight step on the head every frame
+                           (the room stays Interactive), the key map per `shadow_updates` - Q-LD3-1;
+- `idle hoch / maximal`    „In Ruhe verfeinern“ on, S9 allowed, the room settled to Converged: the idle frame (S9; Maximal
+                           with the 2048² map and the 256-sample cube) against the 50 ms ceiling, the first refine
+                           frame (Maximal: the 2048² map's creation and the 256-sample prefilter, `EnvCube.last_ms`), and
+                           the free VRAM before / after (`GL_NVX_gpu_memory_info`);
+- the entries below run with Auto and refinement on (Maximal): the precompiled union (AD-040 §5).
+
 Entering (first in the process, then once more):
 - `open_lookdev` wall ms (display values, sync_views, the LookDraws);
 - the shader preparation behind the status line (`Viewport.prepare_lookdev`): programs compiled and their ms - cold
@@ -167,7 +180,16 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--surfaces", default=",".join(SURFACES))
     parser.add_argument("--effects", default=None,
                         help="AD-039: the P3 effects to measure, comma separated, or 'none' (default: every built one)")
+    parser.add_argument("--ld3a", default="all", choices=("all", "none"),
+                        help="AD-040 §11.1: the LD-3a rows (tiers, drag policies, idle) - 'none' skips them")
+    parser.add_argument("--ld3a-sizes", default="1024x768,1920x1080",
+                        help="AD-040 §11.1: the sizes of the tier rows (WxH, comma separated)")
     args = parser.parse_args(argv)
+    try:
+        args.ld3a_sizes = tuple(tuple(int(v) for v in item.lower().split("x")) for item in args.ld3a_sizes.split(",")
+                                if item)
+    except ValueError:
+        parser.error("--ld3a-sizes: WxH[,WxH]")
     args.surfaces = tuple(s for s in args.surfaces.split(",") if s)
     if args.draws < 1 or not set(args.surfaces) <= set(SURFACES):
         parser.error("--draws >= 1, --surfaces from cage,subd1")
@@ -322,6 +344,117 @@ def p3_rows(window, size, query, app, draws: int, effects, floor: float, lid) ->
     return lines
 
 
+# -- AD-040 LD-3a rows ------------------------------------------------------------------------------------------------
+
+def set_quality(window, size, query, app, **changes) -> None:
+    """Change the room's quality settings; a change that compiles runs its preparation frames (not measured)."""
+    app.set_lookdev_quality(**changes)
+    for _ in range(10):
+        if not app.lookdev.preparing:
+            break
+        app.update_viewport(0.0)
+        frame(window, size, query, app)
+    assert not app.lookdev.preparing
+
+
+def settle(window, size, query, app, until: str = "converged", dt: float = 0.1) -> tuple[float, float] | None:
+    """Tick at `dt` until the room's activity is `until`; the (GPU, wall) ms of the frame that first draws it."""
+    for _ in range(100):
+        app.update_viewport(dt)
+        state = app.lookdev_activity
+        result = frame(window, size, query, app)
+        if state == until:
+            return result
+    return None
+
+
+def nudge(app) -> None:
+    """A camera step: the room becomes Interactive (the next tick)."""
+    app.camera.set_view(app.camera.yaw + 0.002, app.camera.pitch)
+    app._camera_changed()
+
+
+def resize(window, app, wanted) -> tuple[int, int] | None:
+    """The window and the app at `wanted` (None when the framebuffer does not follow)."""
+    window.set_size(*wanted)
+    window.switch_to()
+    window.dispatch_events()
+    got = tuple(window.get_framebuffer_size())
+    app.set_viewport_size(*got)
+    app.update_viewport(0.0)
+    return got if got == tuple(wanted) else None
+
+
+def ld3a_rows(window, size, query, app, draws: int, effects, floor: float, lid, sizes=()) -> list[str]:
+    """AD-040 §11.1: the tier rows (framed / close, per size), the drag policies, the idle rows."""
+    from drag_cost.probe_lookdev import set_view, vram_free
+    from viewport.lookdev_shadow import KeyShadow
+
+    lines = [f"  LD-3a (AD-040): timer_query {app.viewport.lookdev_timer_available()}, effects as allowed: "
+             f"{', '.join(effects) or 'none'}"]
+    set_effects(window, size, query, app, tuple(effects))
+    set_quality(window, size, query, app, refine=False)
+    original = tuple(window.get_framebuffer_size())
+    for wanted in list(sizes) or [original]:
+        got = resize(window, app, wanted) if wanted != original else original
+        if got is None:
+            lines.append(f"  tier rows at {wanted[0]}x{wanted[1]}: the window did not resize - skipped")
+            continue
+        for view in ("framed", "close"):
+            set_view(app, view)
+            for tier in ("entwurf", "mittel", "hoch"):
+                set_quality(window, got, query, app, tier=tier)
+                gpu, wall = rounds(window, got, query, app, draws)
+                config = app.viewport.lookdev_config
+                on = [n for n, v in config.effects.as_dict().items() if v]
+                lines.append(row(f"tier {tier:<7} {view:<6} {got[0]}x{got[1]}", gpu, wall)
+                             + f"   ({app.lookdev_activity}; {len(on)} effects)")
+    if tuple(window.get_framebuffer_size()) != original:
+        resize(window, app, original)
+    set_view(app, "framed")
+    if "shadow" in effects and lid is not None:
+        def step(i):
+            app.set_morph_weight(20 + (i % 2) * 20 + (i // 2) % 3, lid, quiet=True)
+
+        set_quality(window, size, query, app, tier="hoch")
+        for policy in ("every", "every_2nd", "frozen"):
+            set_quality(window, size, query, app, drag_updates=policy)
+            for suffix, shadow in (("", KeyShadow()), (" flush", KeyShadow(flush=True)),
+                                   (" pingpong", KeyShadow(maps=2))):
+                passes = app.viewport.lookdev_pass
+                if passes.shadow is not None:
+                    passes.shadow.release()
+                passes.shadow = shadow
+                gpu, wall = rounds(window, size, query, app, draws, step)
+                lines.append(row(f"drag {policy}{suffix}", gpu, wall, floor)
+                             + f"   KeyShadow.renders {shadow.renders} / deferred {shadow.deferred} in "
+                             f"{WARMUP_ROUNDS + draws} frames ({app.lookdev_activity})")
+        app.set_morph_weight(0, lid, quiet=True)
+        set_quality(window, size, query, app, drag_updates="every")
+    if "soft_shadow" in effects:
+        set_quality(window, size, query, app, tier="hoch", refine=True)
+        for idle in ("hoch", "maximal"):
+            set_quality(window, size, query, app, idle_tier=idle)
+            before = vram_free()
+            nudge(app)
+            app.update_viewport(0.0)
+            frame(window, size, query, app)
+            first = settle(window, size, query, app, "refine")
+            passes = app.viewport.lookdev_pass
+            cube = passes.cube_max if idle == "maximal" else passes.cube
+            settle(window, size, query, app, "converged")
+            gpu, wall = rounds(window, size, query, app, draws)
+            config = app.viewport.lookdev_config
+            lines.append(row(f"idle {idle}", gpu, wall, floor)
+                         + f"   ({app.lookdev_activity}: S9 {config.effects.soft_shadow}, map {config.shadow_size}, "
+                         f"cube {config.cube_samples}; {app.lookdev_quality_status()})")
+            if first is not None:
+                lines.append(f"    first refine frame GPU {first[0]:7.2f} ms, wall {first[1]:7.2f} ms; cube build "
+                             f"{cube.last_ms if cube is not None else 0.0:.1f} ms wall; {before} -> {vram_free()}")
+        set_quality(window, size, query, app, refine=False, idle_tier="hoch")
+    return lines
+
+
 def enter(window, size, query, app, label: str) -> list[str]:
     """Open the room and drive the ticks until its first LookDev frame; what each step costs."""
     viewport = app.viewport
@@ -369,13 +502,18 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     window, app = build_app(tuple(args.size))
     size = window.get_framebuffer_size()
-    print(f"LookDev room probe (AD-038 LD-1, 2026-11-19; AD-039 S1-S7), {size[0]}x{size[1]}, {args.draws} rounds "
-          f"after {WARMUP_ROUNDS}")
+    print(f"LookDev room probe (AD-038 LD-1, 2026-11-19; AD-039 S1-S9; AD-040 LD-3a), {size[0]}x{size[1]}, "
+          f"{args.draws} rounds after {WARMUP_ROUNDS}")
     for line in machine_info(gl.gl_info.get_version_string(), gl.gl_info.get_renderer()):
         print(line)
     print(f"Source: {source_state()}")
     print(f"Scene: {SCENE.name}, edit object {app.scene.edit_object.name!r}, view framed (3/4)")
     print(f"P3 effects (AD-039): {', '.join(args.effects) or 'none'}")
+    if args.ld3a != "none":  # AD-040 §11.1: the entries compile the union of Auto and the refinement's Maximal
+        app.set_lookdev_quality(tier="auto", refine=True, idle_tier="maximal")
+    q = app.lookdev_quality
+    print(f"LD-3a quality (AD-040) for the entries: tier {q.tier}, refine {q.refine}, idle {q.idle_tier}; "
+          f"LD-3a rows: {args.ld3a}")
     lid = probe_target(app) if "shadow" in args.effects else None
     if "maps" in args.effects:
         import tempfile
@@ -410,6 +548,9 @@ def main(argv=None) -> int:
         lines.append(row("lookdev (as entered)" if args.effects else "lookdev", gpu, wall, floor))
         if args.effects:
             lines += p3_rows(window, size, query, app, args.draws, args.effects, floor, lid)
+        if args.ld3a != "none":
+            lines += ld3a_rows(window, size, query, app, args.draws, args.effects, floor, lid, args.ld3a_sizes)
+            app.set_lookdev_quality(tier="auto", refine=True, idle_tier="maximal")
         app.close_lookdev()
         gpu, wall = rounds(window, size, query, app, args.draws)
         lines.append(row("modelling after", gpu, wall, floor))

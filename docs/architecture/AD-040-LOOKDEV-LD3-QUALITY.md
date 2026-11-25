@@ -1,7 +1,10 @@
 # AD-040 — LookDev LD-3: quality manager with an activity state and idle refinement
 
-**Status:** **ACCEPTED (2026-11-25, Manu):** „OK, ich gebe das Go und starte dann in einer neuen Session“. LD-3a is
-next (a fresh session); Q-LD3-1 … Q-LD3-3 stay open as §12.2 proposes (Q-LD3-1 / -2 decided by the §11.1 run).
+**Status:** **ACCEPTED (2026-11-25, Manu):** „OK, ich gebe das Go und starte dann in einer neuen Session“. **LD-3a
+built 2026-11-25** (§14: quality manager, block „Qualität“, machine setting; no shader change, every pin kept; Hoch
+without refinement bit-identical to `1e5d751`); the reference-PC run (§11.1 / §14.4) and Manu's practical test
+(§14.5) are next; Q-LD3-1 … Q-LD3-3 stay open as §12.2 proposes (Q-LD3-1 / -2 decided by the §11.1 run). LD-3b only
+after §12.1 point 3.
 Proposed 2026-11-25 (Architecture Gate). The number AD-040 follows
 AD-039. New class, file and panel names stay `PROVISIONAL` until built.
 **Decisions taken into it** (Manu, 2026-11-25, verbatim): „F-R1 bis F-R4 wie vorgeschlagen, F-R5 Bild speichern
@@ -524,3 +527,138 @@ python experiments\drag_cost\probe_lookdev_room.py | Tee-Object -FilePath lookde
 | X4 | "Qualität: Auto / Hoch / Mittel / Entwurf" with a reason line | the same, plus „In Ruhe verfeinern“, „Ruhe-Qualität“, „Wartezeit“ | F-R1, F-R2, F-R4 |
 | X5 | the capture: one render of what the room shows | by state, never waiting | F-R5 |
 | X6 | (implicit) view state | a machine setting | F7: quality belongs to the PC |
+
+---
+
+## 14. Implementation note — LD-3a built (2026-11-25)
+
+**Decision:** Manu, 2026-11-25: „LD-3a bauen nach docs/architecture/AD-040-LOOKDEV-LD3-QUALITY.md … Umfang: §2–§5,
+§7–§9 für LD-3a, Gates §10.1, Probe-Zeilen §11.1. Keine Shader-Änderung, alle Pins bleiben. LD-3b ist nicht Teil
+dieser Session.“ Built on `d744aa3` (`src/` as at `1e5d751`).
+
+**Kurzfassung (Deutsch):**
+- Im LookDev-Panel gibt es unter „Effekte“ den neuen Block **„Qualität“**: „Qualität (beim Arbeiten)“ Auto / Hoch /
+  Mittel / Entwurf (Standard Auto), **„In Ruhe verfeinern“** (Standard aus), „Ruhe-Qualität“ Hoch / Maximal,
+  „Wartezeit“ 0.1–2 s (Standard 0.3 s), darunter eine Statuszeile („Interaktiv – Hoch (Auto: 8 ms)“, „Ruhe – Maximal“).
+  Unter „Mehr“ zusätzlich **„Schatten beim Ziehen“** (jedes Frame / jedes 2. Frame / eingefroren) für deinen
+  Praxistest zu Q-LD3-1; Standard „jedes Frame“ = heute.
+- Die Einstellung wird **pro Rechner** gespeichert (`~/.mirai_bastel/lookdev_quality.json`), nicht in der Szene und
+  nicht im Undo.
+- Der Raum erkennt Ruhe an der **Frame-Signatur** (Kamera, Mesh-Revisionen, Studio, Effekte, Materialien, Augen,
+  Mal-Textur, Qualität). Bleibt sie 0.3 s gleich, gilt die Ruhe; jede Änderung ist im selben Tick wieder „interaktiv“.
+- Mit „In Ruhe verfeinern“: „Weicher Schatten“ nur in Ruhe; „Maximal“ dazu Schattenkarte 2048² und der Cube mit 256
+  Samples. Auto misst die GPU-Zeit (nie blockierend) und geht nur bei interaktiven Frames eine Stufe herunter.
+- **Hoch ohne Verfeinern ist pixelgleich mit vorher** (geprüft gegen `1e5d751`), keine Shader-Änderung, alle Pins
+  unverändert. Im Modelling Room entsteht nichts davon.
+- „Bild speichern“ speichert sofort, was der Raum gerade zeigt, und nennt den Zustand („– interaktiv (Hoch)“,
+  „– Ruhe (Maximal)“).
+
+### 14.1 What is built
+
+| Layer | Built |
+|---|---|
+| `viewport/lookdev_quality.py` (new, pure) | `RenderConfig` (effects, shadow_size, shadow_updates, cube_samples, samples = 1, jitter = False); `resolve(tier, allowed, features, refine, state, idle_tier, drops, drag_updates)` with the §2.2 table (Entwurf: shadow, eye shadow, thickness, dual lobe, S8, S9 off; Mittel: S9 off; Hoch: as allowed; Maximal: 2048² + 256 samples; refinement on: S9 idle-only; `shadow_updates` the tier's while Interactive, "every" otherwise); `reachable(...)` (the §5 union); `ActivityTracker` (§3.2, N = 1); `AutoTier` (§4.3); `IdleCeiling` (§4.2); `held_back(...)` (the effect tooltips, §8.1); `status_line(...)`; `intersect` / `subset` / `masked` |
+| `viewport/gpu_timer.py` (new) | `GpuTimer`: a ring of 3 `GL_TIME_ELAPSED` queries, read only when `GL_QUERY_RESULT_AVAILABLE`; each result returned with the tag of the frame it measured; a frame that begins inside another timer query (a probe's) is skipped, never nested |
+| `viewport/lookdev_features.py` | `FeatureReport.timer_query` + its check (a query begun / ended without a GL error) and the status line „Qualität: Auto aus – Zeitmessung nicht verfügbar“ |
+| `viewport/lookdev_shadow.py` | `KeyShadow.update(..., defer)`: a change of the casters' content alone (same casters, key, frustum, resolution) may be postponed `defer` times in a row (0 / 1 / None = every / every_2nd / frozen); `deferred` counts them |
+| `viewport/lookdev_pass.py` | `key_shadow(size)` / `env_cube(samples)`: Maximal's second `KeyShadow(2048)` and `EnvCube(samples=256)`, created when first drawn; `timer()`; all released in `release()` |
+| `viewport/viewport.py` | `set_lookdev_config(config, reachable, tag)`, `set_lookdev_reachable`, `lookdev_config`, `lookdev_timing`; `_render_lookdev` draws `intersect(effects in force, config.effects)`, the config's map instance and defer, the config's cube instance (no config = the AD-039 frame, unchanged); `_lookdev_programs` over `_lookdev_masks()` (the union of the reachable configurations); `lookdev_signature(size, quality)` (§3.1); the timer around `_render_lookdev` (not around the overlays, not around a capture's extra render); `take_lookdev_gpu_times`, `lookdev_timer_available` |
+| `viewport/live_texture.py` | `revision` (+1 on `mark`, `mark_all` and a deferred `finish`) |
+| `mirai/lookdev_quality_settings.py` (new) | `QualitySettings` (tier, refine, idle_tier, wait, drag_updates), `load` / `save` / `from_dict` / `default_path`; a missing or bad file or value = the default, unknown keys ignored, atomic write |
+| `mirai/application.py` | `set_lookdev_quality_path`, `lookdev_quality`, `set_lookdev_quality(**changes)` (machine setting, written at once; refused while an interaction runs; a new union compiles behind the status line, I-10); the room's tracker / Auto / ceiling (`_start_quality` on entry, `_stop_quality` on closing); `_quality_step(dt)` in `update_viewport` after `Viewport.sync` (feed Auto / the ceiling, the signature, the tracker, `resolve`, `set_lookdev_config`); `lookdev_activity`, `lookdev_quality_status`, `lookdev_effect_tiers`; the capture's status names the state (§7); every effect / studio push goes through `_push_lookdev_effects` (effects + reachable) |
+| `gui/lookdev_model.py`, `gui/lookdev_panel.py` | `QualityRow`, the block „Qualität“ (§8.1) with its status line; `EffectRow.held_back` / `tooltip` („… – gerade zurückgehalten, in Ruhe (Maximal)“) |
+| `main.py` | `app.set_lookdev_quality_path(default_path())` |
+| `experiments/drag_cost/probe_lookdev_room.py` | the §11.1 rows: `tier entwurf / mittel / hoch` framed / close at 1024×768 and 1920×1080 (`--ld3a-sizes`; the hidden window is resized); `drag every / every_2nd / frozen` (+ flush / pingpong) with `KeyShadow.renders` / `deferred`; `idle hoch / maximal` with the first refine frame, the 256-sample cube build and VRAM; the entries with Auto + refinement (Maximal); `--ld3a none` skips them |
+
+Not touched: every shader source and pin (`lookdev_shaders.py`, the eye shaders), Core, the scene format,
+`view.lookdev`, picking, morph, rig, modelling, the Worklight path, `main.run` (the 60 Hz loop), `config/keymap.json`.
+
+### 14.2 Where the build differs from the AD, and why
+
+| # | AD | Built | Why |
+|---|---|---|---|
+| L1 | §3.1: the signature holds „the `RenderConfig` in force“ | it holds the room's quality key (the tier in force, refinement, idle tier, drag policy), not the configuration | the configuration is a function of the activity state; in the signature, every state change would change the signature and send the room back to Interactive (Settling ↔ Interactive forever). The ceiling's drops are left out for the same reason (they are derived from measurements) |
+| L2 | §8.1: four controls | a fifth, „Schatten beim Ziehen“, under „Mehr“ (stored as `drag_updates` in the same file) | §12.1's practical test asks for „a pose drag with each `shadow_updates`“; Q-LD3-1 is open, so the policy needs a switch until the reference-PC run decides it. Default "every" = today. It goes (or becomes fixed) with Q-LD3-1's answer |
+| L3 | §3.2: `held` = session, gesture, stroke, `MaterialEdit.held()` | the app sees the GUI's held material control as `room.preview` (non-empty while a slider holds a preview); also a held viewport button (`pointer.active`: a slow orbit) | `MaterialEdit` lives in the panel; the app has the same signal without a GUI dependency. A generic „any panel item active“ was rejected: pressing „Bild speichern“ would make the room Interactive and the capture would never show the idle image |
+| L4 | §4.2: Refine drops a knob if „the measured frame“ exceeds 50 ms | the p50 of 5 idle frames (`IDLE_CEILING_FRAMES`); a drop stays until the refinement settings change or the room is entered again | the first refine frame holds one-time costs (the 2048² map's creation, the 256-sample prefilter: 245 ms GPU in the container); one frame would always drop. In LD-3a Converged keeps drawing, so the window fills in 5 ticks. Retrying after every settle would stutter each time |
+| L5 | §3.1: „`LiveTexture.revision += 1` on every upload“ | on every `mark` / `mark_all` / deferred `finish` | the host's mark is the change; the upload follows in the next draw. Counting the mark also works headless and before the first draw |
+| L6 | §4.3 status: „Interaktiv – Mittel (Auto: 14 ms > 12 ms)“ | below Hoch the reason names the tier above's remembered p50 (why Auto is not one tier higher); at Hoch the current p50 | the status explains the tier, not the current tier's own (lower) time |
+| L7 | §4.1 feature check | `timer_query` is probed with the other P3 features, the first time the room asks for timing | the room times every LookDev frame (for Auto and the ceiling); the Worklight never probes (Q4) |
+| L8 | §11.1 rows | the tier rows' second size by resizing the hidden window in one run (`--ld3a-sizes`) | one command covers 1024 and 1080 as §11.1's table asks |
+
+Q-LD3-3 („Maximal“ before LD-3b) is built as the AD proposes (selectable now, as delayed activation); it stays Manu's to
+confirm in the practical test.
+
+### 14.3 Tests (container, llvmpipe, 2026-11-25)
+
+| Gate | Test |
+|---|---|
+| G-1 | `test_gl_lookdev_quality.py::test_hoch_without_refinement_draws_the_ad039_frame_pixel_for_pixel` (head, posed and morphed; cage / SubD 1 × Portrait / Dramatic; every effect incl. S8 / S9; Interactive and Converged): the room's frame = `set_lookdev_config(None)`. **Across commits** (a scratch worktree at `1e5d751`, the same script in both trees): `Gollum_Head_05` cage / SubD 1 × Portrait / Dramatic × effects as default / all on, with and without overlays — **16 of 16 frames bit-identical** (384², `glGetError` 0) |
+| G-2 | `test_lookdev_shaders.py` 19 passed; `test_gl_eye_pass.py` 135 passed; no file under `lookdev_shaders.py` / eye shaders changed |
+| G-3 | `test_lookdev_quality.py`: Q2 over tiers × refine × states × idle tiers × drops × 5 feature reports × 12 allowed sets; the §2.2 table; refinement off = one configuration, Hoch = `effective(allowed)`; the idle-only rule; `shadow_updates` per state; the ceiling's order; `reachable`; `held_back` |
+| G-4 | the tracker with a fake dt: every transition, a change returns in the same tick from Settling / Refine / Converged, `held` keeps Interactive, `wait` bounds 0.1 / 2 s |
+| G-5 | `RenderConfig`'s fields; `lookdev_quality.py` imports only `statistics`, `collections`, `dataclasses`, `.lookdev_optics` (AST) |
+| G-6 | `test_gl_lookdev_quality.py::test_every_input_of_the_frame_changes_the_signature_and_nothing_else_does` (camera, aspect, size, mesh content, layout, model, a studio value, a light, the drawn and the wanted effects, LookDraw base colour / roughness / map path / regions / region faces, the paint revision, eye model (gaze), eye value, eye display, quality key, feature report, the edit object shown; a frame, a capture and the overlays leave it); headless: status line, hover and wire leave it |
+| G-7 | `AutoTier`: the 30-frame window, down > 12 ms, ≤ 1 change / 2 s, up only with the next tier's remembered p50 < 12 ms after 60 frames < 6 ms, frames of another tier ignored, no timer → Mittel + status (also in GL with the check forced off); the GL timer measures app frames and feeds Auto; inside a probe's query it skips without a GL error |
+| G-8 | the GL state after frames of Hoch, Maximal (both 2048² map and 256-sample cube), Mittel frozen, Entwurf: as found, no FBO, units 6 / 7 and the cube on 8 unbound, unit 0 active; `release()` frees the second instances and the timer |
+| G-9 | 8 drag frames: every 8 renders, every_2nd 4, frozen 0 — the lagging map renders once in the first Settling frame |
+| G-10 | entering with Auto + refinement (Maximal) compiles the union (S9 and Entwurf variants); every tier switch and Auto's step afterwards compile nothing (program caches unchanged) |
+| G-11 | the capture in Interactive (Mittel) and Converged (Maximal) equals the frame the room shows in that state, the images differ, the state and the signature unchanged; „Bild speichern“'s status ends „– Ruhe (Maximal)“ |
+| G-12 | the settings round trip, bad / partial / unknown files, the default path; the app writes the file and nothing into the scene file, `view.lookdev` or Undo; a second app reads it |
+| G-13 | headless and GL: no tracker, configuration, timing, LookDev pass or timer before entering and after closing; nothing timed in the Worklight |
+| G-14 | `tests/test_room_rule.py` green |
+
+Runs:
+
+| Command | Result |
+|---|---|
+| `python -m pytest tests/test_lookdev_quality.py -q` | 37 passed |
+| `python -m pytest tests/test_lookdev_room.py tests/test_gui_lookdev_model.py tests/test_lookdev_optics.py tests/test_live_texture.py tests/test_lookdev_session.py tests/test_lookdev_persistence.py tests/test_room_rule.py -q` | 145 passed |
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_quality.py -q` | 20 passed |
+| `xvfb-run -a python -m pytest tests/test_gl_lookdev_shadow.py -q` / `…pass` / `…cube` / `…regions` / `…maps` | 47 / 13 / 13 / 9 / 9 passed |
+| `xvfb-run -a python -m pytest tests/test_gl_eye_pass.py -q`, `python -m pytest tests/test_lookdev_shaders.py -q` | 135 / 19 passed (every pin unchanged) |
+| `python -m pytest experiments/drag_cost/tests/test_probe_lookdev_room.py -q` | 10 passed |
+
+### 14.4 Measurement
+
+**Container (llvmpipe, a function check only, no valid times):** `probe_lookdev_room.py --draws 3 --surfaces cage`
+ran every row - the S1–S9 rows, `tier …` framed / close at 1024×768 and 1920×1080, `drag every / every_2nd /
+frozen` (KeyShadow.renders 8 / 4 / 1 with 0 / 4 / 7 deferred in 8 frames), `idle hoch / maximal` (Converged: S9, map
+2048, cube 256), the entry with the union - `glGetError` 0.
+
+**Reference PC (open, §11.1; it also closes AD-039 §24.4's S1–S9 run):** NVIDIA „Maximale Leistung bevorzugen“,
+repository root, `.venv312`:
+
+```
+python experiments\drag_cost\probe_lookdev_room.py | Tee-Object -FilePath lookdev_room_ld3a.txt
+```
+
+It decides Q-LD3-1 (the `drag …` rows: the cheapest of every / every_2nd that holds 30 fps for Mittel / Hoch), Q-LD3-2
+(the `tier …` rows calibrate the 12 ms target and the table), the 50 ms ceiling and the 2048² / 256-sample cost (`idle
+…`, VRAM), the precompile time (`entry`) and E16 (`modelling`, `modelling after`).
+
+### 14.5 Practical test LD-3a (`scenes/Gollum_Head_05.mirai.json`, about 15 minutes; §12.1 point 2)
+
+LookDev öffnen, Studio Dramatic, SubD 1, „Weicher Schatten“ und „Weiches Licht“ an (Block „Effekte“).
+1. **Unverändert:** Qualität Auto, „In Ruhe verfeinern“ aus — das Bild ist das von gestern (Hoch); die Statuszeile
+   im Block „Qualität“ zeigt „Interaktiv – Hoch (Auto …)“ beim Drehen und „Ruhe – Hoch“ im Stillstand.
+2. **Auto beim Orbit in der Nahansicht:** nah ans Gesicht, länger drehen. Erwartet: bleibt das Bild über 12 ms, geht
+   Auto eine Stufe herunter (Statuszeile „Interaktiv – Mittel (Auto: … ms > 12 ms)“); im Stillstand ändert sich das
+   Bild nie wegen der Zeitmessung.
+3. **Stufen von Hand:** Hoch / Mittel / Entwurf beim Drehen — Mittel ohne Weichen Schatten, Entwurf ohne Schatten,
+   Doppel-Glanz, Durchleuchtung und Weiches Licht. Tooltip eines zurückgehaltenen Effekts: „… gerade zurückgehalten,
+   aktiv in: …“.
+4. **Pose-Drag mit jedem „Schatten beim Ziehen“** (unter „Mehr“): jedes Frame / jedes 2. Frame / eingefroren, je einen
+   Kiefer- oder Morph-Drag. Erwartet: eingefroren bleibt der Schatten während des Ziehens stehen und springt beim
+   Loslassen nach; jedes 2. Frame ruckelt der Schatten leicht. Was fühlt sich für dich richtig an (Q-LD3-1)?
+5. **„In Ruhe verfeinern“ an, Ruhe-Qualität Hoch, dann Maximal:** beim Drehen kein Weicher Schatten; 0.3 s nach dem
+   Loslassen erscheint er (Statuszeile „Ruhe – Hoch“ / „Ruhe – Maximal“). Maximal: das erste Mal ein kurzer Hänger
+   (2048²-Karte, 256-Sample-Cube), danach nicht mehr. Wartezeit 0.1 s und 2 s ausprobieren.
+6. **„Bild speichern“ in jedem Zustand:** beim Drehen (die Meldung endet „– interaktiv (…)“) und in Ruhe („– Ruhe
+   (Maximal)“); es wird nie gewartet, und das gespeicherte Bild ist das gezeigte.
+7. **Maschinen-Einstellung:** App neu starten — die Qualität ist wie eingestellt; eine Szene speichern / laden ändert sie
+   nicht; Undo berührt sie nicht.
+8. **Modelling Room:** LookDev schließen — Worklight wie vorher.
+
+**Open for Manu [O]:** Q-LD3-1 and Q-LD3-2 after the reference-PC run; Q-LD3-3 („Maximal“ before LD-3b, built
+selectable) and the practical test's verdict; then §12.1 point 3 (the LD-3b probe, §11.2) before any LD-3b work.

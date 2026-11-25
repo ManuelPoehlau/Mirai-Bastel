@@ -1,4 +1,5 @@
-"""The LookDev panel (AD-038 §7, proposal §3): Studio, Effekte (AD-039 §2.1), Licht, Material, Ansicht, Status.
+"""The LookDev panel (AD-038 §7, proposal §3): Studio, Effekte (AD-039 §2.1), Qualität (AD-040 §8.1), Licht, Material,
+Ansicht, Status.
 
 Drawn while `app.lookdev_open` (like the Paint Room's window); the logic is `gui.lookdev_model` (headless). Every value
 goes through `Application`. Studio and lights are view state (saved in `view.lookdev`, no Undo): a held slider changes
@@ -74,7 +75,9 @@ class LookdevPanel:
             if changed:
                 app.set_lookdev_effect(effect.name, on)
             if imgui.is_item_hovered(imgui.HoveredFlags_.allow_when_disabled):
-                imgui.set_tooltip(effect.hint if effect.available else effect.reason)
+                imgui.set_tooltip(effect.tooltip)
+        if st.quality is not None:
+            self.draw_quality(st.quality)
         # -- Licht
         imgui.separator_text("Licht")
         for row in st.lights:
@@ -183,6 +186,50 @@ class LookdevPanel:
             changed, on = imgui.checkbox("Licht folgt Kamera", st.follow_camera)
             if changed:
                 app.set_lookdev_studio(follow_camera=on)
+
+    def draw_quality(self, q: lm.QualityRow) -> None:
+        """AD-040 §8.1 (LD-3a): the block „Qualität“ - the interactive tier, „In Ruhe verfeinern“, the idle tier, the
+        wait and (under „Mehr“) the key map while dragging; the status line below (`PROVISIONAL` layout)."""
+        imgui, app = self.imgui, self.app
+        imgui.separator_text(lm.QUALITY_TITLE)
+        imgui.set_next_item_width(self.WIDTH)
+        if imgui.begin_combo(lm.QUALITY_TIER, lm.QUALITY_TIER_LABELS[q.tier]):
+            for tier in lm.QUALITY_TIER_CHOICES:
+                if imgui.selectable(lm.QUALITY_TIER_LABELS[tier], tier == q.tier)[0]:
+                    app.set_lookdev_quality(tier=tier)
+            imgui.end_combo()
+        if imgui.is_item_hovered():
+            imgui.set_tooltip(lm.QUALITY_HINTS["tier"])
+        changed, on = imgui.checkbox(lm.QUALITY_REFINE, q.refine)
+        if changed:
+            app.set_lookdev_quality(refine=on)
+        if imgui.is_item_hovered():
+            imgui.set_tooltip(lm.QUALITY_HINTS["refine"])
+        imgui.begin_disabled(not q.refine)
+        imgui.set_next_item_width(self.WIDTH)
+        if imgui.begin_combo(lm.QUALITY_IDLE_TIER, lm.QUALITY_TIER_LABELS[q.idle_tier]):
+            for tier in lm.QUALITY_IDLE_CHOICES:
+                if imgui.selectable(lm.QUALITY_TIER_LABELS[tier], tier == q.idle_tier)[0]:
+                    app.set_lookdev_quality(idle_tier=tier)
+            imgui.end_combo()
+        imgui.end_disabled()
+        if imgui.is_item_hovered(imgui.HoveredFlags_.allow_when_disabled):
+            imgui.set_tooltip(lm.QUALITY_HINTS["idle_tier"])
+        changed, value = self._slider(lm.QUALITY_WAIT, q.wait, 0.1, 2.0, "%.1f s")
+        if changed:
+            app.set_lookdev_quality(wait=value)
+        if imgui.is_item_hovered():
+            imgui.set_tooltip(lm.QUALITY_HINTS["wait"])
+        if self.more:
+            imgui.set_next_item_width(self.WIDTH)
+            if imgui.begin_combo(lm.QUALITY_DRAG, lm.QUALITY_DRAG_LABELS[q.drag_updates]):
+                for policy in lm.QUALITY_DRAG_CHOICES:
+                    if imgui.selectable(lm.QUALITY_DRAG_LABELS[policy], policy == q.drag_updates)[0]:
+                        app.set_lookdev_quality(drag_updates=policy)
+                imgui.end_combo()
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(lm.QUALITY_HINTS["drag"])
+        imgui.text_disabled(q.status)
 
     def draw_area(self, row: lm.MaterialRow) -> None:
         """AD-039 §9 (S6): the „Bereich“ - „Ganzes Objekt“ or one face region; with a region's own material its place

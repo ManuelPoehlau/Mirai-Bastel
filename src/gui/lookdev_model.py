@@ -3,8 +3,9 @@
 The panel reads the room's state (`state(app)`) and calls `Application` (`set_lookdev_studio_preset`,
 `set_lookdev_studio`, `set_lookdev_light`, `set_lookdev_material`, `set_lookdev_material_values`, `frame_lookdev`,
 `close_lookdev`, `preview_lookdev_material_values`, `reset_lookdev_material`, `save_lookdev_image`,
-`set_lookdev_effect`, AD-039 S7 `set_lookdev_map`, S6 `set_lookdev_area` / `move_lookdev_region`); it holds no
-document state. AD-039 S6: the material block edits a „Bereich“ - „Ganzes Objekt“ or one face region of the targets
+`set_lookdev_effect`, AD-039 S7 `set_lookdev_map`, S6 `set_lookdev_area` / `move_lookdev_region`, AD-040
+`set_lookdev_quality`); it holds no document state. AD-040 §8.1: the block „Qualität“ (`QualityRow`) - a machine setting,
+not the scene's. AD-039 S6: the material block edits a „Bereich“ - „Ganzes Objekt“ or one face region of the targets
 (`AreaRow`; its own material saved on the object, the maps stay the object's). Since LD-2 (AD-038 §18) the material
 is document data (`SceneObject.look`, saved, one Undo step per change: a
 held slider or colour previews, the release commits - `MaterialEdit`); the studio is view state saved in
@@ -73,6 +74,44 @@ EFFECT_HINTS = {"shadow": "Schatten des Key auf Haut und Zähnen (wird nur bei P
                 "soft_shadow": "Schlagschatten des Key werden mit dem Abstand zum Werfer weicher (am besten zusammen "
                                "mit „Weiches Licht“; braucht Schatten; kostet Bildrate)"}
 
+#: AD-040 §8.1 (LD-3a): the block „Qualität“ below „Effekte“ - a machine setting (`~/.mirai_bastel`), no keys.
+QUALITY_TITLE = "Qualität"
+QUALITY_TIER = "Qualität (beim Arbeiten)"
+QUALITY_REFINE = "In Ruhe verfeinern"
+QUALITY_IDLE_TIER = "Ruhe-Qualität"
+QUALITY_WAIT = "Wartezeit"
+QUALITY_DRAG = "Schatten beim Ziehen"
+QUALITY_HINTS = {
+    "tier": "Was beim Drehen, Posen und Morphen gezeichnet wird. Auto misst die Grafikkarte und geht nur beim Arbeiten "
+            "eine Stufe herunter (Ziel 12 ms); ein ruhiges Bild wird nie wegen der Zeitmessung schlechter. "
+            "Entwurf: ohne Schatten, Doppel-Glanz, Durchleuchtung und Weiches Licht; Mittel: ohne Weicher Schatten",
+    "refine": "Nach der Wartezeit ohne Änderung zeichnet der Raum die Ruhe-Qualität (Weicher Schatten nur dann). "
+              "Wird auf diesem Rechner gespeichert, nicht in der Szene",
+    "idle_tier": "Hoch: wie beim Arbeiten plus Weicher Schatten. Maximal: dazu Schattenkarte 2048² und eine genauer "
+                 "gefilterte Umgebung (256 Samples) - kostet einen kurzen Moment beim ersten Mal",
+    "wait": "So lange muss das Bild unverändert sein, bevor die Ruhe beginnt",
+    "drag": "Schattenkarte, während eine Pose, ein Morph oder ein Sculpt-Strich das Modell ändert (Q-LD3-1, offen bis "
+            "zum Referenz-PC-Lauf): eingefroren holt den Schatten beim Loslassen nach",
+}
+QUALITY_TIER_CHOICES = ("auto", "hoch", "mittel", "entwurf")
+QUALITY_IDLE_CHOICES = ("hoch", "maximal")
+QUALITY_TIER_LABELS = {"auto": "Auto", "hoch": "Hoch", "mittel": "Mittel", "entwurf": "Entwurf", "maximal": "Maximal"}
+QUALITY_DRAG_CHOICES = ("every", "every_2nd", "frozen")
+QUALITY_DRAG_LABELS = {"every": "jedes Frame", "every_2nd": "jedes 2. Frame", "frozen": "eingefroren"}
+
+
+@dataclass(frozen=True)
+class QualityRow:
+    """The block „Qualität“: the machine setting's values and the status line („Interaktiv – Mittel (Auto: …)“)."""
+
+    tier: str
+    refine: bool
+    idle_tier: str
+    wait: float
+    drag_updates: str
+    status: str
+
+
 #: AD-039 §10 (S7): the material's maps under „Mehr“ - one row per map: its file, „Laden …“, „Entfernen“.
 MAPS_TITLE = "Maps (gespeichert)"
 MAP_LABELS = look_maps.LABELS
@@ -131,10 +170,18 @@ class EffectRow:
     on: bool
     reason: str | None
     hint: str
+    #: AD-040 §8.1: the quality configuration in force holds it back - where it is drawn („aktiv in: Hoch, Maximal“)
+    held_back: str | None = None
 
     @property
     def available(self) -> bool:
         return self.reason is None
+
+    @property
+    def tooltip(self) -> str:
+        if not self.available:
+            return self.reason
+        return self.hint + (f" – gerade zurückgehalten, {self.held_back}" if self.held_back else "")
 
 
 @dataclass(frozen=True)
@@ -185,6 +232,7 @@ class LookdevPanelState:
     eye_preview: bool
     status: str
     effects: tuple[EffectRow, ...] = ()
+    quality: QualityRow | None = None
 
 
 def _albedo_label(app, obj) -> str:
@@ -223,8 +271,15 @@ def _material(app) -> MaterialRow | None:
 
 def _effects(app, s) -> tuple[EffectRow, ...]:
     reasons = app.lookdev_effect_reasons()
-    return tuple(EffectRow(name, EFFECT_LABELS.get(name, name), bool(on), reasons.get(name), EFFECT_HINTS.get(name, ""))
+    held = app.lookdev_effect_tiers()
+    return tuple(EffectRow(name, EFFECT_LABELS.get(name, name), bool(on), reasons.get(name), EFFECT_HINTS.get(name, ""),
+                           held.get(name))
                  for name, on in s.effects.as_dict().items())
+
+
+def _quality(app) -> QualityRow:
+    q = app.lookdev_quality
+    return QualityRow(q.tier, q.refine, q.idle_tier, q.wait, q.drag_updates, app.lookdev_quality_status())
 
 
 def state(app) -> LookdevPanelState:
@@ -239,6 +294,7 @@ def state(app) -> LookdevPanelState:
         material=_material(app) if app.lookdev_open else None, wire=app.display.wireframe_overlay,
         eye_preview=app.display.eye_preview,
         status="Shader werden vorbereitet …" if room.preparing else SAVED, effects=_effects(app, s),
+        quality=_quality(app),
     )
 
 
@@ -316,7 +372,9 @@ def targets_label(row: MaterialRow) -> str:
     return names + (f"  ({EYE_NOTE})" if row.eye_selected else "")
 
 
-__all__ = ["AREA", "AREA_DOWN", "AREA_HINT", "AREA_MISSING", "AREA_ORDER_HINT", "AREA_OWN", "AREA_RESET_HINT",
+__all__ = ["QUALITY_DRAG", "QUALITY_DRAG_CHOICES", "QUALITY_DRAG_LABELS", "QUALITY_HINTS", "QUALITY_IDLE_CHOICES",
+           "QUALITY_IDLE_TIER", "QUALITY_REFINE", "QUALITY_TIER", "QUALITY_TIER_CHOICES", "QUALITY_TIER_LABELS",
+           "QUALITY_TITLE", "QUALITY_WAIT", "QualityRow", "AREA", "AREA_DOWN", "AREA_HINT", "AREA_MISSING", "AREA_ORDER_HINT", "AREA_OWN", "AREA_RESET_HINT",
            "AREA_UP", "AREA_WHOLE", "AreaRow", "area_label", "EFFECTS_TITLE", "EFFECT_HINTS", "EFFECT_LABELS", "EYE_NOTE", "EffectRow", "LIGHTS", "MAPS_HINT", "MAPS_TITLE",
            "MAP_LABELS", "MAP_LOAD", "MAP_REMOVE", "MapRow", "NORMAL_GREEN_DOWN", "NORMAL_STRENGTH", "load_map",
            "LIGHT_LABELS", "MATERIAL_PRESETS", "MENU_CLOSE", "MENU_OPEN", "RESET", "RESET_HINT",

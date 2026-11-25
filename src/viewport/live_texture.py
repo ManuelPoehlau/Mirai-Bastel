@@ -37,6 +37,9 @@ class LiveTexture:
         #: uploads done (boxes; a full upload counts one) - read by tests and the probes
         self.uploads = 0
         self.uploaded_bytes = 0
+        #: AD-040 §3.1: +1 for every change the host marks (`mark`, `mark_all`, a deferred `finish`) - the LookDev frame
+        #: signature reads it (the boxes are uploaded on the next draw)
+        self.revision = 0
 
     @property
     def width(self) -> int:
@@ -52,11 +55,13 @@ class LiveTexture:
         x1, y1 = min(int(x1), self.width), min(int(y1), self.height)
         if x1 > x0 and y1 > y0:
             self._boxes.append((x0, y0, x1, y1))
+            self.revision += 1
             if self.mipmaps == "frame":
                 self._mips_due = True
 
     def mark_all(self) -> None:
         self._full = True
+        self.revision += 1
         if self.mipmaps != "none":
             self._mips_due = True
 
@@ -64,6 +69,7 @@ class LiveTexture:
         """A stroke ended: the next draw regenerates the mipmaps (policy "deferred")."""
         if self.mipmaps == "deferred":
             self._mips_due = True
+            self.revision += 1  # the minified levels change with the regeneration
 
     def take(self) -> tuple[bool, list[tuple[int, int, int, int]], bool]:
         """(upload everything, boxes, regenerate mipmaps) since the last call; for the GL store."""

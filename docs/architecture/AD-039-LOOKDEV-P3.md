@@ -2121,6 +2121,7 @@ python experiments\drag_cost\probe_lookdev_room.py | Tee-Object -FilePath lookde
 ```
 
 `lookdev +shadow +soft` against `lookdev +shadow` is the effect's cost; expected as K16c above.
+(2026-11-25: folded into AD-040's LD-3a run, the same script with the LD-3a rows: AD-040 §14.4, `lookdev_room_ld3a.txt`.)
 
 ### 24.5 Practical test S9 (`scenes/Gollum_Head_05.mirai.json`, about 10 minutes)
 

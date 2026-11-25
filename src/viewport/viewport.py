@@ -249,6 +249,7 @@ class Viewport:
         # today's code plus one string comparison.
         self.shading = "worklight"
         self._capture_request = None  # AD-038 §18: the next render()'s capture callback ("Bild speichern")
+        self._capturing = False
         self.lookdev_state = None
         self._lookdev_pass = None
         self._edit_look: LookDraw | None = None
@@ -262,6 +263,14 @@ class Viewport:
         # AD-039 §9 (S6): per drawn RenderMesh the key its triangle material slots were last set for (a SubD surface maps
         # its faces through `face_parent`: done again only when the regions or the surface's topology change).
         self._material_slot_keys = weakref.WeakKeyDictionary()
+        # AD-040 (LD-3a): the quality manager's render configuration for the next LookDev frame (None = the frame of
+        # AD-039: every effect as switched, the P3 map and cube), the configurations the room can reach (the compile's
+        # union, None = the effects in force only), the next frame's GPU timer tag, and whether the room times frames.
+        # The room (`Application`) sets them; with `shading == "worklight"` none of them is read.
+        self._lookdev_config = None
+        self._lookdev_reachable = None
+        self._lookdev_tag = None
+        self.lookdev_timing = False
         # Optional (None = headless/TraceStore: es entsteht kein GL-Objekt).
         self.point_overlay = (
             point_overlay_type() if point_overlay_type is not None else None
@@ -561,11 +570,8 @@ class Viewport:
         §10: a LookDraw's maps with `maps` in force on a mesh with UVs."""
         from .lookdev_pass import LookdevPass
 
-        skin, eyes = [], []
+        skin, eyes, eye_keys = [], [], []
         env_spec = self._lookdev_pass.env_spec if self._lookdev_pass is not None else True
-        effects = self.lookdev_effects()
-        cube = effects.cube and env_spec
-        shadow = effects.shadow
         drawn = [(self.surface_render_mesh or self.render_mesh, self._edit_look)] if self.show_faces else []
         for key in self._entry_draw_order():
             eye = self._eye_entries.get(key) if self.eye_display.preview else None
@@ -574,17 +580,112 @@ class Viewport:
                 continue
             drawn.append((self.entry_surface_render_meshes.get(key, self.object_entries[key]),
                           self._entry_looks.get(key)))
-        for rm, look in drawn:
-            if look is not None:
-                uvs = rm.mesh.has_face_uvs()
-                maps = look.map_paths() if effects.maps and uvs else {}
-                regions = effects.regions and bool(look.regions)
-                skin.append(LookdevPass.program_key(look.albedo_source(regions) is not None and uvs, env_spec, shadow,
-                                                    effects.dual_lobe, effects.thickness, "roughness" in maps,
-                                                    "normal" in maps, "translucency" in maps, cube, regions,
-                                                    effects.area_diffuse, effects.soft_shadow))
-        eye_shadow = shadow and effects.eye_shadow and any(self._casts_key_shadow(rm, look) for rm, look in drawn)
-        return sorted(set(skin)), sorted(set(e + (eye_shadow,) for e in eyes))
+        casts = any(self._casts_key_shadow(rm, look) for rm, look in drawn)
+        # AD-040 §5: the union over every configuration the room can reach (each a mask of the effects in force)
+        for effects in self._lookdev_masks():
+            cube = effects.cube and env_spec
+            shadow = effects.shadow
+            for rm, look in drawn:
+                if look is not None:
+                    uvs = rm.mesh.has_face_uvs()
+                    maps = look.map_paths() if effects.maps and uvs else {}
+                    regions = effects.regions and bool(look.regions)
+                    skin.append(LookdevPass.program_key(look.albedo_source(regions) is not None and uvs, env_spec,
+                                                        shadow, effects.dual_lobe, effects.thickness,
+                                                        "roughness" in maps, "normal" in maps, "translucency" in maps,
+                                                        cube, regions, effects.area_diffuse, effects.soft_shadow))
+            eye_shadow = shadow and effects.eye_shadow and casts
+            eye_keys.extend(e + (eye_shadow,) for e in eyes)
+        return sorted(set(skin)), sorted(set(eye_keys))
+
+    def _lookdev_masks(self) -> list:
+        """AD-040 §5: the effects of each configuration the room can reach (`set_lookdev_config`'s `reachable`), each
+        within the effects in force (`lookdev_effects()`); without a quality manager the effects in force alone."""
+        from .lookdev_quality import intersect
+
+        wanted = self.lookdev_effects()
+        if not self._lookdev_reachable:
+            return [wanted]
+        masks = []
+        for config in self._lookdev_reachable:
+            mask = intersect(wanted, config.effects)
+            if mask not in masks:
+                masks.append(mask)
+        return masks
+
+    def set_lookdev_config(self, config, reachable=None, tag=None) -> None:
+        """AD-040 (LD-3a): the quality manager's `lookdev_quality.RenderConfig` for the next LookDev frame (None = the
+        frame of AD-039), the configurations the room can reach for `prepare_lookdev`'s union (None = unchanged; ()
+        = the effects in force only), and the tag the frame's GPU time is returned with (`take_lookdev_gpu_times`).
+        Render state only: the frame draws `config.effects` within the effects in force (never one switched off, Q2)."""
+        self._lookdev_config = config
+        if reachable is not None:
+            self._lookdev_reachable = tuple(reachable)
+        self._lookdev_tag = tag
+
+    def set_lookdev_reachable(self, reachable) -> None:
+        """AD-040 §5: the configurations the room can reach (`prepare_lookdev` compiles their union; () = the effects
+        in force only)."""
+        self._lookdev_reachable = tuple(reachable)
+
+    @property
+    def lookdev_config(self):
+        return self._lookdev_config
+
+    def take_lookdev_gpu_times(self) -> list:
+        """AD-040 §4.1: `[(tag, ms)]` of the LookDev frames whose GPU time arrived since the last call (no wait)."""
+        timer = self._lookdev_pass.gpu_timer if self._lookdev_pass is not None else None
+        return timer.take() if timer is not None else []
+
+    def lookdev_timer_available(self) -> bool | None:
+        """AD-040 §4.1: this context has `timer_query` (None = not probed yet)."""
+        features = self.lookdev_features()
+        return None if features is None else bool(features.timer_query)
+
+    def lookdev_signature(self, size=None, quality=None) -> tuple:
+        """AD-040 §3.1: a key of everything the next LookDev frame reads, built from the objects the draw reads - the
+        camera's `camera_uniforms` (the camera's values without a GL store) and `size` (the framebuffer); per drawn
+        RenderMesh its id, revisions, model matrix and display (alpha), with its LookDraw (material, regions, maps) and
+        the revision of a live paint texture it shows, or its EyeDraw; the studio state (lights, effects), the eye
+        display, the effects in force, the feature report and `quality` - the room's key of its quality settings (the
+        tier in force, refinement, ...), never the activity state: the state is derived from this key, so it must not
+        feed it. O(objects), no GL. Overlays (wire, hover, HUD, panels) are not part of it."""
+        store = self.render_mesh.store
+        camera = self.render_mesh.camera
+        if hasattr(store, "uniform_data"):
+            view = tuple(store.uniform_data("camera_uniforms"))
+        else:
+            view = tuple(sorted((k, v) for k, v in vars(camera).items() if k != "camera_revision")) \
+                if camera is not None else ()
+        objects = []
+        if self.show_faces:
+            rm = self.surface_render_mesh or self.render_mesh
+            objects.append(("edit", self._mesh_signature(rm), self._look_signature(self._edit_look)))
+        eye_preview = self.eye_display.preview
+        for key in self._entry_draw_order():
+            eye = self._eye_entries.get(key) if eye_preview else None
+            if eye is not None and key not in self.entry_surface_render_meshes:
+                objects.append((key, self._mesh_signature(self.object_entries[key]), eye))
+                continue
+            rm = self.entry_surface_render_meshes.get(key, self.object_entries[key])
+            objects.append((key, self._mesh_signature(rm), self._look_signature(self._entry_looks.get(key)),
+                            self._entry_display.get(key)))
+        env_spec = self._lookdev_pass.env_spec if self._lookdev_pass is not None else True
+        return (view, size, tuple(objects), self.lookdev_state, self._lookdev_effects, self.eye_display,
+                self.show_faces, env_spec, self.lookdev_features(), quality)
+
+    @staticmethod
+    def _mesh_signature(rm) -> tuple:
+        model = rm.model_matrix
+        return (id(rm), rm.layout_revision, rm.content_revision, tuple(model) if model is not None else None)
+
+    @staticmethod
+    def _look_signature(look) -> tuple:
+        """A LookDraw and the revisions of the live textures it shows (AD-040 §3.1: the paint has no other counter)."""
+        if look is None:
+            return (None,)
+        live = tuple(getattr(d.albedo, "revision", None) for d in (look, *look.regions))
+        return (look, live)
 
     def lookdev_prepare_needed(self) -> bool:
         """AD-038 §9: a GL viewport whose next LookDev frame would compile a program first."""
@@ -1295,7 +1396,11 @@ class Viewport:
 
             from .lookdev_pass import read_back_buffer
 
-            self._render_meshes()
+            self._capturing = True
+            try:
+                self._render_meshes()
+            finally:
+                self._capturing = False
             rgba = read_back_buffer()
             gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
             capture(rgba)
@@ -1327,7 +1432,15 @@ class Viewport:
         # Reihenfolge (E40, E45, B7, H1): Mesh, Wire, Face-Highlight,
         # Edge-Highlight, Tool-Linien, Zusatz-Overlays, Punkte.
         if self.shading == "lookdev":
-            self._render_lookdev(drawn, light)
+            # AD-040 §4.1: the room times the LookDev step (the meshes, not the overlays); a capture's extra render is
+            # not timed (it is not a frame the room shows)
+            timer = self.lookdev_pass.timer() if self.lookdev_timing and not self._capturing else None
+            timed = timer is not None and timer.begin(self._lookdev_tag)
+            try:
+                self._render_lookdev(drawn, light)
+            finally:
+                if timed:
+                    timer.end()
         else:
             if self.show_faces:
                 drawn.render(self.render_mesh.camera)
@@ -1391,7 +1504,9 @@ class Viewport:
         AD-039 S6: `regions` draws the objects' region materials (each drawn RenderMesh's triangle slots brought up to
         date first; off = one material per object, the slots freed). AD-039 S8: `area_diffuse` draws the lights' diffuse
         term on the skin as finite emitters (the eyes keep theirs). AD-039 S9: `soft_shadow` gives the skin's key
-        lookups the penumbra of the key's disc and keeps the map at full resolution (the eyes keep their lookup on it)."""
+        lookups the penumbra of the key's disc and keeps the map at full resolution (the eyes keep their lookup on it).
+        AD-040 (LD-3a): with the room's `RenderConfig` the frame draws its effects (within the ones in force), its map
+        size and update policy and its cube's sample count - existing defines and instances only."""
         camera = self.render_mesh.camera
         frame = self.lookdev_frame()
         passes = self.lookdev_pass
@@ -1408,19 +1523,26 @@ class Viewport:
                           self._entry_looks.get(key), None))
         shadow = eye_shadow = None
         effects = self.lookdev_effects(wanted=False)
+        config = self._lookdev_config
+        if config is not None:  # AD-040 §2: the quality manager's configuration, within the effects in force (Q2)
+            from .lookdev_quality import intersect
+
+            effects = intersect(effects, config.effects)
         if effects.shadow:
             casters = [rm for rm, look, eye_key in skins if eye_key is None and self._casts_key_shadow(rm, look)]
-            shadow = passes.key_shadow()
+            shadow = passes.key_shadow(config.shadow_size if config is not None else None)
             # AD-039 §24: the soft shadow keeps the map at full resolution (its penumbra comes from the blocker
-            # distance, not from fewer texels): the key's size 0 for the map
+            # distance, not from fewer texels): the key's size 0 for the map. AD-040 §2.2: while Interactive a
+            # caster-only change may keep the last map (`shadow_updates`)
             shadow.update(casters, frame["u_ld_light_dir"][0],
-                          0.0 if effects.soft_shadow else frame["u_ld_light_size"][0])
+                          0.0 if effects.soft_shadow else frame["u_ld_light_size"][0],
+                          config.shadow_defer if config is not None else 0)
             if effects.eye_shadow and casters:
                 eye_shadow = shadow
         cube = None
         skin_drawn = any(look is not None for _rm, look, eye_key in skins if eye_key is None)
         if effects.cube and passes.env_spec and skin_drawn:
-            cube = passes.env_cube()
+            cube = passes.env_cube(config.cube_samples if config is not None else None)
             cube.update(self.lookdev_state.studio)
         for rm, look, eye_key in skins:
             if eye_key is None:

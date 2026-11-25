@@ -90,3 +90,13 @@ def test_the_regions_row_names_a_polygroup_as_the_mouth_in_memory():
     assert [r.name for r in mesh.face_regions.regions] == ["Mouth", "Group 4"]
     assert [(e.region, e.look.preset) for e in obj.look_regions] == [("Mouth", "Mundinneres")]
     assert app.lookdev_area is None and obj.look is None
+
+
+def test_the_ld3a_rows_run_by_default_at_two_sizes_and_can_be_skipped():
+    """AD-040 §11.1: the LD-3a rows (tiers framed / close per size, drag policies, idle) are part of the default run."""
+    args = room.parse_args([])
+    assert args.ld3a == "all" and args.ld3a_sizes == ((1024, 768), (1920, 1080))
+    assert room.parse_args(["--ld3a", "none"]).ld3a == "none"
+    assert room.parse_args(["--ld3a-sizes", "800x600"]).ld3a_sizes == ((800, 600),)
+    with pytest.raises(SystemExit):
+        room.parse_args(["--ld3a-sizes", "big"])

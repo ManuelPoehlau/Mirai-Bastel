@@ -25,6 +25,9 @@ eye pass's LOOKDEV + LD_SHADOW variant does (the eyes receive, they never cast).
 - **Drag options** (AD-039 §11.1, open from P3-0: the drag cost more than the pass): `flush` issues a `glFlush` after the
   pass; `maps = 2` renders into the map the last frame did not sample (ping-pong). Both off by default; the room probe
   measures them (`probe_lookdev_room.py`, rows `lookdev +shadow drag ...`).
+- **Postponed updates** (AD-040 §2.2, LD-3a): `update(..., defer)` lets the quality manager keep the last map for a
+  caster-only change while the room is Interactive (`shadow_updates` "every_2nd" / "frozen"); the first call without
+  `defer` renders it. Maximal (idle) uses a second instance of 2048² (`LookdevPass.key_shadow(size)`).
 
 S4 (AD-039 §7): `bind_raw` binds the same map on `SHADOW_RAW_UNIT` (7) through a sampler object without compare mode
 (GL_LINEAR, CLAMP_TO_EDGE; created on first use, deleted in `release()`), so the skin pass reads its raw depth for the
@@ -66,6 +69,9 @@ class KeyShadow:
         self.flush = bool(flush)
         #: Test hook / probe: how many depth passes ran (T1-3).
         self.renders = 0
+        #: AD-040 §2.2: how many caster-only changes were postponed (`update(..., defer)`), and the current run of them.
+        self.deferred = 0
+        self._postponed = 0
         self._targets: list[tuple[int, int]] = []  # (texture, fbo) per map
         self._current = 0  # the map the skin pass samples
         self._program = None
@@ -108,13 +114,23 @@ class KeyShadow:
 
     # -- the pass --------------------------------------------------------------------------------------------------
 
-    def update(self, casters, key_dir, key_size: float = 0.0) -> bool:
+    def update(self, casters, key_dir, key_size: float = 0.0, defer: int | None = 0) -> bool:
         """Render the map if what it shows changed since the last pass (`key_size`: the key's softness, the map's
-        effective resolution). True = it rendered."""
+        effective resolution). True = it rendered. AD-040 §2.2 (`shadow_updates` while Interactive): a change of the
+        casters' content alone (a pose, morph or sculpt step; the same casters, key, frustum and resolution) may be
+        postponed `defer` times in a row (0 = never, "every"; 1 = "every_2nd"; None = until a call with a smaller
+        `defer`, "frozen") - the map keeps its last pass meanwhile; `deferred` counts the postponed calls."""
         casters = self._drawable(casters)
         key = self.key(casters, key_dir, key_size)
         if key == self._key and self._targets:
             return False
+        if (self._key is not None and self._targets and key[1:] == self._key[1:]
+                and tuple(c[0] for c in key[0]) == tuple(c[0] for c in self._key[0])
+                and (defer is None or self._postponed < defer)):
+            self._postponed += 1
+            self.deferred += 1
+            return False
+        self._postponed = 0
         if not self._ensure():
             return False
         centre, radius = self._sphere

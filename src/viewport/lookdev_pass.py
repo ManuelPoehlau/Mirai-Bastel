@@ -25,6 +25,9 @@
 - GL state as `EyePass`: during the draw depth test and write on, blend off, back faces culled, polygon offset (1, 1)
   when `store.polygon_offset`; afterwards offset, cull and depth test off, units 3 / 4 unbound, unit 0 active, program
   stopped. No FBO, no float target (the RGBA8 default framebuffer).
+- AD-040 (LD-3a): the quality manager's resources - Maximal's second `KeyShadow(2048)` and `EnvCube(samples=256)`
+  (`key_shadow(size)`, `env_cube(samples)`, created when first drawn) and the `GpuTimer` (`timer()`), all deleted in
+  `release()`; no shader source changes (a configuration selects among the existing defines and instances).
 - The background (§8): a full-screen triangle (one empty VAO), depth test and write off, the colours as picked; the
   depth test, depth mask and program are left as found.
 
@@ -147,6 +150,11 @@ class LookdevPass:
         self.shadow = None
         #: AD-039 §8: the studio's environment cube (S5), created on the first frame with the cube on.
         self.cube = None
+        #: AD-040 §5 (LD-3a): Maximal's 2048² map and 256-sample cube, created when Maximal is first drawn.
+        self.shadow_max = None
+        self.cube_max = None
+        #: AD-040 §4.1: the GPU timer, created when the room asks for timing (`timer()`); None if unavailable.
+        self.gpu_timer = None
 
     def feature_report(self):
         """The context's P3 features, probed once (AD-039 §2.2); a missing one queues its status line once."""
@@ -157,21 +165,51 @@ class LookdevPass:
             self.notices.extend(self.features.status_lines())
         return self.features
 
-    def key_shadow(self):
-        """S1's map (AD-039 §4), created on first use."""
+    def key_shadow(self, size: int | None = None):
+        """S1's map (AD-039 §4), created on first use. AD-040 §5: a `size` above the P3 map's (Maximal's 2048²) is a
+        second instance, created when first asked for; each re-renders only on its own key change."""
+        from .lookdev_optics import SHADOW_SIZE
+
+        if size is not None and int(size) != SHADOW_SIZE:
+            if self.shadow_max is None or self.shadow_max.size != int(size):
+                from .lookdev_shadow import KeyShadow
+
+                if self.shadow_max is not None:
+                    self.shadow_max.release()
+                self.shadow_max = KeyShadow(int(size))
+            return self.shadow_max
         if self.shadow is None:
             from .lookdev_shadow import KeyShadow
 
             self.shadow = KeyShadow()
         return self.shadow
 
-    def env_cube(self):
-        """S5's cube (AD-039 §8), created on first use."""
+    def env_cube(self, samples: int | None = None):
+        """S5's cube (AD-039 §8), created on first use. AD-040 §5: `samples` above the P3 cube's (Maximal's 256) is a
+        second cube of the same size, prefiltered when first drawn."""
+        from .lookdev_shaders import CUBE_SAMPLES
+
+        if samples is not None and int(samples) != CUBE_SAMPLES:
+            if self.cube_max is None or self.cube_max.samples != int(samples):
+                from .lookdev_cube import EnvCube
+
+                if self.cube_max is not None:
+                    self.cube_max.release()
+                self.cube_max = EnvCube(samples=int(samples))
+            return self.cube_max
         if self.cube is None:
             from .lookdev_cube import EnvCube
 
             self.cube = EnvCube()
         return self.cube
+
+    def timer(self):
+        """AD-040 §4.1: the GPU timer, created on first use when this context has `timer_query`; None without."""
+        if self.gpu_timer is None and self.feature_report().timer_query:
+            from .gpu_timer import GpuTimer
+
+            self.gpu_timer = GpuTimer()
+        return self.gpu_timer
 
     @staticmethod
     def program_key(albedo_map: bool, env_spec: bool, shadow: bool = False, dual_lobe: bool = False,
@@ -373,6 +411,11 @@ class LookdevPass:
         if self.cube is not None:
             self.cube.release()
             self.cube = None
+        for name in ("shadow_max", "cube_max", "gpu_timer"):  # AD-040 §5 / §4.1
+            resource = getattr(self, name)
+            if resource is not None:
+                resource.release()
+                setattr(self, name, None)
         if self._background is not None:
             import ctypes
 

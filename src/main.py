@@ -852,6 +852,10 @@ def main() -> None:
     window = create_window()
 
     app = Application(keymap_path=KEYMAP_PATH)
+    # AD-040 §8.2: the LookDev quality is a machine setting (`~/.mirai_bastel/lookdev_quality.json`), not the scene's
+    from mirai.lookdev_quality_settings import default_path as lookdev_quality_path
+
+    app.set_lookdev_quality_path(lookdev_quality_path())
     print_input_listing(app)
     app.gizmo_enabled = True  # this window draws the gizmo (`draw_gizmo`); Labs on Application do not
     files = SceneFiles(app, gl_types=GL_TYPES)

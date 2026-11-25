@@ -12,7 +12,8 @@ S1 adds `depth_texture`: a DEPTH_COMPONENT24 texture with `GL_COMPARE_REF_TO_TEX
 materials need it too. S5 adds `cube_rgba16f`: an RGBA16F cube of the production size with every level
 allocated, each face of each level attached to an FBO in turn - every attachment `GL_FRAMEBUFFER_COMPLETE`, `glGetError`
 0 (the LD-0 (c) check; it does not detect the reference PC's defect with sampling an FBO-rendered cube, which
-`viewport.lookdev_cube.EnvCube` works around by copying the cube, AD-039 §11.1 run 4 / 5).
+`viewport.lookdev_cube.EnvCube` works around by copying the cube, AD-039 §11.1 run 4 / 5). AD-040 §4.1 (LD-3a) adds
+`timer_query`: a `GL_TIME_ELAPSED` query begun and ended without a GL error (missing: Auto holds Mittel).
 """
 
 from __future__ import annotations
@@ -23,7 +24,8 @@ from dataclasses import dataclass, fields
 FEATURE_STATUS = {"depth_texture": "LookDev: Schatten aus – Tiefentextur nicht verfügbar",
                   "sampler_objects": "LookDev: Durchleuchtung aus – Sampler-Objekte nicht verfügbar",
                   "cube_rgba16f": "LookDev: Umgebungs-Cube aus – Cube-Ziel nicht verfügbar",
-                  "texture_units": "LookDev: Maps und Region-Materialien aus – zu wenige Textureinheiten"}
+                  "texture_units": "LookDev: Maps und Region-Materialien aus – zu wenige Textureinheiten",
+                  "timer_query": "Qualität: Auto aus – Zeitmessung nicht verfügbar"}
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,7 @@ class FeatureReport:
     sampler_objects: bool = True
     cube_rgba16f: bool = True
     texture_units: bool = True
+    timer_query: bool = True
 
     def missing(self) -> tuple[str, ...]:
         return tuple(f.name for f in fields(self) if not getattr(self, f.name))
@@ -154,9 +157,32 @@ def _texture_units() -> bool:
     return units.value >= max(*MAP_UNITS.values(), REGION_UNIT) + 1
 
 
+def _timer_query() -> bool:
+    """AD-040 §4.1: a `GL_TIME_ELAPSED` query generated, begun, ended and deleted without a GL error (none is active
+    meanwhile: a probe's own query around the frame must not fail this check)."""
+    import ctypes
+
+    from pyglet import gl
+
+    while gl.glGetError() != gl.GL_NO_ERROR:  # an earlier error must not fail this check
+        pass
+    current = gl.GLint()
+    gl.glGetQueryiv(gl.GL_TIME_ELAPSED, gl.GL_CURRENT_QUERY, ctypes.byref(current))
+    if current.value:  # another timer runs (a probe): the query exists, as `glGetQueryiv` did not fail
+        return gl.glGetError() == gl.GL_NO_ERROR
+    ident = gl.GLuint()
+    gl.glGenQueries(1, ctypes.byref(ident))
+    if not ident.value:
+        return False
+    gl.glBeginQuery(gl.GL_TIME_ELAPSED, ident.value)
+    gl.glEndQuery(gl.GL_TIME_ELAPSED)
+    gl.glDeleteQueries(1, ctypes.byref(ident))
+    return gl.glGetError() == gl.GL_NO_ERROR
+
+
 #: The checks, by feature (a test replaces one with a stub to force its failure, AD-039 §2.2).
 CHECKS = {"depth_texture": _depth_texture, "sampler_objects": _sampler_objects, "cube_rgba16f": _cube_rgba16f,
-          "texture_units": _texture_units}
+          "texture_units": _texture_units, "timer_query": _timer_query}
 
 
 def probe() -> FeatureReport:

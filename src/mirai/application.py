@@ -613,6 +613,19 @@ class Application:
         self._paint_room = PaintRoomController(self._services)
         # The LookDev room (AD-038 §2): view configuration + session studio and materials; no interaction session.
         self._lookdev = LookdevRoom(self._services)
+        # AD-040 (LD-3a): the room's quality manager - the machine setting (`lookdev_quality_settings`, read from
+        # `_quality_path`, None = in memory only), the activity tracker (exists only while the room is open, Q4),
+        # Auto, the idle ceiling, and the tick clock Auto's pace reads.
+        from .lookdev_quality_settings import DEFAULTS as _QUALITY_DEFAULTS
+        from viewport.lookdev_quality import AutoTier, IdleCeiling
+
+        self._quality_path: Path | None = None
+        self._quality = _QUALITY_DEFAULTS
+        self._activity = None
+        self._auto = AutoTier()
+        self._ceiling = IdleCeiling()
+        self._quality_clock = 0.0
+        self._quality_frame = None  # (state, tier) of the configuration last handed to the viewport
         # WP-KNIFE-01 UX2b: any Shift key held, as the window reports it
         # (`set_shift_held`). Only the Knife's hover reads it (the midpoint before
         # the click); a click keeps deciding by its press modifiers (A2, AD-019).
@@ -1222,9 +1235,11 @@ class Application:
         self._objects.sync_views()  # the LookDraws, no selection tint (LD-D3)
         self._set_hovered(None)
         viewport = self.viewport
+        self._start_quality()
         if viewport is not None:
-            # AD-039: the effects its programs need, the studio its environment cube shows
-            viewport.set_lookdev_effects(self._lookdev.studio.effects, self._lookdev.studio.studio)
+            # AD-039: the effects its programs need, the studio its environment cube shows; AD-040 §5: every
+            # configuration the quality manager can reach
+            self._push_lookdev_effects(self._lookdev.studio)
         if viewport is not None and viewport.lookdev_prepare_needed():
             self._lookdev.preparing = self.LOOKDEV_PREPARE_FRAMES
             self._set_status("LookDev: Shader werden vorbereitet …")
@@ -1244,7 +1259,7 @@ class Application:
             return
         start = time.perf_counter()
         if self.viewport is not None:
-            self.viewport.set_lookdev_effects(room.studio.effects, room.studio.studio)
+            self._push_lookdev_effects(room.studio)
         count = self.viewport.prepare_lookdev() if self.viewport is not None else 0
         seconds = time.perf_counter() - start
         self._apply_lookdev()
@@ -1267,6 +1282,7 @@ class Application:
             return False
         saved = self._lookdev.stop()
         self._lookdev.preview.clear()  # a held material preview ends without a step
+        self._stop_quality()
         display = self.display
         display.set_mode(saved["mode"])
         display.set_wireframe_overlay(saved["wire"])
@@ -1303,7 +1319,7 @@ class Application:
         room, viewport = self._lookdev, self.viewport
         room.studio = state
         if room.open and not room.preparing and viewport is not None and viewport.shading == "lookdev":
-            viewport.set_lookdev_effects(state.effects, state.studio)
+            self._push_lookdev_effects(state)
             if viewport.lookdev_prepare_needed():
                 room.preparing = self.LOOKDEV_PREPARE_FRAMES
                 self._set_status("LookDev: Umgebung wird vorbereitet …" if viewport.lookdev_cube_needed()
@@ -1413,7 +1429,7 @@ class Application:
         room.studio = wanted
         viewport = self.viewport
         if room.open and not room.preparing and viewport is not None:
-            viewport.set_lookdev_effects(wanted.effects, wanted.studio)
+            self._push_lookdev_effects(wanted)
             if viewport.lookdev_prepare_needed():
                 room.preparing = self.LOOKDEV_PREPARE_FRAMES
                 self._set_status("LookDev: Shader werden vorbereitet …")
@@ -1421,6 +1437,161 @@ class Application:
         self._apply_lookdev()
         self._lookdev_feature_status()
         return True
+
+    # -- the quality manager (AD-040, LD-3a): a machine setting, the activity state, Auto --------------------------
+
+    def set_lookdev_quality_path(self, path: str | Path | None) -> None:
+        """AD-040 §8.2: where the quality settings live (`main.py`: `~/.mirai_bastel/lookdev_quality.json`); read once
+        here, written on every change. None = in memory only (tests, the probes)."""
+        from . import lookdev_quality_settings
+
+        self._quality_path = Path(path) if path is not None else None
+        self._quality = lookdev_quality_settings.load(self._quality_path)
+
+    @property
+    def lookdev_quality(self):
+        """The quality settings (`lookdev_quality_settings.QualitySettings`): tier, refine, idle_tier, wait,
+        drag_updates."""
+        return self._quality
+
+    def set_lookdev_quality(self, **changes) -> bool:
+        """AD-040 §8.1: the block „Qualität“ - `tier` (auto / hoch / mittel / entwurf), `refine` („In Ruhe
+        verfeinern“), `idle_tier` (hoch / maximal), `wait` (0.1-2 s), `drag_updates` (every / every_2nd / frozen, the
+        key map while a caster is dragged, Q-LD3-1). A machine setting: written to the settings file, never to the
+        scene, `view.lookdev` or Undo. Refused while an interaction owns the input. A setting whose programs are not
+        compiled yet takes the I-10 path (the frame before stays with the status line). True = changed."""
+        from . import lookdev_quality_settings
+
+        refusal = self._lookdev_material_refusal()
+        if refusal is not None:
+            self._set_status(refusal.replace("LookDev material", "LookDev Qualität"))
+            return False
+        if "wait" in changes:
+            from viewport.lookdev_quality import clamp_wait
+
+            changes["wait"] = clamp_wait(changes["wait"])
+        try:
+            wanted = dataclasses.replace(self._quality, **changes)
+        except (TypeError, ValueError) as exc:
+            self._set_status(f"LookDev Qualität: {exc}")
+            return False
+        if wanted == self._quality:
+            return False
+        before, self._quality = self._quality, wanted
+        lookdev_quality_settings.save(self._quality_path, wanted)
+        if (before.refine, before.idle_tier) != (wanted.refine, wanted.idle_tier):
+            self._ceiling.reset()  # AD-040 §4.2: the drops belong to the idle configuration they measured
+        if wanted.tier == "auto" and before.tier != "auto":
+            self._auto.reset()  # Auto starts at Hoch (§2.2)
+        if self._activity is not None:
+            self._activity.wait = wanted.wait
+        room, viewport = self._lookdev, self.viewport
+        if room.open and not room.preparing and viewport is not None and viewport.shading == "lookdev":
+            self._push_lookdev_effects(room.studio)
+            if viewport.lookdev_prepare_needed():
+                room.preparing = self.LOOKDEV_PREPARE_FRAMES
+                self._set_status("LookDev: Shader werden vorbereitet …")
+        return True
+
+    def _quality_tier(self) -> str:
+        """The interactive tier in force: the chosen one, or Auto's."""
+        return self._auto.tier if self._quality.tier == "auto" else self._quality.tier
+
+    def _quality_key(self) -> tuple:
+        """What of the quality settings the frame signature holds (AD-040 §3.1) - never the activity state or the
+        ceiling's drops, which are derived from the signature and the measurements."""
+        q = self._quality
+        return (self._quality_tier(), q.refine, q.idle_tier, q.drag_updates)
+
+    def _start_quality(self) -> None:
+        """A room entry: a new activity tracker, Auto at Hoch, no drops (AD-040 §2.2 / §3.2 / §4.2)."""
+        from viewport.lookdev_quality import ActivityTracker
+
+        self._activity = ActivityTracker(self._quality.wait)
+        self._auto.reset()
+        self._ceiling.reset()
+        self._quality_frame = None
+
+    def _stop_quality(self) -> None:
+        """The room closes: no tracker, no configuration, no timing - the Worklight has none of them (Q4)."""
+        self._activity = None
+        self._quality_frame = None
+        if self.viewport is not None:
+            self.viewport.set_lookdev_config(None, reachable=())
+            self.viewport.lookdev_timing = False
+
+    def _push_lookdev_effects(self, state) -> None:
+        """The room's effects and studio for the next compile (AD-039) and every configuration the quality manager can
+        reach with them (AD-040 §5: `prepare_lookdev` compiles the union)."""
+        from viewport.lookdev_quality import reachable
+
+        viewport = self.viewport
+        viewport.set_lookdev_effects(state.effects, state.studio)
+        q = self._quality
+        viewport.set_lookdev_reachable(reachable(q.tier, state.effects, viewport.lookdev_features(), q.refine,
+                                                 q.idle_tier, q.drag_updates))
+
+    def _quality_held(self) -> bool:
+        """AD-040 §3.2: something holds the room Interactive although a tick left the frame unchanged - an interaction
+        session, a gesture, a paint stroke, a held viewport button (a slow orbit), a held material control."""
+        return (self.interaction.session is not None or self._gesture is not None or self._paint_room.stroking
+                or self.pointer.active or bool(self._lookdev.preview))
+
+    def _quality_step(self, dt: float) -> None:
+        """AD-040 §3.2 / §4: once per tick while the room shows LookDev, after the refreshes and `Viewport.sync` (the
+        signature sees this tick's mesh state): the GPU times that arrived feed Auto (Interactive frames only, Q8) or the
+        idle ceiling; the tracker advances on the frame signature; the configuration for the next frame is resolved."""
+        from viewport.lookdev_quality import INTERACTIVE, REFINE, CONVERGED, resolve
+
+        viewport, room, q = self.viewport, self._lookdev, self._quality
+        if self._activity is None:
+            self._start_quality()
+        self._quality_clock += max(0.0, float(dt))
+        viewport.lookdev_timing = True
+        for tag, ms in viewport.take_lookdev_gpu_times():
+            if not isinstance(tag, tuple):
+                continue  # a frame drawn without the room's configuration
+            state, tier, refine = tag
+            if state == INTERACTIVE and q.tier == "auto":
+                self._auto.feed(ms, tier, self._quality_clock)
+            elif state in (REFINE, CONVERGED) and refine and q.refine:
+                self._ceiling.feed(ms)
+        if q.tier == "auto" and self._auto.available and viewport.lookdev_timer_available() is False:
+            self._auto.unavailable()  # AD-040 §4.1: Auto holds Mittel
+        tier = self._quality_tier()
+        signature = viewport.lookdev_signature((self.viewport_width, self.viewport_height), self._quality_key())
+        state = self._activity.step(signature, self._quality_held(), dt)
+        config = resolve(tier, room.studio.effects, viewport.lookdev_features(), q.refine, state, q.idle_tier,
+                         self._ceiling.drops, q.drag_updates)
+        self._quality_frame = (state, tier)
+        viewport.set_lookdev_config(config, tag=(state, tier, q.refine))
+
+    @property
+    def lookdev_activity(self) -> str | None:
+        """AD-040 §3.2: the room's activity state (interactive / settling / refine / converged), None while closed."""
+        return self._activity.state if self._activity is not None else None
+
+    def lookdev_quality_status(self) -> str:
+        """AD-040 §8.1: the block's status line („Interaktiv – Mittel (Auto: 14 ms > 12 ms)“, „Ruhe – Maximal“)."""
+        from viewport.lookdev_quality import INTERACTIVE, status_line
+
+        q = self._quality
+        state = self._activity.state if self._activity is not None else INTERACTIVE
+        return status_line(state, self._quality_tier(), self._auto if q.tier == "auto" else None, q.refine,
+                           q.idle_tier, self._ceiling)
+
+    def lookdev_effect_tiers(self) -> dict:
+        """AD-040 §8.1: per effect held back by the configuration in force, where it is drawn („aktiv in: Hoch, Maximal“
+        / „in Ruhe“) - an effect not held back has no entry."""
+        from viewport.lookdev_quality import held_back
+
+        viewport = self.viewport
+        config = viewport.lookdev_config if viewport is not None and self._lookdev.open else None
+        if config is None:
+            return {}
+        q = self._quality
+        features = viewport.lookdev_features()
+        return held_back(config, self._lookdev.studio.effects, features, q.tier, q.refine, q.idle_tier)
 
     def lookdev_effect_reasons(self) -> dict:
         """Why each P3 effect is greyed in the panel (None = available): a feature this context lacks, or the effect
@@ -1760,7 +1931,22 @@ class Application:
             self._set_status(f"LookDev image: not written ({exc})")
             return
         self._lookdev.last_image = path
-        self._set_status(f"LookDev image saved: {path} ({rgba.shape[1]}×{rgba.shape[0]})")
+        self._set_status(f"LookDev image saved: {path} ({rgba.shape[1]}×{rgba.shape[0]}) – "
+                         f"{self._capture_state_text()}")
+
+    def _capture_state_text(self) -> str:
+        """AD-040 §7: what the saved image shows - the configuration in force when it was rendered („interaktiv
+        (Hoch)“, „Ruhe (Maximal)“); LD-3b adds the refinement's progress."""
+        from viewport.lookdev_quality import REFINE, CONVERGED, TIER_LABELS
+
+        frame = self._quality_frame
+        if frame is None:
+            return "interaktiv"
+        state, tier = frame
+        q = self._quality
+        if state in (REFINE, CONVERGED):
+            return f"Ruhe ({TIER_LABELS[q.idle_tier if q.refine else tier]})"
+        return f"interaktiv ({TIER_LABELS[tier]})"
 
     def lookdev_status(self) -> str:
         studio = self._lookdev.studio
@@ -6841,6 +7027,8 @@ class Application:
             self.skin.refresh()
             self.morph.refresh()
             self.viewport.sync()
+            if self._lookdev.open and self.viewport.shading == "lookdev":
+                self._quality_step(delta_t)  # AD-040 §3.2: after the refreshes, so the signature sees this tick
 
     def shutdown(self) -> None:
         """Sauberes Herunterfahren: aktives Tool deaktivieren (kein stale State);
