@@ -1,6 +1,8 @@
 # AD-040 — LookDev LD-3: quality manager with an activity state and idle refinement
 
-**Status:** **PROPOSED (2026-11-25, Architecture Gate)** — no `src/` change before Manu's go. The number AD-040 follows
+**Status:** **ACCEPTED (2026-11-25, Manu):** „OK, ich gebe das Go und starte dann in einer neuen Session“. LD-3a is
+next (a fresh session); Q-LD3-1 … Q-LD3-3 stay open as §12.2 proposes (Q-LD3-1 / -2 decided by the §11.1 run).
+Proposed 2026-11-25 (Architecture Gate). The number AD-040 follows
 AD-039. New class, file and panel names stay `PROVISIONAL` until built.
 **Decisions taken into it** (Manu, 2026-11-25, verbatim): „F-R1 bis F-R4 wie vorgeschlagen, F-R5 Bild speichern
 jederzeit möglich, schreib das AD“, on the questions of the
