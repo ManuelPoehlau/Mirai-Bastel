@@ -8,14 +8,20 @@ opacity (`commands.PAINT_OPACITY_UP` / `DOWN` in the `paint` binding context). I
 needs: Undo / Redo (one step per stroke; not while a stroke runs), Cancel, the views and display state, the SubD keys
 (P-10: the room paints on whatever is shown), the symmetry cycle and saving.
 
-**A stroke** (`begin` at the press, `step` per drag event, `end` at the release, `cancel` on Esc): the hit on the shown
-surface (`mirai.paint.surface.PaintSurface`: the SubD surface when SubD shows, else the cage), dabs spaced by
-`brush.SPACING` of the radius on screen (at most `MAX_DABS_PER_EVENT` per event, the last sample always), each dab the
-footprint within the world radius (P-7) and its mirror across the mesh's symmetry plane, accumulated in the stroke buffer
-(`mirai.paint.brush.PaintStroke`). The release pads the seams of the touched tiles (`surface.seam_pad`) and pushes one
-History step - with the new paint stack, when the object had none (2048² by default, P-5; 1024² the fast option). Esc
-restores every touched tile exactly. Faces without usable UVs hold no texel: the dab skips them (P-13) and the status line
-says so when the cursor is on one.
+**A stroke** (`begin` at the press, `step` per drag event, `end` at the release, `cancel` on Esc; Phase 4a, AD-037 §12):
+the events only feed the cursor's rays into the stroke's `mirai.paint.dynamics.StrokeQueue`; the path is sampled on the
+shown surface (`mirai.paint.surface.PaintSurface`: the SubD surface when SubD shows, else the cage) and placements lie
+every `dynamics.spacing` of the stamp diameter in **world arc length** (P-18). `frame()` - once per frame, from
+`Application.update_viewport` before the paint display's update - samples and evaluates within a time budget
+(`dynamics.frame_budget`: 10 ms, raised by the excess while more than `BACKLOG_S` of work trails the cursor): each
+placement is one `mirai.paint.stamp.evaluate` (the round tip exactly as the Phase 2 dab, or the alpha tip's projected
+stamp) with its mirror across the mesh's symmetry plane, accumulated in the stroke buffer (`mirai.paint.brush.PaintStroke`).
+**The release never evaluates in the event:** the stroke is *finishing* (`finishing`) and the next frames drain the rest
+(`FINISH_BUDGET_S`); then the seams of the touched tiles are padded (`surface.seam_pad`) and one History step is pushed -
+with the new paint stack, when the object had none (2048² by default, P-5; 1024² the fast option). While finishing,
+Undo / Redo / Shift+S / the SubD keys, a new press, saving and closing the room first finish the stroke (`settle`: the
+rest is bounded) and then run. Esc restores every touched tile exactly, while stroking and while finishing. Faces
+without usable UVs hold no texel: the dab skips them (P-13) and the status line says so when the cursor is on one.
 
 **Pick** (the eyedropper): the composite's colour at the hit's UV (the albedo, not the lit frame colour); then the
 previous tool again (`PROVISIONAL`).
@@ -55,8 +61,11 @@ from ..interaction.session import (
     Wheel,
 )
 from ..mesh_geometry import mesh_center_and_radius
+from ..paint import alpha as alpha_api
 from ..paint import brush as brush_api
+from ..paint import dynamics as dynamics_api
 from ..paint import layers as layers_api
+from ..paint import stamp as stamp_api
 from ..paint.store import PaintError, PaintStackCommand, tile_box
 from ..paint.surface import PaintSurface, mirror, pad_width, seam_pad
 from ..scene_objects import CompositeCommand
@@ -69,8 +78,8 @@ FIRST_LAYER = "Ebene 1"
 #: P-5 (Manu 2026-11-18): 2048² default, 1024² the fast option, 4096² not offered on the reference PC.
 RESOLUTIONS = (2048, 1024)
 DEFAULT_RESOLUTION = 2048
-#: Dabs per drag event at most (audit §8.1: cap the dab rate, never drop the last sample; `PROVISIONAL`).
-MAX_DABS_PER_EVENT = 24
+#: The path's sample step on screen: the spacing in pixels, clamped to this range (`PROVISIONAL`, Phase 4a).
+SAMPLE_STEP_PX = (2.0, 6.0)
 
 #: What the room lets through (module docstring); Undo / Redo are refused while a stroke runs (`allows`).
 PAINT_ALLOWS = frozenset(
@@ -118,15 +127,16 @@ class PaintRoomSession:
         if isinstance(event, Wheel):
             return event.command != commands.ZOOM  # zoom stays navigation
         if isinstance(event, KeyPress):
-            bindings = self._controller.services.bindings
-            return bindings.command_for(event.input) == commands.CANCEL
+            command = self._controller.services.bindings.command_for(event.input)
+            # Esc; and while a stroke finishes the keys that wait for it (`handle` finishes it, the key goes on)
+            return command == commands.CANCEL or (self._controller.finishing and command in _NOT_WHILE_STROKING)
         return isinstance(event, (Motion, Hover, Leave, Modifiers))
 
     def allows(self, command: str, ctx: RunContext) -> Optional[Refusal]:
         if command not in PAINT_ALLOWS:
             return SILENT
-        if self.stroking and command in _NOT_WHILE_STROKING:
-            return SILENT
+        if command in _NOT_WHILE_STROKING and (self.stroking or self._controller.finishing):
+            return SILENT  # (a key for them while finishing first finishes the stroke in `handle`; `can_run` stays pure)
         return None
 
     def handle(self, event) -> Outcome:
@@ -153,6 +163,9 @@ class PaintRoomSession:
         if isinstance(event, Wheel):
             return controller.wheel(event.input, event.command)
         if isinstance(event, KeyPress):
+            if controller.services.bindings.command_for(event.input) != commands.CANCEL:
+                controller.settle()  # the stroke's bounded rest now, then the key's command runs (`can_run`)
+                return PASS
             return self.cancel()
         if isinstance(event, (Motion, Hover)):
             if not self.stroking:
@@ -167,9 +180,9 @@ class PaintRoomSession:
         return PASS
 
     def cancel(self) -> bool:
-        """Esc: a running stroke is undone exactly (no History step); without one nothing happens."""
+        """Esc: a running or finishing stroke is undone exactly (no History step); without one nothing happens."""
         if not self.stroking:
-            return False
+            return self._controller.cancel_stroke() if self._controller.finishing else False
         self.stroking = False  # the press stays the room's until its release (no new stroke starts on it)
         return self._controller.cancel_stroke()
 
@@ -191,7 +204,18 @@ class PaintRoomController:
         self._bounding_radius = 1.0
         self._stroke = None
         self._stack_command = None
-        self._last = None
+        #: the running stroke's sampler and queue (Phase 4a), its surface, alpha, radius, mirror plane, view up, sample
+        #: step on screen and the last screen point
+        self._queue: dynamics_api.StrokeQueue | None = None
+        self._surface = None
+        self._image = None
+        self._radius = 0.0
+        self._definition = None
+        self._view_up = None
+        self._step_px = SAMPLE_STEP_PX[0]
+        self._screen = None
+        #: the stroke was released and its rest is being evaluated over the next frames
+        self.finishing = False
         self._previous_tool = brush_api.TOOL_PAINT
         #: (kind, build seconds) of the last surface built (status line, tests)
         self.last_build: tuple[str, float] | None = None
@@ -205,7 +229,8 @@ class PaintRoomController:
 
     @property
     def stroking(self) -> bool:
-        return self.session is not None and self.session.stroking
+        """A stroke runs or is finishing (nothing else may change the layer, the stack or the shown surface)."""
+        return self.finishing or (self.session is not None and self.session.stroking)
 
     # -- the room -------------------------------------------------------------------------------------------------
 
@@ -228,6 +253,7 @@ class PaintRoomController:
             return None
         if self.session.stroking:
             self.session.cancel()
+        self.settle()
         self.end_preview()
         self.services.interaction.end(self.session)
         self.session = None
@@ -291,6 +317,19 @@ class PaintRoomController:
         if tool is not None and tool != before.tool and tool == brush_api.TOOL_PICK:
             self._previous_tool = before.tool
         self.brush = before.with_(**changes)
+        if self.brush != before:
+            self.services.status(self.brush.status_text())
+            self._redraw_cursor()
+        return self.brush != before
+
+    def set_tip(self, alpha: str | None) -> bool:
+        """The tip: None = round, else a test alpha's id (`mirai.paint.alpha.TEST_ALPHAS`); switching between round and
+        alpha sets that kind's default spacing."""
+        if alpha is not None and alpha not in alpha_api.TEST_ALPHAS:
+            raise ValueError(f"unknown alpha {alpha!r}")
+        tip = brush_api.TipSettings(alpha, self.brush.tip.kreismaske)
+        before = self.brush
+        self.brush = before.with_tip(tip)
         if self.brush != before:
             self.services.status(self.brush.status_text())
             self._redraw_cursor()
@@ -440,12 +479,33 @@ class PaintRoomController:
             viewport.set_tool_overlay()
             return
         radius = self.radius() if self.brush.tool != brush_api.TOOL_PICK else self.radius() * 0.25
-        segments = {TOOL_PREVIEW_LAYER: surface.circle(hit.point, hit.normal, radius)}
         definition = self._mirror_definition()
+        image = alpha_api.resolve(self.brush.tip.alpha) if self.brush.tool != brush_api.TOOL_PICK else None
+        if image is None:
+            segments = {TOOL_PREVIEW_LAYER: surface.circle(hit.point, hit.normal, radius)}
+            if definition is not None:
+                point, normal = mirror(definition, hit.point, hit.normal)
+                segments[TOOL_MIRROR_DIM_LAYER] = surface.circle(point, normal, radius)
+            viewport.set_tool_overlay(segments=segments)
+            return
+        # an alpha tip: its oriented rectangle, the circle dimmed (and the mirror's rectangle dimmed)
+        normal = np.asarray(hit.normal, dtype=np.float64)
+        tangent = self._queue.last_tangent if self._queue is not None else None
+        t = stamp_api.frame_tangent(normal, tangent, self._camera_up())
+        angle = math.radians(self.brush.dynamics.angle)
+        t = math.cos(angle) * t + math.sin(angle) * np.cross(normal, t)
+        b = np.cross(normal, t)
+        dim = surface.circle(hit.point, hit.normal, radius)
         if definition is not None:
-            point, normal = mirror(definition, hit.point, hit.normal)
-            segments[TOOL_MIRROR_DIM_LAYER] = surface.circle(point, normal, radius)
-        viewport.set_tool_overlay(segments=segments)
+            point, _ = mirror(definition, hit.point, hit.normal)
+            dim += _rectangle(point, stamp_api.reflect(definition, t), stamp_api.reflect(definition, b), radius, image)
+        viewport.set_tool_overlay(segments={TOOL_PREVIEW_LAYER: _rectangle(hit.point, t, b, radius, image),
+                                            TOOL_MIRROR_DIM_LAYER: dim})
+
+    def _camera_up(self) -> np.ndarray:
+        """The view's up in object space (the view-fixed rule of a click without movement)."""
+        _, _, up = self.services.edit_camera.basis()
+        return np.asarray(up, dtype=np.float64)
 
     def clear_cursor(self) -> None:
         viewport = self.services.viewport
@@ -459,24 +519,27 @@ class PaintRoomController:
 
     # -- strokes ----------------------------------------------------------------------------------------------------
 
-    def _screen_radius(self, point) -> float:
-        """The brush radius in pixels at `point` (object space) - the dab spacing's unit."""
+    def _screen_radius(self, point, radius: float | None = None) -> float:
+        """The brush radius in pixels at `point` (object space) - the path's sample step's unit."""
         services = self.services
         camera = services.edit_camera
         width, height = services.viewport_size
         _, right, _ = camera.basis()
+        radius = self.radius() if radius is None else radius
         a = camera.project_to_screen(tuple(point), width, height)
-        b = camera.project_to_screen(tuple(np.asarray(point) + self.radius() * np.asarray(right)), width, height)
+        b = camera.project_to_screen(tuple(np.asarray(point) + radius * np.asarray(right)), width, height)
         if a is None or b is None:
             return 8.0
         return max(1.0, math.hypot(b[0] - a[0], b[1] - a[1]))
 
     def begin(self, x: float, y: float) -> bool:
-        """The press: a Pick, or the first dab of a stroke. True = a stroke runs (its drags and release follow)."""
+        """The press: a Pick, or a stroke's first ray (its first placement is evaluated at the next frame). True = a
+        stroke runs (its drags and release follow)."""
         services = self.services
         obj = self.obj
         if obj is None:
             return False
+        self.settle()  # a press while the last stroke finishes: that one first
         surface, hit = self.hit(x, y)
         if hit is None:
             services.status("Paint: nothing of the object under the cursor")
@@ -499,57 +562,80 @@ class PaintRoomController:
             return False
         label = "Erase stroke" if self.brush.tool == brush_api.TOOL_ERASE else "Paint stroke"
         recorder = services.paint.begin_stroke(obj, layer, label)
-        self._stroke = brush_api.PaintStroke(recorder, self.brush)
+        brush = self.brush
+        self._stroke = brush_api.PaintStroke(recorder, brush)
         self._surface = surface
-        self._last = (x, y)
-        self._dab(surface, hit)
+        self._image = alpha_api.resolve(brush.tip.alpha)
+        self._radius = radius = self.radius()
+        self._definition = self._mirror_definition()
+        self._view_up = self._camera_up()
+        spacing = brush.dynamics.spacing * 2.0 * radius
+        screen = self._screen_radius(hit.point, radius)
+        lo, hi = SAMPLE_STEP_PX
+        self._step_px = min(max(brush.dynamics.spacing * 2.0 * screen, lo), hi)
+        jump = max(2.0 * radius, 6.0 * self._step_px * radius / screen)  # a sample farther: a hit gap (silhouette)
+        self._queue = dynamics_api.StrokeQueue(lambda o, d: surface.hit(o, d), spacing, jump,
+                                               directed=self._image is not None, evaluate=self._evaluate,
+                                               radius=radius)
+        self._queue.add_ray(*self._ray(x, y))
+        self._screen = (x, y)
         self._show_cursor(surface, hit)
         return True
 
     def step(self, x: float, y: float) -> None:
-        if self._stroke is None or self._last is None:
+        """A drag event: its ray joins the stroke's path (sampled and evaluated in `frame`); the cursor follows."""
+        queue = self._queue
+        if queue is None or self._stroke is None or self.finishing or self._screen is None:
             return
-        surface = self._surface
-        lx, ly = self._last
-        distance = math.hypot(x - lx, y - ly)
-        hit = self._hit_on(surface, x, y)  # the stroke's surface: SubD and the view cannot change while it runs
-        spacing = brush_api.SPACING * self._screen_radius(hit.point) if hit is not None else 4.0
-        count = int(distance // max(spacing, 1.0))
-        if count == 0:
-            if hit is not None:
-                self._show_cursor(surface, hit)
+        sx, sy = self._screen
+        distance = math.hypot(x - sx, y - sy)
+        if distance <= 0.0:
             return
-        count = min(count, MAX_DABS_PER_EVENT)
-        last_hit = None
-        for i in range(1, count + 1):
-            t = i / count if count == MAX_DABS_PER_EVENT else (i * spacing) / distance
-            sx, sy = lx + (x - lx) * t, ly + (y - ly) * t
-            sample = self._hit_on(surface, sx, sy)
-            if sample is not None:
-                self._dab(surface, sample)
-                last_hit = sample
-            self._last = (sx, sy)
-        if count == MAX_DABS_PER_EVENT:
-            self._last = (x, y)
-        if last_hit is not None:
-            self._show_cursor(surface, last_hit)
+        queue.add_ray(*self._ray(x, y), samples=max(1, math.ceil(distance / self._step_px)))
+        self._screen = (x, y)
+        hit = self._hit_on(self._surface, x, y)  # the stroke's surface: SubD and the view cannot change while it runs
+        if hit is not None:
+            self._show_cursor(self._surface, hit)
 
-    def _dab(self, surface: PaintSurface, hit) -> None:
-        radius = self.radius()
-        brush = self.brush
-        texels, x = surface.footprint(hit.point, radius, hit.normal)
-        parts_t, parts_c = [texels], [brush_api.falloff(x, brush.hardness, brush.curve)]
-        definition = self._mirror_definition()
-        if definition is not None:
-            point, normal = mirror(definition, hit.point, hit.normal)
-            texels, x = surface.footprint(point, radius, normal)
-            parts_t.append(texels)
-            parts_c.append(brush_api.falloff(x, brush.hardness, brush.curve))
-        self._stroke.dab(np.concatenate(parts_t), np.concatenate(parts_c), unique=len(parts_t) == 1)
+    def _evaluate(self, placement) -> None:
+        texels, coverage, unique = stamp_api.evaluate(self._surface, placement, self._radius, self._stroke.settings,
+                                                      self._definition, view_up=self._view_up, image=self._image)
+        self._stroke.dab(texels, coverage, unique=unique)
+
+    def frame(self) -> int:
+        """Once per frame (`Application.update_viewport`): the running or finishing stroke's work within the frame
+        budget; a finished stroke makes its History step. Returns the placements evaluated."""
+        queue = self._queue
+        if queue is None:
+            return 0
+        evaluated = queue.run(dynamics_api.frame_budget(queue, self.finishing))
+        if self.finishing and queue.done:
+            self._commit()
+        return evaluated
 
     def end(self, x: float | None = None, y: float | None = None) -> bool:
-        """The release: seams padded, one History step (with the new stack, if any)."""
+        """The release: no evaluation here - the stroke is finishing; `frame` drains the rest and makes the History
+        step."""
+        if self._stroke is None or self._queue is None:
+            return False
+        self._queue.end_input()
+        self.finishing = True
+        return True
+
+    def settle(self) -> bool:
+        """A finishing stroke's rest evaluated now and its History step pushed (the rest is bounded); True = one was
+        finishing."""
+        if not self.finishing or self._queue is None:
+            return False
+        self._queue.run(None)
+        self._commit()
+        return True
+
+    def _commit(self) -> bool:
+        """The finished stroke: seams padded, one History step (with the new stack, if any)."""
         stroke, self._stroke = self._stroke, None
+        self._queue = None
+        self.finishing = False
         if stroke is None:
             return False
         services = self.services
@@ -587,6 +673,8 @@ class PaintRoomController:
 
     def cancel_stroke(self) -> bool:
         stroke, self._stroke = self._stroke, None
+        self._queue = None
+        self.finishing = False
         if stroke is None:
             return False
         stroke.recorder.cancel()
@@ -623,3 +711,12 @@ class PaintRoomController:
         if isinstance(base, np.ndarray):
             return tuple(float(c) / 255.0 for c in base.reshape(-1, 4)[texel][:3])
         return tuple(float(c) for c in base[:3])
+
+
+def _rectangle(centre, t, b, radius: float, image) -> list[tuple]:
+    """An alpha tip's cursor: its rectangle around `centre` spanned by `t` (width) and `b` (height), as segments."""
+    hw, hh = image.half_extents
+    c = np.asarray(centre, dtype=np.float64)
+    corners = [tuple(float(v) for v in c + radius * (sx * hw * t + sy * hh * b))
+               for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+    return [(corners[i], corners[(i + 1) % 4]) for i in range(4)]

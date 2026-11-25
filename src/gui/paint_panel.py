@@ -1,5 +1,5 @@
 """The Paint Room panel (AD-037 §8 Phase 2): tool, colour, radius, opacity, flow, hardness, curve, mirror, resolution;
-Phase 3: the layers.
+Phase 3: the layers; Phase 4a (§12): the tip (round or a test alpha), spacing, angle and the Kreismaske.
 
 Drawn while `app.paint_room_open` (like the Eye Lab window); the logic is `gui.paint_model` (headless). Every brush value
 goes through `Application.set_paint_brush` (view state: not saved, no Undo step); every layer change is one Undo step
@@ -7,6 +7,8 @@ goes through `Application.set_paint_brush` (view state: not saved, no Undo step)
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 from mirai.paint.brush import RADIUS_STEPS_PERCENT
 
@@ -34,6 +36,7 @@ class PaintPanel:
         changed, colour = imgui.color_edit3("Farbe", list(brush.colour))
         if changed:
             app.set_paint_brush(colour=tuple(float(c) for c in colour))
+        self._tip(st)
         imgui.set_next_item_width(170.0)
         changed, step = imgui.slider_int("Radius", brush.radius_step, 0, len(RADIUS_STEPS_PERCENT) - 1,
                                          pm.radius_label(brush.radius_step))
@@ -41,21 +44,33 @@ class PaintPanel:
             app.set_paint_brush(radius_step=step)
         if imgui.is_item_hovered():
             imgui.set_tooltip("Prozent des Objektradius (Welt, P-7); Shift+Rad im Viewport")
+        round_falloff = brush.tip.round or brush.tip.kreismaske
         for field, label, hint in (("opacity", "Deckkraft", "Alt+Rad im Viewport; baut sich in einem Strich nicht auf"),
-                                   ("flow", "Fluss", "pro Tupfer; baut sich in einem Strich auf"),
+                                   ("flow", "Fluss", "pro Stempel; baut sich in einem Strich auf"),
                                    ("hardness", "Härte", "der volle Kern des Pinsels")):
+            if field == "hardness" and not round_falloff:
+                continue  # an alpha defines its own shape (P-19); hardness and curve shape only the Kreismaske
             imgui.set_next_item_width(170.0)
             changed, value = imgui.slider_float(label, float(getattr(brush, field)) * 100.0, 0.0, 100.0, "%.0f %%")
             if changed:
                 app.set_paint_brush(**{field: value / 100.0})
             if imgui.is_item_hovered():
                 imgui.set_tooltip(hint)
+        if round_falloff:
+            imgui.set_next_item_width(170.0)
+            if imgui.begin_combo("Kurve", pm.curve_label(brush.curve)):
+                for curve in pm.CURVES:
+                    if imgui.selectable(pm.curve_label(curve), curve == brush.curve)[0]:
+                        app.set_paint_brush(curve=curve)
+                imgui.end_combo()
+        lo, hi = pm.SPACING_PERCENT
         imgui.set_next_item_width(170.0)
-        if imgui.begin_combo("Kurve", pm.curve_label(brush.curve)):
-            for curve in pm.CURVES:
-                if imgui.selectable(pm.curve_label(curve), curve == brush.curve)[0]:
-                    app.set_paint_brush(curve=curve)
-            imgui.end_combo()
+        changed, value = imgui.slider_float("Abstand", brush.dynamics.spacing * 100.0, lo, hi, "%.0f %%",
+                                            imgui.SliderFlags_.logarithmic)
+        if changed:
+            app.set_paint_brush(dynamics=dataclasses.replace(brush.dynamics, spacing=min(max(value, lo), hi) / 100.0))
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Abstand der Stempel entlang des Strichs, in % des Stempeldurchmessers (Weltmaß, P-18)")
         if st.mirror_plane is not None:
             changed, on = imgui.checkbox(f"Spiegeln ({st.mirror_plane}-Ebene)", brush.mirror)
             if changed:
@@ -75,6 +90,33 @@ class PaintPanel:
         imgui.separator()
         if imgui.button("Schließen"):
             app.close_paint_room()
+
+    def _tip(self, st: pm.PaintPanelState) -> None:
+        """The tip chooser (4a: a plain combo over the test alphas) and, with an alpha, its angle and Kreismaske."""
+        imgui, app = self.imgui, self.app
+        brush = st.brush
+        imgui.set_next_item_width(170.0)
+        if imgui.begin_combo("Spitze", st.tip_label):
+            for alpha, label in st.tips:
+                if imgui.selectable(label, alpha == brush.tip.alpha)[0] and alpha != brush.tip.alpha:
+                    app.set_paint_tip(alpha)
+            imgui.end_combo()
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Rund = der weiche Pinsel; die anderen sind Test-Alphas (Phase 4a): Strich folgen")
+        if brush.tip.round:
+            return
+        imgui.set_next_item_width(170.0)
+        changed, angle = imgui.slider_float("Winkel", float(brush.dynamics.angle), -180.0, 180.0, "%.0f°")
+        if changed:
+            app.set_paint_brush(dynamics=dataclasses.replace(brush.dynamics, angle=min(max(angle, -180.0), 180.0)))
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Drehung des Alphas gegen die Strichrichtung")
+        changed, on = imgui.checkbox("Kreismaske", brush.tip.kreismaske)
+        if changed:
+            app.set_paint_brush(tip=dataclasses.replace(brush.tip, kreismaske=on))
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Das Alpha zusätzlich mit der runden Abnahme (Härte, Kurve) maskieren - aus: das Alpha "
+                              "bestimmt seine Form selbst")
 
     def _layers(self, st: pm.PaintPanelState) -> None:
         imgui, app = self.imgui, self.app

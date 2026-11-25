@@ -57,14 +57,26 @@ def _centre(app) -> tuple[float, float]:
     return camera.project_to_screen(tuple(best[1]), 800, 600)
 
 
-def _stroke(app, steps: int = 12, dx: float = 4.0, release: bool = True) -> tuple[float, float]:
+def _finish(app, frames: int = 200, display: bool = True) -> None:
+    """Frames until a released stroke has finished (AD-037 §12: the release never evaluates in the event);
+    `display` False: only the room's work, not the paint display's update."""
+    for _ in range(frames):
+        if not app.paint_stroking:
+            return
+        app.update_viewport(0.0) if display else app._paint_room.frame()
+    raise AssertionError("the stroke did not finish")
+
+
+def _stroke(app, steps: int = 12, dx: float = 4.0, release: bool = True, display: bool = True) -> tuple[float, float]:
     x, y = _centre(app)
     app.pointer_motion(x, y)
     app.pointer_press(LMB, x, y)
     for i in range(1, steps + 1):
         app.pointer_drag(dx, 0.0, x + dx * i, y)
+        app.update_viewport(0.0) if display else app._paint_room.frame()  # the stroke's work runs in the frames
     if release:
         app.pointer_release("LEFT", x + dx * steps, y)
+        _finish(app, display=display)
     return x, y
 
 
@@ -160,6 +172,7 @@ def test_the_room_input(app):
     app.dispatch_command(commands.UNDO)
     assert len(app.history) == history  # not while a stroke runs
     app.pointer_release("LEFT", *_centre(app))
+    _finish(app)
     assert len(app.history) == history + 1
     assert app.scene.mesh.export_state() == mesh_before  # painting never writes the mesh
 
@@ -189,6 +202,7 @@ def test_the_mirrored_dab_paints_the_other_side(app):
     assert app.viewport.tool_line_layers["tool_mirror_dim"]  # the mirror's circle
     app.pointer_press(LMB, x + 40, y)
     app.pointer_release("LEFT", x + 40, y)
+    _finish(app)
     surface = PaintSurface(mesh, 1024, 1024)
     painted = np.nonzero(app.paint.pixels(obj, "Ebene 1").reshape(-1, 4)[:, 3])[0]
     painted = painted[surface.map.slot[painted] >= 0]
@@ -208,7 +222,7 @@ def test_the_live_texture_shows_the_composite_and_recomposites_only_changed_tile
     assert isinstance(texture, LiveTexture) and texture is app.paint_display.texture(obj)
     full = app.paint_display.full_composites
     composite = texture.rgba.copy()
-    _stroke(app, steps=3)
+    _stroke(app, steps=3, display=False)
     tiles = app.paint_display.update()
     assert 0 < tiles < 16 and app.paint_display.full_composites == full
     assert not np.array_equal(texture.rgba, composite)
@@ -353,4 +367,120 @@ def test_the_panels_take_the_mouse_in_the_room_but_not_during_a_stroke(app):
     _stroke(app, release=False)
     assert layer._gesture_running()
     app.pointer_release("LEFT", *_centre(app))
+    _finish(app)
     assert not layer._gesture_running()
+
+
+# -- Phase 4a (AD-037 §12): the queue, the finishing stroke, the alpha tip --------------------------------------------
+
+CTRL_Z = Input("key", "z", frozenset({"ctrl"}))
+ESC = Input("key", "ESCAPE", frozenset())
+
+
+def _released(app, steps: int = 12) -> tuple[float, float]:
+    """A stroke whose drags and release come without a frame between them: all its work waits for the frames."""
+    x, y = _centre(app)
+    app.pointer_motion(x, y)
+    app.pointer_press(LMB, x, y)
+    for i in range(1, steps + 1):
+        app.pointer_drag(4.0, 0.0, x + 4.0 * i, y)
+    app.pointer_release("LEFT", x + 4.0 * steps, y)
+    return x, y
+
+
+def test_the_release_never_evaluates_in_the_event_and_the_stroke_finishes_over_frames(app, monkeypatch):
+    from mirai.controllers import paint_room
+
+    obj = app.scene.edit_object
+    app.open_paint_room()
+    _stroke(app)
+    before = app.paint.pixels(obj, "Ebene 1").copy()
+    history = len(app.history)
+    monkeypatch.setattr(paint_room.dynamics_api, "FINISH_BUDGET_S", 0.0)  # one step per frame
+    _released(app)
+    room = app._paint_room
+    assert room.finishing and app.paint_stroking and room._queue.evaluated == 0  # nothing evaluated in the events
+    assert np.array_equal(app.paint.pixels(obj, "Ebene 1"), before) and len(app.history) == history
+    frames = 0
+    while app.paint_stroking:
+        app.update_viewport(0.0)
+        frames += 1
+    assert frames > 3 and len(app.history) == history + 1 and room.last_dabs > 3
+    assert not np.array_equal(app.paint.pixels(obj, "Ebene 1"), before)
+    app.dispatch_command(commands.UNDO)  # one step per stroke
+    assert np.array_equal(app.paint.pixels(obj, "Ebene 1"), before)
+
+
+def test_escape_while_finishing_restores_exactly(app, monkeypatch):
+    from mirai.controllers import paint_room
+
+    obj = app.scene.edit_object
+    app.open_paint_room()
+    _stroke(app)
+    before = app.paint.pixels(obj, "Ebene 1").copy()
+    history = len(app.history)
+    monkeypatch.setattr(paint_room.dynamics_api, "FINISH_BUDGET_S", 0.0)
+    _released(app)
+    for _ in range(4):
+        app.update_viewport(0.0)
+    assert app._paint_room.finishing and not np.array_equal(app.paint.pixels(obj, "Ebene 1"), before)
+    assert app.key_press(ESC) is True
+    assert not app.paint_stroking and len(app.history) == history
+    assert np.array_equal(app.paint.pixels(obj, "Ebene 1"), before)
+    fresh = _app()
+    fresh.open_paint_room()
+    _released(fresh)
+    fresh.key_press(ESC)  # the first stroke, finishing: no paint stack either
+    assert fresh.scene.edit_object.paint is None and len(fresh.history) == 0
+
+
+def test_undo_and_a_new_press_while_finishing_wait_for_the_stroke(app):
+    obj = app.scene.edit_object
+    app.open_paint_room()
+    _stroke(app)
+    first = app.paint.pixels(obj, "Ebene 1").copy()
+    history = len(app.history)
+    _released(app)
+    assert app._paint_room.finishing
+    app.dispatch_command(commands.UNDO)  # the API path: refused while it finishes, as while stroking
+    assert app._paint_room.finishing and len(app.history) == history
+    app.key_press(CTRL_Z)  # the key: the stroke finishes first, then Undo takes it back
+    assert not app.paint_stroking and len(app.history) == history
+    assert np.array_equal(app.paint.pixels(obj, "Ebene 1"), first)
+    app.dispatch_command(commands.REDO)
+    second = app.paint.pixels(obj, "Ebene 1").copy()
+    assert not np.array_equal(second, first)
+    x, y = _released(app)
+    assert app._paint_room.finishing
+    app.pointer_press(LMB, x, y)  # a new press: the finishing stroke is committed first, the new one starts
+    assert len(app.history) == history + 2 and app._paint_room.session.stroking
+    app.pointer_release("LEFT", x, y)
+    _finish(app)
+    assert len(app.history) == history + 3
+
+
+def test_an_alpha_tip_paints_its_spacing_and_draws_an_oriented_rectangle(app):
+    from gui import paint_model as pm
+    from mirai.paint import dynamics
+
+    obj = app.scene.edit_object
+    app.open_paint_room()
+    assert app.paint_brush.dynamics.spacing == dynamics.ROUND_SPACING
+    assert app.set_paint_tip("test/poren") and app.paint_brush.tip.alpha == "test/poren"
+    assert app.paint_brush.dynamics.spacing == dynamics.ALPHA_SPACING  # the alpha kind's default
+    assert "Spitze Poren" in app.status_message and "Abstand 100 %" in app.status_message
+    x, y = _centre(app)
+    app.pointer_motion(x, y)
+    rectangle = app.viewport.tool_line_layers["tool_preview"]
+    assert len(rectangle) == 4  # the rectangle; the circle dimmed
+    assert len(app.viewport.tool_line_layers["tool_mirror_dim"]) == 48
+    history = len(app.history)
+    _stroke(app, steps=20, dx=6.0)
+    assert len(app.history) == history + 1 and obj.paint is not None
+    painted = app.paint.pixels(obj, "Ebene 1")[..., 3]
+    assert len(np.unique(painted[painted > 0])) > 20  # the alpha's greys, not a round dab's plateau
+    assert app.set_paint_tip(None) and app.paint_brush.dynamics.spacing == dynamics.ROUND_SPACING
+    st = pm.state(app)
+    assert [label for _, label in st.tips] == ["Rund", "Poren", "Ader", "Kratzer", "Fleck", "Punkte", "Quadrat"]
+    with pytest.raises(ValueError):
+        app.set_paint_tip("nope")

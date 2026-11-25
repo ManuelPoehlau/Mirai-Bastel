@@ -25,10 +25,12 @@ from .smooth import plan_smooth
 #: line gets about four dabs per pass, about two steps.
 DAB_AMOUNT = 0.5
 
-#: PROVISIONAL: dab spacing as a fraction of the brush radius on screen (the Paint Room uses the same rule).
+#: PROVISIONAL: dab spacing as a fraction of the brush radius on screen (the Paint Room's Phase 2 rule; since AD-037
+#: Phase 4a the room spaces in world arc length with a stamp queue, §12).
 SPACING = 0.25
 
-#: Dabs per pointer event at most (a fast drag fills the rest of its way with the last sample; Paint Room's limit).
+#: Dabs per pointer event at most (a fast drag fills the rest of its way with the last sample; the Paint Room's Phase 2
+#: limit).
 MAX_DABS_PER_EVENT = 24
 
 #: The smallest dab spacing in pixels (a tiny radius on screen must not dab per pixel).

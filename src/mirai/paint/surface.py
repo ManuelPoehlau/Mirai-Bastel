@@ -44,6 +44,17 @@ def pad_width(width: int) -> int:
 
 
 @dataclass(frozen=True)
+class Gathered:
+    """`PaintSurface.gather`'s result: per texel its index, its surface point relative to the centre (float32), its
+    squared normalised distance and its triangle slot."""
+
+    texels: np.ndarray
+    rel: np.ndarray
+    d2: np.ndarray
+    slots: np.ndarray
+
+
+@dataclass(frozen=True)
 class Hit:
     point: np.ndarray          # (3,) object space
     normal: np.ndarray         # (3,) unit, the triangle's winding normal
@@ -168,6 +179,10 @@ class PaintSurface:
         normals = np.cross(pts[:, 1] - pts[:, 0], pts[:, 2] - pts[:, 0])
         length = np.linalg.norm(normals, axis=1)
         self._tri_normal = normals / np.where(length > 0.0, length, 1.0)[:, None]
+        # world area per mapped texel of each triangle (Phase 4a: the alpha frame's area-weighted inner-disc normal)
+        counts = np.diff(self._offsets)
+        self._texel_area = np.where(counts > 0, 0.5 * length / np.maximum(counts, 1), 0.0)
+        self._tri_normal32 = self._tri_normal.astype(np.float32)
         # every mapped texel's surface point, in the slot-grouped order of `_texels`, filled per triangle at its first dab
         # (float32: a dab compares distances to a radius; ~12 bytes per mapped texel; reset when positions change)
         self._texel_points = np.empty((self._texels.size, 3), dtype=np.float32)
@@ -241,39 +256,59 @@ class PaintSurface:
     def footprint(self, centre, radius: float, facing=None) -> tuple[np.ndarray, np.ndarray]:
         """`(texels, x)`: the mapped texels whose surface point lies within `radius` of `centre` and `x = d / radius`
         in [0, 1); only triangles whose normal is within 90 degrees of `facing` (None = all)."""
+        gathered = self._gather(centre, radius, facing, slots=False)
+        if gathered is None:
+            return np.zeros(0, np.int64), np.zeros(0, np.float64)
+        index, _, d2, _ = gathered
+        inside = np.flatnonzero(d2 < 1.0)
+        return self._texels[index[inside]], np.sqrt(d2[inside])
+
+    def gather(self, centre, radius: float, facing=None) -> "Gathered | None":
+        """The footprint's texels with what the alpha frame reads (Phase 4a, `stamp`): their surface points relative to
+        `centre` (float32), `d2 = (d / radius)²` (< 1) and their triangle slots; None when nothing lies there."""
+        gathered = self._gather(centre, radius, facing, slots=True)
+        if gathered is None:
+            return None
+        index, rel, d2, slots = gathered
+        inside = np.flatnonzero(d2 < 1.0)
+        if inside.size == 0:
+            return None
+        return Gathered(self._texels[index[inside]], rel[inside], d2[inside], slots[inside])
+
+    def _gather(self, centre, radius: float, facing, slots: bool):
         c = np.asarray(centre, dtype=np.float64)
         r = float(radius)
-        slots = self._slot_clusters.box(c - r, c + r)
-        near = np.all(self._lo[slots] <= c + r, axis=1) & np.all(self._hi[slots] >= c - r, axis=1)
-        near &= self._live[slots] & ~self._slot_hidden[slots]
+        near_slots = self._slot_clusters.box(c - r, c + r)
+        near = np.all(self._lo[near_slots] <= c + r, axis=1) & np.all(self._hi[near_slots] >= c - r, axis=1)
+        near &= self._live[near_slots] & ~self._slot_hidden[near_slots]
         if facing is not None:
-            near &= self._tri_normal[slots] @ np.asarray(facing, dtype=np.float64) > FACING_MIN
-        slots = slots[near]
-        empty = (np.zeros(0, np.int64), np.zeros(0, np.float64))
-        if slots.size == 0:
-            return empty
-        index = self._ranges(slots)
+            near &= self._tri_normal[near_slots] @ np.asarray(facing, dtype=np.float64) > FACING_MIN
+        near_slots = near_slots[near]
+        if near_slots.size == 0:
+            return None
+        index, of_slot = self._ranges(near_slots, slots)
         if index.size == 0:
-            return empty
-        todo = slots[~self._slot_ready[slots]]
+            return None
+        todo = near_slots[~self._slot_ready[near_slots]]
         if todo.size:
             self._fill_points(todo)
         rel = self._texel_points[index] - c.astype(np.float32)
         d2 = np.einsum("ij,ij->i", rel, rel) / np.float32(r * r)
-        inside = np.flatnonzero(d2 < 1.0)
-        return self._texels[index[inside]], np.sqrt(d2[inside])
+        return index, rel, d2, of_slot
 
-    def _ranges(self, slots: np.ndarray) -> np.ndarray:
-        """The positions [start, end) in `_texels` of every slot in `slots`, as one index array."""
+    def _ranges(self, slots: np.ndarray, with_slots: bool = False):
+        """The positions [start, end) in `_texels` of every slot in `slots`, as one index array (and, `with_slots`,
+        each position's slot; else None)."""
         starts, ends = self._offsets[slots], self._offsets[slots + 1]
         lengths = ends - starts
         total = int(lengths.sum())
         if total == 0:
-            return np.zeros(0, dtype=np.int64)
-        return np.repeat(starts - np.concatenate(([0], np.cumsum(lengths)[:-1])), lengths) + np.arange(total)
+            return np.zeros(0, dtype=np.int64), (np.zeros(0, dtype=np.int64) if with_slots else None)
+        index = np.repeat(starts - np.concatenate(([0], np.cumsum(lengths)[:-1])), lengths) + np.arange(total)
+        return index, (np.repeat(slots, lengths) if with_slots else None)
 
     def _fill_points(self, slots: np.ndarray) -> None:
-        index = self._ranges(slots)
+        index, _ = self._ranges(slots)
         if index.size:
             lengths = self._offsets[slots + 1] - self._offsets[slots]
             rows = self._tri_rows[np.repeat(slots, lengths)]

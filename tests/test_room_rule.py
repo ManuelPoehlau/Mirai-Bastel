@@ -128,6 +128,8 @@ def test_a_stroke_paints_in_a_pose_with_a_mix(app):
     for i in range(1, 13):
         app.pointer_drag(4.0, 0.0, x + 4 * i, y)
     app.pointer_release("LEFT", x + 48, y)
+    app.update_viewport(0.0)  # AD-037 §12: the stroke's work runs in the frames
+    app._paint_room.settle()
     assert obj.paint is not None and app.paint.pixels(obj, "Ebene 1")[..., 3].any()
 
 

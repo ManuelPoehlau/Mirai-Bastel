@@ -552,12 +552,23 @@ def test_paint_room_panel_and_a_stroke_through_the_window_upload_the_live_textur
         window.dispatch_event("on_mouse_release", x0, y0 + 10, mouse.LEFT, 0)
         _tick(app, window, 2)
         assert texture.uploads > uploads and len(app.history) == 2  # a dab: its boxes only
+        # Phase 4a (§12): an alpha tip - the panel draws its rows (Spitze, Winkel, Kreismaske, Abstand), a stroke paints
+        assert app.set_paint_tip("test/ader") is True
+        _tick(app, window, 2)
+        window.dispatch_event("on_mouse_press", x0, y0 - 10, mouse.LEFT, 0)
+        for i in range(1, 8):
+            window.dispatch_event("on_mouse_drag", x0 + 6 * i, y0 - 10, 6, 0, mouse.LEFT, 0)
+            _tick(app, window, 1)
+        window.dispatch_event("on_mouse_release", x0 + 42, y0 - 10, mouse.LEFT, 0)
+        _tick(app, window, 3)
+        assert len(app.history) == 3 and not app.paint_stroking, app.status_message
+        assert app.set_paint_tip(None) is True
         # Phase 3: the layer list draws with two layers; a layer value is one step and re-sends only painted boxes
         assert app.add_paint_layer() is True
         _tick(app, window, 2)
         assert app.set_paint_layer("Ebene 1", blend="multiply") is True
         _tick(app, window, 2)
-        assert len(app.history) == 4 and app.paint_display.texture(obj) is texture
+        assert len(app.history) == 5 and app.paint_display.texture(obj) is texture
         before = snapshot_gl_state()
         _tick(app, window, 1)
         assert snapshot_gl_state() == before

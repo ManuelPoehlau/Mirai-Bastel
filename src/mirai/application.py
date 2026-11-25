@@ -1201,6 +1201,7 @@ class Application:
         before the first LookDev frame, behind a status line (§9). Refused with a status line; True = open."""
         if self._lookdev.open:
             return True
+        self._paint_room.settle()  # AD-037 §12: a finishing stroke is finished first (bounded)
         refusal = self.lookdev_refusal()
         if refusal is not None:
             self._set_status(refusal)
@@ -1942,6 +1943,10 @@ class Application:
         """Change the brush (any `BrushSettings` field; clamped). True = changed."""
         return self._paint_room.set_brush(**changes)
 
+    def set_paint_tip(self, alpha: str | None) -> bool:
+        """The brush tip (AD-037 §12): None = round, else a test alpha's id; switching kind sets its default spacing."""
+        return self._paint_room.set_tip(alpha)
+
     @property
     def paint_resolution(self) -> int:
         """The size of the edit object's paint (its stack's), or of the stack the first stroke will make (P-5)."""
@@ -2511,6 +2516,7 @@ class Application:
         Nachbardatei, damit ein Fehler die alte Datei nicht zerstört. Kein History-Eintrag;
         Selection und History werden nicht gespeichert (Format, V1_SPEC §12); der Ansichts-Zustand (Display,
         Licht, Kamera, ... `mirai.view_state`) reist unter `"view"` mit."""
+        self._paint_room.settle()  # AD-037 §12: a finishing stroke is finished first (bounded)
         owner = self.interaction_owner
         if owner == "paint" and not self._paint_room.stroking:
             owner = None  # AD-037: the Paint Room saves between strokes (its view state is not the document)
@@ -6999,6 +7005,7 @@ class Application:
         WP-VIEW-PERF-01 Slice 2: picks a hover left stale by `coalesce_hover` first
         (`flush_hover`), once per tick.
         """
+        self._paint_room.frame()  # AD-037 §12: the stroke's placements within the frame budget (and its finish)
         if self.viewport is not None:
             self.flush_hover()
             if self._paint_room.session is not None and self._paint_room.obj is not self.scene.edit_object:

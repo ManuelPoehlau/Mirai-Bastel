@@ -17,6 +17,13 @@ build up inside it. Erase reduces the layer's alpha the same way. The stroke kee
 every dab recomputes from the same start pixels (Esc is the recorder's exact restore, `PaintStore.StrokeRecorder.cancel`).
 
 **Blend** (Normal, straight alpha, 8 bit, P-12/P-16): `a = s + a0 (1 - s)`, `c = (k s + c0 a0 (1 - s)) / a`, rounded.
+
+**Tip and dynamics** (Phase 4a, AD-037 §12): every brush has a tip (`TipSettings`): the **round tip** (no alpha - the
+falloff above, unchanged) or an **alpha tip** (`alpha` = an alpha id, `mirai.paint.alpha`; the Kreismaske multiplies
+the falloff in, off by default, P-19). `dynamics` (`mirai.paint.dynamics.StrokeDynamics`) holds the spacing in world arc
+length (P-18) and the orientation. Both default to "today's round brush". A cluster of several stamps combines in one
+write as `S <- 1 - (1 - S) * prod(1 - flow_k * c_k)` (`PaintStroke.dab_product`; the stroke buffer's `S + (1 - S) * f`
+is order-independent, so this is the same as applying them one by one).
 """
 
 from __future__ import annotations
@@ -26,6 +33,8 @@ import math
 from dataclasses import dataclass
 
 import numpy as np
+
+from .dynamics import ALPHA_SPACING, ROUND_SPACING, StrokeDynamics
 
 TOOL_PAINT = "paint"
 TOOL_ERASE = "erase"
@@ -39,9 +48,6 @@ RADIUS_STEPS_PERCENT: tuple[float, ...] = (0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0, 4
 DEFAULT_RADIUS_STEP = RADIUS_STEPS_PERCENT.index(3.0)
 #: `PROVISIONAL`: opacity steps of the opacity wheel (Alt+wheel in the room, P-6), in percent.
 OPACITY_STEPS_PERCENT: tuple[int, ...] = (5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 90, 100)
-#: Dab spacing as a fraction of the brush radius on screen (`PROVISIONAL`; Brush research §7.3: a fraction of the
-#: screen radius). 0.25 = four dabs per radius.
-SPACING = 0.25
 
 
 def _smooth(t):
@@ -71,6 +77,18 @@ CURVE_LABELS = {"smooth": "Weich", "sphere": "Kugel", "root": "Rund", "sharp": "
 
 
 @dataclass(frozen=True)
+class TipSettings:
+    """The brush tip (module docstring): `alpha` None = the round tip."""
+
+    alpha: str | None = None
+    kreismaske: bool = False
+
+    @property
+    def round(self) -> bool:
+        return self.alpha is None
+
+
+@dataclass(frozen=True)
 class BrushSettings:
     tool: str = TOOL_PAINT
     radius_step: int = DEFAULT_RADIUS_STEP
@@ -80,6 +98,8 @@ class BrushSettings:
     hardness: float = 0.5
     curve: str = "smooth"
     mirror: bool = True
+    tip: TipSettings = TipSettings()
+    dynamics: StrokeDynamics = StrokeDynamics()
 
     def __post_init__(self) -> None:
         if self.tool not in TOOLS:
@@ -94,6 +114,8 @@ class BrushSettings:
                 raise ValueError(f"{name} must lie in [0, 1], got {value!r}")
         if len(self.colour) != 3 or not all(0.0 <= c <= 1.0 for c in self.colour):
             raise ValueError(f"colour must be three values in [0, 1], got {self.colour!r}")
+        if not isinstance(self.tip, TipSettings) or not isinstance(self.dynamics, StrokeDynamics):
+            raise ValueError("tip must be TipSettings and dynamics StrokeDynamics")
 
     @property
     def radius_percent(self) -> float:
@@ -112,6 +134,13 @@ class BrushSettings:
             changes["radius_step"] = max(0, min(int(changes["radius_step"]), len(RADIUS_STEPS_PERCENT) - 1))
         return dataclasses.replace(self, **changes)
 
+    def with_tip(self, tip: TipSettings) -> "BrushSettings":
+        """Another tip; switching between the round and an alpha tip sets that kind's default spacing."""
+        if tip.round == self.tip.round:
+            return dataclasses.replace(self, tip=tip)
+        spacing = ROUND_SPACING if tip.round else ALPHA_SPACING
+        return dataclasses.replace(self, tip=tip, dynamics=dataclasses.replace(self.dynamics, spacing=spacing))
+
     def with_opacity_step(self, delta: int) -> "BrushSettings":
         """The next / previous opacity step (clamped)."""
         steps = OPACITY_STEPS_PERCENT
@@ -128,8 +157,15 @@ class BrushSettings:
         tool = TOOL_LABELS[self.tool]
         if self.tool == TOOL_PICK:
             return f"Paint: {tool}"
-        return (f"Paint: {tool} - Radius {self.radius_percent:g} %, Deckkraft {self.opacity * 100:.0f} %, "
-                f"Fluss {self.flow * 100:.0f} %, Härte {self.hardness * 100:.0f} %, Kurve {CURVE_LABELS[self.curve]}")
+        text = (f"Paint: {tool} - Radius {self.radius_percent:g} %, Deckkraft {self.opacity * 100:.0f} %, "
+                f"Fluss {self.flow * 100:.0f} %")
+        if self.tip.round or self.tip.kreismaske:
+            text += f", Härte {self.hardness * 100:.0f} %, Kurve {CURVE_LABELS[self.curve]}"
+        if not self.tip.round:
+            from .alpha import alpha_name
+
+            text += f", Spitze {alpha_name(self.tip.alpha)}"
+        return text + f", Abstand {self.dynamics.spacing * 100:.0f} %"
 
 
 def falloff(x: np.ndarray, hardness: float, curve: str) -> np.ndarray:
@@ -200,6 +236,28 @@ class PaintStroke:
         self.recorder.write_texels(texels, values)
         self.dabs += 1
         return int(texels.size)
+
+    def dab_product(self, texels: np.ndarray, product: np.ndarray) -> int:
+        """A cluster of stamps in one write: `product` (n,) = `prod(1 - flow_k * c_k)` per texel (unique texels), so
+        `S <- 1 - (1 - S) * product` (module docstring). Returns the texels written."""
+        texels = np.asarray(texels, dtype=np.int64)
+        if texels.size == 0:
+            return 0
+        cover = 1.0 - (1.0 - self.cover[texels]) * np.asarray(product, dtype=np.float32)
+        self.cover[texels] = cover
+        self._write(texels, cover)
+        self.dabs += 1
+        return int(texels.size)
+
+    def _write(self, texels: np.ndarray, cover: np.ndarray) -> None:
+        settings = self.settings
+        strength = settings.opacity * cover
+        start = self.start[texels]
+        if settings.tool == TOOL_ERASE:
+            values = blend_erase(start, strength)
+        else:
+            values = blend_paint(start, settings.colour, strength)
+        self.recorder.write_texels(texels, values)
 
     def merge_coverage(self, texels: np.ndarray, coverage: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """`texels` with duplicates merged to their largest coverage (a dab and its mirror overlapping at the plane)."""

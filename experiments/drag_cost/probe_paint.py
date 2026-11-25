@@ -31,6 +31,16 @@ The fixture: the head of `scenes/Gollum_Head_rigging_test.mirai.json` (2,234 fac
   2026-11-18 (7.4 / 9.4 s) the first save is split into reading the base, flattening, encoding and writing the files
   (`texture_files.store`, which includes the file system and any virus scanner on the new file).
 
+- **P-H** (Phase 4a, AD-037 §12) one **alpha** placement + composite + frame: the test alpha "Poren" with the mirror,
+  "Strich folgen", the planar/wrap projection chosen per placement (`mirai.paint.stamp.evaluate`), at 3 % and 5 %, per
+  surface; the share of wrapped placements. Gates (reference PC): 3 % total p95 <= 16.7 ms, 5 % <= 33 ms.
+- **P-I** (Phase 4a) a **2-s fast stroke** through the stamp queue (`mirai.paint.dynamics.StrokeQueue`, the room's
+  budgets): the cursor crosses the face in 2 s at 60 frames/s with two input events per frame; per frame the queue's
+  work, the composite of the touched tiles and the GL frame; then the release: the finishing frames until the queue is
+  empty, the seam padding and the commit (`PaintRoomController._commit`'s work). Round tip (12.5 % spacing) and
+  "Poren" (100 %), 3 %; and the same path as a flick in 10 frames, which leaves a backlog for the finishing. Gates:
+  frame p95 <= 33 ms; release -> History <= 250 ms; no finishing frame > 50 ms.
+
 Plain ASCII output; prints the commit and working-tree state (`_paths.source_state`).
 """
 
@@ -76,10 +86,13 @@ def parse_args(argv=None):
     return args
 
 
-def stats(values) -> str:
+def percentile95(values) -> float:
     values = sorted(values)
-    p95 = values[min(len(values) - 1, int(math.ceil(0.95 * len(values))) - 1)]
-    return f"{statistics.median(values):8.2f} {p95:8.2f} {max(values):8.2f}"
+    return values[min(len(values) - 1, int(math.ceil(0.95 * len(values))) - 1)]
+
+
+def stats(values) -> str:
+    return f"{statistics.median(values):8.2f} {percentile95(values):8.2f} {max(values):8.2f}"
 
 
 def load_head():
@@ -204,6 +217,31 @@ def stroke_rays(centres, bounding: float):
     return [(np.asarray(c, float) + np.array([0.0, 0.0, 3.0 * bounding]), direction) for c in centres]
 
 
+class AlphaDab(Phase2Dab):
+    """Phase 4a: one placement through `mirai.paint.stamp.evaluate` with the test alpha "Poren" (a fixed stroke
+    direction across the face, as "Strich folgen" gives on this stroke)."""
+
+    def __init__(self, surface, store, obj, definition, alpha_id="test/poren") -> None:
+        super().__init__(surface, store, obj, definition)
+        self.settings = self.brush.BrushSettings(colour=(0.7, 0.16, 0.16), opacity=0.6,
+                                                 tip=self.brush.TipSettings(alpha_id))
+        self.stamps = []
+
+    def footprint(self, ray):
+        import numpy as np
+
+        from mirai.paint import stamp
+
+        hit = self.surface.hit(*ray)
+        if hit is None:
+            self.unique = True
+            return np.zeros(0, np.int64), np.zeros(0, np.float32)
+        placement = stamp.Placement(0, hit.point, hit.normal, np.array([1.0, 0.0, 0.0]))
+        texels, coverage, self.unique = stamp.evaluate(self.surface, placement, self.radius, self.settings,
+                                                       self.definition, view_up=(0.0, 1.0, 0.0), stamps=self.stamps)
+        return texels, coverage
+
+
 def run_stroke(store, obj, dab, rays, radius, base, live, frame):
     """One stroke with the Phase 2 dab (cancelled at the end: every stroke starts from the same pixels); per dab
     (dab ms, composite ms, frame ms)."""
@@ -232,6 +270,105 @@ def run_stroke(store, obj, dab, rays, radius, base, live, frame):
     dab.cancel()
     store.take_changed(obj)
     return rows
+
+
+def probe_regions():
+    """`tests/paint_alpha_regions.py` (the 4a probe placements; `experiments/drag_cost/tests` shadows `tests`)."""
+    import importlib.util
+
+    name = "paint_alpha_regions"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, REPO_ROOT / "tests" / f"{name}.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
+def fast_stroke(head, store, surface, definition, base, live, frame, bounding, kind, label, alpha_id,
+                frames_n: int = 120) -> None:
+    """P-I (module docstring): a 2-s stroke (`frames_n` 120; 10: a flick of 0.17 s that leaves a backlog for the
+    finishing) across the face through the stamp queue with the room's budgets."""
+    from mirai.paint import alpha, brush, dynamics, stamp
+    from mirai.paint.store import tile_box
+    from mirai.paint.surface import pad_width, seam_pad
+
+    regions = probe_regions()
+
+    radius = bounding * 0.03
+    settings = brush.BrushSettings(colour=(0.7, 0.16, 0.16), opacity=0.6).with_tip(brush.TipSettings(alpha_id))
+    image = alpha.resolve(alpha_id)
+    recorder = store.begin_stroke(head, head.paint.layers[0].name)
+    stroke = brush.PaintStroke(recorder, settings)
+
+    def evaluate(placement):
+        texels, coverage, unique = stamp.evaluate(surface, placement, radius, settings, definition,
+                                                  view_up=(0.0, 1.0, 0.0), image=image)
+        stroke.dab(texels, coverage, unique=unique)
+
+    camera = regions.front_camera(head.mesh)
+    spacing = settings.dynamics.spacing * 2.0 * radius
+    queue = dynamics.StrokeQueue(surface.hit, spacing, 4.0 * radius, image is not None, evaluate, radius=radius)
+    events_per_frame = 2
+    x0, x1, y = 300.0, 600.0, 470.0  # cheek - nose - cheek in the 900 px front view
+    px_radius = radius / (2.2 * bounding * math.tan(math.radians(25.0))) * 450.0
+    step = min(max(settings.dynamics.spacing * 2.0 * px_radius, 2.0), 6.0)
+
+    def tiles():
+        t = time.perf_counter()
+        for tile in store.take_changed(head):
+            bx0, by0, bx1, by1 = tile_box(tile, head.paint.width, head.paint.height)
+            if live is not None:
+                live.rgba[by0:by1, bx0:bx1] = store.composite(head, base, (bx0, by0, bx1, by1))
+                live.mark(bx0, by0, bx1, by1)
+            else:
+                store.composite(head, base, (bx0, by0, bx1, by1))
+        return time.perf_counter() - t
+
+    def one_frame(finishing: bool) -> float:
+        t = time.perf_counter()
+        queue.run(dynamics.frame_budget(queue, finishing))
+        tiles()
+        if frame is not None:
+            frame()
+        return (time.perf_counter() - t) * 1e3
+
+    last = None
+    stroke_frames = []
+    for f in range(frames_n):
+        for e in range(events_per_frame):
+            k = f * events_per_frame + e
+            x = x0 + (x1 - x0) * k / (frames_n * events_per_frame - 1)
+            samples = 1 if last is None else max(1, math.ceil(abs(x - last) / step))
+            queue.add_ray(*regions.ray(camera, (x, y)), samples=samples)
+            last = x
+        stroke_frames.append(one_frame(False))
+    release = time.perf_counter()
+    queue.end_input()
+    finishing = []
+    while not queue.done:
+        finishing.append(one_frame(True))
+    t = time.perf_counter()
+    boxes = [tile_box(tile, surface.width, surface.height) for tile in recorder.tiles]
+    dst, src = seam_pad(surface.map, boxes, pad_width(surface.width))
+    if dst.size:
+        rgba = store.pixels(head, recorder.name).reshape(-1, 4)
+        recorder.write_texels(dst, rgba[src].copy())
+    command = recorder.commit()
+    tiles()
+    finishing.append((time.perf_counter() - t) * 1e3)
+    to_history = (time.perf_counter() - release) * 1e3
+    if command is not None:
+        command.undo()
+    store.take_changed(head)
+    p95 = percentile95(stroke_frames)
+    worst = max(finishing)
+    name = "2-s fast stroke" if frames_n == 120 else f"flick ({frames_n} frames)"
+    print(f"\nP-I {name}, {label}, 3 %, {kind}: {queue.evaluated} placements "
+          f"({settings.dynamics.spacing * 100:.1f} % spacing), {len(stroke_frames)} frames + {len(finishing) - 1} finishing")
+    print(f"  stroke frame ms  {stats(stroke_frames)}  bar p95 <= 33: {'PASS' if p95 <= 33.0 else 'FAIL'}")
+    print(f"  release -> History {to_history:6.1f} ms  bar <= 250: {'PASS' if to_history <= 250.0 else 'FAIL'};"
+          f"  finishing frame max {worst:.1f} ms  bar <= 50: {'PASS' if worst <= 50.0 else 'FAIL'}")
 
 
 def main(argv=None) -> int:
@@ -363,6 +500,40 @@ def main(argv=None) -> int:
             if window is not None:
                 print(f"    frame      {stats([r[2] for r in rows])}")
             print(f"    total      {stats(total)}{verdict}")
+
+    for kind, surface in surfaces.items():
+        if kind == "subd2":
+            continue  # the head shows level 1 (the 25,000-face cap)
+        dab = AlphaDab(surface, store, head, definition)
+        if live is not None:
+            show(live, kind)
+        print(f"\nP-H alpha placement (Poren, mirror) + composite + frame, {kind}, {size}^2, ms   p50      p95      max")
+        for pct in (3.0, 5.0):
+            radius = bounding * pct / 100.0
+            run_stroke(store, head, dab, rays[:3], radius, base, live, frame)  # warm-up
+            dab.stamps.clear()
+            rows = run_stroke(store, head, dab, rays, radius, base, live, frame)
+            wrapped = sum(1 for st in dab.stamps if st.projection == "wrap") / max(len(dab.stamps), 1)
+            texels = int(np.mean([st.texels.size for st in dab.stamps])) * 2
+            total = [a + b + c for a, b, c in rows]
+            bar = 16.7 if pct == 3.0 else 33.0
+            p95 = percentile95(total)
+            print(f"  radius {pct:4.1f} % (~{texels:,} texels with the mirror, {wrapped * 100:.0f} % wrapped)")
+            print(f"    dab        {stats([r[0] for r in rows])}")
+            print(f"    composite  {stats([r[1] for r in rows])}")
+            if window is not None:
+                print(f"    frame      {stats([r[2] for r in rows])}")
+            print(f"    total      {stats(total)}  bar p95 <= {bar}: {'PASS' if p95 <= bar else 'FAIL'}")
+
+    for kind, surface in surfaces.items():
+        if kind == "subd2":
+            continue
+        if live is not None:
+            show(live, kind)
+        for label, alpha_id in (("round", None), ("Poren", "test/poren")):
+            for frames_n in (120, 10):
+                fast_stroke(head, store, surface, definition, base, live, frame, bounding, kind, label, alpha_id,
+                            frames_n)
 
     if window is not None:
         dab = Phase2Dab(surfaces.get("cage") or next(iter(surfaces.values())), store, head, definition)

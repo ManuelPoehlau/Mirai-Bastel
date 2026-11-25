@@ -1202,7 +1202,7 @@ class SmoothGesture(GestureSession):
         self._show_ring(*cursor)
 
     def _stroke_step(self, x: float, y: float) -> None:
-        """Dabs every `SPACING` x the radius on screen along the way from the last dab (Paint Room's rule)."""
+        """Dabs every `SPACING` x the radius on screen along the way from the last dab (the Paint Room's Phase 2 rule)."""
         stroke = self.stroke
         if stroke.before is None:
             return

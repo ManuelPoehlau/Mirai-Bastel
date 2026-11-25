@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from core.scene import PAINT_BLEND_MODES
+from mirai.paint.alpha import TEST_ALPHAS, alpha_name
 from mirai.paint.brush import CURVE_ARRAYS, CURVE_LABELS, RADIUS_STEPS_PERCENT, TOOL_LABELS, TOOLS, BrushSettings
+from mirai.paint.dynamics import SPACING_MAX, SPACING_MIN
 from mirai.paint.layers import BLEND_LABELS, MAX_LAYERS
 
 #: The panel's title and the SPACE menu row (no key until Manu's "Taste passt").
@@ -21,6 +23,10 @@ CURVES = tuple(CURVE_ARRAYS)
 BLENDS = PAINT_BLEND_MODES
 #: The layer list's text before the first stroke (Phase 3).
 NO_LAYERS = "Noch keine Bemalung - der erste Strich legt „Ebene 1“ an"
+#: Phase 4a (AD-037 §12): the tip chooser - the round tip and the generated test alphas (no library before 4c).
+TIPS: tuple[tuple[str | None, str], ...] = ((None, alpha_name(None)),) + tuple((i, alpha_name(i)) for i in TEST_ALPHAS)
+#: The spacing slider's range in percent of the stamp diameter (P-18).
+SPACING_PERCENT = (SPACING_MIN * 100.0, SPACING_MAX * 100.0)
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,9 @@ class PaintPanelState:
     can_up: bool = False
     can_down: bool = False
     can_merge: bool = False
+    #: the tip chooser's rows (alpha id or None, label) and the chosen one's label
+    tips: tuple[tuple[str | None, str], ...] = TIPS
+    tip_label: str = "Rund"
 
 
 def _plane(app) -> str | None:
@@ -106,6 +115,7 @@ def state(app) -> PaintPanelState:
         surface=app.paint_surface_text if open_ else "",
         stroking=stroking,
         layers=rows,
+        tip_label=alpha_name(app.paint_brush.tip.alpha),
         **flags,
     )
 
