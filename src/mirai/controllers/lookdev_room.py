@@ -17,6 +17,9 @@ It holds:
   else a region name (that region's entry in `SceneObject.look_regions`). View state of the session, like the studio;
   the held preview belongs to it (a new area drops the preview).
 
+AD-040 (LD-3a): the quality manager's state (`quality`, `activity`, `auto`, `ceiling`, ...) - a machine setting and
+the room's activity, never document or view state.
+
 R-1 (§2.2) by construction: opening and closing write only these and the display fields in `saved_view`.
 `look_draw` resolves an object's `LookDraw` from the object (never from the Worklight packet: no selection tint,
 independent of the texture toggle, §3.3). AD-039 S7: with the material's maps that pass `look_maps.drawable` - on an
@@ -26,8 +29,11 @@ skipped: drawn as the object's material), in their order, each with its region's
 
 from __future__ import annotations
 
+from viewport.lookdev_quality import AutoTier, IdleCeiling
+
 from ..lookdev_material import LookMaterial, fallback, region_material, with_region, wrap_rgb
 from ..lookdev_presets import DEFAULT_PRESET, preset as studio_preset
+from ..lookdev_quality_settings import DEFAULTS as QUALITY_DEFAULTS
 
 
 class LookdevRoom:
@@ -39,6 +45,17 @@ class LookdevRoom:
         self.last_image = None  # the last "Bild speichern" file (§18.4)
         self.preparing = False
         self.area: str | None = None  # AD-039 §9: the panel's „Bereich“ (None = „Ganzes Objekt“)
+        # AD-040 (LD-3a): the quality manager - the machine setting (`mirai.lookdev_quality_settings`, read from
+        # `quality_path`, None = in memory only; never saved with the scene), the activity tracker (exists only while
+        # the room is open, Q4), Auto, the idle ceiling, the tick clock Auto's pace reads and the (state, tier) of the
+        # configuration last handed to the viewport. `Application` drives them (`_quality_step`).
+        self.quality_path = None
+        self.quality = QUALITY_DEFAULTS
+        self.activity = None
+        self.auto = AutoTier()
+        self.ceiling = IdleCeiling()
+        self.quality_clock = 0.0
+        self.quality_frame = None
 
     @property
     def open(self) -> bool:

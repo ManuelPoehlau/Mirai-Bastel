@@ -320,7 +320,7 @@ def test_entwurf_draws_no_shadow_and_a_tier_change_compiles_nothing(gl_window, h
         assert app.set_lookdev_quality(tier=tier)
         assert not app.lookdev.preparing
         _tick(gl_window, app)
-    app._auto.tier = "entwurf"  # Auto stepping down
+    app.lookdev.auto.tier = "entwurf"  # Auto stepping down
     frame = _tick(gl_window, app)
     assert not app.viewport.lookdev_config.effects.shadow and frame.sum() > 0
     _settle(gl_window, app)
@@ -392,7 +392,7 @@ def test_the_capture_saves_what_the_room_shows_in_each_state(gl_window, head_app
         app.update_viewport(0.0)  # the capture is no change: Interactive settles, Converged stays
         assert app.lookdev_activity == (lq.SETTLING if state == lq.INTERACTIVE else lq.CONVERGED)
         images[state] = image
-        app._quality_frame = (state, app._quality_tier())
+        app.lookdev.quality_frame = (state, app._quality_tier())
         assert app._capture_state_text() == ("interaktiv (Mittel)" if state == lq.INTERACTIVE else "Ruhe (Maximal)")
     assert not np.array_equal(images[lq.INTERACTIVE], images[lq.CONVERGED])
 
@@ -420,7 +420,7 @@ def test_the_timer_measures_lookdev_frames_without_blocking_and_feeds_auto(gl_wi
         app._camera_changed()
         _tick(gl_window, app, 1 / 60)
     assert timer.measured > 0
-    assert len(app._auto._times) > 0 and app._auto.tier == "hoch"
+    assert len(app.lookdev.auto._times) > 0 and app.lookdev.auto.tier == "hoch"
     assert app.lookdev_quality_status().startswith("Interaktiv – Hoch (Auto")
 
 
@@ -450,10 +450,10 @@ def test_without_a_timer_auto_holds_mittel_with_a_status(gl_window, head_app, mo
     _open(gl_window, app, lo.LookdevEffects(), tier="auto")
     _tick(gl_window, app)
     assert app.viewport.lookdev_pass.gpu_timer is None
-    assert app._auto.tier == "mittel"
+    assert app.lookdev.auto.tier == "mittel"
     assert app.lookdev_quality_status() == "Interaktiv – Mittel (Auto aus – Zeitmessung nicht verfügbar)"
     app.close_lookdev()
-    app._auto.available = True  # the module-wide app is reused by later tests
+    app.lookdev.auto.available = True  # the module-wide app is reused by later tests
 
 
 def test_the_worklight_creates_no_timer_or_second_instance(gl_window, head_app):
