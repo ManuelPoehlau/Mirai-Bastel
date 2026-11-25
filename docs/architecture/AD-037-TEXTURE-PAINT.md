@@ -47,8 +47,8 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
 
 - **Öffnen:** SPACE → „Paint Room öffnen“ (nur mit UVs, kein Auge; keine Taste). Der Raum stellt Shaded + Textur ein,
   schaltet Drahtgitter und Gruppenfarben aus und stellt beim Schließen alles zurück; die Kamera bleibt, wo sie ist.
-  Abgelehnt bei Augen (P-14), ohne UVs, im Bearbeitungsfenster eines Morph-Ziels und **in einer Pose** (P-8 ist für die
-  Pose offen). Ein eingeblendeter Morph (z. B. mouth_open, um im Mund zu malen) ist erlaubt (Manu 2026-11-25).
+  Abgelehnt bei Augen (P-14), ohne UVs, im Bearbeitungsfenster eines Morph-Ziels 
+  (P-8 entschieden, Manu 2026-11-25: **Pose und eingeblendeter Morph sind erlaubt**, z. B. mouth_open, um im Mund zu malen).
 - **Malen:** LMB ziehen malt (P-6, vorläufig, keine Keymap-Zeile), Alt+LMB dreht weiter die Ansicht, Shift+Rad Radius,
   Alt+Rad Deckkraft, das Rad zoomt, Esc nimmt den laufenden Strich exakt zurück. Panel „Paint Room“: Malen / Radieren /
   Pipette, Farbe, Radius (Prozent des Objektradius, P-7), Deckkraft, Fluss, Härte, Kurve (die Soft-Kurven), Spiegeln an der
@@ -110,7 +110,7 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
 | Phase 3 | Several layers and the UV transfer first; pose / morph painting (P-8 / P-9), Blur / Smudge, masks and the 2D UV view not in this slice | §11 |
 | P-13 (GoZ part) | The refusal "until the UV transfer exists" ends with the transfer: a GoZ return that changes a painted object's UVs moves the paint (the Attach refusal stays) | §11.3 |
 
-Still open: P-8, P-9, P-11, P-14 … P-17.
+Still open: P-9, P-11, P-14 … P-17.
 
 ## 2. The data model (Core part)
 
@@ -346,8 +346,8 @@ names it; no key and no `config/keymap.json` entry (CLAUDE.md, P-6).
 
 - **Entry:** the SPACE menu row „Paint Room öffnen“ / „… schließen“ (`gui.paint_model.menu_label`: shown with UVs and not on
   an eye), the panel's close box and „Schließen“. **Refused** with a status line (`paint_room_refusal`): an eye (P-14), no
-  UVs, another interaction running, a morph target's editing view, and a **posed surface** (P-8 stays open for the pose;
-  show the rest pose first). A **morph mix above 0 %** is allowed on entry (Manu 2026-11-25: „Es muss also erlaubt sein,
+  UVs, another interaction running, a morph target's editing view (P-8 decided 2026-11-25: **a pose and a morph mix are both allowed**).
+  A **morph mix above 0 %** is allowed on entry (Manu 2026-11-25: „Es muss also erlaubt sein,
   bei aktiviertem Target in den Paint Room zu wechseln“) - the room already painted on a mix dialled in inside it (the
   texel map reads any `SurfacePositions`), so entering with one is the same state.
 - **View state** saved on entry and restored on leaving (`PaintRoomController.saved_view`): display mode → Shaded, wire
@@ -528,7 +528,7 @@ enter - neither blocks.
 ### 10.8 Not in Phase 2
 
 Several layers in the UI (only the top layer is painted; the stack format has several), blend modes (P-12), the undo
-budget (P-11: before-tiles only, compressed, unlimited), painting a posed surface (P-8, refused; a morph mix is allowed since 2026-11-25), eyes (P-14,
+budget (P-11: before-tiles only, compressed, unlimited), painting a posed / morphed surface (P-8: allowed since 2026-11-25), eyes (P-14,
 refused), UV transfer (Phase 3; a GoZ UV change stays refused, P-13), smudge / blur / clone, lazy mouse, pressure (P-15:
 none), symmetry in a pose (P-9), a depth window for thin gaps beyond the facing test, a key for the room or the tools
 (after Manu's "Taste passt").
@@ -675,7 +675,7 @@ probe and ~10× in this table's case. Not re-measured on the reference PC yet.
 
 ### 11.5 Not in Phase 3 (this slice)
 
-Painting a posed / morphed surface (P-8) and symmetry in a pose (P-9), Blur / Smudge, face regions / Mask Geometry as
+Symmetry in a pose (P-9), Blur / Smudge, face regions / Mask Geometry as
 paint masks, the 2D UV view (all audit Phase 3, not chosen for this slice), layer masks, more blend modes, the undo budget
 (P-11: the layer steps hold compressed snapshots - 16 MiB raw per layer at 2048², a fraction compressed), a UV transfer
 for a later Mirai UV tool (the function takes any old / new UVs of one topology), keys (after "Taste passt").
@@ -696,7 +696,7 @@ Kein Undo-Schritt, die Szene bleibt unverändert. Eine Taste dafür nur nach Dei
 
 Meine Annahmen aus Deinen Entscheidungen (bitte in einem Satz korrigieren, wenn eine nicht stimmt): Malen = LMB ziehen nur
 im Raum (P-6), Radius in Prozent des Objekts (P-7), 2048² als Start (P-5), Malen auf der gezeigten Fläche, mit SubD auf
-der SubD-Fläche (P-10), Gesicht in Ruhe (P-8 offen: in einer Pose lehnt der Raum ab).
+der SubD-Fläche (P-10), Gesicht in Ruhe (P-8 entschieden 2026-11-25: Pose und Morph sind erlaubt).
 
 1. `Gollum_Head_rigging_test` öffnen, den Kopf zum Edit-Objekt machen, SPACE → **„Paint Room öffnen“**. Die Statuszeile
    nennt die Fläche („malt auf dem Käfig, 2048²“), die Zeit für die Karte und die Flächen ohne malbare UV-Fläche. Ist die

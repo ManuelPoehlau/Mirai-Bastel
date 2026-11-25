@@ -965,8 +965,8 @@ class SurfaceSlideGesture(_SlideGesture):
 
 @dataclasses.dataclass
 class _Stroke:
-    """One LMB stroke of a held Smooth / Relax: its journal from the press (None = refused at the press: a shown morph
-    mix; its drags and release are still the gesture's, nothing is written), the last dab's screen point, what moved."""
+    """One LMB stroke of a held Smooth / Relax: its journal from the press (None = no stroke; its drags and release are
+    still the gesture's, nothing is written), the last dab's screen point, what moved."""
 
     before: MeshChange | None
     selection_before: tuple | None
@@ -989,7 +989,8 @@ class SmoothGesture(GestureSession):
     Radius = the Soft radius (also with Soft off), spacing a quarter of it on screen, a ring at the cursor. An LMB press
     after the dial began drops the dial's writes (the press says "stroke"); after a stroke the motion is no dial and the
     release no tap. The key let go during a stroke: the stroke runs on to the LMB release, then the gesture ends.
-    Refused with a shown morph mix (O-5: N to 0 %, or Tab to edit the target)."""
+    With a morph mix shown (Manu 2026-11-25, lifts O-5) the dab is picked and drawn on the mix but smooths the base,
+    like every other base edit under a mix (E2): the ring and the hit sit on the drawn surface, the writes on the rest."""
 
     cancel_unbegun = True
 
@@ -1185,11 +1186,6 @@ class SmoothGesture(GestureSession):
         services = self.services
         mesh = services.scene.mesh
         self.stroked = True
-        if services.query_mesh is not mesh:  # O-5: the drawn shape is not the one a dab would smooth
-            self.stroke = _Stroke(None, None)
-            services.status(f"{self._stroke_label()}: refused - a morph target is dialled in; set it to 0 % (N) or "
-                            "edit the target (Tab)")
-            return
         if self.begun:  # the dial had begun: the press says "stroke", the dial's writes go
             self.abort()
             self.begun = False

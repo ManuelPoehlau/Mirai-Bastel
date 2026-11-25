@@ -83,13 +83,16 @@ def test_entering_and_leaving_lookdev_keeps_the_deformation_state(app):
     assert snapshot(app) == before
 
 
-def test_lookdev_to_paint_room_in_a_pose_is_refused_and_changes_nothing(app):
+def test_lookdev_to_paint_room_in_a_pose_switches_and_changes_nothing(app):
+    """Manu 2026-11-25 lifts P-8: the Paint Room opens in a pose and with a mix; LookDev closes (R-1)."""
     _deform(app)
     assert app.open_lookdev()
     before = snapshot(app)
-    assert app.open_paint_room() is False
-    assert "P-8" in app.status_message
-    assert app.lookdev_open and not app.paint_room_open  # LookDev stays open
+    assert app.open_paint_room(), app.status_message
+    assert app.paint_room_open and not app.lookdev_open
+    _tick(app)
+    assert snapshot(app) == before
+    assert app.close_paint_room() and not app.paint_room_open
     _tick(app)
     assert snapshot(app) == before
 
@@ -108,6 +111,24 @@ def test_paint_room_opens_with_a_morph_mix_and_keeps_it(app):
     assert app.close_paint_room() and not app.paint_room_open
     _tick(app)
     assert snapshot(app) == before
+
+
+def test_a_stroke_paints_in_a_pose_with_a_mix(app):
+    """Manu 2026-11-25 lifts P-8: the stroke lands on the posed, mixed surface the window shows."""
+    from mirai.interaction.input import Input
+
+    app.set_paint_resolution(1024)
+    _deform(app)
+    assert app.open_paint_room(), app.status_message
+    obj = app.scene.edit_object
+    width, height = app._services.viewport_size
+    x, y = width / 2, height / 2
+    app.pointer_motion(x, y)
+    app.pointer_press(Input("mouse", "LEFT", frozenset()), x, y)
+    for i in range(1, 13):
+        app.pointer_drag(4.0, 0.0, x + 4 * i, y)
+    app.pointer_release("LEFT", x + 48, y)
+    assert obj.paint is not None and app.paint.pixels(obj, "Ebene 1")[..., 3].any()
 
 
 def test_lookdev_and_paint_room_at_rest(app):

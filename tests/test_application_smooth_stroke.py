@@ -3,7 +3,7 @@ dabs Smooth / Relax at the surface under the cursor; one History entry per strok
 
 A click is one dab (the selection stays), Alt+S takes Alt+LMB (no orbit), the key let go mid-stroke lets the stroke run
 to the LMB release, after a stroke the release is no tap and the motion no dial, a dial already running is dropped by
-the LMB press. Radius = the Soft radius (Soft may be off). Symmetry: pairs stay exact; a shown morph mix refuses.
+the LMB press. Radius = the Soft radius (Soft may be off). Symmetry: pairs stay exact; a shown morph mix smooths the base (2026-11-25).
 """
 
 from __future__ import annotations
@@ -208,19 +208,23 @@ def test_masked_points_stay():
     assert len(app.history) == 1
 
 
-def test_a_dialled_in_morph_target_refuses_the_stroke():
+def test_a_dialled_in_morph_target_does_not_refuse_the_stroke():
+    """Manu 2026-11-25 (lifts O-5): the stroke smooths the base, picked and drawn on the mix."""
     app = _bumpy_app()
     mesh = app.scene.mesh
     lid = app.create_morph_target("Smile")
     assert lid is not None, app.status_message
     assert app.set_morph_weight(40, lid), app.status_message
-    before, entries = mesh.export_state(), len(app.history)
+    entries = len(app.history)
+    before = _row_z(app, ON_PATH)
     path = _path(app)
     _arm(app, S, path[0])
     _stroke(app, path)
-    assert "morph target is dialled in" in app.status_message
     app.key_release(_key("s"))
-    assert mesh.export_state() == before and len(app.history) == entries
+    assert "dialled in" not in app.status_message
+    assert len(app.history) == entries + 1
+    assert _row_z(app, ON_PATH) != before
+    assert_mesh_invariants(mesh)
 
 
 def test_symmetric_stroke_keeps_the_pairs_exact():

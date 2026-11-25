@@ -1074,9 +1074,9 @@ class Application:
 
     def paint_room_refusal(self) -> str | None:
         """Why the Paint Room cannot open on the edit object now (None = it can): an eye (P-14), no UVs, another
-        interaction, a morph target's editing view, or a posed surface (P-8 is open for the pose). A morph mix above 0 %
-        is allowed (Manu 2026-11-25): the room already paints on a mix dialled in inside it (the texel map reads any
-        `SurfacePositions`), so entering with one is the same state."""
+        interaction or a morph target's editing view. A morph mix and a pose are allowed (Manu 2026-11-25, lifts
+        P-8): the room writes no mesh data and its texel map reads any `SurfacePositions` (`_query_cage`), so it paints
+        on the surface the window shows."""
         obj = self.scene.edit_object
         session = self.interaction.session
         if session is not None and session.owner != "paint":
@@ -1087,10 +1087,6 @@ class Application:
             return f"Paint Room: {obj.name!r} has no UVs - nothing can be painted (UVs come from ZBrush, UV Master)"
         if self.morph_view_open:
             return "Paint Room: not in a morph target's editing view"
-        skin = self.skin.provider
-        if skin.surface_mesh is not None and self.surface_chain.holds(skin) and skin.posed():
-            return ("Paint Room: the object is shown posed - painting a posed surface is not decided yet (P-8);"
-                    " show the rest pose first")
         return None
 
     def open_paint_room(self) -> bool:
