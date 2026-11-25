@@ -9,8 +9,8 @@ Room (2026-11-18, container: TESTED; reference PC: P-A … P-G pass on the shown
 **Phase 3 scope and P-12: Manu, 2026-11-19** (§1). **IMPLEMENTED Phase 3, several layers, Multiply and the UV transfer
 (2026-11-19, container: TESTED; reference PC: not run yet)** as built in §11; the P-13 refusal of a GoZ UV change is lifted.
 **Phase 4 (alpha brushes, stroke dynamics, brush presets): PROPOSED 2026-11-25, its decisions taken; IMPLEMENTED 4a
-(alpha tip, projection with the wrap fallback, world spacing, stamp queue; 2026-11-25, container: TESTED; reference PC
-run 2026-11-25: P-H 3 % failed, optimised the same day, §12.7, re-run open) as built in §12; 4b next** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
+(alpha tip, projection with the wrap fallback, world spacing, stamp queue; 2026-11-25, container: TESTED; reference PC:
+every 4a gate met after the same day's optimisation, §12.7; Praxistest open) as built in §12; 4b next** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).
@@ -99,8 +99,8 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
   Rest wird über die nächsten Bilder fertig gemalt, dann kommt der Undo-Schritt. Esc nimmt auch dann exakt zurück; Strg+Z,
   ein neuer Klick, SubD-Tasten, Speichern warten auf das Ende (der Rest ist klein) und laufen dann.
 - **Kontaktbogen** der acht Prüfstellen: `docs/research/alpha_brush_4a_assets_2026-11-25/`. Dein Lauf auf dem
-  Referenz-PC (2026-11-25): 3 %-Alpha-Platzierung zu langsam (18 / 24 ms statt ≤ 16,7) – am selben Tag beschleunigt, im
-  Container jetzt so schnell wie der runde Tupfer (§12.7); bitte `probe_paint.py --surfaces cage,subd1` noch einmal.
+  Referenz-PC (2026-11-25): erst war die 3 %-Alpha-Platzierung zu langsam (18 / 24 ms statt ≤ 16,7); am selben Tag
+  beschleunigt, im zweiten Lauf **14,1 / 16,0 ms – alle 4a-Grenzen eingehalten** (§12.7).
 
 ## 1. Decisions (Manu, 2026-11-18)
 
@@ -856,7 +856,9 @@ The frame rows are llvmpipe (5.5–7 ms cage, 10–15 ms SubD 1; the reference P
 
 ### 12.6 Not in 4a / open
 
-- **Reference-PC re-run open** after §12.7: `python experiments/drag_cost/probe_paint.py --surfaces cage,subd1`.
+- **Reference PC: done** (second run, §12.7): every 4a gate met. SubD 1 at 3 % is tight - 0.7 ms margin for the alpha,
+  0.3 ms for the round dab; 4b's jitter and spray must not add cost to a single-stamp placement.
+- **Praxistest open** (Manu: the contact sheets and the Praxistest „Alpha-Spitze“ below).
 - **The wrap's radius rule is object-relative:** `WRAP_FROM_PERCENT` is P-7's percent of the object's bounding radius,
   measured on the Gollum head. On a much larger object (a full body) 3 % is large against a face's features and stays
   planar - painting through there as the round dab does today. A curvature-relative rule (stamp radius against the
@@ -907,6 +909,21 @@ against the round dab's 1.84 / 1.51 ms. In the probe of the same run (`RESULTS_P
 "after the optimisation"): P-H 3 % dab p50 / p95 2.39 / 3.00 ms (cage) and 2.54 / 3.23 ms (SubD 1) against P-A's round
 dab 2.31 / 2.86 and 2.68 / 3.58 ms, 0 % wrapped; P-H 5 % 10–15 % wrapped, total p95 13.5 / 18.1 ms (llvmpipe frame).
 **Expectation for the RPC [H]:** the alpha's 3 % row about the round dab's (13.6 / 15.8 ms p95), i.e. passing.
+
+**The second reference-PC run** (Manu, 2026-11-25, at `0ff03c8`; [RPC], verbatim in the results file above):
+**every 4a gate met.**
+
+| Row | cage p50 / p95 | SubD 1 p50 / p95 | gate | |
+|---|---|---|---|---|
+| P-A round 3 % (dab · total) | 5.72 / 7.68 · 11.91 / 15.72 ms | 6.46 / 8.30 · 14.85 / 16.39 ms | ≤ 16.7 | PASS |
+| **P-H alpha 3 % (dab · total)**, 0 % wrapped | 6.64 / 7.33 · 12.46 / **14.05** ms | 6.96 / 7.59 · 14.71 / **16.01** ms | ≤ 16.7 | **PASS** (was 18.23 / 24.27) |
+| P-H alpha 5 % (total), 15 / 10 % wrapped | 19.05 / 24.84 ms | 21.18 / 28.21 ms | ≤ 33 | PASS |
+| P-I 2-s stroke round / Poren: frame p95 · release → History | 18.3 / 14.8 ms · 9.9 / 9.7 ms | 20.0 / 17.3 ms · 12.1 / 10.8 ms | ≤ 33 · ≤ 250 | PASS |
+| P-I finishing frame max (all rows, flicks included) | ≤ 42.9 ms | ≤ 44.4 ms | ≤ 50 | PASS |
+
+The alpha's 3 % dab is now the round dab's (p95 7.33 / 7.59 against 7.68 / 8.30 ms; it writes a quarter of the
+texels). The flicks (information) drain in ≤ 14 finishing frames. P-A round 1 % on the cage had one stall (max 293 ms,
+p95 28 ms in that row only; 9.0 / 12.6 ms in the first run) - the machine, not 4a.
 
 ## Praxistest für Manu (Deutsch, ca. 5 Minuten, optional)
 
