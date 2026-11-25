@@ -8,6 +8,7 @@ Core change and scene format v14 included. **IMPLEMENTED Phase 1 (2026-11-18, co
 Room (2026-11-18, container: TESTED; reference PC: P-A … P-G pass on the shown surfaces, §10.8e)** as built in §10: SPACE menu row, no key, no keymap entry.
 **Phase 3 scope and P-12: Manu, 2026-11-19** (§1). **IMPLEMENTED Phase 3, several layers, Multiply and the UV transfer
 (2026-11-19, container: TESTED; reference PC: not run yet)** as built in §11; the P-13 refusal of a GoZ UV change is lifted.
+**Phase 4 (alpha brushes, stroke dynamics, brush presets): PROPOSED 2026-11-25, not decided** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c, decisions P-18 … P-27 open; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).

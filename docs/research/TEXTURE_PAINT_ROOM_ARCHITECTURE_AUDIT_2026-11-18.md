@@ -486,6 +486,8 @@ needs layer A (built here first, shared with the Brush research later); Phase 3'
 mesh; UV transfer needs only the old and new UVs of the same topology. **Never in the first version:** several material
 channels, a UV editor, brush presets, a GPU paint engine, Ptex, vertex colours.
 
+*2026-11-25 (pointer, this record unchanged):* Phase 4 is proposed in [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) — alpha stamps, stroke dynamics and brush presets after the first version; "no brush presets" above applied to the first version.
+
 ---
 
 ## 11. Open questions and decisions for Manu
