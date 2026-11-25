@@ -40,6 +40,13 @@ The fixture: the head of `scenes/Gollum_Head_rigging_test.mirai.json` (2,234 fac
   empty, the seam padding and the commit (`PaintRoomController._commit`'s work). Round tip (12.5 % spacing) and
   "Poren" (100 %), 3 %; and the same path as a flick in 10 frames, which leaves a backlog for the finishing. Gates:
   frame p95 <= 33 ms; release -> History <= 250 ms; no finishing frame > 50 ms.
+- **P-J** (Phase 4b, AD-037 §13) one **spray** placement + composite + frame: 20 "Poren" stamps of 20 % size with
+  rotation / size / flow jitter and the mirror (`mirai.paint.stamp.paint`, one gather per cluster), 3 %, per surface;
+  the round spray (20 stamps) as information. Gate (reference PC): p95 <= 33 ms.
+- **P-K** (Phase 4b) a **10-s spray stroke** through the stamp queue: the cursor crosses the face ten times in 10 s (600
+  frames, two events per frame), the Poren spray of P-J at 50 % spacing, then the finishing. Gate: no frame > 50 ms.
+P-H and P-I paint through `stamp.paint` too (the room's path): without jitter, scatter or spray it is 4a's, bit for bit
+(`tests/test_paint_dynamics.py`), and its 3 % row must stay where 4a was (AD-037 §12.6: 0.7 ms margin on SubD 1).
 
 Plain ASCII output; prints the commit and working-tree state (`_paths.source_state`).
 """
@@ -218,14 +225,39 @@ def stroke_rays(centres, bounding: float):
 
 
 class AlphaDab(Phase2Dab):
-    """Phase 4a: one placement through `mirai.paint.stamp.evaluate` with the test alpha "Poren" (a fixed stroke
-    direction across the face, as "Strich folgen" gives on this stroke)."""
+    """Phase 4a: one placement through `mirai.paint.stamp.paint` (the room's path; without randomness 4a's `evaluate` +
+    `dab`) with the test alpha "Poren" (a fixed stroke direction across the face, as "Strich folgen" gives on this
+    stroke)."""
 
     def __init__(self, surface, store, obj, definition, alpha_id="test/poren") -> None:
         super().__init__(surface, store, obj, definition)
         self.settings = self.brush.BrushSettings(colour=(0.7, 0.16, 0.16), opacity=0.6,
                                                  tip=self.brush.TipSettings(alpha_id))
         self.stamps = []
+        self.index = 0
+
+    def dab(self, ray) -> int:
+        import numpy as np
+
+        from mirai.paint import stamp
+
+        hit = self.surface.hit(*ray)
+        if hit is None:
+            return 0
+        placement = stamp.Placement(self.index, hit.point, hit.normal, np.array([1.0, 0.0, 0.0]))
+        self.index += 1
+        return stamp.paint(self.stroke, self.surface, placement, self.radius, self.settings, self.definition,
+                           view_up=(0.0, 1.0, 0.0), seed=4711, stamps=self.stamps)
+
+
+def spray_settings(brush, alpha_id: str | None = "test/poren", spacing: float = 0.5):
+    """P-J / P-K's spray (module docstring): 20 stamps of 20 %, rotation ±180°, size ±30 %, flow ±30 %."""
+    from mirai.paint import dynamics
+
+    settings = brush.BrushSettings(colour=(0.7, 0.16, 0.16), opacity=0.6).with_tip(brush.TipSettings(alpha_id))
+    return settings.with_(dynamics=dynamics.StrokeDynamics().with_(
+        spacing=spacing, emitter="spray", spray_density=20, spray_size=0.2, jitter_rotation=180.0, jitter_size=0.3,
+        jitter_flow=0.3))
 
     def footprint(self, ray):
         import numpy as np
@@ -286,9 +318,10 @@ def probe_regions():
 
 
 def fast_stroke(head, store, surface, definition, base, live, frame, bounding, kind, label, alpha_id,
-                frames_n: int = 120) -> None:
+                frames_n: int = 120, settings=None, crossings: int = 1, row: str = "P-I") -> None:
     """P-I (module docstring): a 2-s stroke (`frames_n` 120; 10: a flick of 0.17 s that leaves a backlog for the
-    finishing) across the face through the stamp queue with the room's budgets."""
+    finishing) across the face through the stamp queue with the room's budgets. P-K: `settings` (the spray), 600
+    frames, `crossings` times across the face."""
     from mirai.paint import alpha, brush, dynamics, stamp
     from mirai.paint.store import tile_box
     from mirai.paint.surface import pad_width, seam_pad
@@ -296,19 +329,20 @@ def fast_stroke(head, store, surface, definition, base, live, frame, bounding, k
     regions = probe_regions()
 
     radius = bounding * 0.03
-    settings = brush.BrushSettings(colour=(0.7, 0.16, 0.16), opacity=0.6).with_tip(brush.TipSettings(alpha_id))
+    if settings is None:
+        settings = brush.BrushSettings(colour=(0.7, 0.16, 0.16), opacity=0.6).with_tip(brush.TipSettings(alpha_id))
     image = alpha.resolve(alpha_id)
     recorder = store.begin_stroke(head, head.paint.layers[0].name)
     stroke = brush.PaintStroke(recorder, settings)
 
-    def evaluate(placement):
-        texels, coverage, unique = stamp.evaluate(surface, placement, radius, settings, definition,
-                                                  view_up=(0.0, 1.0, 0.0), image=image)
-        stroke.dab(texels, coverage, unique=unique)
+    def evaluate(placement):  # the room's `_evaluate`
+        stamp.paint(stroke, surface, placement, radius, settings, definition, view_up=(0.0, 1.0, 0.0), image=image,
+                    seed=4711)
 
     camera = regions.front_camera(head.mesh)
     spacing = settings.dynamics.spacing * 2.0 * radius
-    queue = dynamics.StrokeQueue(surface.hit, spacing, 4.0 * radius, image is not None, evaluate, radius=radius)
+    directed = image is not None or settings.dynamics.scattered
+    queue = dynamics.StrokeQueue(surface.hit, spacing, 4.0 * radius, directed, evaluate, radius=radius)
     events_per_frame = 2
     x0, x1, y = 300.0, 600.0, 470.0  # cheek - nose - cheek in the 900 px front view
     px_radius = radius / (2.2 * bounding * math.tan(math.radians(25.0))) * 450.0
@@ -338,7 +372,9 @@ def fast_stroke(head, store, surface, definition, base, live, frame, bounding, k
     for f in range(frames_n):
         for e in range(events_per_frame):
             k = f * events_per_frame + e
-            x = x0 + (x1 - x0) * k / (frames_n * events_per_frame - 1)
+            travel = crossings * k / (frames_n * events_per_frame - 1)  # in crossings: there and back
+            phase = travel % 2.0
+            x = x0 + (x1 - x0) * (phase if phase <= 1.0 else 2.0 - phase)
             samples = 1 if last is None else max(1, math.ceil(abs(x - last) / step))
             queue.add_ray(*regions.ray(camera, (x, y)), samples=samples)
             last = x
@@ -363,6 +399,16 @@ def fast_stroke(head, store, surface, definition, base, live, frame, bounding, k
     store.take_changed(head)
     p95 = percentile95(stroke_frames)
     worst = max(finishing)
+    if row == "P-K":
+        everything = stroke_frames + finishing
+        print(f"\nP-K 10-s spray stroke, {label}, 3 %, {kind}: {queue.evaluated} placements "
+              f"({settings.dynamics.spacing * 100:.0f} % spacing, {settings.dynamics.spray_density} stamps each), "
+              f"{len(stroke_frames)} frames + {len(finishing) - 1} finishing")
+        print(f"  stroke frame ms  {stats(stroke_frames)}")
+        print(f"  release -> History {to_history:6.1f} ms;  frames > 50 ms: "
+              f"{sum(1 for t in everything if t > 50.0)}, max {max(everything):.1f} ms  bar no frame > 50: "
+              f"{'PASS' if max(everything) <= 50.0 else 'FAIL'}")
+        return
     name = "2-s fast stroke" if frames_n == 120 else f"flick ({frames_n} frames)"
     print(f"\nP-I {name}, {label}, 3 %, {kind}: {queue.evaluated} placements "
           f"({settings.dynamics.spacing * 100:.1f} % spacing), {len(stroke_frames)} frames + {len(finishing) - 1} finishing")
@@ -386,7 +432,7 @@ def main(argv=None) -> int:
     from mirai.paint.surface import PaintSurface
 
     size = args.size
-    print(f"Paint probe (AD-037 Phase 1e / 2) - {source_state()}")
+    print(f"Paint probe (AD-037 Phase 1e / 2 / 4a / 4b) - {source_state()}")
     print(f"python {sys.version.split()[0]}, numpy {np.__version__}, size {size}^2, {args.dabs} dabs per stroke")
     head = load_head()
     definition = head.mesh.symmetry_definition
@@ -541,6 +587,35 @@ def main(argv=None) -> int:
             for frames_n in (120, 10):
                 fast_stroke(head, store, surface, definition, base, live, frame, bounding, kind, label, alpha_id,
                             frames_n)
+
+    from mirai.paint import brush as brush_api
+
+    for kind, surface in surfaces.items():
+        if kind == "subd2":
+            continue
+        if live is not None:
+            show(live, kind)
+        print(f"\nP-J spray placement (20 stamps, 20 %, jitter, mirror) + composite + frame, {kind}, {size}^2, 3 %, ms"
+              "   p50      p95      max")
+        radius = bounding * 0.03
+        for label, alpha_id in (("Poren", "test/poren"), ("round", None)):
+            dab = AlphaDab(surface, store, head, definition)
+            dab.settings = spray_settings(brush_api, alpha_id)
+            run_stroke(store, head, dab, rays[:3], radius, base, live, frame)  # warm-up
+            dab.stamps.clear()
+            rows = run_stroke(store, head, dab, rays, radius, base, live, frame)
+            stamps = len(dab.stamps) / max(len(rays), 1)
+            total = [a + b + c for a, b, c in rows]
+            p95 = percentile95(total)
+            gate = f"bar p95 <= 33: {'PASS' if p95 <= 33.0 else 'FAIL'}" if alpha_id else "(info, no bar)"
+            print(f"  {label} spray ({stamps:.0f} stamps per placement with the mirror)")
+            print(f"    dab        {stats([r[0] for r in rows])}")
+            print(f"    composite  {stats([r[1] for r in rows])}")
+            if window is not None:
+                print(f"    frame      {stats([r[2] for r in rows])}")
+            print(f"    total      {stats(total)}  {gate}")
+        fast_stroke(head, store, surface, definition, base, live, frame, bounding, kind, "Poren spray", "test/poren",
+                    600, settings=spray_settings(brush_api), crossings=10, row="P-K")
 
     if window is not None:
         dab = Phase2Dab(surfaces.get("cage") or next(iter(surfaces.values())), store, head, definition)

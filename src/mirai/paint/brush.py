@@ -18,6 +18,9 @@ every dab recomputes from the same start pixels (Esc is the recorder's exact res
 
 **Blend** (Normal, straight alpha, 8 bit, P-12/P-16): `a = s + a0 (1 - s)`, `c = (k s + c0 a0 (1 - s)) / a`, rounded.
 
+**Jitter, scatter, spray** (Phase 4b, AD-037 §13) live in `dynamics` too (`StrokeDynamics`); a cluster's stamps
+write once through `dab_product`.
+
 **Tip and dynamics** (Phase 4a, AD-037 §12): every brush has a tip (`TipSettings`): the **round tip** (no alpha - the
 falloff above, unchanged) or an **alpha tip** (`alpha` = an alpha id, `mirai.paint.alpha`; the Kreismaske multiplies
 the falloff in, off by default, P-19). `dynamics` (`mirai.paint.dynamics.StrokeDynamics`) holds the spacing in world arc
@@ -135,8 +138,9 @@ class BrushSettings:
         return dataclasses.replace(self, **changes)
 
     def with_tip(self, tip: TipSettings) -> "BrushSettings":
-        """Another tip; switching between the round and an alpha tip sets that kind's default spacing."""
-        if tip.round == self.tip.round:
+        """Another tip; switching between the round and an alpha tip sets that kind's default spacing (a spray keeps
+        its own)."""
+        if tip.round == self.tip.round or self.dynamics.spray:
             return dataclasses.replace(self, tip=tip)
         spacing = ROUND_SPACING if tip.round else ALPHA_SPACING
         return dataclasses.replace(self, tip=tip, dynamics=dataclasses.replace(self.dynamics, spacing=spacing))
@@ -165,7 +169,13 @@ class BrushSettings:
             from .alpha import alpha_name
 
             text += f", Spitze {alpha_name(self.tip.alpha)}"
-        return text + f", Abstand {self.dynamics.spacing * 100:.0f} %"
+        text += f", Abstand {self.dynamics.spacing * 100:.0f} %"
+        dyn = self.dynamics
+        if dyn.spray:
+            text += f", Spray {dyn.spray_density}"
+        if dyn.scattered or dyn.jitter_rotation or dyn.jitter_size or dyn.jitter_flow:
+            text += ", Streuung"
+        return text
 
 
 def falloff(x: np.ndarray, hardness: float, curve: str) -> np.ndarray:

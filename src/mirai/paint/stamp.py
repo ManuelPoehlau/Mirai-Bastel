@@ -37,6 +37,27 @@
 
 Only arrays over the gathered texels; no loop per texel. A stamp is evaluated on the shown surface's own texel points,
 so cage, SubD, a morph mix and a pose all work alike.
+
+**Phase 4b** (AD-037 §13): `paint(stroke, ...)` is what the room does with a placement. A brush without randomness
+(`StrokeDynamics.random` False) goes through `evaluate` and `PaintStroke.dab` exactly as in 4a (pinned bit for bit
+against a frozen copy, `tests/test_paint_dynamics.py`); the orientation modes Ansicht / Fläche only choose another
+tangent (`orientation_tangent`). With randomness, `cluster` evaluates the placement's stamps from the stroke's seed
+(`dynamics.random_values`, counter-based) and writes them in **one** `PaintStroke.dab_product`:
+
+- **scatter** moves the placement along / across the stroke line (in its tangent plane, at most `SCATTER_MAX` radii)
+  and puts it back on the surface with a ray along the hit normal (`_scattered`); off the object nothing is painted;
+- **single:** one stamp, jittered in rotation, size and flow - the alpha tip through `alpha_stamp` (its frame, mip,
+  depth window, fade and projection choice as in 4a), the round tip through the footprint and falloff;
+- **spray:** `spray_density` stamps inside the brush disc (`dynamics.spray_positions`), each `spray_size` radii (times
+  its size jitter), rotated by the angle offset plus its jitter, at `flow * spray_intensity * flow jitter`. **One**
+  gather for the whole cluster, one frame (as `alpha_stamp`'s), the depth window and facing fade once per texel; the
+  stamps' bounding squares as one (stamps x texels) mask (K <= `SPRAY_MAX`), the alpha (or the round falloff) read only
+  on the selected (stamp, texel) pairs - one read per mip level -, multiplied into the cluster's `prod(1 - flow_k * c_k)`
+  in stamp order (`np.multiply.at`). No loop per texel, and none per stamp either.
+  The stamps lie in the placement's tangent plane (the proposal's planar approximation; no wrap for spray stamps).
+- **mirror:** the reflected cluster uses the **same** random values in the reflected frame (its handedness flipped): a
+  scattered stamp lands at the mirrored place, an asymmetric alpha appears mirrored. A texel in both keeps the smaller
+  product (the larger coverage), as the 4a dab merges its mirror.
 """
 
 from __future__ import annotations
@@ -48,6 +69,7 @@ import numpy as np
 
 from . import alpha as alpha_api
 from .brush import BrushSettings, falloff
+from . import dynamics as dynamics_api
 from .dynamics import Placement
 from .surface import FACING_MIN, PaintSurface, mirror
 
@@ -81,8 +103,9 @@ SADDLE = 0.04
 WRAP_ITERATIONS = 64
 PLANAR, WRAP = "planar", "wrap"
 
-__all__ = ["PLANAR", "WRAP", "WRAP_FROM_PERCENT", "Frame", "Placement", "Stamp", "alpha_stamp", "combine", "evaluate", "frame_tangent",
-           "projection_for", "reflect"]
+__all__ = ["PLANAR", "WRAP", "WRAP_FROM_PERCENT", "Frame", "Placement", "SprayStamp", "Stamp", "alpha_stamp", "cluster",
+           "combine", "evaluate", "frame_tangent", "orientation_tangent", "paint", "projection_for", "reflect",
+           "surface_tangent"]
 
 
 @dataclass(frozen=True, eq=False)
@@ -382,7 +405,8 @@ def evaluate(surface: PaintSurface, placement: Placement, radius: float, setting
             parts_c.append(falloff(x, settings.hardness, settings.curve))
         return np.concatenate(parts_t), np.concatenate(parts_c), len(parts_t) == 1
     angle = settings.dynamics.angle
-    main = alpha_stamp(surface, placement.point, placement.normal, radius, image, tangent=placement.tangent,
+    tangent = orientation_tangent(surface, placement, settings.dynamics.orientation, radius, view_up)
+    main = alpha_stamp(surface, placement.point, placement.normal, radius, image, tangent=tangent,
                        view_up=view_up, angle=angle, settings=settings,
                        projection=projection_for(settings.radius_percent))
     parts = [main]
@@ -413,3 +437,258 @@ def combine(texels: list[np.ndarray], coverages: list[np.ndarray], flows) -> tup
     product = np.ones(unique.size, dtype=np.float32)
     np.multiply.at(product, inverse, factors)
     return unique, product
+
+
+# -- Phase 4b: orientation, jitter, scatter, spray ---------------------------------------------------------------------
+
+
+def surface_tangent(surface: PaintSurface, point, facing, radius: float) -> np.ndarray | None:
+    """The UV-u tangent `∂p/∂u` (unit, world) of the triangle under `point` (the nearest texel's within a quarter
+    radius), None where there is none or the triangle's UVs are degenerate (orientation "Fläche", proposal §5.3)."""
+    gathered = surface.gather(point, 0.25 * radius, facing)
+    if gathered is None:
+        return None
+    slot = int(gathered.slots[int(np.argmin(gathered.d2))])
+    p = surface._p[surface._tri_rows[slot]]
+    uv = surface.map.tri_uvs[slot]
+    e1, e2 = p[1] - p[0], p[2] - p[0]
+    (du1, dv1), (du2, dv2) = uv[1] - uv[0], uv[2] - uv[0]
+    det = du1 * dv2 - du2 * dv1
+    if abs(det) < 1e-18:
+        return None
+    t = (e1 * dv2 - e2 * dv1) / det
+    length = float(np.linalg.norm(t))
+    return t / length if length > 1e-300 else None
+
+
+def orientation_tangent(surface: PaintSurface, placement: Placement, orientation: str, radius: float, view_up):
+    """The stamp's "up" before the angle offset (proposal §5.3): the path's direction ("stroke", 4a), the view's up
+    ("view", and the base of "random", whose turn is a random value), the UV-u tangent ("surface"). None falls back to
+    the view's up in the frame."""
+    if orientation == "stroke":
+        return placement.tangent
+    if orientation == "surface":
+        return surface_tangent(surface, placement.point, placement.normal, radius)
+    return view_up
+
+
+@dataclass(frozen=True, eq=False)
+class SprayStamp:
+    """One stamp of a randomised cluster (tests, the probe): its world centre, its frame's `t` (turned by its angle),
+    its radius, its flow and whether it is the mirror's."""
+
+    centre: np.ndarray
+    t: np.ndarray
+    radius: float
+    flow: float
+    mirrored: bool = False
+
+
+def _scattered(surface: PaintSurface, placement: Placement, radius: float, offset, view_up):
+    """The placement moved by `offset` (along, across) radii in its tangent plane (along = the path's direction, else
+    the view's up) and put back on the surface: the hit of a ray along `-normal` from one radius above. None when it
+    leaves the object, faces away, or lands farther than the offset allows (another sheet)."""
+    along, across = offset
+    n = np.asarray(placement.normal, dtype=np.float64)
+    n = n / max(float(np.linalg.norm(n)), 1e-300)
+    t = frame_tangent(n, placement.tangent, view_up)
+    b = _cross3(n, t)
+    target = np.asarray(placement.point, dtype=np.float64) + radius * (along * t + across * b)
+    hit = surface.hit(target + radius * n, -n)
+    if hit is None or float(np.dot(hit.normal, n)) <= FACING_MIN:
+        return None
+    if float(np.linalg.norm(np.asarray(hit.point) - target)) > radius * dynamics_api.SCATTER_MAX:
+        return None
+    return Placement(placement.index, np.asarray(hit.point, dtype=np.float64), np.asarray(hit.normal, dtype=np.float64),
+                     placement.tangent)
+
+
+def _merge_min(texels: np.ndarray, product: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Duplicate texels (a cluster and its mirror at the plane) merged to their smallest product (largest coverage)."""
+    order = np.lexsort((product, texels))
+    texels, product = texels[order], product[order]
+    keep = np.r_[True, texels[1:] != texels[:-1]] if texels.size else np.zeros(0, dtype=bool)
+    return texels[keep], product[keep]
+
+
+def cluster(surface: PaintSurface, placement: Placement, radius: float, settings: BrushSettings, definition=None, *,
+            view_up=None, image: alpha_api.AlphaImage | None = None, seed: int = 0,
+            stamps: list | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """`(unique texels, prod(1 - flow_k * c_k))` of one randomised placement and its mirror for
+    `PaintStroke.dab_product` (module docstring, Phase 4b). `stamps` (a list) receives a `SprayStamp` per stamp."""
+    dyn = settings.dynamics
+    k = dyn.spray_density if dyn.spray else 1
+    values = dynamics_api.random_values(seed, placement.index, [*range(k), dynamics_api.PLACEMENT_ROW])
+    if dyn.scattered:
+        placement = _scattered(surface, placement, radius, dynamics_api.scatter_offset(dyn, values[k]), view_up)
+        if placement is None:
+            return _EMPTY
+    angles, sizes, flows = dynamics_api.stamp_jitter(dyn, values[:k])
+    angles = angles + dyn.angle
+    flows = np.minimum(settings.flow * flows * (dyn.spray_intensity if dyn.spray else 1.0), 1.0)
+    if dyn.spray:
+        parts = _spray(surface, placement, radius, settings, definition, view_up, image, values[:k], angles, sizes,
+                       flows, stamps)
+    else:
+        parts = _single(surface, placement, radius, settings, definition, view_up, image, float(angles[0]),
+                        float(sizes[0]), float(flows[0]), stamps)
+    parts = [p for p in parts if p[0].size]
+    if not parts:
+        return _EMPTY
+    if len(parts) == 1:
+        return parts[0]
+    return _merge_min(np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts]))
+
+
+def _single(surface, placement, radius, settings, definition, view_up, image, angle, size, flow, stamps):
+    """One jittered stamp (and its mirror) as `[(texels, 1 - flow * c)]` parts."""
+    r = radius * size
+    f = np.float32(flow)
+    if image is None:  # the round tip: the footprint and falloff at the jittered size (rotation does not show)
+        texels, x = surface.footprint(placement.point, r, placement.normal)
+        parts = [(texels, np.float32(1.0) - f * falloff(x, settings.hardness, settings.curve).astype(np.float32))]
+        if stamps is not None:
+            stamps.append(SprayStamp(np.asarray(placement.point), np.zeros(3), r, flow))
+        if definition is not None:
+            point, normal = mirror(definition, placement.point, placement.normal)
+            texels, x = surface.footprint(point, r, normal)
+            parts.append((texels, np.float32(1.0) - f * falloff(x, settings.hardness, settings.curve).astype(np.float32)))
+            if stamps is not None:
+                stamps.append(SprayStamp(point, np.zeros(3), r, flow, True))
+        return parts
+    tangent = orientation_tangent(surface, placement, settings.dynamics.orientation, radius, view_up)
+    main = alpha_stamp(surface, placement.point, placement.normal, r, image, tangent=tangent, view_up=view_up,
+                       angle=angle, settings=settings, projection=projection_for(settings.radius_percent * size))
+    parts = [(main.texels, np.float32(1.0) - f * main.coverage)]
+    if stamps is not None and main.frame is not None:
+        stamps.append(SprayStamp(main.frame.centre, main.frame.t, r, flow))
+    if definition is not None and main.frame is not None:
+        point, normal = mirror(definition, placement.point, placement.normal)
+        fr = main.frame
+        reflected = Frame(np.asarray(point), reflect(definition, fr.t), reflect(definition, fr.b), reflect(definition, fr.n))
+        other = alpha_stamp(surface, point, normal, r, image, settings=settings, frame=reflected,
+                            projection=main.projection)
+        parts.append((other.texels, np.float32(1.0) - f * other.coverage))
+        if stamps is not None:
+            stamps.append(SprayStamp(reflected.centre, reflected.t, r, flow, True))
+    return parts
+
+
+def _spray(surface, placement, radius, settings, definition, view_up, image, values, angles, sizes, flows, stamps):
+    """The spray cluster (module docstring) and its mirror as `[(texels, product)]` parts."""
+    dyn = settings.dynamics
+    positions = dynamics_api.spray_positions(dyn, values)
+    scales = dyn.spray_size * sizes  # each stamp's radius in brush radii
+    if image is None:
+        reach = 1.0
+    else:
+        reach = image.reach
+        if settings.tip.kreismaske:
+            reach = min(reach, 1.0)
+    extent = max(float((np.hypot(positions[:, 0], positions[:, 1]) + scales * reach).max()), INNER_DISC)
+    tangent = orientation_tangent(surface, placement, dyn.orientation, radius, view_up)
+    main = _spray_cluster(surface, placement.point, placement.normal, radius, extent, settings, image, positions,
+                          scales, reach, angles, flows, tangent=tangent, view_up=view_up)
+    if main is None:
+        return []
+    texels, product, frame = main
+    parts = [(texels, product)]
+    if stamps is not None:
+        stamps.extend(_spray_records(frame, radius, positions, scales, angles, flows, False))
+    if definition is not None:
+        point, normal = mirror(definition, placement.point, placement.normal)
+        reflected = Frame(np.asarray(point), reflect(definition, frame.t), reflect(definition, frame.b),
+                          reflect(definition, frame.n))
+        other = _spray_cluster(surface, point, normal, radius, extent, settings, image, positions, scales, reach, angles,
+                               flows, frame=reflected)
+        if other is not None:
+            parts.append(other[:2])
+            if stamps is not None:
+                stamps.extend(_spray_records(reflected, radius, positions, scales, angles, flows, True))
+    return parts
+
+
+def _spray_records(frame: Frame, radius, positions, scales, angles, flows, mirrored) -> list:
+    records = []
+    for (x, y), s, a, f in zip(positions, scales, angles, flows):
+        th = math.radians(float(a))
+        records.append(SprayStamp(frame.centre + radius * (x * frame.t + y * frame.b),
+                                  math.cos(th) * frame.t + math.sin(th) * frame.b, radius * float(s), float(f),
+                                  mirrored))
+    return records
+
+
+def _spray_cluster(surface, centre, facing, radius, extent, settings, image, positions, scales, reach, angles, flows, *,
+                   tangent=None, view_up=None, frame: Frame | None = None):
+    """One gather around `centre`, the frame (given: the mirror's), then per stamp its mask and coverage multiplied into
+    the cluster's product. Returns (texels, product, frame) or None."""
+    r = float(radius)
+    gathered = surface.gather(centre, r * extent, facing)
+    if gathered is None:
+        return None
+    d2 = gathered.d2 * np.float32(extent * extent)  # (d / r)²
+    if frame is None:
+        frame = _frame(surface, gathered, d2, centre, facing, tangent, view_up, 0.0)
+    basis = np.stack((frame.t, frame.b, frame.n), axis=1).astype(np.float32) / np.float32(r)
+    local = gathered.rel @ basis
+    a, beta, h = local[:, 0], local[:, 1], np.abs(local[:, 2])
+    # the depth window and the facing fade once per texel of the cluster (its plane)
+    window = np.ones(a.size, dtype=np.float32)
+    if float(h.max()) > DEPTH_SOFT:
+        window = np.float32(1.0) - _smoothstep(DEPTH_SOFT, DEPTH_MAX, h)
+    facing_n = surface._tri_normal32[gathered.slots] @ frame.n.astype(np.float32)
+    if float(facing_n.min()) < FADE_TO:
+        window = window * _smoothstep(FADE_FROM, FADE_TO, facing_n)
+    # the brush disc's diameter in texels (the mip level of each stamp follows its share of it)
+    within = min(extent, 1.0)
+    disc = 2.0 * math.sqrt(float(np.count_nonzero(d2 < np.float32(within * within))) / math.pi) / within
+    # every stamp's bounding square at once (stamps x texels; K <= `SPRAY_MAX`): the (stamp, texel) pairs it holds
+    x = positions[:, 0].astype(np.float32)[:, None]
+    y = positions[:, 1].astype(np.float32)[:, None]
+    e = (scales * reach).astype(np.float32)[:, None]
+    dx = a[None, :] - x
+    dy = beta[None, :] - y
+    k, sel = np.nonzero((np.abs(dx) < e) & (np.abs(dy) < e))
+    product = np.ones(a.size, dtype=np.float32)
+    if k.size == 0:
+        return gathered.texels[:0], product[:0], frame
+    dx, dy = dx[k, sel], dy[k, sel]
+    th = np.radians(np.asarray(angles, dtype=np.float64))
+    cos, sin = np.cos(th).astype(np.float32)[k], np.sin(th).astype(np.float32)[k]
+    inv = (1.0 / scales).astype(np.float32)[k]
+    u = (dx * cos + dy * sin) * inv  # the texel in the stamp's own frame (turned by its angle), in stamp radii
+    v = (dy * cos - dx * sin) * inv
+    if image is None:
+        coverage = falloff(np.sqrt(u * u + v * v), settings.hardness, settings.curve).astype(np.float32)
+    else:
+        hw, hh = image.half_extents
+        inside = np.flatnonzero((np.abs(u) < np.float32(hw)) & (np.abs(v) < np.float32(hh)))
+        k, sel, u, v = k[inside], sel[inside], u[inside], v[inside]
+        coverage = np.empty(k.size, dtype=np.float32)
+        # each stamp's mip level from its share of the disc's diameter in texels; one read per level
+        levels = np.array([image.level_for(disc * float(s)) for s in scales], dtype=np.int64)[k]
+        used = np.unique(levels)
+        for level in used:
+            at = slice(None) if used.size == 1 else np.flatnonzero(levels == level)
+            coverage[at] = image.sample_local(int(level), u[at], v[at])
+        if settings.tip.kreismaske:
+            coverage *= falloff(np.sqrt(u * u + v * v), settings.hardness, settings.curve).astype(np.float32)
+    flows = np.asarray(flows, dtype=np.float32)
+    np.multiply.at(product, sel, np.float32(1.0) - flows[k] * coverage * window[sel])
+    painted = np.flatnonzero(product < np.float32(1.0))
+    return gathered.texels[painted], product[painted], frame
+
+
+def paint(stroke, surface: PaintSurface, placement: Placement, radius: float, settings: BrushSettings, definition=None,
+          *, view_up=None, image: alpha_api.AlphaImage | None = None, seed: int = 0, stamps: list | None = None) -> int:
+    """One placement into `stroke` (a `PaintStroke`; module docstring, Phase 4b): without randomness exactly 4a's
+    `evaluate` + `dab`, else `cluster` + one `dab_product`. Returns the texels written."""
+    if image is None:
+        image = alpha_api.resolve(settings.tip.alpha)
+    if not settings.dynamics.random:
+        texels, coverage, unique = evaluate(surface, placement, radius, settings, definition, view_up=view_up,
+                                            image=image, stamps=stamps)
+        return stroke.dab(texels, coverage, unique=unique)
+    texels, product = cluster(surface, placement, radius, settings, definition, view_up=view_up, image=image, seed=seed,
+                              stamps=stamps)
+    return stroke.dab_product(texels, product)

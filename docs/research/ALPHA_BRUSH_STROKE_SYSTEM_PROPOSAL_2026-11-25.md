@@ -554,6 +554,7 @@ Praxistest for Manu. Gates are for the **reference PC at 2048²** unless marked;
   and across the seam.
 
 ### 4b — dynamics and spray
+*(Built 2026-11-25: [AD-037 §13](../architecture/AD-037-TEXTURE-PAINT.md), with its deviations.)*
 - **Content:** rotation, scale and flow jitter; scatter; the orientation modes; the Spray emitter; counter-based RNG.
 - **Acceptance:**
   - **determinism**: the same samples and seed give identical pixels for 1 ms, 10 ms and unlimited budgets;

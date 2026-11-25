@@ -23,6 +23,12 @@ Undo / Redo / Shift+S / the SubD keys, a new press, saving and closing the room 
 rest is bounded) and then run. Esc restores every touched tile exactly, while stroking and while finishing. Faces
 without usable UVs hold no texel: the dab skips them (P-13) and the status line says so when the cursor is on one.
 
+**Randomness** (Phase 4b, AD-037 §13): every stroke draws a **seed** at the press (`new_seed`); placement `i`, stamp
+`k` take their jitter, scatter and spray values from `(seed, i, k)` only (`mirai.paint.dynamics.random_values`), so the
+frame budget, the event rate and the queue's chunking never change the pattern. The seed is kept with the stroke's
+`PaintStrokeCommand` (`seed`, for diagnostics and replay; not in the scene). Undo / Redo restore the recorded tiles and
+never draw again.
+
 **Pick** (the eyedropper): the composite's colour at the hit's UV (the albedo, not the lit frame colour); then the
 previous tool again (`PROVISIONAL`).
 
@@ -34,6 +40,7 @@ not on a hidden one; `layer_step` pushes a `mirai.paint.layers` step between str
 from __future__ import annotations
 
 import math
+import secrets
 import time
 from typing import Optional
 
@@ -80,6 +87,12 @@ RESOLUTIONS = (2048, 1024)
 DEFAULT_RESOLUTION = 2048
 #: The path's sample step on screen: the spacing in pixels, clamped to this range (`PROVISIONAL`, Phase 4a).
 SAMPLE_STEP_PX = (2.0, 6.0)
+
+
+def new_seed() -> int:
+    """A stroke's seed (module docstring: randomness); tests replace it."""
+    return secrets.randbits(32)
+
 
 #: What the room lets through (module docstring); Undo / Redo are refused while a stroke runs (`allows`).
 PAINT_ALLOWS = frozenset(
@@ -214,6 +227,9 @@ class PaintRoomController:
         self._view_up = None
         self._step_px = SAMPLE_STEP_PX[0]
         self._screen = None
+        #: the running stroke's seed (Phase 4b) and the last committed stroke's (tests, diagnostics)
+        self._seed = 0
+        self.last_seed: int | None = None
         #: the stroke was released and its rest is being evaluated over the next frames
         self.finishing = False
         self._previous_tool = brush_api.TOOL_PAINT
@@ -481,7 +497,8 @@ class PaintRoomController:
         radius = self.radius() if self.brush.tool != brush_api.TOOL_PICK else self.radius() * 0.25
         definition = self._mirror_definition()
         image = alpha_api.resolve(self.brush.tip.alpha) if self.brush.tool != brush_api.TOOL_PICK else None
-        if image is None:
+        dyn = self.brush.dynamics
+        if image is None or dyn.spray or dyn.orientation == "random":  # (spray, a random turn: the brush circle)
             segments = {TOOL_PREVIEW_LAYER: surface.circle(hit.point, hit.normal, radius)}
             if definition is not None:
                 point, normal = mirror(definition, hit.point, hit.normal)
@@ -490,7 +507,12 @@ class PaintRoomController:
             return
         # an alpha tip: its oriented rectangle, the circle dimmed (and the mirror's rectangle dimmed)
         normal = np.asarray(hit.normal, dtype=np.float64)
-        tangent = self._queue.last_tangent if self._queue is not None else None
+        if dyn.orientation == "surface":
+            tangent = stamp_api.surface_tangent(surface, hit.point, hit.normal, radius)
+        elif dyn.orientation == "view":
+            tangent = None
+        else:
+            tangent = self._queue.last_tangent if self._queue is not None else None
         t = stamp_api.frame_tangent(normal, tangent, self._camera_up())
         angle = math.radians(self.brush.dynamics.angle)
         t = math.cos(angle) * t + math.sin(angle) * np.cross(normal, t)
@@ -569,14 +591,16 @@ class PaintRoomController:
         self._radius = radius = self.radius()
         self._definition = self._mirror_definition()
         self._view_up = self._camera_up()
+        self._seed = new_seed()
         spacing = brush.dynamics.spacing * 2.0 * radius
         screen = self._screen_radius(hit.point, radius)
         lo, hi = SAMPLE_STEP_PX
         self._step_px = min(max(brush.dynamics.spacing * 2.0 * screen, lo), hi)
         jump = max(2.0 * radius, 6.0 * self._step_px * radius / screen)  # a sample farther: a hit gap (silhouette)
+        # placements need the path's direction for an alpha tip (P-21) and for scatter (along / across the stroke)
+        directed = self._image is not None or brush.dynamics.scattered
         self._queue = dynamics_api.StrokeQueue(lambda o, d: surface.hit(o, d), spacing, jump,
-                                               directed=self._image is not None, evaluate=self._evaluate,
-                                               radius=radius)
+                                               directed=directed, evaluate=self._evaluate, radius=radius)
         self._queue.add_ray(*self._ray(x, y))
         self._screen = (x, y)
         self._show_cursor(surface, hit)
@@ -598,9 +622,8 @@ class PaintRoomController:
             self._show_cursor(self._surface, hit)
 
     def _evaluate(self, placement) -> None:
-        texels, coverage, unique = stamp_api.evaluate(self._surface, placement, self._radius, self._stroke.settings,
-                                                      self._definition, view_up=self._view_up, image=self._image)
-        self._stroke.dab(texels, coverage, unique=unique)
+        stamp_api.paint(self._stroke, self._surface, placement, self._radius, self._stroke.settings, self._definition,
+                        view_up=self._view_up, image=self._image, seed=self._seed)
 
     def frame(self) -> int:
         """Once per frame (`Application.update_viewport`): the running or finishing stroke's work within the frame
@@ -650,6 +673,9 @@ class PaintRoomController:
                 rgba = services.paint.pixels(recorder.obj, recorder.name).reshape(-1, 4)
                 recorder.write_texels(dst, rgba[src].copy())
         command = recorder.commit()
+        if command is not None:
+            command.seed = self._seed
+        self.last_seed = self._seed
         self.last_dabs = stroke.dabs
         stack_command, self._stack_command = self._stack_command, None
         if command is None and stack_command is None:

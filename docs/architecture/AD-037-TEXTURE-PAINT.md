@@ -1,4 +1,4 @@
-# AD-037 — Texture paint: storage, data model, foundations (Phase 1), the Paint Room (Phase 2), layers and UV transfer (Phase 3), alpha tip and stroke queue (Phase 4a)
+# AD-037 — Texture paint: storage, data model, foundations (Phase 1), the Paint Room (Phase 2), layers and UV transfer (Phase 3), alpha tip and stroke queue (Phase 4a), jitter, scatter and spray (Phase 4b)
 
 **Status:** **DECIDED (Manu, 2026-11-18)**: „P-1 ja, P-2 ja, P-3 Go, P-4 ja, P-6 ja“ (the audit's addendum), the additive
 Core change and scene format v14 included. **IMPLEMENTED Phase 1 (2026-11-18, container: TESTED)** as built in §2–§6.
@@ -12,7 +12,8 @@ Room (2026-11-18, container: TESTED; reference PC: P-A … P-G pass on the shown
 (alpha tip, projection with the wrap fallback, world spacing, stamp queue; 2026-11-25, container: TESTED; reference PC:
 every 4a gate met after the same day's optimisation, §12.7; **Praxistest passed, Manu 2026-11-25**: „Praxistest gut
 bestanden. Läuft flüssiger, als ich erwartet habe. Keine Verzerrungen auch über extreme winkel hinweg.“) as built in §12;
-4b next** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
+IMPLEMENTED 4b (jitter, scatter, the orientation modes, the spray emitter, counter-based randomness; 2026-11-25,
+container: TESTED, every 4b gate met in the container; reference PC and Praxistest: open) as built in §13** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).
@@ -104,6 +105,22 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
   Referenz-PC (2026-11-25): erst war die 3 %-Alpha-Platzierung zu langsam (18 / 24 ms statt ≤ 16,7); am selben Tag
   beschleunigt, im zweiten Lauf **14,1 / 16,0 ms – alle 4a-Grenzen eingehalten** (§12.7). **Praxistest bestanden**
   (Manu 2026-11-25: „Läuft flüssiger, als ich erwartet habe. Keine Verzerrungen auch über extreme winkel hinweg.“).
+
+**Phase 4b – Zufall, Streuung, Spray (gebaut 2026-11-25, §13):**
+
+- Im Panel drei **eingeklappte Abschnitte** mit Kurzfassung: **Strich** (Abstand; mit Alpha Ausrichtung – Strich folgen,
+  Ansicht, Fläche, Zufall – und Winkel; Einzeln / Spray), **Streuung** (Drehung ±, Größe ±, Fluss ± je Stempel; Streuung
+  quer und längs bis 2 Radien), **Spray** (Dichte bis 64 Stempel, Stempelgröße, Intensität). Ohne all das malt der
+  Pinsel **bitgleich wie 4a** (zuerst festgenagelt, gegen eine eingefrorene Kopie von 4a).
+- **Zufall mit Gedächtnis:** jeder Strich zieht beim Klick einen Startwert; jeder Stempel bekommt seine Werte nur aus
+  (Startwert, Platzierung, Stempel). Mausgeschwindigkeit, Bildrate und Warteschlange ändern das Muster nicht; Strg+Z /
+  Strg+Y stellen die Pixel her und würfeln nie neu; der **Spiegel** nutzt dieselben Werte gespiegelt.
+- **Spray:** ein Klick = ein Stoß, Stillhalten fügt nichts hinzu (P-28); alle Stempel einer Platzierung werden in einem
+  Durchgang gerechnet und in **einem** Schreibvorgang aufgetragen. Die Dichte pro Fläche hängt nicht von der
+  Strichgeschwindigkeit ab.
+- Messung im Container: 3 %-Spray mit 20 Stempeln (+ Spiegel) p95 12,8 / 24,1 ms (Grenze 33), 10-s-Spray-Strich kein
+  Bild über 50 ms; die einfache Platzierung ohne Zufall kostet genau wie in 4a. **Offen:** Dein Referenz-PC-Lauf und der
+  Praxistest (unten).
 
 ## 1. Decisions (Manu, 2026-11-18)
 
@@ -929,6 +946,162 @@ The alpha's 3 % dab is now the round dab's (p95 7.33 / 7.59 against 7.68 / 8.30 
 texels). The flicks (information) drain in ≤ 14 finishing frames. P-A round 1 % on the cage had one stall (max 293 ms,
 p95 28 ms in that row only; 9.0 / 12.6 ms in the first run) - the machine, not 4a.
 
+## 13. Phase 4b — built (2026-11-25): jitter, scatter, orientation modes, spray, counter-based randomness
+
+Built on `claude/charming-curie-kckgrg` from `4a49d5b` (4a closed). Basis: the
+[proposal](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) §5.1, §5.3, §5.5–§5.7, §5.9, §7 area 4, §8, §9
+"4b", §10 (P-18 … P-28 decided). Values marked `PROVISIONAL` are agent-set. No key, no keymap entry, no scene-format
+change, no new dependency; the foundations (texel map, store, recorder, live texture, `seam_pad`, `mirror`, Pick, the
+queue, the 4a projection and wrap rule) are unchanged - 4b only adds what a placement does with them.
+
+### 13.1 Pinned first: no randomness = 4a, bit for bit
+
+Before the rebuild, `tests/test_paint_dynamics.py` pinned the room's placement path against a **frozen copy of 4a's
+`stamp` module** (`tests/paint_stamp_4a_frozen.py`, `4a49d5b`): the round tip (erase, 3 %) and the alpha tip (Poren 3 %
+planar, Poren 5 % with wrapped placements, Ader 5 % with angle 30° and the Kreismaske) through the stroke queue on the
+Gollum head's cage and SubD 1, mirror on and off - pixels and the stroke buffer identical. It stayed green through the
+rebuild. The round tip stays bit-identical to the Phase 2 dab (`tests/test_paint_alpha.py`, unchanged).
+
+### 13.2 The settings - `mirai.paint.dynamics.StrokeDynamics`
+
+| Field | Meaning (proposal §5.1) | Range (`PROVISIONAL`) | Default |
+|---|---|---|---|
+| `orientation` | Strich folgen / Ansicht / Fläche / Zufall (§5.3) | - | Strich folgen (P-21) |
+| `angle` | offset of the stamp's "up", every mode | ±180° | 0 |
+| `jitter_rotation` | Zufall: rotation per stamp | ± 0–180° | 0 |
+| `jitter_size` | Zufall: size per stamp | ± 0–90 % | 0 |
+| `jitter_flow` | Zufall: flow per stamp ("Deckkraft-Streuung (pro Stempel)") | ± 0–100 %, the stamp's flow capped at 1 | 0 |
+| `scatter_across`, `scatter_along` | Streuung: offset from the stroke line, two sliders | 0–2 r each, the offset's length capped at 2 r | 0 |
+| `emitter` | Einzeln / Spray (§5.5) | - | Einzeln |
+| `spray_density` | stamps per placement | 1–64 (K ≤ 64) | 12 |
+| `spray_size` | stamp size | 5–50 % of the radius | 20 % |
+| `spray_intensity` | the spray stamps' flow | 0–100 % of the brush flow | 100 % |
+
+`StrokeDynamics.with_` clamps (the panel's path; scatter beyond 2 r is capped, pinned), the constructor refuses values
+outside. Switching to spray sets the spacing to 50 % (`SPRAY_SPACING`, a burst per radius of path); a tip change keeps a
+spray's spacing. Rotation and orientation do not apply to the round tip (§5.9); size, flow, scatter and spray do.
+
+### 13.3 Counter-based randomness (§5.7) - `dynamics.random_values`
+
+- **The seed** is drawn at the press (`controllers.paint_room.new_seed`, 32 bit), held by the controller for the running
+  stroke and stored on the stroke's `PaintStrokeCommand` (`seed`; diagnostics and replay). Not in the scene: the scene
+  stores pixels. (There is no `StrokeState` class; the controller holds the stroke's state.)
+- **Values of placement `i`, stamp `k`** come only from `(seed, i, k)`: a SplitMix64 hash over the counter
+  `((i · 65 + k) · 8 + column)`, eight columns per stamp row (rotation, size, flow, across, along, radius, turn,
+  orientation), row 64 the placement's own (its scatter). **Deviation:** the proposal named
+  `Generator(PCG64(SeedSequence([seed, i, k])))`; building a generator per stamp costs tens of µs (20 stamps: ~1 ms per
+  placement), the hash draws a placement's 21 rows in 0.03 ms. The property is the same: a pure function of the counter,
+  independent of the density, of other rows and of timing (pinned; mean and correlation checked).
+- Placements are arc-length positions (4a), so mouse speed, event rate, queue chunking and frame budget change neither
+  where the stamps go nor what they draw. **Undo / Redo** restore the recorded tiles and never draw (pinned with a
+  `random_values` that records calls).
+- **The mapping** (`stamp_jitter`, `scatter_offset`, `spray_positions`) is pure: rotation within ± `jitter_rotation`
+  (plus a full random turn for "Zufall"), size within 1 ± `jitter_size`, flow factor within 1 ± `jitter_flow` (≥ 0),
+  scatter within ± each slider with the length capped at 2 r, spray centres area-uniform (`ρ = √u`) in the disc of radius
+  `1 − spray_size` (**deviation:** the proposal's `ρ = r √u` lets a stamp stick out of the disc; with `1 − s` the stamps
+  stay inside it, as §5.5 asks).
+
+### 13.4 A placement - `mirai.paint.stamp.paint` / `cluster`
+
+- **Without randomness** (`StrokeDynamics.random` False - the orientation modes Ansicht / Fläche included, they only
+  choose another tangent, `orientation_tangent`) `paint` is 4a's `evaluate` + `PaintStroke.dab`, unchanged.
+- **With randomness** `cluster` returns `(texels, prod(1 − flow_k · c_k))` and the stroke takes **one**
+  `PaintStroke.dab_product` per placement (§5.6; `S ← 1 − (1 − S) · P`).
+- **Scatter** moves the placement by `(along · t + across · b) · r` in its tangent plane (`t` the path's direction, else
+  the view's up) and **puts it back on the surface** with a ray along `−n` from one radius above (`_scattered`).
+  **Deviation:** the proposal left a scattered stamp in the tangent plane; on the head's curvature a 2 r offset would
+  float 0.2–2 r above the skin (and the depth window would cut it). Off the object, onto a back face or onto another
+  sheet farther than 2 r: nothing is painted for that placement.
+- **Single:** the alpha tip goes through 4a's `alpha_stamp` at the jittered radius and angle (its inner-disc frame, mip,
+  depth window, facing fade; the wrap rule with the jittered radius: `projection_for(radius % · size)`); the round tip
+  through 4a's footprint and falloff at the jittered radius.
+- **Spray:** **one gather** around the (scattered) centre within the reach of the farthest stamp, **one frame** (4a's
+  inner-disc normal, the orientation's tangent), the depth window and facing fade once per texel in that plane; then
+  all stamps' bounding squares as one (stamps × texels) boolean mask, each selected (stamp, texel) pair turned into its
+  stamp's frame (angle offset + rotation jitter, or a random turn), the alpha read once per mip level (each stamp's level
+  from its share of the disc's diameter in texels) - or the round falloff (hardness, curve) for the round tip -, and
+  `np.multiply.at` into the cluster's product in stamp order. **Deviation:** the proposal's loop over stamps became one
+  vectorised pass (the loop cost ~50 µs of NumPy overhead per stamp; 20 Poren stamps 4.9 → 2.5 ms per placement [C]);
+  still no loop per texel. Spray stamps lie in the placement's tangent plane (the proposal's planar approximation): no
+  wrap for spray stamps.
+- **Mirror:** the reflected cluster at the mirrored centre uses **the same random values** in the reflected frame
+  (handedness flipped): every mirror stamp's centre is the reflection of its main stamp's, its direction the reflected
+  direction, same radius and flow (pinned on the head), and a randomised stroke on a symmetric plane is mirror-symmetric
+  to 4·10⁻⁵ (pinned, spray and single). A texel in both keeps the smaller product (the larger coverage), as 4a merges.
+- **A click without movement is one burst** (one placement; pinned: one `dab_product` after 30 still frames); holding
+  still adds nothing (P-28: no time-based emission).
+- **Surfaces:** like 4a, a cluster reads only the shown surface - its hit, its texel points, its triangle normals and UVs
+  (`PaintSurface`) - so the cage, SubD, a morph mix and a pose work alike (the pose and the morph mix are a shown mesh
+  like any other; not separately tested in 4b).
+
+### 13.5 Room, cursor, panel
+
+- `PaintRoomController`: the seed per stroke; the queue is `directed` for an alpha tip **or scatter** (the scatter needs
+  the path's direction; the plain round tip stays undirected, as 4a). The cursor: an alpha tip draws its rectangle turned
+  by the orientation (Strich folgen: the last direction; Ansicht: the view's up; Fläche: the UV-u tangent under the
+  cursor); spray and "Zufall" draw the brush circle (§7).
+- **Panel** (`gui.paint_panel`, logic in `gui.paint_model`): under the tip, collapsing headers **closed by default**, each
+  with a one-line summary while closed (proposal §7 area 4): **Strich** (Abstand; with an alpha Ausrichtung and Winkel;
+  Einzeln / Spray), **Streuung** (Drehung ± with an alpha, Größe ±, Fluss ±, Streuung quer, Streuung längs), **Spray**
+  (only with spray: Dichte, Stempelgröße, Intensität). The summaries (e.g. „Abstand 50 %, Fläche +30°, Spray“, „Drehung
+  ±180°, Größe ±40 %, Fluss ±50 %, quer 0,6 r, längs 0,4 r“, „20 Stempel, Größe 25 %, Intensität 100 %“) and a headless
+  draw of every section are pinned. The status line adds „Spray N“ and „Streuung“ when they are on. No presets, no
+  library (4c). Layout `PROVISIONAL` until the 4c picker (P-23).
+
+### 13.6 Tests [C]
+
+`tests/test_paint_dynamics.py` (34): the 4a bit identity (16 cases); the randomness a pure function of
+`(seed, i, k)`; every jitter / scatter / spray value inside its bounds over 150 seeds × 3 placements and filling them;
+scatter capped at 2 r (settings and painted texels); **the same rays and seed give identical pixels for budgets 1 ms,
+10 ms and unlimited** (spray Poren with every jitter and scatter, single Ader, round spray; mirror on; a different seed
+differs); the mirror reuses the values (head, SubD 1) and a stroke is mirror-symmetric (plane); **spray density per area
+independent of the stroke speed** (the same 240 px line in 80 and in 8 events: stamps per arc length, painted area and
+coverage within 5 %); a spray cluster in one write equals its stamps one by one (cover within 1·10⁻⁵, pixels ±1); the
+orientation modes (view, surface on two UV layouts, random deterministic per placement, the offset for every mode);
+the room: one Undo step per stroke with its seed, Undo / Redo exact without drawing, Esc exact, the same seed and input
+paint the same stroke (with and without the display's update), a click is one burst; the panel model and a headless draw.
+The 4a curvature, leak, seam, frame and mirror tests (`tests/test_paint_alpha.py`) stay green unchanged.
+Whole suite (container, xvfb): `tests/` 8295 passed, 3 failed - the same 3 as on `922d964` and in 4a (§12.5: the
+box-paint scenario, its `can_run` purity variant, `test_scene_menu_local_tmp::test_probe_menu_wiring`), 8 skipped;
+`tests/test_gl_*.py` alone 444 passed; `experiments/drag_cost/tests` and `experiments/morph_lab/tests` 158 passed.
+
+### 13.7 Measurements [C] (container: Xeon, Python 3.13, NumPy 2.2.6, llvmpipe; `probe_paint.py`, 2048², mirror on)
+
+Verbatim in [`RESULTS_PAINT_PHASE4B_CONTAINER_2026-11-25.md`](../../experiments/drag_cost/RESULTS_PAINT_PHASE4B_CONTAINER_2026-11-25.md).
+
+| Row (2048², mirror on, 3 %) | cage p50 / p95 | SubD 1 p50 / p95 | gate (reference PC) |
+|---|---|---|---|
+| **P-J** Poren spray, 20 stamps (+ mirror): dab (CPU) | 4.16 / 4.80 ms | 4.56 / 6.81 ms | — |
+| **P-J** total with the llvmpipe frame | 10.95 / **12.83** ms | 17.36 / **24.05** ms | p95 ≤ 33 ms |
+| P-J round spray, 20 stamps (info): total | 10.54 / 13.98 ms | 16.24 / 20.38 ms | — |
+| **P-K** 10-s spray stroke (280 / 273 placements of 20 stamps): stroke frame p95 · max of every frame | 14.4 · **22.1** ms | 20.5 · **35.3** ms | no frame > 50 ms |
+| P-K release → History | 9.6 ms | 11.6 ms | (≤ 250 ms, 4a's) |
+| P-H alpha 3 %, single, no randomness: dab, 4a ↔ 4b A/B (1200 placements each, interleaved) | 1.76 / 2.47 ↔ 1.76 / 2.54 ms | 1.73 / 2.22 ↔ 1.71 / 2.03 ms | **unchanged** (§12.6) |
+| P-A round 3 %: dab, 4a ↔ 4b A/B | 1.55 / 2.02 ↔ 1.55 / 2.01 ms | 1.54 / 2.29 ↔ 1.55 / 2.26 ms | unchanged |
+
+- A single placement without jitter, scatter or spray costs what it cost in 4a (it runs 4a's code; `paint` adds one
+  property check). The probe's own P-H rows, run alternately at `4a49d5b` and on 4b (`--no-gl`, twice each), scatter
+  by ± 0.3 ms both ways - as much as P-A, whose code is untouched.
+- Expectation for the reference PC [H]: the CPU there was 2.2–2.6× the container's on the 4a dab (§12.7: 6.6–7.0 ms
+  against 2.4–2.5 ms p50); P-J's dab would be ~10–15 ms p50, ~18 ms p95 on SubD 1, plus composite and a 4–6 ms frame:
+  **~25–28 ms p95 against the 33 ms gate**. P-K: the queue's budget bounds a frame's work; the largest container frame
+  (35 ms on SubD 1, of it llvmpipe's draw) suggests a margin, but it is the RPC run that decides.
+- The vectorised spray: 20 Poren stamps 4.9 → 2.5 ms per placement (mirror on, before / after, best of 6 [C]);
+  20 round stamps 3.3 → 2.1 ms.
+
+### 13.8 Not in 4b / open
+
+- **Reference-PC run open:** `python experiments/drag_cost/probe_paint.py` (rows P-H, P-J, P-K; P-A / P-I for
+  comparison) - the gates P-J p95 ≤ 33 ms and P-K no frame > 50 ms, and P-H 3 % as in §12.7 (14.05 / 16.01 ms p95).
+- **Praxistest** below (Manu).
+- Colour jitter (§5.8: the stroke colour buffer) stays 4d; presets, the library, the picker and the starter set are 4c.
+- Spray stamps never wrap (planar cluster, §13.4); a large spray brush (≥ 8 %) on a strongly curved place (the nose tip)
+  fades its outer stamps by the depth window instead of wrapping them. If the practical test asks for it, the cluster
+  can wrap as a whole (one geodesic map per cluster, 4a's `_wrap`).
+- The scatter's re-hit is one extra ray per placement (≈ 0.1–0.3 ms [C], measured inside the single-jitter row: 2.4 /
+  2.7 ms against 1.8 ms plain); on a very large object a 2 r scatter can jump a crease onto the neighbouring sheet within
+  2 r (the lip) - allowed by the cap.
+
 ## Praxistest für Manu (Deutsch, ca. 5 Minuten, optional)
 
 Phase 1 hat nur einen sichtbaren Teil, die UV-Prüfung:
@@ -1017,3 +1190,35 @@ aufgelegt wurde. Sieht etwas gestreckt, abgeschnitten oder falsch aus?
 
 Rückmeldung am liebsten mit einem Satz je Punkt. Die Test-Alphas sind nur zum Ausprobieren (die Starter-Sammlung kommt in
 4c nach Deinem Blick auf einen eigenen Bildbogen); Panel-Aufbau und Werte sind vorläufig. Keine neue Taste.
+
+## Praxistest Zufall, Streuung, Spray (Phase 4b) für Manu (Deutsch, ca. 15 Minuten)
+
+Neu im Panel unter „Spitze“: drei **eingeklappte Abschnitte** – **Strich**, **Streuung**, **Spray** (Spray nur, wenn
+„Spray“ gewählt ist). Eingeklappt zeigt jede Zeile eine Kurzfassung (z. B. „Streuung   Drehung ±180°, Größe ±30 %“). Ohne
+Zufall, Streuung und Spray malt alles **bitgleich wie 4a**.
+
+1. `Gollum_Head_rigging_test` öffnen, Kopf als Edit-Objekt, SPACE → **„Paint Room öffnen“**, Spiegeln an. Erst „Rund“
+   wie bisher: gleich wie gestern?
+2. **Poren-Spray auf Wange und Nase:** Spitze **Poren**, Radius 3 %, „Strich“ aufklappen → **Spray**. Der Abstand springt
+   auf 50 %. „Spray“ aufklappen: Dichte 20, Stempelgröße 20 %. „Streuung“: Drehung ±180°, Größe ±30 %, Fluss ±30 %.
+   Über Wange und Nasenrücken malen: sieht es wie Hautporen aus (kein Muster, keine Reihen)? Ist der Strich flüssig?
+   **Ein Klick ohne Bewegung** = genau ein Sprühstoß; **Maus stillhalten** fügt nichts hinzu (P-28) – passt das?
+3. **Sommersprossen:** Spitze **Punkte** (oder Rund) mit Spray, Dichte 5–8, Stempelgröße 30–40 %, Größe ±50 %, Fluss
+   ±60 %, Deckkraft ~50 %, Farbe ein helles Braun; zusätzlich „Streuung quer“ 1,0 r. Ein paar Tupfer über Nase und Wangen:
+   unregelmäßig genug? Fehlt etwas (z. B. Farbvariation – die kommt erst in 4d)?
+4. **Adern mit Zufallsdrehung:** Spitze **Ader**, Einzeln, Abstand ~60 %, „Drehung ±“ 20–40°, Größe ±20 %. Ein Strich an
+   der Schläfe / am Hals: wirkt die Ader verzweigter, weniger wie eine Kette gleicher Stempel? „Ausrichtung“ auf **Ansicht**,
+   **Fläche** und **Zufall** umschalten: Unterschied sichtbar? (Fläche richtet sich nach der UV-u-Richtung, Ansicht nach
+   „oben“ am Bildschirm.)
+5. **Spiegel-Symmetrie des Zufalls:** mit Spiegeln einen Spray- und einen Ader-Strich auf eine Wange: ist die andere
+   Seite das **Spiegelbild** (gleiche Poren, gespiegelt), nicht ein anderes Zufallsmuster?
+6. **Streuung längs/quer** bis 2 r: die Stempel springen neben die Linie, aber nie weiter als 2 Radien; am Rand der Nase
+   oder des Kinns fällt ein gestreuter Stempel, der neben das Objekt fiele, weg. Wirkt das natürlich?
+7. **Undo:** Strg+Z nimmt genau einen Strich zurück, Strg+Y bringt **dasselbe** Muster wieder (nicht neu gewürfelt).
+   Esc mitten im Strich: alles wie vorher?
+8. Schneller Spray-Strich quer über das Gesicht und sofort loslassen: friert etwas ein? (Die Farbe darf kurz nachlaufen.)
+9. **SubD an** (V) und dasselbe: Unterschied zum Käfig? Wenn Du magst: mit einer Pose / Morph-Mischung (Gesicht verzogen)
+   malen – sitzen die Poren auf der verformten Haut?
+
+Rückmeldung am liebsten mit einem Satz je Punkt; Werte, Bereiche und der Panel-Aufbau sind vorläufig (bis zum 4c-Picker).
+Keine neue Taste.

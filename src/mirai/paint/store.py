@@ -409,13 +409,15 @@ class StrokeRecorder:
 
 class PaintStrokeCommand:
     """The pixels of one stroke as an Undo step (the Core `Command` protocol; `layer_declarations`: no mesh data). Holds
-    the touched tiles' "before" pixels; the first Undo captures their "after" pixels for Redo."""
+    the touched tiles' "before" pixels; the first Undo captures their "after" pixels for Redo. `seed`: the stroke's
+    random seed (AD-037 §13, diagnostics and replay; Undo / Redo never use it - they restore pixels)."""
 
     def __init__(self, store: PaintStore, obj: SceneObject, name: str, before: dict, description: str) -> None:
         self.store, self.obj, self.name = store, obj, name
         self.before = dict(before)
         self.after: dict | None = None
         self.description = description
+        self.seed: int | None = None
 
     def _swap(self, write: dict) -> dict:
         rgba = self.store.pixels(self.obj, self.name)

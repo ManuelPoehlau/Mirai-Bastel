@@ -6,7 +6,8 @@ rays, sampled finely between input events. The arc-length remainder carries acro
 across their boundaries. A **hit gap** (a sample misses the object, or the path jumps - a silhouette) ends the run: the
 next hit starts a new run with its own first placement, nothing is interpolated across the gap.
 
-**Orientation** "Strich folgen" (P-21, the only mode of 4a): the stamp's "up" follows the path. Placement `k`'s tangent
+**Orientation** "Strich folgen" (P-21, the default; 4b adds Ansicht / Fläche / Zufall, `stamp.orientation_tangent`):
+the stamp's "up" follows the path. Placement `k`'s tangent
 is the chord from placement `k-1`, exponentially smoothed over arc length (`SMOOTHING_LENGTH`), so mouse jitter does
 not rotate the stamps -
 smoothed *on the surface*: the previous tangent is first turned onto the new hit's tangent plane (the minimal rotation
@@ -25,6 +26,15 @@ over the following frames; `done` says when nothing is left.
 
 Placements are a pure function of the rays and their sample counts: the budget, the frame timing and how the work is
 chunked never change them (the 4b replay test builds on this).
+
+**Phase 4b** (AD-037 §13; proposal §5.1, §5.3, §5.5, §5.7): `StrokeDynamics` also holds the orientation modes
+(`ORIENTATIONS`: Strich folgen - the default, P-21 -, Ansicht, Fläche, Zufall), **jitter** per stamp (rotation ± degrees,
+size ± %, flow ± %), **scatter** of each stamp from the stroke line (across and along, in radii, capped at
+`SCATTER_MAX`), and the **emitter** (single, or spray: `spray_density` stamps of `spray_size` radii inside the brush
+disc at `spray_intensity` of the flow). Every random value is **counter-based** (`random_values`): it depends only on
+the stroke's seed, the placement's index and the stamp's row, never on timing, chunking or event rate; the mapping of
+those values onto angles, scales, flows and offsets (`stamp_jitter`, `scatter_offset`, `spray_positions`) is pure and
+keeps every value inside its bounds. A brush with none of it (`StrokeDynamics.random` False) paints as in 4a.
 """
 
 from __future__ import annotations
@@ -32,7 +42,7 @@ from __future__ import annotations
 import math
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 import numpy as np
@@ -43,8 +53,26 @@ SPACING_MIN, SPACING_MAX = 0.02, 3.0
 #: frontal view) and of an alpha tip (stamps touching; proposal §5.2 "about 100 %"). `PROVISIONAL`.
 ROUND_SPACING = 0.125
 ALPHA_SPACING = 1.0
-ORIENTATIONS = ("stroke",)
-ORIENTATION_LABELS = {"stroke": "Strich folgen"}
+#: Orientation modes (proposal §5.3): the path's direction (P-21, the default), the view's up, the surface's UV-u
+#: tangent, a random angle per stamp. The angle offset applies to all.
+ORIENTATIONS = ("stroke", "view", "surface", "random")
+ORIENTATION_LABELS = {"stroke": "Strich folgen", "view": "Ansicht", "surface": "Fläche", "random": "Zufall"}
+#: Emitters (proposal §5.5): one stamp per placement, or a spray of several small stamps inside the brush disc.
+EMITTERS = ("single", "spray")
+EMITTER_LABELS = {"single": "Einzeln", "spray": "Spray"}
+#: Scatter cap in radii (proposal §5.5: the stamps lie in the placement's tangent plane, a planar approximation): each
+#: slider and the offset's length (`PROVISIONAL`).
+SCATTER_MAX = 2.0
+#: Size jitter cap (± fraction of the stamp size; a stamp never shrinks to nothing; `PROVISIONAL`).
+SIZE_JITTER_MAX = 0.9
+#: Spray: at most this many stamps per placement (proposal §5.5: K <= 64), the stamp size range in radii (§5.5: 10-30 %
+#: proposed, wider here) and the defaults (`PROVISIONAL`).
+SPRAY_MAX = 64
+SPRAY_SIZE_MIN, SPRAY_SIZE_MAX = 0.05, 0.5
+SPRAY_DENSITY = 12
+SPRAY_SIZE = 0.2
+#: The spacing a brush takes when it switches to spray (a burst per radius of path; `PROVISIONAL`).
+SPRAY_SPACING = 0.5
 #: Exponential smoothing of the stroke direction over arc length (`PROVISIONAL`): a placement's weight is
 #: `α = 1 - exp(-spacing / (SMOOTHING_LENGTH * r))` - mouse jitter is a length on the surface, so the smoothing is
 #: too. 25 % spacing gives α ≈ 0.63 (the proposal's 0.5 per placement at a dense stroke), 100 % gives 0.98: stamps two
@@ -74,20 +102,76 @@ def frame_budget(queue: "StrokeQueue", finishing: bool) -> float:
     return min(max(BUDGET_S, excess), CATCHUP_BUDGET_S) if excess > 0.0 else BUDGET_S
 
 
+#: The ranges of the numeric fields (`StrokeDynamics.with_` clamps into them, the constructor refuses beyond them).
+_RANGES = {
+    "spacing": (SPACING_MIN, SPACING_MAX),
+    "angle": (-180.0, 180.0),
+    "jitter_rotation": (0.0, 180.0),
+    "jitter_size": (0.0, SIZE_JITTER_MAX),
+    "jitter_flow": (0.0, 1.0),
+    "scatter_across": (0.0, SCATTER_MAX),
+    "scatter_along": (0.0, SCATTER_MAX),
+    "spray_size": (SPRAY_SIZE_MIN, SPRAY_SIZE_MAX),
+    "spray_intensity": (0.0, 1.0),
+}
+
+
 @dataclass(frozen=True)
 class StrokeDynamics:
     spacing: float = ROUND_SPACING
     orientation: str = "stroke"
     angle: float = 0.0  # degrees, the offset of the stamp's "up" from the orientation
+    #: jitter per stamp (proposal §5.1 "Zufall"): rotation ± degrees, size ± fraction, flow ± fraction
+    jitter_rotation: float = 0.0
+    jitter_size: float = 0.0
+    jitter_flow: float = 0.0
+    #: scatter from the stroke line in radii (§5.1 "Streuung"): across the stroke and along it
+    scatter_across: float = 0.0
+    scatter_along: float = 0.0
+    #: the emitter (§5.5) and the spray's stamps per placement, stamp size (radii) and flow (fraction of the brush's)
+    emitter: str = "single"
+    spray_density: int = SPRAY_DENSITY
+    spray_size: float = SPRAY_SIZE
+    spray_intensity: float = 1.0
 
     def __post_init__(self) -> None:
-        if not (isinstance(self.spacing, (int, float)) and math.isfinite(self.spacing)
-                and SPACING_MIN <= self.spacing <= SPACING_MAX):
-            raise ValueError(f"spacing must lie in [{SPACING_MIN}, {SPACING_MAX}], got {self.spacing!r}")
+        for name, (lo, hi) in _RANGES.items():
+            value = getattr(self, name)
+            if not (isinstance(value, (int, float)) and math.isfinite(value) and lo <= value <= hi):
+                raise ValueError(f"{name} must lie in [{lo}, {hi}], got {value!r}")
         if self.orientation not in ORIENTATIONS:
             raise ValueError(f"orientation one of {ORIENTATIONS}, got {self.orientation!r}")
-        if not (isinstance(self.angle, (int, float)) and math.isfinite(self.angle) and -180.0 <= self.angle <= 180.0):
-            raise ValueError(f"angle must lie in [-180, 180], got {self.angle!r}")
+        if self.emitter not in EMITTERS:
+            raise ValueError(f"emitter one of {EMITTERS}, got {self.emitter!r}")
+        if not (isinstance(self.spray_density, int) and 1 <= self.spray_density <= SPRAY_MAX):
+            raise ValueError(f"spray_density must be an int in [1, {SPRAY_MAX}], got {self.spray_density!r}")
+
+    def with_(self, **changes) -> "StrokeDynamics":
+        """A copy with `changes`, numbers clamped into their ranges (the panel's sliders; scatter beyond 2 r is capped)."""
+        for name, value in changes.items():
+            if name in _RANGES:
+                lo, hi = _RANGES[name]
+                changes[name] = float(min(max(float(value), lo), hi))
+        if "spray_density" in changes:
+            changes["spray_density"] = int(min(max(int(changes["spray_density"]), 1), SPRAY_MAX))
+        if changes.get("emitter") == "spray" and self.emitter != "spray" and "spacing" not in changes:
+            changes["spacing"] = SPRAY_SPACING
+        return replace(self, **changes)
+
+    @property
+    def spray(self) -> bool:
+        return self.emitter == "spray"
+
+    @property
+    def scattered(self) -> bool:
+        return self.scatter_across > 0.0 or self.scatter_along > 0.0
+
+    @property
+    def random(self) -> bool:
+        """The brush draws random values (jitter, scatter, spray or the random orientation); False: it paints as in
+        4a, bit for bit."""
+        return (self.spray or self.scattered or self.orientation == "random"
+                or self.jitter_rotation > 0.0 or self.jitter_size > 0.0 or self.jitter_flow > 0.0)
 
 
 @dataclass(frozen=True, eq=False)
@@ -314,3 +398,70 @@ class StrokeQueue:
             self._push(Placement(held.index, held.point, held.normal, tangent))
         self._prev = None
         self._last_point = None
+
+
+# -- counter-based randomness (Phase 4b, proposal §5.7) ------------------------------------------------------------------
+
+#: The values each stamp row draws, by column (a fixed layout: a value's meaning never depends on what else is drawn).
+ROTATION, SIZE, FLOW, ACROSS, ALONG, RADIUS, TURN, ORIENT = range(8)
+VALUES = 8
+#: The row of the placement's own values (its scatter); stamp rows are 0 .. `SPRAY_MAX` - 1.
+PLACEMENT_ROW = SPRAY_MAX
+_ROWS = SPRAY_MAX + 1
+_GOLDEN = np.uint64(0x9E3779B97F4A7C15)
+_M1 = np.uint64(0xBF58476D1CE4E5B9)
+_M2 = np.uint64(0x94D049BB133111EB)
+
+
+def _mix(x: np.ndarray) -> np.ndarray:
+    """The SplitMix64 finaliser on a uint64 array (wraps modulo 2^64)."""
+    x = (x ^ (x >> np.uint64(30))) * _M1
+    x = (x ^ (x >> np.uint64(27))) * _M2
+    return x ^ (x >> np.uint64(31))
+
+
+def random_values(seed: int, index: int, rows) -> np.ndarray:
+    """`(len(rows), VALUES)` uniform values in [0, 1) of placement `index`'s stamp `rows` for the stroke `seed`: a pure
+    function of `(seed, index, row, column)` (a SplitMix64 stream over the counter - counter-based like the proposal's
+    `PCG64(SeedSequence([seed, i, k]))`, without a generator built per stamp), so the pattern does not depend on the
+    mouse speed, the event rate, the queue's chunking or the frame timing, and Undo / Redo never draw again."""
+    rows = np.asarray(rows, dtype=np.uint64).reshape(-1)
+    key = _mix(np.array([int(seed) & 0xFFFFFFFFFFFFFFFF], dtype=np.uint64) + _GOLDEN)
+    counter = ((np.array([int(index)], dtype=np.uint64) * np.uint64(_ROWS) + rows)[:, None] * np.uint64(VALUES)
+               + np.arange(VALUES, dtype=np.uint64)[None, :])
+    x = _mix(key + (counter + np.uint64(1)) * _GOLDEN)
+    return (x >> np.uint64(11)).astype(np.float64) * (1.0 / 9007199254740992.0)
+
+
+def stamp_jitter(dynamics: StrokeDynamics, values: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Per stamp row of `values`: (angle offset in degrees, size factor, flow factor) - the rotation jitter (plus a full
+    turn for the random orientation) within ± `jitter_rotation`, the size within 1 ± `jitter_size` (> 0), the flow
+    factor within 1 ± `jitter_flow` (>= 0; the caller caps the flow at 1)."""
+    values = np.atleast_2d(values)
+    angle = dynamics.jitter_rotation * (2.0 * values[:, ROTATION] - 1.0)
+    if dynamics.orientation == "random":
+        angle = angle + 360.0 * values[:, ORIENT]
+    size = 1.0 + dynamics.jitter_size * (2.0 * values[:, SIZE] - 1.0)
+    flow = np.maximum(1.0 + dynamics.jitter_flow * (2.0 * values[:, FLOW] - 1.0), 0.0)
+    return angle, size, flow
+
+
+def scatter_offset(dynamics: StrokeDynamics, values: np.ndarray) -> tuple[float, float]:
+    """The placement's scatter (along, across) in radii from its `values` row: uniform within ± each slider, the offset's
+    length capped at `SCATTER_MAX` (the planar approximation's limit)."""
+    values = np.asarray(values).reshape(-1)
+    along = dynamics.scatter_along * (2.0 * float(values[ALONG]) - 1.0)
+    across = dynamics.scatter_across * (2.0 * float(values[ACROSS]) - 1.0)
+    length = math.hypot(along, across)
+    if length > SCATTER_MAX:
+        along, across = along * SCATTER_MAX / length, across * SCATTER_MAX / length
+    return along, across
+
+
+def spray_positions(dynamics: StrokeDynamics, values: np.ndarray) -> np.ndarray:
+    """`(k, 2)` spray stamp centres (along, across) in radii from the stamp rows' `values`: area-uniform in the disc of
+    radius `1 - spray_size` (`ρ = √u`), so the stamps stay inside the brush disc."""
+    values = np.atleast_2d(values)
+    rho = (1.0 - dynamics.spray_size) * np.sqrt(values[:, RADIUS])
+    turn = 2.0 * math.pi * values[:, TURN]
+    return np.stack((rho * np.cos(turn), rho * np.sin(turn)), axis=1)

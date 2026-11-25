@@ -12,7 +12,19 @@ from dataclasses import dataclass
 from core.scene import PAINT_BLEND_MODES
 from mirai.paint.alpha import TEST_ALPHAS, alpha_name
 from mirai.paint.brush import CURVE_ARRAYS, CURVE_LABELS, RADIUS_STEPS_PERCENT, TOOL_LABELS, TOOLS, BrushSettings
-from mirai.paint.dynamics import SPACING_MAX, SPACING_MIN
+from mirai.paint.dynamics import (
+    EMITTER_LABELS,
+    EMITTERS,
+    ORIENTATION_LABELS,
+    ORIENTATIONS,
+    SCATTER_MAX,
+    SIZE_JITTER_MAX,
+    SPACING_MAX,
+    SPACING_MIN,
+    SPRAY_MAX,
+    SPRAY_SIZE_MAX,
+    SPRAY_SIZE_MIN,
+)
 from mirai.paint.layers import BLEND_LABELS, MAX_LAYERS
 
 #: The panel's title and the SPACE menu row (no key until Manu's "Taste passt").
@@ -27,6 +39,65 @@ NO_LAYERS = "Noch keine Bemalung - der erste Strich legt „Ebene 1“ an"
 TIPS: tuple[tuple[str | None, str], ...] = ((None, alpha_name(None)),) + tuple((i, alpha_name(i)) for i in TEST_ALPHAS)
 #: The spacing slider's range in percent of the stamp diameter (P-18).
 SPACING_PERCENT = (SPACING_MIN * 100.0, SPACING_MAX * 100.0)
+#: Phase 4b (AD-037 §13): the brush's collapsed sections (proposal §7 area 4) - key, title; "spray" only with the spray
+#: emitter - and the ranges of their sliders (percent / radii / stamps).
+SECTIONS = (("stroke", "Strich"), ("scatter", "Streuung"), ("spray", "Spray"))
+ORIENTATION_ROWS = tuple((o, ORIENTATION_LABELS[o]) for o in ORIENTATIONS)
+EMITTER_ROWS = tuple((e, EMITTER_LABELS[e]) for e in EMITTERS)
+SIZE_JITTER_PERCENT = SIZE_JITTER_MAX * 100.0
+SCATTER_RADII = SCATTER_MAX
+SPRAY_DENSITY_RANGE = (1, SPRAY_MAX)
+SPRAY_SIZE_PERCENT = (SPRAY_SIZE_MIN * 100.0, SPRAY_SIZE_MAX * 100.0)
+
+
+def _radii(value: float) -> str:
+    return f"{value:.1f}".replace(".", ",") + " r"
+
+
+def stroke_summary(brush: BrushSettings) -> str:
+    """The "Strich" section's line while it is closed: spacing, orientation (alpha tip) and angle, emitter."""
+    dyn = brush.dynamics
+    parts = [f"Abstand {dyn.spacing * 100:.0f} %"]
+    if not brush.tip.round:
+        parts.append(ORIENTATION_LABELS[dyn.orientation] + (f" {dyn.angle:+.0f}°" if dyn.angle else ""))
+    parts.append(EMITTER_LABELS[dyn.emitter])
+    return ", ".join(parts)
+
+
+def scatter_summary(brush: BrushSettings) -> str:
+    """The "Streuung" section's line: the jitter and scatter values that are on, else "aus"."""
+    dyn = brush.dynamics
+    parts = []
+    if dyn.jitter_rotation and not brush.tip.round:
+        parts.append(f"Drehung ±{dyn.jitter_rotation:.0f}°")
+    if dyn.jitter_size:
+        parts.append(f"Größe ±{dyn.jitter_size * 100:.0f} %")
+    if dyn.jitter_flow:
+        parts.append(f"Fluss ±{dyn.jitter_flow * 100:.0f} %")
+    if dyn.scatter_across:
+        parts.append(f"quer {_radii(dyn.scatter_across)}")
+    if dyn.scatter_along:
+        parts.append(f"längs {_radii(dyn.scatter_along)}")
+    return ", ".join(parts) if parts else "aus"
+
+
+def spray_summary(brush: BrushSettings) -> str:
+    """The "Spray" section's line: density, stamp size, intensity."""
+    dyn = brush.dynamics
+    return (f"{dyn.spray_density} Stempel, Größe {dyn.spray_size * 100:.0f} %, "
+            f"Intensität {dyn.spray_intensity * 100:.0f} %")
+
+
+def sections(brush: BrushSettings) -> tuple[tuple[str, str, str], ...]:
+    """The brush's sections shown now as (key, title, summary): "Spray" only with the spray emitter."""
+    summaries = {"stroke": stroke_summary, "scatter": scatter_summary, "spray": spray_summary}
+    return tuple((key, title, summaries[key](brush)) for key, title in SECTIONS
+                 if key != "spray" or brush.dynamics.spray)
+
+
+def section_label(title: str, summary: str, open_: bool, key: str) -> str:
+    """The header's label: closed it carries the one-line summary (proposal §7 area 4); the ID stays the key's."""
+    return f"{title}###{key}" if open_ else f"{title}   {summary}###{key}"
 
 
 @dataclass(frozen=True)
@@ -154,5 +225,6 @@ def blend_label(blend: str) -> str:
     return BLEND_LABELS[blend]
 
 
-__all__ = ["BLENDS", "CURVES", "MENU_CLOSE", "MENU_OPEN", "NO_LAYERS", "TITLE", "TOOLS", "LayerRow", "PaintPanelState",
-           "menu_label", "state", "toggle"]
+__all__ = ["BLENDS", "CURVES", "MENU_CLOSE", "MENU_OPEN", "NO_LAYERS", "SECTIONS", "TITLE", "TOOLS", "LayerRow",
+           "PaintPanelState", "menu_label", "scatter_summary", "section_label", "sections", "spray_summary", "state",
+           "stroke_summary", "toggle"]
