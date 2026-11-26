@@ -9,8 +9,8 @@ pyglet noch `examples/` kennt.
     Mesh:   Attach | Attach – Look des Ziels übernehmen (AD-031 P2, O-13) | Detach | (Select Linked: Hinweis) (P3) |
             Weld… (P4) | Bridge (P5; alle ohne Taste)
     SPACE:  Add + > (Grundkörper, Basehead, Baseman) | Select Linked | Textur an/aus | UV-Prüfung an/aus (AD-037, nur mit
-            UVs) | Paint Room öffnen / schließen (AD-037 Phase 2, nur mit UVs, kein Auge) | Szene laden (Shift+Klick: als
-            Referenz)
+            UVs) | Paint Room öffnen / schließen (AD-037 Phase 2, nur mit UVs, kein Auge) | Gewichte malen / Weight Room
+            schließen (AD-041 W-1, kein Auge) | Szene laden (Shift+Klick: als Referenz)
 
 Attach fragt nach, bevor ungewichtete Punkte in ein gebundenes Mesh kommen (O-5): der Dialog nennt die Anzahl, erst
 „Trotzdem anhängen“ ruft `Application.attach_objects(accept_unweighted=True)`.
@@ -40,7 +40,7 @@ from mirai.detach import LABEL as DETACH_LABEL, LINKED_LABEL
 from mirai.topology.bridge import LABEL as BRIDGE_LABEL
 from mirai.topology.weld import LABEL as WELD_LABEL
 
-from . import lookdev_model, paint_model
+from . import lookdev_model, paint_model, weight_model
 from .file_browser import FileBrowser
 from .file_browser_model import ALL_FILTER, OBJ_FILTER, SCENE_FILTER, LastDirs, RecentFiles
 
@@ -347,6 +347,9 @@ class Menus:
         room = paint_model.menu_label(app)  # AD-037 Phase 2: the Paint Room (no key until Manu's "Taste passt")
         if room is not None and imgui.menu_item(room, "", app.paint_room_open)[0]:
             paint_model.toggle(app)
+        room = weight_model.menu_label(app)  # AD-041 W-1: the Weight Room (no key)
+        if room is not None and imgui.menu_item(room, "", app.weight_room_open)[0]:
+            weight_model.toggle(app)
         # AD-038: the LookDev room (no key, D-L9)
         if imgui.menu_item(lookdev_model.menu_label(app), "", app.lookdev_open)[0]:
             lookdev_model.toggle(app)

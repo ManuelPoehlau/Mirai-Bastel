@@ -169,6 +169,8 @@ def hud_state(app) -> HudState:
         active = "Re-Symmetrize"
     elif app.bone_chain_active:
         active = "Bone chain"  # Bone tool 01 (2026-11-17): the session in the slot, no gesture
+    elif app.weight_room_open:
+        active = app.weight_room_text  # AD-041 §5: "Weight Room · <bone> · <operation>"
     elif command is not None:
         active = _TOOL_NAMES.get(command) or app.gesture_label or command
         if command == commands.LOOP_SLIDE and app.selection.mode.name == "VERTEX":

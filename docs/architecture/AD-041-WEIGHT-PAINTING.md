@@ -7,7 +7,8 @@ Was PROPOSED the same day. Direction decided by Manu on 2026-11-26 (Development 
 - brush operations Add / Subtract, Smooth / Blur, Replace and „Aufräumen“ in the first build;
 - „Gleich mit L/R-Paaren“.
 
-Slice 1 (the brush arithmetic) is built (2026-11-26, §13); slice 2 (the Weight Room) is next.
+Slice 1 (the brush arithmetic) and slice 2 (the Weight Room, heatmap, panel) are built (2026-11-26, §13); slice 3
+(fill from a selection) is next.
 
 **Mode:** Production, in fresh sessions with this AD as the handoff (§11).
 **Baseline:** `claude/serene-dirac-9sue6z` @ `3c9c80c`.
@@ -334,3 +335,51 @@ Deine Entscheidungen brauche ich zu W-1 … W-12 in §10. Die Empfehlung steht j
   `refresh()` per dab while posed; `footprint(..., hit_face=face_hit's face, toward_viewer=...)`; `dab(fp,
   services.mask_values(fp.vertices))` returns the written vertices for the heatmap patch.
 
+
+### Slice 2 — the Weight Room (2026-11-26)
+
+- **Built:** `src/mirai/controllers/weight_room.py` (`WeightRoomSession`, owner `"weight"`, exclusive;
+  `WeightRoomController`; `WeightRoomBrush`, view state), `src/mirai/weight_heatmap.py` (`WeightHeat`, headless),
+  `soft_selection/shading.py` (the `WEIGHTS` look: `weight_colors`), `soft_selection/gl_shading.py` (`set_heat`: an
+  indexed draw from arrays with partial colour uploads), `weight_paint.CageRays` (the ray hit on the shown cage),
+  `Application.open_weight_room` / `close_weight_room` / `set_weight_brush` / `clean_weights_value` and the room's hooks
+  (frame, Esc, wheel, save, SubD, edit-object change, scene load), `gui/weight_model.py` + `gui/weight_panel.py`, the SPACE
+  row „Gewichte malen“, the Bone panel's „Gewichte malen …“, `PANEL_USABLE_OWNERS` += `"weight"`, the HUD's active entry
+  „Weight Room · <Knochen> · <Operation>“, `SkeletonController.bone_at` / `bone_on_plane`. No change under `src/core/`, no
+  key, no `config/keymap.json` entry.
+- **As built, where §4–§7 left room** (all `PROVISIONAL`):
+  - *The stroke's surface is frozen at the press*: hit, footprint and "front only" of one stroke read the cage as it was at
+    the press (the slice-1 note said `refresh()` per dab while posed). While posed the skin stage still moves the painted
+    vertices at once (F-5, tested), but the brush does not chase vertices it just moved; the next stroke sees the new
+    surface. Reason: no feedback loop under the cursor, and Add / Subtract / Replace stay path-independent.
+  - *Placements*: `paint.dynamics.StrokeQueue` with spacing 0.25 of the brush diameter, evaluated in `frame()` within
+    the Paint Room's budget; the release drains the rest synchronously (a dab is cheap; no "finishing" state).
+  - *Default radius 10 %* of the bounding radius, flow 0.5, opacity 1, hardness 0. A footprint holds vertices: a brush
+    smaller than the faces catches nothing - the status line then says so („größer machen (Shift+Rad)“).
+  - *W-5*: a plain press within `PICK_RADIUS_PX` of a bone line waits; released before `CLICK_SLOP_PX` (4 px) of motion
+    it chooses the bone, moved further it paints from the press point. Ctrl+LMB = the largest share at the hit face's
+    vertex nearest to the hit (a vertex with only the object share chooses nothing).
+  - *Symmetry (slice 2 only)*: a bone on the plane paints both sides at once, each footprint vertex's partner taking the
+    larger coverage of the two sides - exactly symmetric (tested). An off-centre bone under symmetry stays refused (the
+    room opens; HUD and panel say why) until slice 4.
+  - *Display*: opening hides the weight view (`9`) and the Soft preview and restores both on close; nothing else of the
+    display changes (no region tint, texture or mode switch). The heatmap draws every shown face, one colour per vertex,
+    grey at 0, at alpha 0.85, on the cage source (posed / morphed). With SubD shown the heatmap still sits on the cage.
+  - *Allowed in the room*: Undo / Redo, Esc, views, display, Look, SubD, Shift+S, `6` / Alt+`6`, the bone keys; refused
+    while a stroke runs: Undo / Redo, Shift+S, the pose and bone keys, SubD. Opening the Paint Room or LookDev closes the
+    Weight Room first (one room at a time).
+  - *Gate*: the room adds no command - the radius / strength wheel reuses the Paint Room's (`paint` context). Its strokes
+    reach the mesh through the pointer paths (class "commands"); `clean_weights_value` is `RIG`. The enumeration test now
+    scans `controllers.weight_room` too. `POSE_MODE_ALLOWS` needed no entry: an exclusive session's `allows` alone decides
+    (`can_run` stage 1), so pose mode never reaches the room.
+  - *Panel*: no „Füllen aus Auswahl“ (slice 3) and no „Gewichte spiegeln“ / pair status (slice 4) yet; „Aufräumen“ with
+    its threshold is in.
+- **Tests:** `tests/test_weight_room.py` (18), `tests/test_gui_weight_panel_model.py` (4), `tests/test_gui_weight_room_window.py`
+  (xvfb: the Bone panel opens the room, the panel's buttons, a stroke with the window's own handlers, range uploads),
+  `tests/test_gl_soft_shading.py` (+1, xvfb: grey at 0, red at 1, range upload, gone on close), `tests/test_layer_gate.py`
+  (scans the room).
+- **Early cost [H]** (container, the 296 x 296 grid = 87.6k vertices, radius 1.5 %): opening + first sync 0.58 s (the fan
+  triangles of every face), first hover 0.21 s (the cage's ray table; reused until the surface moves), a frame while
+  stroking 7.9 ms median / 33 ms max with the heatmap patch, the release drain < 1 ms. Slice 5 measures on the reference PC.
+- **Next:** slice 3 (fill from a selection; the jaw scenario moved). Manu's look at the room is welcome any time
+  („Einspruch statt Abnahme“); the values above are agent choices.

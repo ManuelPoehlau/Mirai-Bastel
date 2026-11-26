@@ -31,6 +31,10 @@ change by `1 - m` (`S·(1 - m)`, for Smooth `c·flow·(1 - m)`), as `_WeightsGes
 
 The stroke runs inside the caller's open recording (`Mesh.begin_change`): release = `end_change` (one History entry),
 Esc = `rollback_change`. "Aufräumen" is `skin_weights.clean_weights`.
+
+**Ray hit** (slice 2, `CageRays`): the Weight Room's stroke samples its path with rays (`paint.dynamics.StrokeQueue`);
+`CageRays.hit` is the nearest hit on the shown cage's triangles (the heatmap's fan triangles, hidden faces left out;
+the cluster cull and the ray-triangle test of `paint.surface.PaintSurface.hit`, without a texel map).
 """
 
 from __future__ import annotations
@@ -47,6 +51,7 @@ from core.rig import Rig
 
 from .mask import FULL as MASK_FULL
 from .paint.brush import CURVE_ARRAYS, falloff
+from .paint.surface import _clusters
 from .skin_weights import bone_share, parent_function, set_bone_weight, soft_target
 
 OP_ADD = "add"
@@ -284,3 +289,60 @@ class BrushWeightStroke:
                 written.append(v)
         return tuple(written)
 
+
+
+#: The ray-triangle test's tolerance (as `paint.surface`).
+_EPS = 1e-9
+
+
+@dataclass(frozen=True)
+class RayHit:
+    point: np.ndarray   # (3,) mesh space
+    normal: np.ndarray  # (3,) unit, the triangle's winding normal
+    face: object        # FaceId
+    distance: float
+
+
+class CageRays:
+    """The nearest ray hit on triangles over positions (module docstring: ray hit). `P` (n, 3) are the rows' positions
+    (a `VertexCloud`'s), `tris` (m, 3) row triples, `tri_face` (m,) the face of each triangle."""
+
+    def __init__(self, P: np.ndarray, tris: np.ndarray, tri_face: np.ndarray) -> None:
+        from core import FaceId
+
+        self._face_id = FaceId
+        tris = np.asarray(tris, dtype=np.int64).reshape(-1, 3)
+        self.tri_face = np.asarray(tri_face, dtype=np.int64)
+        p = np.asarray(P, dtype=np.float64)[tris] if len(tris) else np.zeros((0, 3, 3))
+        self._v0 = p[:, 0]
+        self._e1 = p[:, 1] - p[:, 0]
+        self._e2 = p[:, 2] - p[:, 0]
+        self._clusters = _clusters(p.min(axis=1), p.max(axis=1)) if len(tris) else None
+
+    def hit(self, origin, direction) -> Optional[RayHit]:
+        if self._clusters is None:
+            return None
+        o = np.asarray(origin, dtype=np.float64)
+        d = np.asarray(direction, dtype=np.float64)
+        tris = self._clusters.ray(o, d)
+        if tris.size == 0:
+            return None
+        e1, e2 = self._e1[tris], self._e2[tris]
+        h = np.cross(d[None, :], e2)
+        det = np.einsum("ij,ij->i", e1, h)
+        ok = np.abs(det) >= _EPS
+        inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+        s = o[None, :] - self._v0[tris]
+        u = inv * np.einsum("ij,ij->i", s, h)
+        q = np.cross(s, e1)
+        v = inv * (q @ d)
+        t = inv * np.einsum("ij,ij->i", e2, q)
+        ok &= (u >= -_EPS) & (u <= 1.0 + _EPS) & (v >= -_EPS) & (u + v <= 1.0 + _EPS) & (t > _EPS)
+        if not ok.any():
+            return None
+        candidates = np.nonzero(ok)[0]
+        k = int(candidates[np.argmin(t[candidates])])
+        normal = np.cross(e1[k], e2[k])
+        length = float(np.linalg.norm(normal))
+        normal = normal / length if length > 0.0 else np.array([0.0, 0.0, 1.0])
+        return RayHit(o + t[k] * d, normal, self._face_id(int(self.tri_face[int(tris[k])])), float(t[k]))

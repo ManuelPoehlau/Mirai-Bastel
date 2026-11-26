@@ -5,7 +5,8 @@ Oben das Kettenwerkzeug („Kette starten“ als Kind des aktuellen Knochens ode
 Esc) und das Einrasten an Pivots und Knochenenden. Darunter der aktuelle Knochen: Auswahl (Liste, davor / danach), Name, Parent
 (mit Zyklus-Sperre), Kopf und Spitze als Zahlen (Welt), Roll in Grad, Ausblenden, Löschen. Zahlen und Namen gelten beim
 Verlassen des Felds (Enter oder Klick daneben): ein Undo-Schritt je Änderung; nur in der Ruhe-Pose (AD-028 §7). Unten das
-Skinning: Gewichte aus der Gruppe mit Breite, Gewicht setzen mit Wert (Auswahl, mit Soft das Soft-Feld), Gewichtsansicht.
+Skinning: Gewichte aus der Gruppe mit Breite, Gewicht setzen mit Wert (Auswahl, mit Soft das Soft-Feld), Gewichtsansicht,
+„Gewichte malen …“ (öffnet den Weight Room, AD-041).
 Jeder Knopf ruft denselben `Application`-Weg wie die Taste bzw. das Werkzeug, mit denselben Ablehnungen; das Panel hält
 keinen Dokumentzustand (nur die Eingabepuffer der Felder und die Regler-Startwerte).
 """
@@ -242,6 +243,12 @@ class BonePanel:
         if changed:
             bm.toggle_weight_view(app)
             self.layer.last_note = app.status_message
+        # AD-041 W-1: der Weight Room (Pinsel, Heatmap) - keine Taste, dieser Knopf und die SPACE-Zeile
+        label = "Weight Room schließen" if st.weight_room_open else "Gewichte malen …"
+        blocker = st.weight_room_blocker
+        self._button(label, blocker is None, "weight_room", 0,
+                     blocker or "Gewichte mit dem Pinsel malen: Heatmap des aktuellen Knochens, ein Undo-Schritt je Strich",
+                     lambda: bm.open_weight_room(app))
 
     def _button(self, label: str, enabled: bool, kind: str, key, hint, action, small: bool = False) -> None:
         imgui = self.imgui

@@ -64,6 +64,8 @@ class BonePanelState:
     axis_object: str | None  # das Objekt, dessen Achse „Objekt-Achse“ und der Knopf „Ausrichten“ nehmen (None = keins)
     align_blocker: str | None  # warum „Ausrichten“ gerade nicht geht (None = es geht)
     link_blocker: str | None = None  # AD-036: warum „folgt Knochen“ / „Lösen“ gerade nicht gehen (None = sie gehen)
+    weight_room_open: bool = False  # AD-041: der Weight Room ist offen
+    weight_room_blocker: str | None = None  # AD-041: warum „Gewichte malen …“ gerade nicht geht (None = es geht)
 
     @property
     def has_bones(self) -> bool:
@@ -99,6 +101,11 @@ def _tree_rows(rig, current, hidden) -> tuple[BoneRow, ...]:
         if bone.parent is None:
             walk(bone.id, 0)
     return tuple(rows)
+
+
+def bone_rows(rig, current) -> tuple[BoneRow, ...]:
+    """Die Knochen als Baum für eine Liste (auch das Weight-Room-Panel, AD-041 §7)."""
+    return _tree_rows(rig, current, rig.hidden_ids())
 
 
 def state(app) -> BonePanelState:
@@ -149,6 +156,8 @@ def state(app) -> BonePanelState:
         axis_object=app.bone_axis_object_name,
         align_blocker=app.bone_align_blocker,
         link_blocker=app.bone_link_blocker,
+        weight_room_open=app.weight_room_open,
+        weight_room_blocker=None if app.weight_room_open else app.weight_room_refusal(),
     )
 
 
@@ -204,6 +213,11 @@ def set_chain_axis(app, mode: str) -> None:
 
 def align_to_object_axis(app, bone) -> bool:
     return app.align_bone_to_object_axis(bone)
+
+
+def open_weight_room(app) -> bool:
+    """„Gewichte malen …“ (AD-041 W-1): der Weight Room öffnet (offen: er schließt)."""
+    return app.close_weight_room() if app.weight_room_open else app.open_weight_room()
 
 
 def toggle_weight_view(app) -> bool:

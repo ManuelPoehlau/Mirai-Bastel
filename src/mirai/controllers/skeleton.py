@@ -1440,6 +1440,10 @@ class SkeletonController:
             return None
         return bone, mesh
 
+    def bone_on_plane(self, bone, definition) -> bool:
+        """Head and tail of `bone` lie on the edit mesh's symmetry plane `definition` (§8.4; the Weight Room asks too)."""
+        return self._on_plane(bone, definition)
+
     def _on_plane(self, bone, definition) -> bool:
         edit = self.services.scene.edit_object
         b = self.rig.bone(bone)
@@ -1545,6 +1549,16 @@ class SkeletonController:
     def pick_bone(self, x: float, y: float) -> bool:
         """A click in pose mode: the nearest bone whose projected head-tail segment is within `PICK_RADIUS_PX`
         becomes current. True = a bone was hit."""
+        bone = self.bone_at(x, y)
+        if bone is None:
+            return False
+        self.current = bone
+        self.services.status(f"Current bone: {self.bone_name(bone)!r}")
+        return True
+
+    def bone_at(self, x: float, y: float) -> Optional[BoneId]:
+        """The shown bone whose projected (posed) head-tail segment is nearest to the screen point and within
+        `PICK_RADIUS_PX`, None if none is (pure; also the Weight Room's click on a bone line, AD-041 W-5)."""
         services = self.services
         camera = services.camera
         width, height = services.viewport_size
@@ -1562,11 +1576,7 @@ class SkeletonController:
             d = math.hypot(a[0] + t * dx - x, a[1] + t * dy - y)
             if d <= PICK_RADIUS_PX and (best is None or d < best[0]):
                 best = (d, bid)
-        if best is None:
-            return False
-        self.current = best[1]
-        services.status(f"Current bone: {self.bone_name(best[1])!r}")
-        return True
+        return None if best is None else best[1]
 
     def gizmo_pivot(self):
         """The gizmo in pose mode: at the current bone's posed head (world)."""

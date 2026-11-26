@@ -160,6 +160,7 @@ from .controllers.knife import KnifeController
 from .controllers.lookdev_room import LookdevRoom
 from .controllers.morph import MorphController
 from .controllers.paint_room import RESOLUTIONS as PAINT_RESOLUTIONS, PaintRoomController
+from .controllers.weight_room import WeightRoomController
 from .controllers.objects import OBJECT_MODE_ROUTES, PLACEMENT_COMMANDS, ObjectController, selection_state
 from .controllers.pointer_tools import PointerToolsController
 from .controllers.skeleton import SHARE_VIEW_MODE, ShareCache, SkeletonController
@@ -611,6 +612,8 @@ class Application:
         self._knife = KnifeController(self._services)
         # The Paint Room (AD-037 §8 Phase 2): its session, the shown paint surface, the brush and the strokes.
         self._paint_room = PaintRoomController(self._services)
+        # The Weight Room (AD-041 §4): its session, the weight brush, the strokes and the heatmap model.
+        self._weight_room = WeightRoomController(self._services, self._skeleton)
         # The LookDev room (AD-038 §2): view configuration + session studio and materials; no interaction session.
         self._lookdev = LookdevRoom(self._services)
         # WP-KNIFE-01 UX2b: any Shift key held, as the window reports it
@@ -746,6 +749,8 @@ class Application:
         self._morph.drop_view()  # the reset replaces every object, the view included
         if self._paint_room.session is not None:  # AD-037: the room ends with its object
             self.close_paint_room()
+        if self._weight_room.session is not None:  # AD-041: the room ends with its object
+            self.close_weight_room()
         if self._lookdev.open:  # AD-038 §2.1: the room closes before the scene is replaced
             self.close_lookdev()
         self._lookdev.clear()  # its session materials belong to the objects that go
@@ -1097,6 +1102,8 @@ class Application:
         (one Undo step). Refused with a status line (`paint_room_refusal`). True = open."""
         if self._paint_room.session is not None:
             return True
+        if self._weight_room.session is not None and not self._weight_room.stroking:
+            self.close_weight_room(status=None)  # AD-041: one room at a time
         refusal = self.paint_room_refusal()
         if refusal is not None:
             self._set_status(refusal)  # AD-038 §2.1: an open LookDev room stays open (R-1)
@@ -1167,6 +1174,115 @@ class Application:
         """The Paint Room's brush (`mirai.paint.brush.BrushSettings`; view state, not saved)."""
         return self._paint_room.brush
 
+    # -- the Weight Room (AD-041 §4, slice 2: a configuration of the same window, like the Paint Room) ---------------
+
+    @property
+    def weight_room_open(self) -> bool:
+        return self._weight_room.session is not None
+
+    def weight_room_refusal(self) -> str | None:
+        """Why the Weight Room cannot open on the edit object now (None = it can): another interaction or a held
+        gesture, a morph target's editing view, object level (`4`), an eye (eyes follow their bone by a link, AD-036)."""
+        session = self.interaction.session
+        if session is not None and session.owner not in ("weight", "paint"):
+            return f"Weight Room: not while the {session.owner or session.label} interaction runs"
+        if self._paint_room.stroking:
+            return "Weight Room: nicht während eines Paint-Strichs"
+        if self._gesture is not None:
+            return "Weight Room: not while a gesture is held"
+        if self.morph_view_open:
+            return "Weight Room: nicht in der Bearbeitungsansicht eines Morph-Ziels"
+        obj = self.scene.edit_object
+        if obj.eye is not None:
+            return f"Weight Room: {obj.name!r} ist ein Auge - Augen folgen ihrem Knochen über eine Verbindung"
+        if self.selection.mode is SelectionMode.OBJECT:
+            return "Weight Room: in 1/2/3 (Punkte, Kanten, Flächen) öffnen"
+        return None
+
+    def open_weight_room(self) -> bool:
+        """Open the Weight Room on the edit object (SPACE row "Gewichte malen", the Bone panel; no key, W-1): an open
+        Paint Room, LookDev or Eye Lab closes first; the weight view (`9`) and the Soft preview are hidden and saved for
+        the exit; the heatmap of the current bone shows (AD-041 §5) and the brush session starts. Pose, morph, gaze and
+        SubD stay as they are (AD-038 R-1). View state only: no Undo step; every stroke is one. True = open."""
+        if self._weight_room.session is not None:
+            return True
+        refusal = self.weight_room_refusal()
+        if refusal is not None:
+            self._set_status(refusal)
+            return False
+        if self._paint_room.session is not None:
+            self.close_paint_room(status="Paint Room closed")
+        if self._lookdev.open:
+            self.close_lookdev(status=None)
+        if self.eye_lab_open:
+            self.close_eye_lab()
+        saved = {"weight_view": self._weight_view is not None}
+        if self._weight_view is not None:
+            self._weight_view.close()
+            self._weight_view = None
+        self._set_hovered(None)
+        self._weight_room.start(self.scene.edit_object, saved)
+        overlay = self._soft_shading_overlay
+        if overlay is not None and hasattr(overlay, "set_heat"):
+            overlay.set_heat(self._weight_room.heat)
+        self._soft_preview_refresh()  # the room owns the display: the Soft preview shows nothing
+        blocker = self._weight_room.paint_blocker()
+        text = f"Weight Room: {self.scene.edit_object.name!r} - LMB ziehen malt, Shift+Rad Radius, Alt+Rad Stärke"
+        self._set_status(text if blocker is None else f"{text}; gesperrt: {blocker}")
+        return True
+
+    def close_weight_room(self, status: str | None = "Weight Room geschlossen") -> bool:
+        """Close the Weight Room: a running stroke is rolled back, the heatmap goes, the weight view and the Soft
+        preview come back as they were. The weights stay (they are the document's). True = it was open."""
+        if self._weight_room.session is None:
+            return False
+        state = self._weight_room.stop()
+        overlay = self._soft_shading_overlay
+        if overlay is not None and hasattr(overlay, "set_heat"):
+            overlay.set_heat(None)
+        if state.get("weight_view") and self._weight_view is None:
+            self._weight_view = ShareCache()
+        self._soft_preview_refresh()
+        if status is not None:
+            self._set_status(status)
+        self._refresh_hover()
+        return True
+
+    @property
+    def weight_brush(self):
+        """The Weight Room's brush (`controllers.weight_room.WeightRoomBrush`; view state, not saved)."""
+        return self._weight_room.brush
+
+    def set_weight_brush(self, **changes) -> bool:
+        """The panel's brush values (operation, radius_step, flow, opacity, hardness, curve, value, connected,
+        front_only); clamped. True = something changed."""
+        return self._weight_room.set_brush(**changes)
+
+    @property
+    def weight_stroking(self) -> bool:
+        """A Weight Room stroke runs (the panel then keeps its hands off the mouse)."""
+        return self._weight_room.stroking
+
+    @property
+    def weight_paint_blocker(self) -> str | None:
+        """Why a Weight Room stroke would be refused now (None = it paints)."""
+        return self._weight_room.paint_blocker() if self._weight_room.session is not None else None
+
+    @property
+    def weight_room_text(self) -> str | None:
+        """The HUD's entry while the room is open ("Weight Room · <bone> · <operation>"), else None."""
+        return self._weight_room.hud_text() if self._weight_room.session is not None else None
+
+    @property
+    def weight_heat(self):
+        """The room's heatmap model (`mirai.weight_heatmap.WeightHeat`; tests, the probe)."""
+        return self._weight_room.heat
+
+    def clean_weights_value(self, threshold: float = 0.01) -> bool:
+        """"Aufräumen" (AD-041 §3.3, W-9): every bone's share below `threshold` on the edit mesh goes to its parent (or
+        the object) by the write rule - one Undo step; masked points keep theirs. In the room and outside it (1/2/3)."""
+        return self._weight_room.clean(threshold)
+
     # -- the LookDev room (AD-038 §2: a configuration of the same window, no interaction session) -----------------
 
     #: The LookDev frames shown before the room's programs compile, so the status line is on screen during the stall.
@@ -1202,6 +1318,8 @@ class Application:
         if self._lookdev.open:
             return True
         self._paint_room.settle()  # AD-037 §12: a finishing stroke is finished first (bounded)
+        if self._weight_room.session is not None and not self._weight_room.stroking:
+            self.close_weight_room(status=None)  # AD-041: one room at a time
         refusal = self.lookdev_refusal()
         if refusal is not None:
             self._set_status(refusal)
@@ -1522,7 +1640,7 @@ class Application:
         """AD-040 §3.2: something holds the room Interactive although a tick left the frame unchanged - an interaction
         session, a gesture, a paint stroke, a held viewport button (a slow orbit), a held material control."""
         return (self.interaction.session is not None or self._gesture is not None or self._paint_room.stroking
-                or self.pointer.active or bool(self._lookdev.preview))
+                or self._weight_room.stroking or self.pointer.active or bool(self._lookdev.preview))
 
     def _quality_step(self, dt: float) -> None:
         """AD-040 §3.2 / §4: once per tick while the room shows LookDev, after the refreshes and `Viewport.sync` (the
@@ -2650,6 +2768,8 @@ class Application:
         owner = self.interaction_owner
         if owner == "paint" and not self._paint_room.stroking:
             owner = None  # AD-037: the Paint Room saves between strokes (its view state is not the document)
+        if owner == "weight" and not self._weight_room.stroking:
+            owner = None  # AD-041: the Weight Room too
         if owner is not None:
             self._set_status(f"Save scene: not while the {owner} interaction runs")
             return False
@@ -3876,6 +3996,8 @@ class Application:
         owner = self.interaction_owner
         if owner == "paint" and not self._paint_room.stroking:
             owner = None  # AD-037 P-10: the Paint Room paints on whatever is shown, SubD on or off
+        if owner == "weight" and not self._weight_room.stroking:
+            owner = None  # AD-041: the Weight Room keeps SubD as it is (R-1)
         if owner is not None or self._pointer_tools.drag_select is not None:
             self._set_status(f"SubD: ignoriert — {owner or 'Auswahl'} läuft")
             return False
@@ -4882,6 +5004,9 @@ class Application:
             gesture is not None and gesture.soft_op_running
         ):
             return False
+        if self._weight_room.session is not None:
+            self._soft_show(None)  # AD-041 §5: the Weight Room's heatmap owns the display
+            return False
         if self._weight_view is not None:
             self._soft_show(self._weight_view_share() or None, SHARE_VIEW_MODE)
             return False
@@ -4928,6 +5053,9 @@ class Application:
         room = self._paint_room.session
         if room is not None:
             return room.cancel()  # AD-037: Esc in the Paint Room undoes the running stroke only
+        weights = self._weight_room.session
+        if weights is not None:
+            return weights.cancel()  # AD-041: Esc in the Weight Room rolls the running stroke back only
         drag = self._pointer_tools.drag_select  # (a drag selection and a held pivot never coexist)
         if drag is not None:
             return drag.cancel()
@@ -6173,8 +6301,8 @@ class Application:
         Live radius (AD-020, `PROVISIONAL`): während einer begonnenen Soft-Geste (Move/Rotate/Scale,
         auch per Gizmo/Tweak) ist das Zoom-Rad die Radius-Stufe dieser Geste und zoomt nicht."""
         command = self.bindings.command_for(input)
-        if self.interaction.owner == "paint":
-            grabbed = self.interaction.grab(Wheel(input, command))  # AD-037: radius / opacity wheel of the room
+        if self.interaction.owner in ("paint", "weight"):
+            grabbed = self.interaction.grab(Wheel(input, command))  # AD-037 / AD-041: the room's radius / opacity wheel
             if grabbed is not PASS:
                 return grabbed
         if command is None and "alt" in input.modifiers:
@@ -7136,10 +7264,16 @@ class Application:
         (`flush_hover`), once per tick.
         """
         self._paint_room.frame()  # AD-037 §12: the stroke's placements within the frame budget (and its finish)
+        self._weight_room.frame()  # AD-041 §4: the weight stroke's placements within the frame budget
         if self.viewport is not None:
             self.flush_hover()
             if self._paint_room.session is not None and self._paint_room.obj is not self.scene.edit_object:
                 self.close_paint_room("Paint Room closed: the edit object changed")
+            if self._weight_room.session is not None:
+                if self._weight_room.obj is not self.scene.edit_object:
+                    self.close_weight_room("Weight Room geschlossen: das Edit-Objekt hat gewechselt")
+                else:
+                    self._weight_room.show_heat()  # AD-041 §5: the current bone, its layer, the hidden faces
             if self._lookdev.preparing:
                 self._prepare_lookdev_step()
             self._objects.sync_highlight()
@@ -7159,6 +7293,8 @@ class Application:
         self._knife.shutdown()
         if self._paint_room.session is not None:
             self.close_paint_room()
+        if self._weight_room.session is not None:
+            self.close_weight_room()
         if self._lookdev.open:
             self.close_lookdev()
         chain = self._skeleton.chain

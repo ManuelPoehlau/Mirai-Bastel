@@ -112,3 +112,48 @@ def test_selected_face_fill_stays_above_the_shading(gl_window):
     # moves towards the selection yellow compared with the shading alone.
     yellowness = lambda c: (c[0] + c[1]) / 2.0 - c[2]  # noqa: E731
     assert yellowness(rgb) - yellowness(before) >= 20, (before, rgb)
+
+
+def test_the_weight_rooms_heatmap_draws_grey_at_zero_and_colours_a_share(gl_window):
+    """AD-041 §5 (slice 2): the room's heatmap through the real GL path - every face drawn (grey where the bone has no
+    share), opaque enough to read; a weight written shows in colour, uploaded as a colour range (no full upload)."""
+    import numpy as np
+
+    from core import Rig
+    from mirai.interaction import commands as cmd
+    from mirai.soft_selection.shading import WEIGHT_ALPHA, WEIGHT_ZERO_RGB
+    from mirai.skin_weights import set_bone_weight
+    from mirai.skinning import skin_layer
+    from core import PointLayerInfo
+    from core.mesh import LayerKind
+
+    app = Application()
+    app.init_scene("cube", store_type=GLRenderStore, soft_shading_overlay_type=GLSoftShadingOverlay)
+    app.frame_scene()
+    app.set_viewport_size(gl_window.width, gl_window.height)
+    app.dispatch_command(cmd.SET_FACE_MODE)
+    rig, bone = Rig().with_new_bone("Kiefer", (0.0, 0.0, 0.0), (0.0, 0.0, 0.3))
+    app.scene.rig = rig
+    app.select_bone(bone)
+    plain = _render(gl_window, app)
+    assert app.open_weight_room(), app.status_message
+    overlay = app._soft_shading_overlay
+    grey = _render(gl_window, app)
+    centre = _pixel(grey, SIZE // 2, SIZE // 2)
+    expected = [round((c * WEIGHT_ALPHA + 0.0) * 255) for c in WEIGHT_ZERO_RGB]
+    assert grey != plain
+    assert all(abs(a - b) <= 40 for a, b in zip(centre, expected)), centre  # mostly the grey over the lit cube
+    full = overlay.heat_full_uploads
+    mesh = app.scene.mesh
+    lid = mesh.add_point_layer(PointLayerInfo("Skin", LayerKind.WEIGHTS))
+    _render(gl_window, app)  # (the new layer: one whole recompute)
+    full = overlay.heat_full_uploads
+    for v in mesh.all_vertex_ids():
+        mesh.set_layer_value(lid, v, set_bone_weight((), bone, 1.0, lambda b: None))
+    coloured = _render(gl_window, app)
+    assert overlay.heat_full_uploads == full and overlay.heat_range_uploads >= 1
+    r, g, b = _pixel(coloured, SIZE // 2, SIZE // 2)
+    assert r > g and r > b and r > 120  # share 1: red
+    assert skin_layer(mesh) == lid and np.all(app.weight_heat.shares == 1.0)
+    assert app.close_weight_room()
+    assert _render(gl_window, app) == plain  # the heatmap is gone (its buffers freed in the draw)
