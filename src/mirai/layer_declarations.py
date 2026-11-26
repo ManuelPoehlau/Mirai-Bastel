@@ -303,7 +303,7 @@ METHOD_CLASSES: Mapping[str, str] = MappingProxyType(
         "end_bone_chain": "non-mesh",
         "edit_bone": "non-mesh",
         "delete_bone": RIG,
-        "weights_from_group_value": RIG,
+        "fill_weights_value": RIG,
         "set_weight_value": RIG,
         # AD-041 (slice 2): "Aufräumen" rewrites the weights layer itself (one recording, the write rule), as the weight
         # values do; the Weight Room's strokes come through the pointer paths ("commands"), its brush is view state

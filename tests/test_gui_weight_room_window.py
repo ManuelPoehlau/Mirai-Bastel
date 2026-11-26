@@ -72,6 +72,7 @@ def test_the_bone_panel_opens_the_room_its_panel_works_and_a_stroke_paints(env):
     assert app.weight_room_open, app.status_message
     _frame(window, 3)
     assert ("weight_op", "smooth") in layer.item_rects and ("weight_clean", 0) in layer.item_rects
+    assert ("weight_fill", 0) in layer.item_rects and ("weight_fill_width", 0) in layer.item_rects
     _click(window, _center(layer.item_rects[("weight_op", "smooth")]))
     assert app.weight_brush.operation == "smooth"
     _click(window, _center(layer.item_rects[("weight_op", "add")]))

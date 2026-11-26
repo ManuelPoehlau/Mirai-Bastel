@@ -2,7 +2,7 @@
 
 The panel reads `state(app)` and calls `Application`: the bone rows with the current one, the brush values, the reason
 painting is refused, the symmetry text; the SPACE row (open / close, none for an eye); the actions (operation, bone,
-"Aufräumen", rest / pose, symmetry) go the app's ways. The Bone panel offers "Gewichte malen …".
+"Füllen aus Auswahl", "Aufräumen", rest / pose, symmetry) go the app's ways. The Bone panel offers "Gewichte malen …".
 """
 
 from __future__ import annotations
@@ -23,6 +23,21 @@ def test_the_state_reads_the_room_and_its_brush() -> None:
     assert [r.current for r in st.rows] == [True] and st.current_name == app.current_bone_name
     assert st.symmetry == "X" and st.symmetry_text == "Symmetrie X"
     assert st.radius_label.endswith("%")
+
+
+def test_the_fill_row_reads_the_selection_and_calls_the_app() -> None:
+    from mirai.soft_selection import RADIUS_STEPS_PERCENT
+
+    d = room()
+    app = d.app
+    st = wm.state(app)
+    assert st.selected_points == bm.state(app).selected_points >= 1
+    assert st.fill_percent == float(RADIUS_STEPS_PERCENT[app.soft_settings.radius_step])
+    assert not share(app)
+    history = len(app.history)
+    assert wm.fill(app, st.fill_percent) and len(app.history) == history + 1 and share(app)
+    app.selection.clear()
+    assert wm.state(app).selected_points == 0 and not wm.fill(app, 10.0)
 
 
 def test_the_menu_row_and_the_bone_panel_button() -> None:

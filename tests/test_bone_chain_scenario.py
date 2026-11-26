@@ -2,7 +2,7 @@
 readable steps, every step one or a few events through the public entry points, headless, the head basemesh with
 symmetry X; `tests/test_jaw_scenario.py` is the pattern).
 
-group "Jaw" -> the chain tool (hinge, chin) -> weights from the group (the panel's value path, falloff width) -> edit the
+group "Jaw" -> the chain tool (hinge, chin) -> select the group, fill from the selection (the panel's value path, falloff width; AD-041 §3.4) -> edit the
 bone after binding (the hinge moves) -> rotate the jaw (E, X) -> Undo to the start and Redo to the end -> save -> load.
 
 What holds: the bone is on the symmetry plane to the last bit (the symmetric weights allow it); the weights are keyed by
@@ -73,8 +73,13 @@ def place_the_jaw_bone_with_the_chain_tool(d: Driver, faces):
     return bone
 
 
-def weights_from_the_group(d: Driver, width_percent: float = 15.0) -> None:
-    assert d.app.weights_from_group_value(width_percent), d.app.status_message
+def fill_from_the_jaw_group(d: Driver, faces, width_percent: float = 15.0) -> None:
+    """AD-041 §3.4: the group is selected again (Alt+G), then the fill takes the selection."""
+    app = d.app
+    app.selection.clear()
+    d.tap(key("g", "alt"))
+    assert app.selection.faces == set(faces), app.status_message
+    assert d.app.fill_weights_value(width_percent), d.app.status_message
     assert d.app.status_message.endswith("committed (Ctrl+Z takes it back)")
 
 
@@ -147,7 +152,7 @@ def run_chain_jaw_scenario(tmp_path, make_driver=head_driver) -> None:
     start_depth = len(app.history)
     faces = group_jaw(d)
     bone = place_the_jaw_bone_with_the_chain_tool(d, faces)
-    weights_from_the_group(d)
+    fill_from_the_jaw_group(d, faces)
     assert_symmetric_weights(mesh)
     bound = weights(mesh)
     assert bound and all(k == bone.id for value in bound.values() for k, _ in value)

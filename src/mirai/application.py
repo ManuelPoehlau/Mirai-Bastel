@@ -2546,10 +2546,10 @@ class Application:
         """The placement an object is seen with now (AD-036 §4.2): its bone's pose included."""
         return self._objects.drawn_transform(self.scene.objects[object_id])
 
-    def weights_from_group_value(self, percent: float) -> bool:
-        """The current bone's weights from the active group at a falloff width in % of the mesh's bounding radius (the
-        key's gesture with a number instead of the mouse); one Undo step."""
-        return self._skeleton.weights_from_group_value(percent)
+    def fill_weights_value(self, percent: float) -> bool:
+        """Fill from selection (AD-041 §3.4): the current bone's weights from the selected points at a falloff width in % of
+        the mesh's bounding radius (the key's gesture with a number instead of the mouse); one Undo step."""
+        return self._skeleton.fill_weights_value(percent)
 
     def set_weight_value(self, value: float) -> bool:
         """The current bone's weight `value` (0-1) on the selection, with the Soft field if Soft is on (the key's gesture
@@ -3010,11 +3010,11 @@ class Application:
     def _run_rig(self, command: str, ctx: RunContext, context: Optional[dict]) -> bool:
         """The rig, pose and weight commands (`SkeletonController`, AD-028 §8.3); the two weight gestures are hold keys
         (a key arms them; there is nothing to hold from the API)."""
-        if command in (commands.WEIGHTS_FROM_GROUP, commands.WEIGHT_SET):
+        if command in (commands.WEIGHTS_FILL, commands.WEIGHT_SET):
             if ctx.source != "key" or self._gesture is not None or self.viewport is None:
                 return False
             origin = self._gestures.origin(ctx.input.value)
-            if command == commands.WEIGHTS_FROM_GROUP:
+            if command == commands.WEIGHTS_FILL:
                 return self._skeleton.arm_falloff(ctx.input.value, origin)
             return self._skeleton.arm_weight(ctx.input.value, origin)
         done = self._skeleton.command(command)

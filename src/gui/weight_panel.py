@@ -1,6 +1,6 @@
 """The Weight Room panel (AD-041 §7, slice 2; layout `PROVISIONAL`): the bones (the active one highlighted, a click makes a
 bone current), the operation (Add / Subtract / Replace / Smooth, Replace's value), radius, strength, opacity, hardness,
-curve, "nur zusammenhängend", "nur Vorderseite", the symmetry and Ruhe / Pose, "Aufräumen" with its threshold, and
+curve, "nur zusammenhängend", "nur Vorderseite", the symmetry and Ruhe / Pose, "Füllen aus Auswahl" with its width, "Aufräumen" with its threshold, and
 "Raum schließen". While painting is refused the reason stands at the top.
 
 Drawn while `app.weight_room_open` (like the Paint Room); the logic is `gui.weight_model` (headless). Every brush value goes
@@ -24,6 +24,7 @@ class WeightPanel:
     def __init__(self, imgui, app, layer) -> None:
         self.imgui, self.app, self.layer = imgui, app, layer
         self.threshold = CLEAN_THRESHOLD  # Regler „Schwelle“ (nur der Startwert des Reglers, kein Dokumentzustand)
+        self.fill_percent: float | None = None  # Regler „Breite“ des Füllens; None = die Startbreite der Soft-Stufe
 
     def draw(self) -> None:
         imgui, app = self.imgui, self.app
@@ -49,6 +50,8 @@ class WeightPanel:
         if imgui.is_item_hovered():
             imgui.set_tooltip("Taste 6: Ruhe <-> letzte Pose; in der Pose bewegt sich das Mesh beim Malen mit")
         imgui.separator()
+        self._fill(st)
+        imgui.separator()
         imgui.set_next_item_width(110.0)
         changed, value = imgui.slider_float("Schwelle", self.threshold, wm.CLEAN_RANGE[0], wm.CLEAN_RANGE[1], "%.3f")
         self.layer._remember("weight_threshold", 0)
@@ -67,6 +70,30 @@ class WeightPanel:
         imgui.separator()
         if imgui.button("Raum schließen"):
             app.close_weight_room()
+
+    def _fill(self, st: wm.WeightPanelState) -> None:
+        """„Füllen aus Auswahl“ (AD-041 §3.4): the selected points seed a falloff of this width for the current bone."""
+        imgui, app = self.imgui, self.app
+        n = st.selected_points
+        imgui.text_disabled(f"Füllen aus Auswahl ({n} Punkt{'e' if n != 1 else ''})")
+        start = st.fill_percent if self.fill_percent is None else self.fill_percent
+        imgui.set_next_item_width(110.0)
+        changed, value = imgui.slider_float("Breite %", start, 0.0, 200.0, "%.0f %%")
+        self.layer._remember("weight_fill_width", 0)
+        if changed:
+            self.fill_percent = value
+        imgui.same_line()
+        enabled = n > 0 and st.current_name is not None and not st.stroking
+        imgui.begin_disabled(not enabled)
+        pressed = imgui.button("Füllen")
+        imgui.end_disabled()
+        self.layer._remember("weight_fill", 0)
+        if imgui.is_item_hovered(imgui.HoveredFlags_.allow_when_disabled):
+            imgui.set_tooltip("Gewichte des aktuellen Knochens aus der Auswahl (Punkte, Kanten, Flächen; eine Gruppe ist nur"
+                              " eine Art zu wählen), Falloff in % des Mesh-Radius; ein Strg+Z")
+        if pressed and enabled:
+            wm.fill(app, start)
+            self.layer.last_note = app.status_message
 
     def _bones(self, st: wm.WeightPanelState) -> None:
         imgui, app = self.imgui, self.app

@@ -7,8 +7,8 @@ Was PROPOSED the same day. Direction decided by Manu on 2026-11-26 (Development 
 - brush operations Add / Subtract, Smooth / Blur, Replace and „Aufräumen“ in the first build;
 - „Gleich mit L/R-Paaren“.
 
-Slice 1 (the brush arithmetic) and slice 2 (the Weight Room, heatmap, panel) are built (2026-11-26, §13); slice 3
-(fill from a selection) is next.
+Slice 1 (the brush arithmetic), slice 2 (the Weight Room, heatmap, panel) and slice 3 (fill from a selection) are built
+(2026-11-26, §13); slice 4 (L/R pairs) is next.
 
 **Mode:** Production, in fresh sessions with this AD as the handoff (§11).
 **Baseline:** `claude/serene-dirac-9sue6z` @ `3c9c80c`.
@@ -381,5 +381,42 @@ Deine Entscheidungen brauche ich zu W-1 … W-12 in §10. Die Empfehlung steht j
 - **Early cost [H]** (container, the 296 x 296 grid = 87.6k vertices, radius 1.5 %): opening + first sync 0.58 s (the fan
   triangles of every face), first hover 0.21 s (the cage's ray table; reused until the surface moves), a frame while
   stroking 7.9 ms median / 33 ms max with the heatmap patch, the release drain < 1 ms. Slice 5 measures on the reference PC.
-- **Next:** slice 3 (fill from a selection; the jaw scenario moved). Manu's look at the room is welcome any time
+- **Next:** slice 4 (L/R pairs, mirrored writes). Manu's look at the room is welcome any time
   („Einspruch statt Abnahme“); the values above are agent choices.
+
+### Slice 3 — fill from a selection (2026-11-26)
+
+- **Built:** `FalloffGesture` now seeds from the selection - `resolve_selection_vertices(mesh, selection, mode)`, i.e.
+  the selected points, the corners of selected edges, the vertices of selected faces - instead of the active group's
+  faces. Same mechanism otherwise (Soft metric and curve, `symmetric_influence` under symmetry, width by mouse or number,
+  replaces the bone's share, one recording, Esc = `rollback_change`, a tap = the start width). No change under
+  `src/core/`.
+- **Renames (§3.4):** `commands.WEIGHTS_FROM_GROUP` -> `WEIGHTS_FILL` (value `"WeightsFromGroup"` -> `"WeightsFill"`; no
+  `config/keymap.json` entry named it), `Application.weights_from_group_value` / `SkeletonController.…` ->
+  `fill_weights_value` (the gate's `RIG` entry follows). The code default key `7` stays until Manu decides (W-6).
+- **Refusals** (texts `PROVISIONAL`): empty selection -> „Fill from selection: select points or faces first“; every
+  selected point masked -> „…all selected points are masked (Ctrl+M unmasks)“ (as Set weight does); object level, no bone,
+  a part that follows a bone, and an off-centre bone under symmetry are unchanged (`_weights_refusal`). Partly masked or
+  hidden points keep the `_masked` treatment. An asymmetric selection under symmetry runs (the symmetric field takes
+  one-sided seeds); a seed without a partner is refused by `SoftSymmetryRefusal` as for any symmetric Soft.
+- **Panel:** the Bone panel's skinning row reads „Füllen aus Auswahl“ with „Breite %“ and „Anwenden“; the button needs a
+  selection (`st.selected_points > 0`), not a group. `BonePanelState.group` is gone (nothing read it any more).
+  The status line and the bone-add hint say „Fill from selection“ / „fill weights from the selection“.
+- **In the Weight Room:** the room's panel got the same row („Füllen aus Auswahl (N Punkte)“, „Breite %“, „Füllen“; the
+  button needs a selection, a bone and no running stroke). The room holds the interaction slot, so the fill runs
+  *beside* it: `Application.fill_weights_value` in the room starts a *detached* `FalloffGesture` (`detached = True`: it
+  never enters the slot, `end` only releases its own recording, and it shows no face shading over the heatmap); the
+  heatmap follows through the layer watch as for „Aufräumen“. Refused during a stroke. The key `7` is not offered in
+  the room (its session's `allows` decides).
+- **Jaw scenarios moved:** `test_jaw_scenario.py` and `test_bone_chain_scenario.py` now clear the selection, select the
+  group again with Alt+G and fill (the old step „weights from the group“).
+- **Tests:** `test_application_rig.py` (`test_falloff_refusals` for the empty selection;
+  `test_fill_from_a_selection_needs_no_group_and_is_the_same_field_as_the_group_gave`: jaw faces selected without any
+  group give the field the group gave, a few points alone work, Undo takes it back; a fully masked selection refuses),
+  `test_gui_bone_panel_model.py`, `test_bone_edit.py`, the two scenarios, `test_keymap_config.py` (hold family renamed);
+  in the room: `test_weight_room.py` (the fill is one Undo step, the room stays, the heatmap follows; refused during a
+  stroke and without a selection), `test_gui_weight_panel_model.py` (the fill row's state and action),
+  `test_gui_weight_room_window.py` (xvfb, imgui-bundle: the row's items are drawn).
+  Targeted set (the DoD files plus the above): all green except
+  `test_interaction_structure.py::test_iv_can_run_is_pure[test_box_paint_and_lasso_select_and_esc_cancels_a_box]`
+  (5 vs 6 vertices), which fails identically without this change (one of the known pre-existing failures).

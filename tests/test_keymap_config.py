@@ -129,7 +129,7 @@ def test_the_hold_family_is_the_set_application_arms_on_a_key():
     assert cmd.HOLD_COMMANDS == {
         cmd.MOVE, cmd.ROTATE, cmd.SCALE, cmd.EXTRUDE, cmd.LOOP_SLIDE, cmd.SURFACE_SLIDE, cmd.SMOOTH, cmd.RELAX, cmd.INFLATE,
         cmd.PINCH, cmd.INSET, cmd.BEVEL, cmd.LASSO_ARM, cmd.LIGHT_DRAG, cmd.MORPH_WEIGHT_DRAG, cmd.PIVOT_PLACE,
-        cmd.WEIGHTS_FROM_GROUP, cmd.WEIGHT_SET,
+        cmd.WEIGHTS_FILL, cmd.WEIGHT_SET,
     }
 
 

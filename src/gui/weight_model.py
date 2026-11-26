@@ -1,9 +1,9 @@
 """The Weight Room panel's logic (AD-041 §7, slice 2; AD-030: pure logic headless, `weight_panel` only draws).
 
 The panel reads the room's state (`state(app)`) and calls `Application` (`set_weight_brush`, `select_bone`,
-`clean_weights_value`, `close_weight_room`, the symmetry and rest / pose keys through `dispatch_command`); it holds no
+`clean_weights_value`, `fill_weights_value`, `close_weight_room`, the symmetry and rest / pose keys through `dispatch_command`); it holds no
 document state. Labels German, the operation names as in AD-041 (Add / Subtract / Replace / Smooth); every layout choice
-`PROVISIONAL`. "Füllen aus Auswahl" (slice 3) and "Gewichte spiegeln" / the L/R pair status (slice 4) join later.
+`PROVISIONAL`. "Füllen aus Auswahl" (slice 3) is in; "Gewichte spiegeln" / the L/R pair status (slice 4) join later.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from mirai.interaction import commands
 from mirai.paint.brush import CURVE_ARRAYS, CURVE_LABELS, RADIUS_STEPS_PERCENT
 from mirai.skin_weights import CLEAN_THRESHOLD
+from mirai.soft_selection import RADIUS_STEPS_PERCENT as SOFT_RADIUS_STEPS_PERCENT
 from mirai.symmetry_axis import current_axis
 from mirai.weight_paint import OPERATION_LABELS, OPERATIONS
 
@@ -54,6 +55,8 @@ class WeightPanelState:
     front_only: bool
     symmetry: str | None  # the edit mesh's symmetry axis, None = off
     posed: bool
+    selected_points: int = 0  # the fill's seeds (AD-041 §3.4)
+    fill_percent: float = 15.0  # the fill's start width: the Soft radius step, as the key
 
     @property
     def radius_label(self) -> str:
@@ -95,6 +98,8 @@ def state(app) -> WeightPanelState:
         front_only=brush.front_only,
         symmetry=axis,
         posed=app.posed,
+        selected_points=bm.selected_point_count(app),
+        fill_percent=float(SOFT_RADIUS_STEPS_PERCENT[app.soft_settings.radius_step]),
     )
 
 
@@ -137,10 +142,15 @@ def toggle_rest(app) -> bool:
     return app.dispatch_command(commands.POSE_TOGGLE_REST)
 
 
+def fill(app, percent: float) -> bool:
+    """„Füllen aus Auswahl“ (AD-041 §3.4): the current bone's weights from the selected points, falloff `percent`."""
+    return app.fill_weights_value(percent)
+
+
 def clean(app, threshold: float = CLEAN_THRESHOLD) -> bool:
     return app.clean_weights_value(threshold)
 
 
 __all__ = ["BONE_BUTTON", "CLEAN_RANGE", "CURVES", "MENU_CLOSE", "MENU_OPEN", "OPERATION_HINTS", "OPERATION_ROWS",
-           "TITLE", "WeightPanelState", "choose_bone", "clean", "curve_label", "cycle_symmetry", "menu_label",
+           "TITLE", "WeightPanelState", "choose_bone", "clean", "curve_label", "cycle_symmetry", "fill", "menu_label",
            "radius_label", "set_operation", "state", "toggle", "toggle_rest"]

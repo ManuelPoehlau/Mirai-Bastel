@@ -210,14 +210,66 @@ def test_falloff_from_the_group_follows_the_rule_esc_is_exact_and_a_tap_is_the_s
 
 
 def test_falloff_refusals() -> None:
+    """AD-041 §3.4: an empty selection is refused (a group is no longer needed), as is a fully masked one."""
     d = head_driver()
     app = d.app
     rig_head(d, group=False)
+    app.selection.clear()
     state = _state(app)
     d.key_down(FALLOFF)
-    assert app.status_message == "Weights from group: make a group first (Ctrl+G on the faces)"
+    assert app.status_message == "Fill from selection: select points or faces first"
     d.key_up("7")
     assert _state(app) == state and app.interaction_owner is None
+    assert not app.fill_weights_value(20.0) and app.status_message == "Fill from selection: select points or faces first"
+    assert _state(app) == state
+
+
+def test_fill_from_a_selection_needs_no_group_and_is_the_same_field_as_the_group_gave() -> None:
+    """The seeds are the selection: the jaw faces selected without a group give the field the group gave (the old
+    scenario, `select the jaw -> fill`); points alone work too and so does a group selected again."""
+    d = head_driver()
+    app = d.app
+    rig_head(d, group=False)
+    mesh = app.scene.mesh
+    assert app.active_region is None
+    bone = app.current_bone
+    soft = app.soft_settings
+    start = RADIUS_STEPS_PERCENT[soft.radius_step]
+    seeds = {v for f in jaw_faces(mesh) for v in mesh.face_vertices(f)}
+    hold(d, FALLOFF, ((20, 0),))
+    assert app.status_message.startswith("Fill from selection (")
+    field = _field(mesh, seeds, start + 10.0, soft)
+    got = weights(mesh)
+    assert set(got) == set(field)
+    assert all(got[v] == ((bone, 1.0),) for v in seeds)
+    assert_layer_invariants(mesh)
+    d.tap(CTRL_Z)
+    assert weights(mesh) == {}
+    # a few points: the field grows from them alone
+    d.tap(key("1"))
+    picked = sorted(seeds)[:3]
+    app.selection.vertices = set(picked)
+    assert app.fill_weights_value(float(start)), app.status_message
+    field = _field(mesh, set(picked), float(start), soft)
+    assert set(weights(mesh)) == set(field)
+    assert all(weights(mesh)[v][0][0] == bone for v in picked)
+
+
+def test_fill_from_a_selection_is_refused_when_every_point_is_masked() -> None:
+    d = head_driver()
+    app = d.app
+    rig_head(d, group=False)
+    mesh = app.scene.mesh
+    d.tap(key("1"))
+    seed = next(iter(sorted(mesh.all_vertex_ids())))
+    corr = vertex_correspondence(mesh)
+    partner = getattr(corr[seed], "partner", None)
+    app.selection.vertices = {seed} | ({partner} if partner is not None else set())
+    d.tap(key("m", "ctrl"))  # Ctrl+M masks the selection (the pair under symmetry)
+    state = _state(app)
+    assert not app.fill_weights_value(20.0)
+    assert app.status_message == "Fill from selection: all selected points are masked (Ctrl+M unmasks)"
+    assert _state(app) == state
 
 
 def test_set_weight_on_the_selection_with_snap_soft_and_mask() -> None:
@@ -586,7 +638,7 @@ def test_the_rig_keys_are_free_in_every_context_and_not_in_the_keymap() -> None:
         assert bindings.command_for(inp, GLOBAL_CONTEXT) == command
         for context in (KNIFE_CONTEXT, SUBD_CONTEXT, MORPH_CONTEXT, WINDOW_CONTEXT):
             assert bindings.command_for(inp, context) in (None, command), (command, context)
-    assert {commands.WEIGHTS_FROM_GROUP, commands.WEIGHT_SET} <= commands.HOLD_COMMANDS
+    assert {commands.WEIGHTS_FILL, commands.WEIGHT_SET} <= commands.HOLD_COMMANDS
 
 
 def test_a_weight_gesture_is_computed_from_its_press_values_whatever_its_path() -> None:

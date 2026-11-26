@@ -2,13 +2,13 @@
 
 Kein pyglet, kein imgui: nur Lesen über die öffentlichen `Application`-Zugriffe. Das Panel zeichnet `state(app)` und ruft bei
 einer Eingabe dieselben Wege wie die Tasten bzw. das Werkzeug (`start_bone_chain`, `edit_bone`, `rename_bone`,
-`select_bone`, `set_bones_hidden`, `delete_bone`, `weights_from_group_value`, `set_weight_value`); es hält keinen
+`select_bone`, `set_bones_hidden`, `delete_bone`, `fill_weights_value`, `set_weight_value`); es hält keinen
 Dokumentzustand (AD-030). Jede Änderung ist ein Undo-Schritt, jede Ablehnung steht in der Statuszeile; `*_blocker` sagt
 vorab, warum etwas gerade nicht geht (das Panel graut den Knopf aus).
 
 Knochen stehen weiter im Outliner; das Panel zeigt den aktuellen Knochen (Name, Parent, Kopf, Spitze, Roll, Ausblenden,
 Löschen), die Verbindung starrer Teile (AD-036: die gewählten Objekte folgen dem aktuellen Knochen / folgen keinem) und
-die Skinning-Aktionen (Gewichte aus Gruppe mit Breite, Gewicht setzen mit Wert, Gewichtsansicht).
+die Skinning-Aktionen (Füllen aus Auswahl mit Breite, Gewicht setzen mit Wert, Gewichtsansicht).
 """
 
 from __future__ import annotations
@@ -55,7 +55,6 @@ class BonePanelState:
     chain_blocker: str | None
     chain_snap: bool
     chain_parent_name: str | None  # Parent, den „Kette starten“ vergäbe (der aktuelle Knochen)
-    group: str | None
     selected_points: int
     soft_on: bool
     weight_view: bool
@@ -83,8 +82,17 @@ class BonePanelState:
     @property
     def can_weights(self) -> bool:
         """Grob: es gibt einen Knochen und keine Interaktion läuft. Die feinen Ablehnungen (Objektebene, Symmetrie,
-        keine Gruppe, keine Auswahl) kommen aus `Application` in die Statuszeile, wie bei den Tasten."""
+        keine Auswahl) kommen aus `Application` in die Statuszeile, wie bei den Tasten."""
         return self.current is not None and not self.chain_active  # (Gewichte gehen auch in der Pose, AD-028 §7.1)
+
+
+def selected_point_count(app) -> int:
+    """Die Punkte der Auswahl (Ecken gewählter Kanten und Flächen mit), die „Füllen aus Auswahl“ als Seeds nimmt; 0 auf
+    Objektebene (AD-041 §3.4)."""
+    selection = app.selection
+    if selection.mode is SelectionMode.OBJECT:
+        return 0
+    return len(resolve_selection_vertices(app.scene.mesh, selection, selection.mode))
 
 
 def _tree_rows(rig, current, hidden) -> tuple[BoneRow, ...]:
@@ -133,9 +141,7 @@ def state(app) -> BonePanelState:
             choices = ((None, "(keiner, Wurzel)"),) + tuple(
                 (o.id, o.name) for o in rig.bones if o.id != b.id and b.id not in rig.ancestors(o.id)
             )
-    mesh = app.scene.mesh
-    selection = app.selection
-    selected = 0 if selection.mode is SelectionMode.OBJECT else len(resolve_selection_vertices(mesh, selection, selection.mode))
+    selected = selected_point_count(app)
     soft = app.soft_settings
     return BonePanelState(
         rows=rows,
@@ -147,7 +153,6 @@ def state(app) -> BonePanelState:
         chain_blocker=app.bone_chain_blocker,
         chain_snap=app.bone_chain_snap,
         chain_parent_name=None if current_id is None else app.current_bone_name,
-        group=app.active_region,
         selected_points=selected,
         soft_on=soft.enabled,
         weight_view=app.weight_view,

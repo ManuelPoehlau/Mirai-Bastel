@@ -271,7 +271,7 @@ _HINT_COMMANDS: dict[str, tuple[tuple[str, ...], Optional[str]]] = {
     "Morph": ((commands.MORPH_NEW, commands.MORPH_EDIT_TOGGLE, commands.MORPH_WEIGHT_DRAG), MORPH_CONTEXT),
     "Targets": ((commands.MORPH_NEXT, commands.MORPH_PREVIOUS), MORPH_CONTEXT),
     "Rig": (
-        (commands.POSE_MODE, commands.POSE_TOGGLE_REST, commands.BONE_ADD, commands.WEIGHTS_FROM_GROUP,
+        (commands.POSE_MODE, commands.POSE_TOGGLE_REST, commands.BONE_ADD, commands.WEIGHTS_FILL,
          commands.WEIGHT_SET),
         None,
     ),

@@ -124,12 +124,12 @@ def test_the_blockers_that_grey_the_panel() -> None:
     assert not st.can_weights  # nothing to weight while the chain runs
 
 
-def test_the_skinning_defaults_the_group_the_selection_and_the_start_width() -> None:
+def test_the_skinning_defaults_the_selection_and_the_start_width() -> None:
     d = head_driver()
     rig_head(d)
     app = d.app
     st = bm.state(app)
-    assert st.group == "Group 1" and st.selected_points >= 1
+    assert st.selected_points >= 1
     assert st.falloff_percent == float(RADIUS_STEPS_PERCENT[app.soft_settings.radius_step]) and not st.soft_on
     assert not st.weight_view
     assert bm.toggle_weight_view(app) and bm.state(app).weight_view

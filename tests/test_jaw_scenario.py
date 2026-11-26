@@ -2,7 +2,7 @@
 the AD-027 scenario style - every step one or a few events through the public entry points
 (`tests/interaction_trace.py`), headless, on the head basemesh with symmetry X.
 
-group "Jaw" -> pivot in the joint -> add the bone -> weights from the group with a width -> a Soft correction at the
+group "Jaw" -> pivot in the joint -> add the bone -> select the group, fill from the selection with a width (AD-041 §3.4) -> a Soft correction at the
 mouth corner -> rotate the jaw (E, X) -> a morph target shaped beside the base -> rest -> Loop Insert at the mouth
 corner -> pose again. Then: bones, weights (the rule at the new loop, W1-W4), offsets (the rule) and the posed
 surface (= `skinning.evaluate` of the mix) as stated; Undo to the start and Redo to the end exact; save -> load
@@ -29,8 +29,8 @@ from tests.rig_support import (
 #: The scenario runs with this driver; the purity check below swaps in one that checks `can_run` at every step.
 make_driver = Driver
 
-CTRL_ALT_N, CTRL_N, TAB, N, W, I, X = (
-    key("n", "ctrl", "alt"), key("n", "ctrl"), key("tab"), key("n"), key("w"), key("i"), key("x")
+CTRL_ALT_N, CTRL_N, TAB, N, W, I, X, ALT_G = (
+    key("n", "ctrl", "alt"), key("n", "ctrl"), key("tab"), key("n"), key("w"), key("i"), key("x"), key("g", "alt")
 )
 
 
@@ -62,7 +62,16 @@ def add_the_bone(d: Driver):
     return bone
 
 
-def weights_from_the_group(d: Driver, width_px: float = 30.0) -> None:
+def select_the_jaw_group(d: Driver, faces) -> None:
+    """AD-041 §3.4: a group is only one way to select - the selection is cleared, Alt+G selects the group again."""
+    app = d.app
+    app.selection.clear()
+    d.tap(ALT_G)
+    assert app.selection.faces == set(faces), app.status_message
+
+
+def fill_from_the_jaw_group(d: Driver, faces, width_px: float = 30.0) -> None:
+    select_the_jaw_group(d, faces)
     hold(d, FALLOFF, ((width_px, 0),))
     assert d.app.status_message.endswith("committed (Ctrl+Z takes it back)")
 
@@ -200,11 +209,11 @@ def run_jaw_scenario(tmp_path) -> None:
     mesh = app.scene.mesh
     start = (mesh.export_state(), app.scene.rig)
     start_depth = len(app.history)  # symmetry X
-    group_jaw(d)
+    faces = group_jaw(d)
     pivot_in_the_joint(d)
     bone = add_the_bone(d)
     assert abs(bone.head[0]) <= 1e-12 and abs(bone.tail[0]) <= 1e-12  # on the plane: symmetric weights allowed
-    weights_from_the_group(d)
+    fill_from_the_jaw_group(d, faces)
     assert_symmetric_weights(mesh)
     corner = mouth_corner(mesh)
     before = weights(mesh)[corner]

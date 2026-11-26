@@ -7,14 +7,14 @@ gestures and the three stage-7 policies. Names, keys and texts `PROVISIONAL`.
   the bone's share to its parent, `skin_weights.delete_bone_weights` - and the rig without the bone).
 - **Bone tool 01** (2026-11-17, AD-028 addendum): the chain-click tool (`bone_chain.BoneChainSession`, begun by
   `begin_chain`: no key), `edit_bone` (a bone's name, parent, head, tail, roll at rest, one Undo step; refused while
-  posed), `delete_bone` by id, and the two weight operations as values (`weights_from_group_value`,
+  posed), `delete_bone` by id, and the two weight operations as values (`fill_weights_value`,
   `set_weight_value`: the gestures' own stroke, committed at once, for the panel).
 - **Pose** (view state, §6; no History, not saved, a load starts at rest): `BoneId -> BonePose`, the current bone,
   the last pose (for the rest <-> pose toggle) and the pose mode. Written to the skin stage through
   `services.skin.provider.set_pose`. A deleted bone's pose channel goes with it and does not come back on Undo.
 - **Gesture kinds** (`gestures.GestureSession` subclasses - the second user of the one controller dependency,
   AD-027 §7.1 M7): `BoneGesture` (W/E/R in pose mode, also the gizmo at the bone head), `FalloffGesture`
-  (weights from the active group, mouse = falloff width) and `WeightGesture` (the current bone's weight on the
+  (fill from the selection, mouse = falloff width) and `WeightGesture` (the current bone's weight on the
   selection, mouse = value). The two weight gestures run inside one open recording: release = one entry, Esc =
   `rollback_change`; every step is computed from the values at the press (`skin_weights.WeightStroke`).
 - **Policies** (`can_run` stage 7, pure, in order): (1) pose mode - only pose, rig and view-state commands;
@@ -50,7 +50,6 @@ from ..layer_declarations import edits_positions_or_topology
 from ..mask import FULL as MASK_FULL
 from ..mesh_geometry import mesh_center_and_radius
 from ..morph_targets import WEIGHT_COMMANDS as MORPH_WEIGHT_COMMANDS
-from ..regions import live_faces
 from ..scene_objects import CompositeCommand, group_leaves
 from ..skin_weights import WeightStroke, bone_share, delete_bone_weights, soft_target
 from ..skinning import REST, BonePose, is_posed, skin_layer, skin_transforms
@@ -83,6 +82,9 @@ FALLOFF_PX_PER_PERCENT = 2.0
 FALLOFF_MAX_PERCENT = 200.0
 #: The Soft display mode the weight gestures show the current bone's share in (face shading, §8.4).
 SHARE_VIEW_MODE = "faces"
+#: AD-041 §3.4: the fill's label and its refusal for an empty selection (texts `PROVISIONAL`).
+FILL_LABEL = "Fill from selection"
+SELECT_FIRST = "select points or faces first"
 
 #: Bone line items (look `PROVISIONAL`): bone yellow, the current bone brighter and thicker, dimmed outside pose mode.
 COLOR_BONE = (0.95, 0.85, 0.3, 1.0)
@@ -378,6 +380,9 @@ class _WeightsGesture(_RigGesture):
             frozenset(v for v, value in self.mesh.layer_items(lid) if any(k == bone for k, _ in value))
             if lid is not None else frozenset()
         )
+        #: AD-041 §3.4: run inside the Weight Room, which holds the slot - the gesture is then not in it (`end` leaves the
+        #: slot alone) and shows no face shading over the heatmap
+        self.detached = False
         self.partners = {}
         if self.mesh.symmetry_definition is not None:
             self.partners = {
@@ -387,7 +392,7 @@ class _WeightsGesture(_RigGesture):
 
     @property
     def label(self) -> str:
-        return "Weights from group" if self.command == commands.WEIGHTS_FROM_GROUP else "Set weight"
+        return FILL_LABEL if self.command == commands.WEIGHTS_FILL else "Set weight"
 
     # what a kind gives: the targets {vertex: x} for its current gesture value
     def targets(self) -> dict:
@@ -455,6 +460,8 @@ class _WeightsGesture(_RigGesture):
 
     def _show_share(self) -> None:
         """The current bone's share on the shading overlay (§8.4), so the width shows also at rest."""
+        if self.detached:
+            return
         stroke = self.stroke
         shares = bone_shares(self.mesh, stroke.layer, self.bone, stroke.press)
         if self.services.show_soft_weights(shares, SHARE_VIEW_MODE):
@@ -500,19 +507,24 @@ class _WeightsGesture(_RigGesture):
         # a weight gesture that ended without release / abort (refused, Undo while armed): nothing stays
         self.abort()
 
+    def end(self) -> None:
+        if self.detached:  # it never entered the slot: only its own recording is released
+            self.cleanup()
+            return
+        super().end()
+
 
 class FalloffGesture(_WeightsGesture):
-    """Weights from the active group (§8.4, hold): seeds = the vertices of the group's live faces, the field from
-    the Soft settings' metric and curve (`symmetric_influence` under symmetry), its width in % of the mesh's bounding
-    radius (mouse left / right, starting at the Soft radius step). Each step sets the current bone to the field on
-    the field ∪ the vertices that had the bone at the press - it replaces the bone's weights. A tap = the start
-    width."""
+    """Fill from the selection (AD-041 §3.4, hold; AD-028 §8.4 as "weights from the group"): seeds = the selected points
+    (the corners of selected edges and faces; a group is only one way to select them), the field from the Soft
+    settings' metric and curve (`symmetric_influence` under symmetry), its width in % of the mesh's bounding radius
+    (mouse left / right, starting at the Soft radius step). Each step sets the current bone to the field on the field ∪
+    the vertices that had the bone at the press - it replaces the bone's weights. A tap = the start width."""
 
-    def __init__(self, skeleton, key, origin, bone, seeds, group: str) -> None:
-        super().__init__(skeleton, commands.WEIGHTS_FROM_GROUP, key, origin, bone)
+    def __init__(self, skeleton, key, origin, bone, seeds) -> None:
+        super().__init__(skeleton, commands.WEIGHTS_FILL, key, origin, bone)
         services = self.services
         self.seeds = frozenset(seeds)
-        self.group = group
         soft = services.soft_settings
         self.start_percent = float(RADIUS_STEPS_PERCENT[soft.radius_step])
         _, self.bounding_radius = mesh_center_and_radius(self.mesh)
@@ -538,7 +550,8 @@ class FalloffGesture(_WeightsGesture):
 
     def describe(self) -> str:
         name = self.skeleton.bone_name(self.bone)
-        return f"Weights from group {self.group!r} -> {name!r}: falloff {self.percent:.0f} %"
+        n = len(self.seeds)
+        return f"{FILL_LABEL} ({n} point{'s' if n != 1 else ''}) -> {name!r}: falloff {self.percent:.0f} %"
 
     def release(self) -> None:
         if self.before is None:  # a tap: the start width
@@ -863,8 +876,8 @@ class SkeletonController:
         self.current = bid
         under = f" under {self.bone_name(parent)!r}" if parent is not None else ""
         services.status(
-            f"Bone {name!r} added{under} (pivot -> selection centre). {self.key_text(commands.WEIGHTS_FROM_GROUP)}"
-            f" held = weights from the active group, {self.key_text(commands.POSE_MODE)} = pose mode"
+            f"Bone {name!r} added{under} (pivot -> selection centre). {self.key_text(commands.WEIGHTS_FILL)}"
+            f" held = fill weights from the selection, {self.key_text(commands.POSE_MODE)} = pose mode"
         )
         return True
 
@@ -1369,18 +1382,27 @@ class SkeletonController:
             return False
         return True
 
-    def weights_from_group_value(self, percent: float) -> bool:
-        """"Weights from group" with a width given as a number (the panel): the `FalloffGesture`'s stroke at `percent` of
-        the mesh's bounding radius, committed at once - one History entry, the refusals of the key (§8.4)."""
-        label = "Weights from group"
-        if not self._weight_work_ready(label):
+    def fill_weights_value(self, percent: float) -> bool:
+        """"Fill from selection" with a width given as a number (the panel): the `FalloffGesture`'s stroke at `percent`
+        of the mesh's bounding radius, committed at once - one History entry, the refusals of the key (AD-041 §3.4)."""
+        label = FILL_LABEL
+        services = self.services
+        in_room = services.interaction_owner == "weight"  # the room holds the slot; the fill then runs beside it
+        if in_room:
+            if services.weight_stroking:
+                services.status(f"{label}: not during a stroke")
+                return False
+        elif not self._weight_work_ready(label):
             return False
         gesture = self._falloff_gesture(label, None, (None, True))
         if gesture is None:
             return False
         gesture.start_percent = max(0.0, min(FALLOFF_MAX_PERCENT, float(percent)))
         gesture._cache = None
-        self.services.interaction.start(gesture)
+        if in_room:
+            gesture.detached = True
+        else:
+            services.interaction.start(gesture)
         return gesture.apply_once()
 
     def set_weight_value(self, value: float) -> bool:
@@ -1457,35 +1479,38 @@ class SkeletonController:
         return True
 
     def _falloff_gesture(self, label: str, key, origin) -> Optional[FalloffGesture]:
-        """The `FalloffGesture` for the current bone and the active group, or None with the refusal posted (§8.4). Not
-        yet in the slot."""
+        """The `FalloffGesture` for the current bone on the selection, or None with the refusal posted (AD-041 §3.4: an
+        empty selection is refused; a masked-out one too). Not yet in the slot."""
         services = self.services
         picked = self._weights_refusal(label)
         if picked is None:
             return None
         bone, mesh = picked
-        group = services.active_region
-        faces = live_faces(mesh, group) if group is not None else frozenset()
-        if not faces:
-            services.status(f"{label}: make a group first (Ctrl+G on the faces)")
+        selection = services.selection
+        seeds = resolve_selection_vertices(mesh, selection, selection.mode)
+        if not seeds:
+            services.status(f"{label}: {SELECT_FIRST}")
             return None
-        seeds = {v for f in faces for v in mesh.face_vertices(f)}
+        mask = services.mask_values(seeds)
+        if mask and all(mask.get(v, 0.0) >= MASK_FULL for v in seeds):
+            services.status(f"{label}: all selected points are masked (Ctrl+M unmasks)")
+            return None
         try:
-            return FalloffGesture(self, key, origin, bone, seeds, group)
+            return FalloffGesture(self, key, origin, bone, seeds)
         except SoftSymmetryRefusal as exc:
             services.status(f"{label}: refused - {exc}")
             return None
 
     def arm_falloff(self, key: str, origin) -> bool:
         services = self.services
-        label = "Weights from group"
+        label = FILL_LABEL
         gesture = self._falloff_gesture(label, key, origin)
         if gesture is None:
             return False
         services.interaction.start(gesture)
         services.set_hovered(None)
         services.status(
-            f"{label} {gesture.group!r} -> {self.bone_name(gesture.bone)!r}: mouse left/right = falloff width"
+            f"{label} ({len(gesture.seeds)} points) -> {self.bone_name(gesture.bone)!r}: mouse left/right = falloff width"
             f" ({gesture.start_percent:.0f} %), release {key.upper()} to commit, Esc cancels"
         )
         return True

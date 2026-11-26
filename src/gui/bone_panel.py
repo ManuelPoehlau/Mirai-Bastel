@@ -218,8 +218,8 @@ class BonePanel:
         imgui, app = self.imgui, self.app
         imgui.text_disabled("Skinning (aktueller Knochen)")
         enabled = st.can_weights
-        group = f"Gruppe {st.group!r}" if st.group is not None else "keine Gruppe (Strg+G)"
-        imgui.text(f"Gewichte aus {group}")
+        points = f"{st.selected_points} Punkt{'e' if st.selected_points != 1 else ''}" + (" (Soft)" if st.soft_on else "")
+        imgui.text("Füllen aus Auswahl")
         imgui.set_next_item_width(130.0)
         start = st.falloff_percent if self.falloff is None else self.falloff
         changed, value = imgui.slider_float("Breite %", start, 0.0, 200.0, "%.0f %%")
@@ -227,10 +227,10 @@ class BonePanel:
         if changed:
             self.falloff = value
         imgui.same_line()
-        self._button("Anwenden", enabled and st.group is not None, "falloff", 0,
-                     "Gewichte des aktuellen Knochens aus der Gruppe, Falloff in % des Mesh-Radius (ein Undo-Schritt)",
-                     lambda: app.weights_from_group_value(start))
-        points = f"{st.selected_points} Punkt{'e' if st.selected_points != 1 else ''}" + (" (Soft)" if st.soft_on else "")
+        self._button("Anwenden", enabled and st.selected_points > 0, "falloff", 0,
+                     f"Gewichte des aktuellen Knochens aus der Auswahl ({points}; eine Gruppe ist nur eine Art zu wählen),"
+                     " Falloff in % des Mesh-Radius (ein Undo-Schritt)",
+                     lambda: app.fill_weights_value(start))
         imgui.set_next_item_width(130.0)
         changed, self.weight = imgui.slider_float("Wert", self.weight, 0.0, 1.0, "%.2f")
         self.layer._remember("bone_weight", 0)

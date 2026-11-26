@@ -444,7 +444,7 @@ POSE_TOGGLE_REST = "PoseToggleRest"
 POSE_RESET_BONE = "PoseResetBone"
 #: Hold keys (mouse left / right): the current bone's weights from the active group with a falloff width, and the
 #: current bone's weight on the selection (Soft: falling off outside it). Release = one Undo step, Esc = nothing.
-WEIGHTS_FROM_GROUP = "WeightsFromGroup"
+WEIGHTS_FILL = "WeightsFill"
 WEIGHT_SET = "WeightSet"
 #: GUI Phase A3 (W1a, Manu 2026-11-03; name and key `PROVISIONAL`): the weight view - the current bone's share on the
 #: edit mesh at rest, in the Soft face-shading sink; while on, the Soft preview shows nothing. View state (session
@@ -460,7 +460,7 @@ RIG_COMMANDS = (
     POSE_MODE,
     POSE_TOGGLE_REST,
     POSE_RESET_BONE,
-    WEIGHTS_FROM_GROUP,
+    WEIGHTS_FILL,
     WEIGHT_SET,
 )
 
@@ -471,7 +471,7 @@ HOLD_COMMANDS = frozenset(
     {
         MOVE, ROTATE, SCALE, EXTRUDE, LOOP_SLIDE, SURFACE_SLIDE, SMOOTH, RELAX, INFLATE, PINCH, INSET, BEVEL, LASSO_ARM,
         LIGHT_DRAG,
-        MORPH_WEIGHT_DRAG, PIVOT_PLACE, WEIGHTS_FROM_GROUP, WEIGHT_SET,
+        MORPH_WEIGHT_DRAG, PIVOT_PLACE, WEIGHTS_FILL, WEIGHT_SET,
     }
 )
 

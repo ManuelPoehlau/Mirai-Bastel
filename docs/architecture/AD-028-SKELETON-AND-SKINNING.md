@@ -469,7 +469,7 @@ the second user of the one controller dependency AD-027 §7.1 M7 introduced (obj
 | `POSE_MODE` | enter / leave pose mode | none |
 | `POSE_TOGGLE_REST`, `POSE_RESET_BONE` | §6 | none (view) |
 | E / W / R in pose mode, the gizmo at the bone head | `BoneGesture` | none (view) |
-| `WEIGHTS_FROM_GROUP` (hold) | `FalloffGesture` | one entry on commit |
+| `WEIGHTS_FILL` (hold; was `WEIGHTS_FROM_GROUP`, AD-041 slice 3) | `FalloffGesture` | one entry on commit |
 | `WEIGHT_SET` (hold) | `WeightGesture` | one entry on commit |
 
 Keys are code defaults checked against `config/keymap.json` and free in every context (also the Morph Lab's, which
@@ -482,7 +482,7 @@ binds `J` — so the toggle does not take `J`); `config/keymap.json` is not touc
   commits (no entry), Esc restores. In pose mode an LMB click picks the nearest bone whose projected head–tail segment
   is within 10 px (CPU, a few bones; `PROVISIONAL`); a press on the gizmo hands over as `GizmoPress` does today.
 - **`FalloffGesture`** (hold, mouse left / right = width in % of the mesh's bounding radius, starting at the Soft radius
-  step's value): seeds = the vertices of the active group's live faces (refused without one: "make a group (Ctrl+G)");
+  step's value): seeds = the vertices of the active group's live faces (refused without one: "make a group (Ctrl+G)") - **since AD-041 slice 3: the selected points** (the corners of selected edges and faces; refused when empty: "select points or faces first");
   the field `f` from the Soft settings' metric and curve (F-10; `symmetric_influence` under symmetry); each step sets
   the current bone to `f(v)` by §3.4 on the field ∪ the vertices that had the bone at the press, **from the values at
   the press** (a pure function of width and start: no drift), inside one open recording (creates the "Skin" layer in it
@@ -605,8 +605,8 @@ texts, colours, layout and the snap radius are `PROVISIONAL`. Code: `controllers
 - **Bone / Skin panel** (`gui/bone_panel.py`, button "Bone" in the toggle bar, closed by default; the state is a pure function
   of `Application` in `gui/bone_model.py`, no document state, AD-030): the chain buttons (child of the current bone / new root,
   end), the snap checkbox, the current bone (list, name, parent without the bone's descendants, head / tail as numbers in world
-  space, roll in degrees, hidden, delete), and the skinning section: weights from the active group with a width in % (the key's
-  `FalloffGesture` stroke with a number: `Application.weights_from_group_value`), set weight with a value on the selection
+  space, roll in degrees, hidden, delete), and the skinning section: fill from the selection with a width in % (the key's
+  `FalloffGesture` stroke with a number: `Application.fill_weights_value`, was `weights_from_group_value`), set weight with a value on the selection
   (Soft field if Soft is on: `set_weight_value`), the weight view. Number fields commit on leaving the field, one Undo step each;
   ImGui reads the displayed "%.4f" back on every entered field, so a difference below half a displayed digit is no input.
   Bones stay in the outliner.

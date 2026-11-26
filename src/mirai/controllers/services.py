@@ -87,6 +87,12 @@ class AppServices:
         return self._app.interaction_owner
 
     @property
+    def weight_stroking(self) -> bool:
+        """A Weight Room stroke runs. Reason for the member (AD-041 §3.4): the room's panel fills from the selection
+        while the room owns the slot, never while one of its strokes runs."""
+        return self._app.weight_stroking
+
+    @property
     def cursor(self):
         return self._app._cursor
 
@@ -159,7 +165,8 @@ class AppServices:
     @property
     def active_region(self):
         """The edit object's active polygroup (`Application.active_region`), None without groups. Reason for the member
-        (AD-028 §8.1, F-11): the weights come from the group ("Weights from group"); the groups stay in `Application`."""
+        (AD-028 §8.1, F-11): the groups stay in `Application`. Since AD-041 §3.4 the weight fill takes the selection, not
+        the group; the group is one way to select (the Weight Room's fill and the Outliner use it)."""
         return self._app.active_region
 
     @property

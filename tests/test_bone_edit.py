@@ -1,5 +1,5 @@
 """Bone tool 01 (2026-11-17): editing a bone after binding, deleting by id and the weight operations as numbers (the panel's
-entries) - `SkeletonController.edit_bone`, `delete_bone(bone)`, `weights_from_group_value`, `set_weight_value`; AD-028 addendum
+entries) - `SkeletonController.edit_bone`, `delete_bone(bone)`, `fill_weights_value`, `set_weight_value`; AD-028 addendum
 2026-11-17.
 
 A bone's name, parent, head, tail and roll change in the rest pose, one Undo step each (`RigCommand`); weights are keyed by
@@ -236,7 +236,7 @@ def test_weights_from_the_group_as_a_number_equals_the_key_with_the_same_width()
     app = d.app
     percent = float(RADIUS_STEPS_PERCENT[app.soft_settings.radius_step]) + 30 / FALLOFF_PX_PER_PERCENT
     depth = len(app.history)
-    assert app.weights_from_group_value(percent), app.status_message
+    assert app.fill_weights_value(percent), app.status_message
     assert len(app.history) == depth + 1 and not app.interaction_owner
     assert weights(app.scene.mesh) == expected
     d.tap(CTRL_Z)
@@ -261,4 +261,4 @@ def test_set_weight_as_a_number_writes_the_selection_and_refuses_like_the_key() 
     assert len(app.history) == depth
     # no group: the same refusal as the key
     app2 = head_driver().app
-    assert not app2.weights_from_group_value(20.0)
+    assert not app2.fill_weights_value(20.0)

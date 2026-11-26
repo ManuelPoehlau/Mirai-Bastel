@@ -320,6 +320,49 @@ def test_the_heatmap_shows_the_current_bone() -> None:
     assert heat.bone == other and heat.shares.max() == 0.0
 
 
+# -- Füllen aus Auswahl, Aufräumen, the edit object, the HUD -----------------------------------------------------
+
+
+def test_fill_from_the_selection_inside_the_room_is_one_undo_step_and_the_room_stays() -> None:
+    """AD-041 §3.4: the room's panel fills from the selection beside the room's session - one History entry, the heatmap
+    follows, the room (the slot's owner) stays open, the face shading of the weight view does not cover the heatmap."""
+    d = room()
+    app = d.app
+    assert app.selection.faces and not share(app)
+    history = len(app.history)
+    assert app.fill_weights_value(15.0), app.status_message
+    assert app.status_message.endswith("committed (Ctrl+Z takes it back)")
+    assert len(app.history) == history + 1 and share(app)
+    assert app.weight_room_open and app.interaction_owner == "weight"
+    assert app.weight_heat.shares.max() > 0.0
+    assert not app.weight_view  # no face shading over the heatmap
+    d.tap(CTRL_Z)
+    assert not share(app) and len(app.history) == history and app.interaction_owner == "weight"
+    d.tap(CTRL_Y)
+    assert share(app)
+    # the room still paints afterwards (Add would change nothing on shares that are 1 already)
+    app.set_weight_brush(operation="subtract")
+    stroke(d, *screen_point(app))
+    assert len(app.history) == history + 2
+
+
+def test_fill_inside_the_room_is_refused_without_a_selection_and_during_a_stroke() -> None:
+    d = room()
+    app = d.app
+    x, y = screen_point(app)
+    stroke(d, x, y, release=False)
+    assert app.weight_stroking
+    history = len(app.history)
+    assert not app.fill_weights_value(15.0) and app.status_message == "Fill from selection: not during a stroke"
+    assert len(app.history) == history
+    d.release()
+    app.selection.clear()
+    history = len(app.history)
+    assert not app.fill_weights_value(15.0)
+    assert app.status_message == "Fill from selection: select points or faces first" and len(app.history) == history
+    assert app.interaction_owner == "weight"
+
+
 # -- Aufräumen, the edit object, the HUD -------------------------------------------------------------------------
 
 
