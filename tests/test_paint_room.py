@@ -480,7 +480,6 @@ def test_an_alpha_tip_paints_its_spacing_and_draws_an_oriented_rectangle(app):
     painted = app.paint.pixels(obj, "Ebene 1")[..., 3]
     assert len(np.unique(painted[painted > 0])) > 20  # the alpha's greys, not a round dab's plateau
     assert app.set_paint_tip(None) and app.paint_brush.dynamics.spacing == dynamics.ROUND_SPACING
-    st = pm.state(app)
-    assert [label for _, label in st.tips] == ["Rund", "Poren", "Ader", "Kratzer", "Fleck", "Punkte", "Quadrat"]
+    assert pm.state(app).tip_label == "Rund"
     with pytest.raises(ValueError):
         app.set_paint_tip("nope")

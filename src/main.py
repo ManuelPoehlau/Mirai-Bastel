@@ -856,6 +856,8 @@ def main() -> None:
     from mirai.lookdev_quality_settings import default_path as lookdev_quality_path
 
     app.set_lookdev_quality_path(lookdev_quality_path())
+    # AD-037 §14 (Manu 2026-11-25): the user's alphas and brush presets live in `~/.mirai_bastel/paint/`, never in scenes
+    app.set_paint_user_dir(Path.home() / ".mirai_bastel" / "paint")
     print_input_listing(app)
     app.gizmo_enabled = True  # this window draws the gizmo (`draw_gizmo`); Labs on Application do not
     files = SceneFiles(app, gl_types=GL_TYPES)

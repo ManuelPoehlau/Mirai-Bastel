@@ -39,6 +39,7 @@ not on a hidden one; `layer_step` pushes a `mirai.paint.layers` step between str
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import secrets
 import time
@@ -68,10 +69,10 @@ from ..interaction.session import (
     Wheel,
 )
 from ..mesh_geometry import mesh_center_and_radius
-from ..paint import alpha as alpha_api
 from ..paint import brush as brush_api
 from ..paint import dynamics as dynamics_api
 from ..paint import layers as layers_api
+from ..paint import library as library_api
 from ..paint import stamp as stamp_api
 from ..paint.store import PaintError, PaintStackCommand, tile_box
 from ..paint.surface import PaintSurface, mirror, pad_width, seam_pad
@@ -207,6 +208,10 @@ class PaintRoomController:
     def __init__(self, services: AppServices) -> None:
         self.services = services
         self.brush = brush_api.BrushSettings()
+        #: Phase 4c (AD-037 §14): the alphas and brush presets (`set_user_dir`: `~/.mirai_bastel/paint/`) and the preset
+        #: the brush came from (view state; the built-in "Runder Pinsel" equals `BrushSettings()`)
+        self.library = library_api.PaintLibrary()
+        self.preset_id: str | None = library_api.DEFAULT_PRESET
         #: size of a new paint stack (P-5)
         self.resolution = DEFAULT_RESOLUTION
         self.session: PaintRoomSession | None = None
@@ -339,17 +344,68 @@ class PaintRoomController:
         return self.brush != before
 
     def set_tip(self, alpha: str | None) -> bool:
-        """The tip: None = round, else a test alpha's id (`mirai.paint.alpha.TEST_ALPHAS`); switching between round and
-        alpha sets that kind's default spacing."""
-        if alpha is not None and alpha not in alpha_api.TEST_ALPHAS:
-            raise ValueError(f"unknown alpha {alpha!r}")
-        tip = brush_api.TipSettings(alpha, self.brush.tip.kreismaske)
+        """The tip: None = round, else a library alpha's id (`mirai.paint.library`; unknown: ValueError); the Kreismaske
+        stays, invert and contrast start neutral; switching between round and alpha sets that kind's default spacing."""
+        tip = self.library.tip(alpha, brush_api.TipSettings(kreismaske=self.brush.tip.kreismaske))
+        if alpha == self.brush.tip.alpha:
+            tip = dataclasses.replace(self.brush.tip, alpha_name=tip.alpha_name, alpha_hash=tip.alpha_hash)
         before = self.brush
         self.brush = before.with_tip(tip)
         if self.brush != before:
             self.services.status(self.brush.status_text())
             self._redraw_cursor()
         return self.brush != before
+
+    # -- the library (Phase 4c, AD-037 §14) -------------------------------------------------------------------------
+
+    def tip_image(self, brush: brush_api.BrushSettings | None = None):
+        """What the brush's tip paints with (`PaintLibrary.image_for`): None = the round tip, or a missing alpha."""
+        brush = self.brush if brush is None else brush
+        return None if brush.tip.round else self.library.image_for(brush.tip)
+
+    def alpha_missing(self) -> bool:
+        """The tip names an alpha the library cannot find: it paints round, the reference stays."""
+        return not self.brush.tip.round and self.library.resolve(self.brush.tip) is None
+
+    @property
+    def preset(self):
+        return self.library.preset(self.preset_id)
+
+    @property
+    def brush_changed(self) -> bool:
+        """The brush differs from its preset (the panel's "geändert"); without a preset: False."""
+        preset = self.preset
+        return preset is not None and not preset.matches(self.brush, self.library.keep_size)
+
+    def select_preset(self, preset_id: str) -> bool:
+        """The brush takes the preset's values (colour, tool, mirror stay, P-25; the radius too with "Größe behalten",
+        P-20). Unknown: refused with a status line."""
+        preset = self.library.preset(preset_id)
+        if preset is None:
+            self.services.status(f"Paint: unbekannter Pinsel {preset_id!r}")
+            return False
+        self.preset_id = preset.id
+        self.brush = preset.apply(self.brush, self.library.keep_size)
+        text = f"Pinsel „{preset.name}“ - " + self.brush.status_text()
+        if self.alpha_missing():
+            text = f"Pinsel „{preset.name}“: Alpha fehlt ({self.brush.tip.label()}) - malt mit der runden Spitze"
+        self.services.status(text)
+        self._redraw_cursor()
+        return True
+
+    def library_call(self, action, done) -> object:
+        """Run a library operation; its `LibraryError` (or a file error) becomes the status line, None returned.
+        `done(result)` gives the status text of success."""
+        try:
+            result = action()
+        except (library_api.LibraryError, OSError) as exc:
+            self.services.status(f"Pinsel-Bibliothek: {exc}")
+            return None
+        self.services.status(done(result))
+        return result
+
+    def set_user_dir(self, path) -> None:
+        self.library = library_api.PaintLibrary(path)
 
     def set_resolution(self, size: int) -> bool:
         if size not in RESOLUTIONS:
@@ -496,7 +552,7 @@ class PaintRoomController:
             return
         radius = self.radius() if self.brush.tool != brush_api.TOOL_PICK else self.radius() * 0.25
         definition = self._mirror_definition()
-        image = alpha_api.resolve(self.brush.tip.alpha) if self.brush.tool != brush_api.TOOL_PICK else None
+        image = self.tip_image() if self.brush.tool != brush_api.TOOL_PICK else None
         dyn = self.brush.dynamics
         if image is None or dyn.spray or dyn.orientation == "random":  # (spray, a random turn: the brush circle)
             segments = {TOOL_PREVIEW_LAYER: surface.circle(hit.point, hit.normal, radius)}
@@ -587,7 +643,7 @@ class PaintRoomController:
         brush = self.brush
         self._stroke = brush_api.PaintStroke(recorder, brush)
         self._surface = surface
-        self._image = alpha_api.resolve(brush.tip.alpha)
+        self._image = self.tip_image(brush)
         self._radius = radius = self.radius()
         self._definition = self._mirror_definition()
         self._view_up = self._camera_up()

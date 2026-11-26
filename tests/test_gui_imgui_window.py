@@ -578,3 +578,72 @@ def test_paint_room_panel_and_a_stroke_through_the_window_upload_the_live_textur
     finally:
         layer.close()
         window.close()
+
+
+def test_paint_brush_picker_thumbnails_import_card_and_release(tmp_path):
+    """AD-037 §14 Phase 4c: the picker popup in the real window - both tabs draw their thumbnails as GL textures (within
+    the per-frame budget), the popup owns the mouse, choosing a preset sets the brush; the import card imports an alpha
+    into the user folder and sets the tip; frames leave the GL state as found; closing the room frees the textures."""
+    import numpy as np
+
+    from gui import brush_picker_model as bm
+    from mirai.iris_import import encode_png
+    from mirai.paint import library as lib
+
+    try:
+        window, app, layer = run.build(argv=["cube"])
+    except Exception as exc:
+        pytest.skip(f"kein GL/Display: {exc}")
+
+    def _tick(n):
+        for _ in range(n):
+            app.update_viewport(0.0)
+            run.render_frame(window)
+
+    try:
+        app.set_paint_user_dir(tmp_path / "paint")
+        mesh = app.scene.mesh
+        for i, fid in enumerate(mesh.all_face_ids()):
+            mesh.set_face_uvs(fid, [(i / 6 + du / 6, dv) for du, dv in ((0, 0), (1, 0), (1, 1), (0, 1))])
+        app.viewport.on_topology_changed()
+        assert app.open_paint_room() is True
+        _tick(3)
+        panel = layer.paint
+        picker = panel.picker
+        assert picker.textures  # the brush row's and the tip's previews
+        picker.open(bm.TAB_BRUSHES)
+        _tick(8)
+        assert picker.is_open and layer.popup_open
+        presets = len(app.paint_library.presets())
+        assert sum(1 for key in picker.textures if key[0] == "preset") >= 3
+        picker.open(bm.TAB_ALPHAS)
+        _tick(8)
+        assert picker.tab == bm.TAB_ALPHAS and sum(1 for key in picker.textures if key[0] == "alpha") >= 6
+        assert all(seconds < 0.15 for seconds, _ in picker.thumb_frames), picker.thumb_frames
+        before = snapshot_gl_state()
+        _tick(1)
+        assert snapshot_gl_state() == before
+        app.select_paint_preset("builtin:poren_spray")
+        assert app.paint_brush.dynamics.spray and presets >= 6
+        # the import card (the file browser's pick is `open_card`)
+        y, x = np.mgrid[0:64, 0:64]
+        grey = (np.clip(1.0 - np.hypot(x - 31.5, y - 31.5) / 32.0, 0.0, 1.0) * 255).astype(np.uint8)
+        rgba = np.dstack([grey, grey, grey, np.full_like(grey, 255)])
+        source = tmp_path / "in" / "scheibe.png"
+        source.parent.mkdir(parents=True)
+        source.write_bytes(encode_png(rgba))
+        assert picker.open_card(source)
+        _tick(3)
+        assert picker.card_rect is not None and picker.card_rect in layer.panel_rects
+        entry = app.import_paint_alpha(picker.draft)
+        picker.close_card()
+        _tick(2)
+        assert entry is not None and app.paint_brush.tip.alpha == entry.id
+        assert entry.path.parent == tmp_path / "paint" / "alphas"
+        assert app.close_paint_room() is True
+        _tick(2)
+        assert not picker.textures and picker.draft is None and not layer.popup_open
+        assert lib.PaintLibrary(tmp_path / "paint").alpha_entry(entry.id) is not None
+    finally:
+        layer.close()
+        window.close()

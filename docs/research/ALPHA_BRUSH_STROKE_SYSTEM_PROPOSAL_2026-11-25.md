@@ -1,6 +1,6 @@
 # Alpha Brush & Stroke System — Architecture and UX Proposal for AD-037 Phase 4 (2026-11-25)
 
-**Status:** **PROPOSAL — research and architecture only; decisions P-18 … P-28 DECIDED (Manu, 2026-11-25: „P-18 bis P-28 zugestimmt“), §10. Slice 4a BUILT 2026-11-25: [AD-037 §12](../architecture/AD-037-TEXTURE-PAINT.md) (the wrap projection of §4.3 built as its fallback; deviations there).** No change to `src/`, `tests/`, the keymap,
+**Status:** **PROPOSAL — research and architecture only; decisions P-18 … P-28 DECIDED (Manu, 2026-11-25: „P-18 bis P-28 zugestimmt“), §10. Slice 4a BUILT 2026-11-25: [AD-037 §12](../architecture/AD-037-TEXTURE-PAINT.md) (the wrap projection of §4.3 built as its fallback; deviations there); 4b BUILT 2026-11-25 (§13); 4c BUILT 2026-11-26 (§14: deviations there - flat dynamics fields in the preset JSON, the source mode an import-only choice, thumbnail files; starter alphas await the contact-sheet verdict).** No change to `src/`, `tests/`, the keymap,
 the scene format or the dependencies. Every value marked `PROVISIONAL` is an agent proposal; decisions P-18 … P-28
 (§10) are decided as recommended (Manu, 2026-11-25).
 **State audited:** `main` @ `e583cee` (AD-037 Phases 1–3 built; P-8 lifted 2026-11-25).
@@ -564,6 +564,7 @@ Praxistest for Manu. Gates are for the **reference PC at 2048²** unless marked;
 - **Gates:** a 3 % spray placement with 20 stamps p95 ≤ 33 ms; a 10 s spray stroke with no frame above 50 ms.
 
 ### 4c — library, presets, picker, import, starter set
+*(Built 2026-11-26: [AD-037 §14](../architecture/AD-037-TEXTURE-PAINT.md), with its deviations.)*
 - **Content:**
   - `library.py`; presets (save, save as, duplicate, rename, delete, categories, favourites);
   - the picker popup and the areas of §7;

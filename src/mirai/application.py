@@ -1944,8 +1944,138 @@ class Application:
         return self._paint_room.set_brush(**changes)
 
     def set_paint_tip(self, alpha: str | None) -> bool:
-        """The brush tip (AD-037 §12): None = round, else a test alpha's id; switching kind sets its default spacing."""
+        """The brush tip (AD-037 §12, §14): None = round, else a library alpha's id (`paint_library`); switching kind sets
+        its default spacing."""
         return self._paint_room.set_tip(alpha)
+
+    # -- the brush library (AD-037 §14 Phase 4c; view state and the user's files - no Undo, nothing in the scene) -----
+
+    @property
+    def paint_library(self):
+        """The alphas and brush presets (`mirai.paint.library.PaintLibrary`) - read by the picker."""
+        return self._paint_room.library
+
+    def set_paint_user_dir(self, path) -> None:
+        """Where the user's alphas and presets live (`src/main.py`: `~/.mirai_bastel/paint/`; nothing is written
+        elsewhere). Without one, saving and importing are refused."""
+        self._paint_room.set_user_dir(path)
+
+    @property
+    def paint_preset(self):
+        """The preset the brush came from (`BrushPreset`), or None."""
+        return self._paint_room.preset
+
+    @property
+    def paint_brush_changed(self) -> bool:
+        """The brush differs from its preset (the panel's "geändert")."""
+        return self._paint_room.brush_changed
+
+    @property
+    def paint_alpha_missing(self) -> bool:
+        """The tip's alpha is not in the library: the brush paints round and keeps the reference."""
+        return self._paint_room.alpha_missing()
+
+    def select_paint_preset(self, preset_id: str) -> bool:
+        """Take a preset's values (colour, tool, mirror stay; the radius too with "Größe behalten")."""
+        return self._paint_room.select_preset(preset_id)
+
+    def reset_paint_preset(self) -> bool:
+        """„Zurücksetzen“: the preset's values again."""
+        room = self._paint_room
+        return room.preset_id is not None and room.select_preset(room.preset_id)
+
+    def save_paint_preset(self) -> bool:
+        """„Speichern“: the user preset takes the brush's values (a built-in refuses: „Speichern als …“)."""
+        room = self._paint_room
+        if room.preset_id is None:
+            self._set_status("Pinsel-Bibliothek: kein Pinsel gewählt - „Speichern als …“")
+            return False
+        saved = room.library_call(lambda: room.library.save_preset(room.preset_id, room.brush),
+                                  lambda p: f"Pinsel „{p.name}“ gespeichert")
+        return saved is not None
+
+    def save_paint_preset_as(self, name: str, category: str = "") -> bool:
+        """„Speichern als …“: a new user preset from the brush; the brush now comes from it."""
+        room = self._paint_room
+        saved = room.library_call(lambda: room.library.save_preset_as(name, category, room.brush),
+                                  lambda p: f"Pinsel „{p.name}“ gespeichert ({p.path})")
+        if saved is not None:
+            room.preset_id = saved.id
+        return saved is not None
+
+    def duplicate_paint_preset(self, preset_id: str) -> bool:
+        room = self._paint_room
+        return room.library_call(lambda: room.library.duplicate_preset(preset_id),
+                                 lambda p: f"Pinsel „{p.name}“ angelegt") is not None
+
+    def rename_paint_preset(self, preset_id: str, name: str) -> bool:
+        room = self._paint_room
+        renamed = room.library_call(lambda: room.library.rename_preset(preset_id, name),
+                                    lambda p: f"Pinsel heißt jetzt „{p.name}“")
+        if renamed is not None and room.preset_id == preset_id:
+            room.preset_id = renamed.id
+        return renamed is not None
+
+    def set_paint_preset_category(self, preset_id: str, category: str) -> bool:
+        room = self._paint_room
+        return room.library_call(lambda: room.library.set_preset_category(preset_id, category),
+                                 lambda p: f"Pinsel „{p.name}“: Kategorie {p.category}") is not None
+
+    def delete_paint_preset(self, preset_id: str) -> bool:
+        """Delete a user preset's file; a brush that came from it keeps its values (no preset any more)."""
+        room = self._paint_room
+        preset = room.library.preset(preset_id)
+        done = room.library_call(lambda: room.library.delete_preset(preset_id) or True,
+                                 lambda _r: f"Pinsel „{preset.name if preset else preset_id}“ gelöscht")
+        if done is not None and room.preset_id == preset_id:
+            room.preset_id = None
+        return done is not None
+
+    def set_paint_favourite(self, item_id: str, on: bool) -> bool:
+        room = self._paint_room
+        return room.library_call(lambda: room.library.set_favourite(item_id, on) or True,
+                                 lambda _r: "Favorit gesetzt" if on else "Favorit entfernt") is not None
+
+    def set_paint_keep_size(self, on: bool) -> bool:
+        """„Größe behalten“ (P-20): switching presets keeps the current radius."""
+        room = self._paint_room
+        return room.library_call(lambda: room.library.set_keep_size(on) or True,
+                                 lambda _r: "Größe behalten: an" if on else "Größe behalten: aus") is not None
+
+    def import_paint_alpha(self, draft, use: bool = True):
+        """„Importieren“ (the import card's `library.ImportDraft`): the normalised alpha into the user folder (the same
+        pixels already there: that alpha); `use` sets it as the tip. Returns the `AlphaEntry`, or None (status)."""
+        room = self._paint_room
+
+        def run():
+            return room.library.import_alpha(draft.preview(), draft.name, draft.category)
+
+        result = room.library_call(run, lambda r: (f"Alpha „{r[0].name}“ importiert" if r[1]
+                                                    else f"Alpha schon vorhanden: „{r[0].name}“ (gleiche Pixel)"))
+        if result is None:
+            return None
+        if use:
+            message = self.status_message
+            room.set_tip(result[0].id)
+            self._set_status(message)  # the import's line, not the brush's
+        return result[0]
+
+    def rename_paint_alpha(self, alpha_id: str, name: str) -> bool:
+        room = self._paint_room
+        return room.library_call(lambda: room.library.rename_alpha(alpha_id, name),
+                                 lambda e: f"Alpha heißt jetzt „{e.name}“") is not None
+
+    def set_paint_alpha_category(self, alpha_id: str, category: str) -> bool:
+        room = self._paint_room
+        return room.library_call(lambda: room.library.set_alpha_category(alpha_id, category),
+                                 lambda e: f"Alpha „{e.name}“: Kategorie {e.category}") is not None
+
+    def delete_paint_alpha(self, alpha_id: str) -> bool:
+        """Delete a user alpha's file (a brush using it paints round and says „Alpha fehlt“)."""
+        room = self._paint_room
+        entry = room.library.alpha_entry(alpha_id)
+        return room.library_call(lambda: room.library.delete_alpha(alpha_id) or True,
+                                 lambda _r: f"Alpha „{entry.name if entry else alpha_id}“ gelöscht") is not None
 
     @property
     def paint_resolution(self) -> int:

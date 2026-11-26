@@ -1,4 +1,4 @@
-# AD-037 — Texture paint: storage, data model, foundations (Phase 1), the Paint Room (Phase 2), layers and UV transfer (Phase 3), alpha tip and stroke queue (Phase 4a), jitter, scatter and spray (Phase 4b)
+# AD-037 — Texture paint: storage, data model, foundations (Phase 1), the Paint Room (Phase 2), layers and UV transfer (Phase 3), alpha tip and stroke queue (Phase 4a), jitter, scatter and spray (Phase 4b), library, presets and picker (Phase 4c)
 
 **Status:** **DECIDED (Manu, 2026-11-18)**: „P-1 ja, P-2 ja, P-3 Go, P-4 ja, P-6 ja“ (the audit's addendum), the additive
 Core change and scene format v14 included. **IMPLEMENTED Phase 1 (2026-11-18, container: TESTED)** as built in §2–§6.
@@ -13,7 +13,11 @@ Room (2026-11-18, container: TESTED; reference PC: P-A … P-G pass on the shown
 every 4a gate met after the same day's optimisation, §12.7; **Praxistest passed, Manu 2026-11-25**: „Praxistest gut
 bestanden. Läuft flüssiger, als ich erwartet habe. Keine Verzerrungen auch über extreme winkel hinweg.“) as built in §12;
 IMPLEMENTED 4b (jitter, scatter, the orientation modes, the spray emitter, counter-based randomness; 2026-11-25,
-container: TESTED, every 4b gate met in the container; reference PC and Praxistest: open) as built in §13** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
+container: TESTED, every 4b gate met in the container; reference PC and Praxistest: open) as built in §13;
+IMPLEMENTED 4c (the library: built-in and user alphas and presets in `~/.mirai_bastel/paint/`, references id → hash →
+name with the round-tip fallback, the picker and the import card, the starter-alpha generator with its contact sheets
+- the starter alphas not adopted until Manu's check; 2026-11-26, container: TESTED, every 4c gate met in the container;
+reference PC, contact-sheet verdict and Praxistest: open) as built in §14** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).
@@ -121,6 +125,26 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
 - Messung im Container: 3 %-Spray mit 20 Stempeln (+ Spiegel) p95 12,8 / 24,1 ms (Grenze 33), 10-s-Spray-Strich kein
   Bild über 50 ms; die einfache Platzierung ohne Zufall kostet genau wie in 4a. **Offen:** Dein Referenz-PC-Lauf und der
   Praxistest (unten).
+
+**Phase 4c – Bibliothek, Pinsel-Presets, Auswahl, Import, Starter-Sammlung (gebaut 2026-11-26, §14):**
+
+- **Pinsel-Zeile** oben im Panel: Vorschau, Name, Kategorie, „* “ für Favoriten, „– geändert“; „Pinsel …“ öffnet die
+  **Auswahl** (Reiter Pinsel / Alphas, Kategorie, Suche, Vorschaubilder, Favoriten zuerst, Rechtsklick: Favorit,
+  Duplizieren, Umbenennen, Kategorie, Löschen). Geändert: Speichern (eigene), Speichern als …, Zurücksetzen.
+- **Spitze:** Vorschaubild (öffnet die Alphas), mit Alpha „Rund“, Invertieren, Kontrast, Kreismaske. Fehlt ein Alpha,
+  malt der Pinsel rund, zeigt „Alpha fehlt: …“ und behält den Verweis (Suche: Kennung → Pixel-Prüfsumme → Name).
+- **Presets** speichern Spitze, Radius (P-20, „Größe behalten“ schaltbar), Deckkraft, Fluss, Härte, Kurve und den Strich –
+  **nie** Farbe, Werkzeug, Spiegeln, Ebene (P-25). Eingebaute sind schreibgeschützt; Deine liegen in
+  `~/.mirai_bastel/paint/` – nirgends sonst wird geschrieben, Szenen speichern nie Alphas. Der Raum startet mit „Runder
+  Pinsel“ (= der bisherige Pinsel); sieben eingebaute Presets auf den 4a-Test-Alphas.
+- **Import:** Bild wählen → Karte mit Live-Vorschau, Quelle **Alphakanal / Luminanz / Luminanz × Alphakanal** (vorgewählt,
+  P-26), Invertieren, Kontrast, Name, Kategorie, Warnung bei hellem Rand; auf 1024 px begrenzt; dasselbe Bild zweimal =
+  ein Alpha.
+- **Starter-Sammlung:** 22 erzeugte Alphas in den sieben Kategorien von P-22 – **noch nicht übernommen**: erst Dein Blick
+  auf die Kontaktbögen `docs/research/alpha_brush_4c_assets_2026-11-26/`, dann je Kategorie
+  `python tools/make_starter_alphas.py --adopt …`.
+- Messung im Container: Import 1024² ≤ 0,11 s (Grenze 0,5), erstes Öffnen mit 50 Vorschaubildern 88 ms (Grenze 150),
+  Alpha-Speicher höchstens 64 MiB. **Offen:** Dein Urteil zu den Kontaktbögen, der Referenz-PC-Lauf, der Praxistest.
 
 ## 1. Decisions (Manu, 2026-11-18)
 
@@ -1102,6 +1126,164 @@ Verbatim in [`RESULTS_PAINT_PHASE4B_CONTAINER_2026-11-25.md`](../../experiments/
   2.7 ms against 1.8 ms plain); on a very large object a 2 r scatter can jump a crease onto the neighbouring sheet within
   2 r (the lip) - allowed by the cap.
 
+## 14. Phase 4c — built (2026-11-26): library, presets, picker, import, starter set
+
+Built on `ccr-f6a3ac5f-ciny94` from `08e208d` (4b built; its reference-PC run and Praxistest are still open). Basis: the
+[proposal](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) §6, §7, §8, §9 "4c", §10 (P-20, P-22, P-23,
+P-25, P-26 decided, Manu 2026-11-25; user assets in `~/.mirai_bastel/paint/`, the procedural starter set). Values marked
+`PROVISIONAL` are agent-set. No key, no keymap entry, no scene-format change, no new dependency; painting itself (the
+stamp, the queue, the projection, the randomness) is unchanged - 4c only decides **which** tip and values a stroke gets.
+
+### 14.1 The library - `mirai.paint.library.PaintLibrary`
+
+- **Where** (§6.1): built in and read-only - the six 4a test alphas (in memory), the starter alphas
+  `assets/paint/alphas/<category>/<stem>.png` (+ `index.json`: names, hashes; only for categories Manu accepted, §14.5)
+  and the presets `assets/paint/brushes/*.json`; the user's in `~/.mirai_bastel/paint/` (`src/main.py`:
+  `Application.set_paint_user_dir`): `alphas/<slug>_<hash12>.png` (an 8-bit **grey** PNG, its 64² thumbnail in
+  `alphas/thumbs/<hash>.png`), `brushes/<slug>.json`, `library.json` (favourites, the user alphas' names and categories,
+  "Größe behalten"). Nothing is written anywhere else (pinned with a fake home: only `paint/` appears, the repo's
+  `assets/` and the source image are untouched). Without a user folder (tests, tools) saving and importing are refused
+  with a reason, favourites live in memory. A PNG dropped into `alphas/` is picked up by the scan ("Unsortiert", the
+  name from the file name, normalised with the suggested source mode - decoded once per file and session).
+- **Ids and references** (§6.2): `test/<stem>`, `builtin:<category>/<stem>`, `user:<hash12>` (`alpha.pixel_hash`:
+  SHA-256 over the normalised pixels and their shape). `TipSettings` gained `alpha_name` / `alpha_hash` (the brush keeps
+  `{id, name, hash}`) and `invert` / `contrast`. `resolve`: **id → hash → name → missing**. **Missing:** the brush paints
+  with the round tip - pixel for pixel what the round tip with the same values paints (pinned through the room) - the
+  panel says "Alpha fehlt: <name> (malt rund)", the status line too when a preset is chosen, and the reference stays
+  (saving keeps it; pinned).
+- **Presets** (§6.4): `"format": "mirai.paint.brush/1"`, one JSON per preset, the `eye_presets` rules (a broken, foreign,
+  out-of-range, unknown-field or name-taken file is skipped with its reason in `problems`, shown in the picker; names
+  slugged; atomic saves). A preset holds the tip (alpha reference, invert, contrast, Kreismaske), the radius (P-20, as
+  `radius_percent`, read back to the nearest step), opacity, flow, hardness, curve and the stroke dynamics - **never
+  colour, tool, mirror or layer** (P-25; pinned: the file has no such key, applying keeps the room's). Operations:
+  choose · "geändert" (`BrushPreset.matches`) · Speichern (user presets) · Speichern als · Duplizieren ("… Kopie",
+  "… Kopie 2") · Umbenennen (the file and the favourite follow) · Kategorie · Löschen (user only) · Favorit. Built-ins are
+  read-only (save as / duplicate only; pinned). **"Größe behalten"** (P-20) keeps the radius when switching and makes the
+  marker ignore it.
+- **Deviations from §6.4's example:** the dynamics are stored as the flat `StrokeDynamics` fields (exact, one name per
+  value); the import's **source mode is not part of a tip** - a stored alpha is already grey, so the mode is an import
+  choice (§6.3); **invert and contrast are** (applied when the alpha is read: `alpha.contrast_lut`, a symmetric S-curve
+  around 0.5, `k = 4^contrast`, black stays black - a derived image, cached).
+- **Cache** (§6.6): an LRU of decoded alphas (pixels + mips, the shaped variants too) capped at `CACHE_BYTES` = 64 MiB.
+  Thumbnails do not go through it.
+- **The room** (`PaintRoomController`): `library`, `preset_id` (view state; the room starts on the built-in "Runder
+  Pinsel", which equals `BrushSettings()` - pinned), `tip_image()` (what a stroke and the cursor paint with),
+  `alpha_missing()`, `select_preset` (status line, "Alpha fehlt" when so). `Application`: `paint_library`,
+  `paint_preset`, `paint_brush_changed`, `paint_alpha_missing`, `select_paint_preset`, `reset_paint_preset`,
+  `save_paint_preset(_as)`, `duplicate / rename / delete_paint_preset`, `set_paint_preset_category`,
+  `set_paint_favourite`, `set_paint_keep_size`, `import_paint_alpha`, `rename / delete_paint_alpha`,
+  `set_paint_alpha_category`; `set_paint_tip` takes any library id. Library errors become the status line.
+
+### 14.2 The import (§6.3, P-26) - `library.open_import`, `ImportDraft`, `import_pixels`
+
+PNG through the own decoder, anything else through pyglet's (`read_image_rgba`). The image is box-reduced once to
+`IMPORT_MAX` = 1024 px (P-22; luminance and the alpha channel are linear, so reducing first equals reducing the grey up
+to rounding). **Source modes** Alphakanal / Luminanz (Rec.709 of the display values, P-16) / Luminanz × Alphakanal,
+**preselected** as §6.3 says (no alpha channel → Luminanz; uniform RGB with a varying alpha → Alphakanal; both varying →
+both; a bright border → Invertieren suggested), then Invertieren and Kontrast. Refused: smaller than 8 px, or nothing
+painted (the reason in the card). **Border warning** when the outermost ring's mean is above 3 % (a square edge). The
+same pixels imported twice are one alpha (also against a built-in) - the status says "schon vorhanden".
+
+### 14.3 Picker and panel (§7, P-23) - `gui.brush_picker_model` (headless), `gui.brush_picker`, `gui.paint_panel`
+
+- **Area 1, the brush row:** the brush's 32² preview (opens the picker), its name, category, `*` for a favourite (the
+  panel font has no star), "- geändert"; "Pinsel ..." opens the picker; while changed: Speichern (a user preset),
+  Speichern als ... (an inline name field), Zurücksetzen. Without a preset ("Eigener Pinsel", after deleting it): Speichern
+  als.
+- **Area 2, the tip:** "Spitze:" with the tip's thumbnail (opens the Alphas tab) and its name or "Alpha fehlt: ...";
+  with an alpha "Rund" (back to the round tip), Invertieren, Kreismaske, Kontrast. Hardness and curve show for the round
+  tip, with the Kreismaske, and for a missing alpha (it paints round). The 4a test-alpha combo is gone (the picker
+  replaces it).
+- **The picker popup** (an ImGui popup, Esc / a click outside closes it; it owns the mouse like a menu,
+  `ImguiLayer.popup_open`): tabs **Pinsel** / **Alphas**, a category combo (Alle, Favoriten, the categories present), a
+  search over name and category, "Größe behalten" (Pinsel) or "Alpha importieren ..." (Alphas: the file browser, purpose
+  `image`); a grid of 64² thumbnails, favourites first, the chosen one framed, a tooltip (name, category, built in /
+  own, favourite, missing); right-click: Favorit, Duplizieren (presets), Umbenennen, Kategorie, Löschen (own only;
+  disabled and marked "nur lesen" for built-ins). Choosing a preset sets the brush and closes the picker; choosing an
+  alpha sets the tip (the brush becomes "geändert").
+- **The import card** (its own window - the file browser closes the popup; its rectangle joins the panel rectangles):
+  the live preview, the three source modes, Invertieren, Kontrast, name, category, the border warning, Importieren
+  (writes it and sets it as the tip) / Abbrechen.
+- **Thumbnails** (§6.6): pixels from `PaintLibrary.thumbnail` (a user alpha's 64² file; built-ins made from their image
+  once per session, kept in memory), GL textures made within `THUMB_BUDGET_S` = 12 ms per frame (a name button until
+  then), kept while the room is open and freed when it closes (`PaintPanel.release`, called by the layer once the room is
+  shut; pinned in the real window). **Change found by measuring:** the first build read the full alpha per thumbnail -
+  ~57 ms for a 1024² noise alpha [C], 2.5 s for 50 -, hence the thumbnail files.
+- Layout `PROVISIONAL` (P-23). Screenshots in the container's real window were checked (panel, both tabs).
+
+### 14.4 Built-in presets (`assets/paint/brushes/`, `PROVISIONAL` values)
+
+Runder Pinsel (= `BrushSettings()`), Poren-Spray, Poren einzeln, Adern folgen, Sommersprossen, Schmutz streuen, Kratzer
+- seven, on the six **4a test alphas** (proposal §6.5 named eight, some on starter alphas - "Feine Falten", "Körnung"
+need the starter set; they follow once Manu has accepted it, §14.5).
+
+### 14.5 The starter set - `tools/make_starter_alphas.py`, contact sheet first (P-22, review point 6)
+
+- A deterministic generator (fixed seeds, NumPy, our own work; every alpha with a black border, pinned): 22 alphas in
+  P-22's seven categories - **Organisch** (Poren fein / grob / gruppiert, Falten kurz, Krähenfüße), **Adern** (verzweigt,
+  Kapillaren), **Sprenkel** (Sommersprossen, Punkte gestreut, Sprenkel weich), **Schmutz** (Fleck, Schmutz, Ablagerung),
+  **Schaden** (Kratzer, Narbe, Risse), **Oberfläche** (Körnung, Rauschen unregelmäßig), **Formen** (Kreis, Quadrat, Ring
+  weich, Linie). Methods as §6.5 (jittered soft dots, branching tapered walks, thresholded fBm, Voronoi edges with width
+  noise, noisy polylines, band-limited noise).
+- **Contact sheets** (one per category + an overview):
+  [`docs/research/alpha_brush_4c_assets_2026-11-26/`](../research/alpha_brush_4c_assets_2026-11-26/) - each alpha, a
+  stamped strip (Einzeln, 100 % spacing) and a spray strip (12 stamps, random turn, size and flow jitter: the 4b
+  randomness) across a neutral shaded sphere (the tangent-plane stamp with the depth window). Labels need Pillow
+  (optional; it is not a dependency, `contact_sheet.md` names the rows).
+- **Not adopted yet:** as decided ("starter alphas adopted only after the contact-sheet check"), no starter PNG is
+  committed. `python tools/make_starter_alphas.py --adopt <categories>|all` writes the accepted categories into
+  `assets/paint/alphas/` with `index.json` and `assets/paint/LICENSES.md` (generator named per file); the library picks
+  them up as `builtin:<category>/<stem>` (pinned in a temporary folder).
+
+### 14.6 Tests [C]
+
+`tests/test_paint_library.py` (21: built-in presets load clean and resolve; the default preset is today's brush;
+presets carry no colour / tool / mirror; round trip and "Größe behalten"; broken / foreign / out-of-range / unknown-field
+/ name-taken files skipped with their reasons; built-ins read-only; save, rename, category, delete, favourites persist;
+no user folder refuses; the missing alpha keeps its reference through a save; id → hash → name; the same image twice is
+one alpha; **user assets in the user folder only**; source modes and the suggestion; refusals, the 1024 clamp and the
+border warning; a 1024² import < 0.5 s; a dropped PNG; the contrast table; shaped alphas; the cache cap),
+`tests/test_paint_presets_room.py` (8: the room starts on "Runder Pinsel"; choosing keeps colour, tool, mirror; keep
+size; save as / save / built-in refusal / rename / delete; the import sets the tip and finds a second import; **a
+missing alpha paints exactly as the round tip** and keeps its reference; a preset with a deleted alpha says so; contrast
+changes the pixels), `tests/test_brush_picker_model.py` (8: favourites first, filter, search; the brush row's marker and
+saving; "Alpha fehlt"; thumbnails; **50 thumbnails for the first open < 150 ms** without filling the alpha cache;
+thumbnail files follow their alphas; the import card's model; a headless draw of the panel and the picker),
+`tests/test_paint_starter_alphas.py` (2: deterministic, black borders, P-22's categories; `--adopt` → the library),
+`tests/test_gui_imgui_window.py::test_paint_brush_picker_thumbnails_import_card_and_release` (the real window: both
+tabs' thumbnails as GL textures, every thumbnail frame < 150 ms, the popup owns the mouse, GL state as found, the import
+card's rectangle, an import into the user folder, the textures freed when the room closes). The 4a / 4b tests are
+unchanged and green (one assertion on the removed 4a tip combo now reads the panel model's tip label).
+Whole suite: see the commit's run below (§14.8).
+
+### 14.7 Measurements [C] (container: Xeon, Python 3.13, NumPy 2.2.6, llvmpipe; `probe_paint_library.py`)
+
+Verbatim in [`RESULTS_PAINT_PHASE4C_CONTAINER_2026-11-26.md`](../../experiments/drag_cost/RESULTS_PAINT_PHASE4C_CONTAINER_2026-11-26.md).
+
+| Row | container | gate (reference PC) |
+|---|---|---|
+| **P-L** 1024² import (open + suggestion, preview, files written): smooth / noise / shape on transparency, max | 92 / 106 / 107 ms | ≤ 500 ms |
+| P-L 4096² (clamped to 1024; information) | 0.61–0.75 s | — |
+| **P-M** picker first open, 50 thumbnails: thumbnails + GL textures (llvmpipe) | 23 + 65 = 88 ms | ≤ 150 ms |
+| P-M afterwards (every texture cached) | 0.15 ms per frame | no per-frame cost |
+| **P-N** alpha cache, 60 imported 1024² alphas read | 64.0 MiB peak (48 held) | ≤ 64 MiB |
+
+- **Change found by measuring (P-L):** the first build wrote user alphas as RGBA PNGs at zlib level 6: a 1024² noise
+  alpha took 298 / 322 ms (p50 / max) - with the reference PC's ×2–3 [H] about the gate. They are 8-bit grey PNGs at
+  level 3 now (`library.encode_grey_png`; read back by `decode_png`): 62 ms of writing.
+- Expectation for the reference PC [H]: P-L ≤ ~0.3 s, P-M ~0.2 s of CPU for 50 at once **but** spread over frames by
+  the 12 ms budget, so no frame of the first open should exceed ~30 ms; the run decides.
+
+### 14.8 Not in 4c / open
+
+- **Manu:** the contact sheets (§14.5) - which categories to adopt (then `--adopt`, the presets "Feine Falten",
+  "Körnung" on them); the Praxistest below; the reference-PC run of `probe_paint_library.py` (and 4b's, §13.8).
+- 4d (each its own decision): colour jitter (§5.8), the preset export bundle, CC0 alphas with a recorded licence, the
+  wrap for spray clusters, lazy mouse.
+- The room's last used brush is not remembered across sessions (view state, §6.1 "may"); the room starts on "Runder
+  Pinsel".
+- No key for the picker or brush cycling (a proposal for Manu's "Taste passt" after the practical test).
+
 ## Praxistest für Manu (Deutsch, ca. 5 Minuten, optional)
 
 Phase 1 hat nur einen sichtbaren Teil, die UV-Prüfung:
@@ -1222,3 +1404,35 @@ Zufall, Streuung und Spray malt alles **bitgleich wie 4a**.
 
 Rückmeldung am liebsten mit einem Satz je Punkt; Werte, Bereiche und der Panel-Aufbau sind vorläufig (bis zum 4c-Picker).
 Keine neue Taste.
+
+## Praxistest Pinsel-Bibliothek (Phase 4c) für Manu (Deutsch, ca. 15 Minuten)
+
+Neu oben im Panel: die **Pinsel-Zeile** (Vorschau, Name, „Pinsel …“) und darunter die **Spitze** mit Vorschaubild. Die
+4a-Auswahlliste „Spitze“ ist durch die Auswahl ersetzt. Keine neue Taste.
+
+0. **Kontaktbögen** (vorher, am Bildschirm): `docs/research/alpha_brush_4c_assets_2026-11-26/contact_sheet_*.png` –
+   je Kategorie: übernehmen, nachbessern (was?) oder weglassen? Erst danach kommen Starter-Alphas ins Repo.
+1. Gollum-Kopf, SPACE → „Paint Room öffnen“. Die Pinsel-Zeile zeigt **„Runder Pinsel (Grundformen)“** – malt er wie
+   bisher?
+2. **„Pinsel …“**: Reiter **Pinsel** – sieben Vorschaubilder. **„Poren-Spray“** wählen und über die Wange malen. Farbe,
+   Werkzeug und Spiegeln bleiben, wie sie waren? Deckkraft ändern → „– geändert“ erscheint; **Zurücksetzen** holt die
+   Werte zurück.
+3. **Speichern als …**: Namen eintippen, Enter. Danach etwas ändern → **Speichern** überschreibt Deinen Pinsel. Ein
+   eingebauter lässt sich nicht überschreiben (nur „Speichern als“) – passt das so?
+4. **Größe behalten** (in der Auswahl) an, Radius 6 %, dann andere Pinsel wählen: bleibt 6 %? Aus: jeder Pinsel bringt
+   seine Größe mit (P-20).
+5. Reiter **Alphas**: ein Alpha anklicken setzt die Spitze des aktuellen Pinsels (der wird „geändert“). Rechtsklick auf
+   einen Pinsel / ein Alpha: **Favorit** – steht er danach vorne, mit „* “? Suche („por“) und Kategorie-Filter.
+6. **Alpha importieren …** (Reiter Alphas): ein eigenes Graustufen- oder freigestelltes PNG wählen. Stimmt die
+   vorgeschlagene **Quelle** (Alphakanal / Luminanz / beides)? Invertieren / Kontrast in der Vorschau; ein Bild mit
+   hellem Rand zeigt „Rand nicht schwarz“. **Importieren** → es ist sofort die Spitze. Dasselbe Bild nochmal importieren:
+   „schon vorhanden“.
+7. **Spitze**-Zeile: Invertieren und Kontrast am Fleck- oder Poren-Alpha ausprobieren – sinnvoll, oder überflüssig?
+8. **Fehlendes Alpha:** einen eigenen Pinsel mit Deinem importierten Alpha speichern, dann das Alpha löschen (Rechtsklick
+   → Löschen) und den Pinsel wählen: „Alpha fehlt: …“, er malt rund, nichts stürzt ab.
+9. Ordner `~/.mirai_bastel/paint/` (Windows: `C:\Users\<Du>\.mirai_bastel\paint\`) ansehen: `alphas/`,
+   `brushes/`, `library.json` – sonst nichts Neues, auch nicht neben der Szene.
+10. **Referenz-PC:** `python experiments/drag_cost/probe_paint_library.py` (Import, erstes Öffnen, Alpha-Speicher) –
+    die Ausgabe bitte ins Repo oder in den Chat.
+
+Rückmeldung am liebsten mit einem Satz je Punkt; Aufbau und Werte sind vorläufig (P-23).

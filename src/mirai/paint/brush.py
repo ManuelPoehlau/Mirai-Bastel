@@ -79,16 +79,48 @@ CURVE_ARRAYS = {"smooth": _smooth, "sphere": _sphere, "root": _root, "sharp": _s
 CURVE_LABELS = {"smooth": "Weich", "sphere": "Kugel", "root": "Rund", "sharp": "Spitz", "linear": "Linear"}
 
 
+#: The tip's contrast range (Phase 4c, AD-037 §14): a symmetric S-curve around 0.5 (`alpha.contrast_lut`).
+CONTRAST_RANGE = (-1.0, 1.0)
+
+
 @dataclass(frozen=True)
 class TipSettings:
-    """The brush tip (module docstring): `alpha` None = the round tip."""
+    """The brush tip (module docstring): `alpha` None = the round tip.
+
+    Phase 4c (AD-037 §14): `alpha_name` / `alpha_hash` keep the alpha's reference with the brush (a preset's
+    `{"id", "name", "hash"}`; the library resolves id -> hash -> name, a missing alpha paints round and the reference
+    stays); `invert` and `contrast` shape the alpha's grey values when it is read (a derived image, cached)."""
 
     alpha: str | None = None
     kreismaske: bool = False
+    invert: bool = False
+    contrast: float = 0.0
+    alpha_name: str | None = None
+    alpha_hash: str | None = None
+
+    def __post_init__(self) -> None:
+        lo, hi = CONTRAST_RANGE
+        if not (isinstance(self.contrast, (int, float)) and math.isfinite(self.contrast) and lo <= self.contrast <= hi):
+            raise ValueError(f"contrast must lie in [{lo}, {hi}], got {self.contrast!r}")
 
     @property
     def round(self) -> bool:
         return self.alpha is None
+
+    @property
+    def shaped(self) -> bool:
+        """The alpha's grey values are changed when read (invert or contrast)."""
+        return self.invert or self.contrast != 0.0
+
+    def label(self) -> str:
+        """The tip's name for status lines and the panel."""
+        if self.alpha is None:
+            return "Rund"
+        if self.alpha_name:
+            return self.alpha_name
+        from .alpha import alpha_name
+
+        return alpha_name(self.alpha)
 
 
 @dataclass(frozen=True)
@@ -166,9 +198,7 @@ class BrushSettings:
         if self.tip.round or self.tip.kreismaske:
             text += f", Härte {self.hardness * 100:.0f} %, Kurve {CURVE_LABELS[self.curve]}"
         if not self.tip.round:
-            from .alpha import alpha_name
-
-            text += f", Spitze {alpha_name(self.tip.alpha)}"
+            text += f", Spitze {self.tip.label()}"
         text += f", Abstand {self.dynamics.spacing * 100:.0f} %"
         dyn = self.dynamics
         if dyn.spray:

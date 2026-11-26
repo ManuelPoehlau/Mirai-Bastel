@@ -1,7 +1,10 @@
 """The Paint Room panel (AD-037 §8 Phase 2): tool, colour, radius, opacity, flow, hardness, curve, mirror, resolution;
-Phase 3: the layers; Phase 4a (§12): the tip (round or a test alpha) and the Kreismaske; Phase 4b (§13): the collapsed
-sections "Strich" (spacing, orientation, angle, emitter), "Streuung" (jitter, scatter) and "Spray" (only with spray),
-each with a one-line summary while closed (proposal §7 area 4).
+Phase 3: the layers; Phase 4a (§12): the tip and the Kreismaske; Phase 4b (§13): the collapsed sections "Strich"
+(spacing, orientation, angle, emitter), "Streuung" (jitter, scatter) and "Spray" (only with spray), each with a one-line
+summary while closed (proposal §7 area 4). Phase 4c (§14, proposal §7 areas 1 and 2): the **brush row** (the brush's
+preview, name, category, favourite, "geändert"; "Pinsel ..." opens the picker, `gui.brush_picker`; Speichern /
+Speichern als / Zurücksetzen while changed) and the **tip area** (the alpha's thumbnail opens the picker's Alphas tab;
+"Alpha fehlt" when the library cannot find it; Invertieren, Kontrast, Kreismaske with an alpha).
 
 Drawn while `app.paint_room_open` (like the Eye Lab window); the logic is `gui.paint_model` (headless). Every brush value
 goes through `Application.set_paint_brush` (view state: not saved, no Undo step); every layer change is one Undo step
@@ -14,7 +17,9 @@ import dataclasses
 
 from mirai.paint.brush import RADIUS_STEPS_PERCENT
 
+from . import brush_picker_model as bm
 from . import paint_model as pm
+from .brush_picker import BrushPicker
 
 
 class PaintPanel:
@@ -26,6 +31,25 @@ class PaintPanel:
         self.held_opacity: tuple[str, float] | None = None
         #: which brush sections are open (closed by default; the last frame's state picks the header's label)
         self.open_sections: dict[str, bool] = {}
+        #: Phase 4c: the picker popup and the import card; the "Speichern als" name while it is typed (None: closed)
+        self.picker = BrushPicker(imgui, app, layer)
+        self.save_as_buf: str | None = None
+
+    @property
+    def popup_open(self) -> bool:
+        """The picker popup is open (it owns the whole mouse, like the menus)."""
+        return self.picker.is_open
+
+    @property
+    def extra_rects(self) -> list[tuple]:
+        """Windows the panel draws besides its own (the import card)."""
+        return [] if self.picker.card_rect is None else [self.picker.card_rect]
+
+    def release(self) -> None:
+        """The room closed: the picker's textures are freed."""
+        if self.picker.textures or self.picker.draft is not None or self.picker._preview is not None:
+            self.picker.release()
+        self.save_as_buf = None
 
     def draw(self) -> None:
         imgui, app = self.imgui, self.app
@@ -40,6 +64,8 @@ class PaintPanel:
         changed, colour = imgui.color_edit3("Farbe", list(brush.colour))
         if changed:
             app.set_paint_brush(colour=tuple(float(c) for c in colour))
+        imgui.separator()
+        self._brush_row()
         self._tip(st)
         imgui.set_next_item_width(170.0)
         changed, step = imgui.slider_int("Radius", brush.radius_step, 0, len(RADIUS_STEPS_PERCENT) - 1,
@@ -48,7 +74,7 @@ class PaintPanel:
             app.set_paint_brush(radius_step=step)
         if imgui.is_item_hovered():
             imgui.set_tooltip("Prozent des Objektradius (Welt, P-7); Shift+Rad im Viewport")
-        round_falloff = brush.tip.round or brush.tip.kreismaske
+        round_falloff = brush.tip.round or brush.tip.kreismaske or app.paint_alpha_missing
         for field, label, hint in (("opacity", "Deckkraft", "Alt+Rad im Viewport; baut sich in einem Strich nicht auf"),
                                    ("flow", "Fluss", "pro Stempel; baut sich in einem Strich auf"),
                                    ("hardness", "Härte", "der volle Kern des Pinsels")):
@@ -91,27 +117,96 @@ class PaintPanel:
         imgui.separator()
         if imgui.button("Schließen"):
             app.close_paint_room()
+        self.picker.draw()
+
+    def _thumb(self, key, make, size: float, label: str) -> bool:
+        """A small picture button (the picker's texture cache), or a text button without GL; True = clicked."""
+        imgui = self.imgui
+        texture = self.picker.texture(key, make, budgeted=False, slot="current")
+        if texture is None:
+            return imgui.button(label)
+        return imgui.image_button(label, imgui.ImTextureRef(texture.id), imgui.ImVec2(size, size))
+
+    def _brush_row(self) -> None:
+        """Area 1 (proposal §7): the brush's preview, name, category, favourite and "geändert"; the picker; saving."""
+        imgui, app = self.imgui, self.app
+        row = bm.brush_row(app)
+        if self._thumb(bm.current_key(app), lambda: bm.current_thumbnail(app), bm.PREVIEW, "Pinsel##preview"):
+            self.picker.open(bm.TAB_BRUSHES)
+        imgui.same_line()
+        imgui.text(bm.brush_label(row))
+        imgui.same_line()
+        if imgui.button("Pinsel ..."):
+            self.picker.open(bm.TAB_BRUSHES)
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Pinsel und Alphas wählen, importieren, verwalten")
+        if row.changed or row.preset_id is None:
+            if row.can_save:
+                if imgui.small_button("Speichern"):
+                    app.save_paint_preset()
+                imgui.same_line()
+            imgui.begin_disabled(not app.paint_library.writable)
+            if imgui.small_button("Speichern als ..."):
+                self.save_as_buf = app.paint_library.free_name(row.name if row.preset_id else "Mein Pinsel")
+            imgui.end_disabled()
+            if row.changed:
+                imgui.same_line()
+                if imgui.small_button("Zurücksetzen"):
+                    app.reset_paint_preset()
+                if imgui.is_item_hovered():
+                    imgui.set_tooltip("Die Werte des Pinsels wieder herstellen")
+        if self.save_as_buf is not None:
+            imgui.set_next_item_width(170.0)
+            entered, self.save_as_buf = imgui.input_text("Name##save_as", self.save_as_buf,
+                                                         imgui.InputTextFlags_.enter_returns_true)
+            imgui.same_line()
+            ok = imgui.small_button("OK##save_as")
+            imgui.same_line()
+            if imgui.small_button("Abbrechen##save_as"):
+                self.save_as_buf = None
+            elif (entered or ok) and app.save_paint_preset_as(self.save_as_buf, row.category):
+                self.save_as_buf = None
 
     def _tip(self, st: pm.PaintPanelState) -> None:
-        """The tip chooser (4a: a plain combo over the test alphas) and, with an alpha, its angle and Kreismaske."""
+        """Area 2 (proposal §7): the tip's alpha (its thumbnail opens the picker's Alphas tab) or "Rund"; with an alpha
+        Invertieren, Kontrast and the Kreismaske."""
         imgui, app = self.imgui, self.app
         brush = st.brush
-        imgui.set_next_item_width(170.0)
-        if imgui.begin_combo("Spitze", st.tip_label):
-            for alpha, label in st.tips:
-                if imgui.selectable(label, alpha == brush.tip.alpha)[0] and alpha != brush.tip.alpha:
-                    app.set_paint_tip(alpha)
-            imgui.end_combo()
+        tip = bm.tip_row(app)
+        imgui.text("Spitze:")
+        imgui.same_line()
+        if self._thumb(bm.current_key(app), lambda: bm.current_thumbnail(app), bm.PREVIEW, "Alpha##tip"):
+            self.picker.open(bm.TAB_ALPHAS)
         if imgui.is_item_hovered():
-            imgui.set_tooltip("Rund = der weiche Pinsel; die anderen sind Test-Alphas (Phase 4a): Strich folgen")
+            imgui.set_tooltip("Alpha wählen (Bibliothek)")
+        imgui.same_line()
+        if tip.missing:
+            imgui.text_colored(imgui.ImVec4(0.95, 0.55, 0.45, 1.0), tip.text)
+        else:
+            imgui.text(tip.text)
         if brush.tip.round:
             return
+        imgui.same_line()
+        if imgui.small_button("Rund"):
+            app.set_paint_tip(None)
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Zurück zur runden Spitze")
+        changed, on = imgui.checkbox("Invertieren", brush.tip.invert)
+        if changed:
+            app.set_paint_brush(tip=dataclasses.replace(brush.tip, invert=on))
+        imgui.same_line()
         changed, on = imgui.checkbox("Kreismaske", brush.tip.kreismaske)
         if changed:
             app.set_paint_brush(tip=dataclasses.replace(brush.tip, kreismaske=on))
         if imgui.is_item_hovered():
             imgui.set_tooltip("Das Alpha zusätzlich mit der runden Abnahme (Härte, Kurve) maskieren - aus: das Alpha "
                               "bestimmt seine Form selbst")
+        imgui.set_next_item_width(170.0)
+        changed, value = imgui.slider_float("Kontrast", float(brush.tip.contrast), -1.0, 1.0, "%.2f")
+        if changed:
+            app.set_paint_brush(tip=dataclasses.replace(brush.tip, contrast=float(min(max(value, -1.0), 1.0))))
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("S-Kurve um Mittelgrau: + härter, - weicher (Schwarz und Weiß bleiben)")
 
     # -- the brush sections (Phase 4b) -----------------------------------------------------------------------------
 

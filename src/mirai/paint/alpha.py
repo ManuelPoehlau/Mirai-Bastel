@@ -314,3 +314,48 @@ def alpha_name(alpha_id: str | None) -> str:
         return "Rund"
     entry = TEST_ALPHAS.get(alpha_id)
     return entry[0] if entry is not None else alpha_id
+
+
+# -- Phase 4c (AD-037 §14): shaping, hashes ------------------------------------------------------------------------
+
+
+def contrast_lut(invert: bool, contrast: float) -> np.ndarray:
+    """A 256-entry uint8 table: `invert` (white <-> black), then `contrast` in [-1, 1] as a symmetric S-curve around 0.5
+    (proposal §6.3 "a gamma around 0.5": each half `0.5 * (2 v) ** k`, `k = 4 ** contrast`; 0 = unchanged, > 0 harder,
+    < 0 softer). Black stays black and white stays white, so a black border stays black."""
+    v = np.arange(256, dtype=np.float64) / 255.0
+    if invert:
+        v = 1.0 - v
+    if contrast:
+        k = 4.0 ** float(contrast)
+        low = v < 0.5
+        v = np.where(low, 0.5 * (2.0 * v) ** k, 1.0 - 0.5 * (2.0 * (1.0 - v)) ** k)
+    return np.clip(np.rint(v * 255.0), 0, 255).astype(np.uint8)
+
+
+def shaped(image: AlphaImage, invert: bool, contrast: float) -> AlphaImage:
+    """`image` with its grey values through `contrast_lut` (a new image with its own mips and reach)."""
+    if not invert and not contrast:
+        return image
+    return AlphaImage.from_pixels(image.id, image.name, contrast_lut(invert, contrast)[image.pixels])
+
+
+def pixel_hash(pixels: np.ndarray) -> str:
+    """The 12-hex content id of a normalised alpha (proposal §6.2): SHA-256 over its shape and its uint8 pixels, so the
+    same image imported twice - under any file name, on any machine - is the same alpha."""
+    import hashlib
+
+    pixels = np.ascontiguousarray(pixels, dtype=np.uint8)
+    header = f"{pixels.shape[0]}x{pixels.shape[1]}:".encode()
+    return hashlib.sha256(header + pixels.tobytes()).hexdigest()[:12]
+
+
+def fitted(image: AlphaImage, size: int) -> np.ndarray:
+    """`image` fitted into a `size`² square with its aspect (its long side fills it), from the mip level closest to the
+    size, read bilinearly: (size, size) float32 coverage in [0, 1] (thumbnails, AD-037 §14)."""
+    c = (np.arange(size, dtype=np.float32) + 0.5) / size * 2.0 - 1.0
+    y, x = np.meshgrid(c, c, indexing="ij")
+    hw, hh = image.half_extents
+    u = (x / hw + 1.0) * 0.5
+    v = (y / hh + 1.0) * 0.5
+    return image.sample(image.level_for(float(size)), u.ravel(), v.ravel()).reshape(size, size)

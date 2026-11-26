@@ -470,8 +470,11 @@ class ImguiLayer:
             pos, size = imgui.get_window_pos(), imgui.get_window_size()
             imgui.end()
             rects.append((pos.x, pos.y, size.x, size.y))
+            rects.extend(self.paint.extra_rects)  # AD-037 §14: the import card
             if keep is False:
                 self.app.close_paint_room()
+        elif self.paint is not None:
+            self.paint.release()  # AD-037 §14: the picker's thumbnails live while the room is open
         if self.lookdev is not None and self.app.lookdev_open:
             # links oben (wie der Paint Room): die Mitte gehört dem Kopf, der beurteilt wird
             imgui.set_next_window_pos(imgui.ImVec2(8.0, self.PANEL_POS[1]), imgui.Cond_.first_use_ever)
@@ -486,7 +489,9 @@ class ImguiLayer:
         self.panel_rects = rects
         if self.menus is not None:
             self.menus.popups()
-            self.popup_open = self.menus.popup_open
+        # AD-037 §14: the brush picker owns the mouse while it is open, like a menu
+        self.popup_open = ((self.menus is not None and self.menus.popup_open)
+                           or (self.paint is not None and self.app.paint_room_open and self.paint.popup_open))
 
     def _outliner(self) -> None:
         imgui = self._imgui

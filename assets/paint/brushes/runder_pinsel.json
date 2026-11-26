@@ -1,0 +1,30 @@
+{
+  "format": "mirai.paint.brush/1",
+  "name": "Runder Pinsel",
+  "category": "Grundformen",
+  "tip": {
+    "alpha": null,
+    "invert": false,
+    "contrast": 0.0,
+    "kreismaske": false
+  },
+  "radius_percent": 3.0,
+  "opacity": 1.0,
+  "flow": 1.0,
+  "hardness": 0.5,
+  "curve": "smooth",
+  "dynamics": {
+    "spacing": 0.125,
+    "orientation": "stroke",
+    "angle": 0.0,
+    "jitter_rotation": 0.0,
+    "jitter_size": 0.0,
+    "jitter_flow": 0.0,
+    "scatter_across": 0.0,
+    "scatter_along": 0.0,
+    "emitter": "single",
+    "spray_density": 12,
+    "spray_size": 0.2,
+    "spray_intensity": 1.0
+  }
+}
