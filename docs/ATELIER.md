@@ -91,7 +91,7 @@ Mehlsack Lab (oben).
 | Symmetrie-Spur J: symmetrische Soft Selection fertig, Re-Symmetrize prüfen | Symmetrie als durchgehender Werkzeugfluss | [AD-SYM-04](architecture/AD-SYM-04-SYMMETRY-IN-PRODUCTION-APP.md#kurzfassung-für-manu-deutsch) · [AD-SYM-05](architecture/AD-SYM-05-WEIGHTED-TRANSFORMS-IN-CORE.md) |
 | Hover-/Navigations-Optimierung auf dichten Meshes | flüssigeres Arbeiten auf dichten Meshes | D1c |
 | Toolbox-Lücken: Subdivide (B2) | die fehlenden Alltagswerkzeuge | [WP Toolbox-Lücken](WP_TOOLBOX_GAPS_PLAN.md) |
-| Weight Painting (AD-041, freigegeben 2026-11-26) | Gewichte direkt malen (Add / Subtract / Replace / Smooth) im Weight Room, auch in der Pose; Füllen aus Auswahl statt aus Gruppe, Aufräumen, L/R-Knochenpaare mit gespiegelten Gewichten; Scheibe 1 als Nächstes | [AD-041](architecture/AD-041-WEIGHT-PAINTING.md#kurzfassung-für-manu-deutsch) |
+| Weight Painting (AD-041, freigegeben 2026-11-26) | Gewichte direkt malen (Add / Subtract / Replace / Smooth) im Weight Room, auch in der Pose; Füllen aus Auswahl statt aus Gruppe, Aufräumen, L/R-Knochenpaare mit gespiegelten Gewichten; Scheibe 1 (Pinsel-Rechnung, ohne Fenster) gebaut 2026-11-26, Scheibe 2 (Raum, Heatmap, Panel) als Nächstes | [AD-041](architecture/AD-041-WEIGHT-PAINTING.md#kurzfassung-für-manu-deutsch) |
 | GUI-Zustandssichtbarkeit | Arbeitsmodus, Morph-Target, Rig-Zustand und Gewichtsanzeige klarer erkennen; Priorität und Vorschläge bleiben offen | [GUI-Bestandsaufnahme](design/GUI_Bestandsaufnahme.md) |
 
 ---

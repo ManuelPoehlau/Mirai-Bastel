@@ -578,7 +578,7 @@ bones, IK and constraints, editing on the posed surface, a GPU drawing path
 every bound object shows the pose, and in a pose the gaze drives the eye bones —
 [AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md) slices 1–2; slice 3 (the "unbound" view, the panel's "follows" rows,
 the reference-PC probe) open.
-**2026-11-26:** weight painting decided — [AD-041](AD-041-WEIGHT-PAINTING.md): a Weight Room with a weight brush, fill from a selection instead of from a group, clean, L/R bone pairs with mirrored weights; no Core change; ACCEPTED (W-1 … W-12 as recommended), slice 1 next.
+**2026-11-26:** weight painting decided — [AD-041](AD-041-WEIGHT-PAINTING.md): a Weight Room with a weight brush, fill from a selection instead of from a group, clean, L/R bone pairs with mirrored weights; no Core change; ACCEPTED (W-1 … W-12 as recommended); slice 1 (the brush arithmetic) built the same day, slice 2 (the room) next.
 
 ---
 
