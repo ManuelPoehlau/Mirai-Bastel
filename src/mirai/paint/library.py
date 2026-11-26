@@ -79,9 +79,9 @@ CATEGORIES = {
 }
 TEST_CATEGORY = "Test-Alphas (4a)"
 UNSORTED = "Unsortiert"
-#: The 4a test alphas' categories (they stay built in; the starter set joins them once adopted).
-TEST_CATEGORIES = {"test/poren": "Organisch", "test/ader": "Adern", "test/kratzer": "Schaden", "test/fleck": "Schmutz",
-                   "test/punkte": "Sprenkel", "test/quadrat": "Formen"}
+#: The 4a test alphas stay built in (old brushes reference them) - listed after the starter set (adopted 2026-11-26),
+#: in their own category, their names marked so they do not read as the starter set's "Kratzer", "Fleck", "Quadrat".
+TEST_SUFFIX = " (4a)"
 
 #: Import source modes (P-26).
 MODE_ALPHA = "alpha"
@@ -461,8 +461,6 @@ class PaintLibrary:
         if self._alphas is not None:
             return self._alphas
         entries: dict[str, AlphaEntry] = {}
-        for alpha_id, (name, _make) in alpha_api.TEST_ALPHAS.items():
-            entries[alpha_id] = AlphaEntry(alpha_id, name, TEST_CATEGORIES.get(alpha_id, TEST_CATEGORY), "test")
         root = self.builtin_dir / "alphas"
         index = {}
         if (root / "index.json").is_file():
@@ -471,13 +469,25 @@ class PaintLibrary:
             except (OSError, ValueError) as exc:
                 self.problems.append(f"alphas/index.json: {exc}")
         if root.is_dir():
-            for path in sorted(root.glob("*/*.png")):
+            order = list(index) if isinstance(index, dict) else []
+            categories = list(CATEGORIES)
+
+            def rank(path: Path) -> tuple:  # P-22's category order, then the generator's (index.json), then the name
+                key = f"{path.parent.name}/{path.stem}"
+                return (categories.index(path.parent.name) if path.parent.name in categories else len(categories),
+                        order.index(key) if key in order else len(order), key)
+
+            for path in sorted(root.glob("*/*.png"), key=rank):
+                if path.parent.name == THUMB_DIR:
+                    continue  # the built-ins' thumbnail files (`tools/make_starter_alphas.py --adopt`)
                 key = f"{path.parent.name}/{path.stem}"
                 meta = index.get(key, {}) if isinstance(index, dict) else {}
                 name = meta.get("name") or path.stem.replace("_", " ").capitalize()
                 category = CATEGORIES.get(path.parent.name, path.parent.name.capitalize())
                 entries[f"builtin:{key}"] = AlphaEntry(f"builtin:{key}", name, category, "builtin", path,
                                                        meta.get("hash"))
+        for alpha_id, (name, _make) in alpha_api.TEST_ALPHAS.items():
+            entries[alpha_id] = AlphaEntry(alpha_id, name + TEST_SUFFIX, TEST_CATEGORY, "test")
         meta = self._library_meta()["alphas"]
         if self.user_dir is not None and (self.user_dir / "alphas").is_dir():
             for path in sorted((self.user_dir / "alphas").glob("*.png")):
@@ -588,18 +598,28 @@ class PaintLibrary:
     # -- thumbnails (§6.6) ----------------------------------------------------------------------------------------
 
     def _thumb_path(self, entry: AlphaEntry) -> Path | None:
+        """A built-in's thumbnail file (written by the generator, read-only) or a user alpha's (written here)."""
+        if entry.source == "builtin" and entry.hash is not None:
+            return self.builtin_dir / "alphas" / THUMB_DIR / f"{entry.hash}.png"
         if entry.source != "user" or self.user_dir is None:
             return None
         return self.user_dir / "alphas" / THUMB_DIR / f"{self.hash_of(entry)}.png"
 
     @staticmethod
     def make_thumbnail(image: alpha_api.AlphaImage) -> np.ndarray:
-        return np.clip(np.rint(alpha_api.fitted(image, THUMB) * 255.0), 0, 255).astype(np.uint8)
+        """THUMB² grey, stretched so its brightest pixel is white: a thin alpha (a scratch 2 px wide in 512) averages to a
+        faint line at 64², which the picker would barely show."""
+        value = alpha_api.fitted(image, THUMB)
+        peak = float(value.max())
+        if peak > 0.0:
+            value = value / peak
+        return np.clip(np.rint(value * 255.0), 0, 255).astype(np.uint8)
 
     def thumbnail(self, alpha_id: str) -> np.ndarray | None:
         """The alpha fitted into THUMB² (uint8 grey), without reading the full image when it can: a user alpha's
         thumbnail is a small file beside it (`alphas/thumbs/<hash>.png`, written at the import, else made once - a
-        1024² PNG takes ~60 ms to decode [C], its thumbnail file < 1 ms); kept in memory. None: unknown/unreadable."""
+        1024² PNG takes ~60 ms to decode [C], its thumbnail file < 1 ms), a built-in's the generator's
+        (`assets/paint/alphas/thumbs/<hash>.png`); kept in memory. None: unknown/unreadable."""
         thumb = self._thumbs.get(alpha_id)
         if thumb is not None:
             return thumb
@@ -621,7 +641,7 @@ class PaintLibrary:
                 except (OSError, ValueError):
                     return None  # (not into the LRU: a thumbnail must not push the painting alphas out)
             thumb = self.make_thumbnail(image)
-            if path is not None:
+            if path is not None and entry.source == "user":  # the repo's assets stay read-only
                 self._write_thumb(path, thumb)
         self._thumbs[alpha_id] = thumb
         return thumb

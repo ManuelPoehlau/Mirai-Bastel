@@ -4,9 +4,9 @@
   "category": "Haut",
   "tip": {
     "alpha": {
-      "id": "test/ader",
-      "name": "Ader",
-      "hash": "db0fea26a4ef"
+      "id": "builtin:adern/adern_verzweigt",
+      "name": "Adern verzweigt",
+      "hash": "e0f37835e916"
     },
     "invert": false,
     "contrast": 0.0,

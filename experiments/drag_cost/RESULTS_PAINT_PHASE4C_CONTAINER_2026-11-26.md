@@ -35,3 +35,23 @@ P-M picker first open, 50 thumbnails (44 imported 1024^2 + 6 built in), ms      
 P-N alpha cache: 60 imported 1024^2 alphas read for painting, one after the other      gate <= 64 MiB
   peak 64.0 MiB, now 64.0 MiB (48 alphas held); first read of a 1024^2 alpha p50 42 ms  PASS
 ```
+
+## Second run, after the starter set was adopted (22 built-in alphas with their thumbnail files)
+
+```
+Paint library probe (AD-037 Phase 4c) - commit d89a6255f9, working tree MODIFIED, src/ tree e60c41c415
+python 3.13.18, numpy 2.2.6
+
+P-L 1024^2 import (open + suggestion, preview, write PNG + thumbnail), ms       gate <= 500 ms
+  smooth, RGB              p50   72.1  max   96.0  (open 11, preview 15, write 45; suggested Luminanz)  PASS
+  noise, RGB               p50   96.0  max  107.2  (open 18, preview 16, write 73; suggested Luminanz)  PASS
+  shape on transparency    p50   82.3  max   94.8  (open 27, preview 3, write 65; suggested Alphakanal)  PASS
+  4096^2 (information, clamped to 1024 px): 641 ms
+
+P-M picker first open, 50 thumbnails (22 imported 1024^2 + 28 built in), ms      gate <= 150 ms
+  50 items: scan 1.3, thumbnails 19.7, GL textures 55.4, total 76.4  PASS
+  afterwards (all 50 cached, the frame's lookups only) 0.11 ms; alpha cache 0.0 MiB (thumbnails do not fill it)
+
+P-N alpha cache: 60 imported 1024^2 alphas read for painting, one after the other      gate <= 64 MiB
+  peak 64.0 MiB, now 64.0 MiB (48 alphas held); first read of a 1024^2 alpha p50 42 ms  PASS
+```

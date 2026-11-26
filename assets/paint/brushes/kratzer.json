@@ -4,9 +4,9 @@
   "category": "Schaden",
   "tip": {
     "alpha": {
-      "id": "test/kratzer",
+      "id": "builtin:schaden/kratzer",
       "name": "Kratzer",
-      "hash": "c7ced5a8c20f"
+      "hash": "1dc764b31b7d"
     },
     "invert": false,
     "contrast": 0.0,

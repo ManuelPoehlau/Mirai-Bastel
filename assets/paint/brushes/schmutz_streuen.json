@@ -4,9 +4,9 @@
   "category": "Schmutz",
   "tip": {
     "alpha": {
-      "id": "test/fleck",
+      "id": "builtin:schmutz/fleck",
       "name": "Fleck",
-      "hash": "d0584039f0a4"
+      "hash": "6ff3ccb95ef3"
     },
     "invert": false,
     "contrast": 0.0,

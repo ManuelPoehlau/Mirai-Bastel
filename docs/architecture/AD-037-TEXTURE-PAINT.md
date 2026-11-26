@@ -16,8 +16,8 @@ IMPLEMENTED 4b (jitter, scatter, the orientation modes, the spray emitter, count
 container: TESTED, every 4b gate met in the container; reference PC and Praxistest: open) as built in §13;
 IMPLEMENTED 4c (the library: built-in and user alphas and presets in `~/.mirai_bastel/paint/`, references id → hash →
 name with the round-tip fallback, the picker and the import card, the starter-alpha generator with its contact sheets
-- the starter alphas not adopted until Manu's check; 2026-11-26, container: TESTED, every 4c gate met in the container;
-reference PC, contact-sheet verdict and Praxistest: open) as built in §14** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
+- **the starter set adopted in full, Manu 2026-11-26: „alle übernehmen für das starterset“**; 2026-11-26, container:
+TESTED, every 4c gate met in the container; reference PC and Praxistest: open) as built in §14** — [`ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md`](../research/ALPHA_BRUSH_STROKE_SYSTEM_PROPOSAL_2026-11-25.md) (slices 4a–4c; **decisions P-18 … P-28: Manu 2026-11-25, „P-18 bis P-28 zugestimmt“**; user assets in `~/.mirai_bastel/paint/` and the procedural starter set: Manu 2026-11-25).
 **Basis:** [`TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md`](../research/TEXTURE_PAINT_ROOM_ARCHITECTURE_AUDIT_2026-11-18.md)
 (§3 storage, §4 architecture, §5 topology, §8 performance, §10 Phase 1). Implemented on `claude/brave-clarke-40728c` @
 `25154ac` (the audit and its decisions addendum).
@@ -140,11 +140,12 @@ Phase 1 legt das Fundament für den Paint Room, ohne dass schon gemalt wird:
 - **Import:** Bild wählen → Karte mit Live-Vorschau, Quelle **Alphakanal / Luminanz / Luminanz × Alphakanal** (vorgewählt,
   P-26), Invertieren, Kontrast, Name, Kategorie, Warnung bei hellem Rand; auf 1024 px begrenzt; dasselbe Bild zweimal =
   ein Alpha.
-- **Starter-Sammlung:** 22 erzeugte Alphas in den sieben Kategorien von P-22 – **noch nicht übernommen**: erst Dein Blick
-  auf die Kontaktbögen `docs/research/alpha_brush_4c_assets_2026-11-26/`, dann je Kategorie
-  `python tools/make_starter_alphas.py --adopt …`.
+- **Starter-Sammlung:** 22 erzeugte Alphas in den sieben Kategorien von P-22 (Kontaktbögen
+  `docs/research/alpha_brush_4c_assets_2026-11-26/`) – **komplett übernommen** (Manu 2026-11-26: „alle übernehmen für
+  das starterset“). Die neun eingebauten Presets nutzen sie (neu: „Feine Falten“, „Körnung“); die sechs 4a-Test-Alphas
+  stehen dahinter als „… (4a)“.
 - Messung im Container: Import 1024² ≤ 0,11 s (Grenze 0,5), erstes Öffnen mit 50 Vorschaubildern 88 ms (Grenze 150),
-  Alpha-Speicher höchstens 64 MiB. **Offen:** Dein Urteil zu den Kontaktbögen, der Referenz-PC-Lauf, der Praxistest.
+  Alpha-Speicher höchstens 64 MiB. **Offen:** der Referenz-PC-Lauf, der Praxistest.
 
 ## 1. Decisions (Manu, 2026-11-18)
 
@@ -1213,9 +1214,10 @@ same pixels imported twice are one alpha (also against a built-in) - the status 
 
 ### 14.4 Built-in presets (`assets/paint/brushes/`, `PROVISIONAL` values)
 
-Runder Pinsel (= `BrushSettings()`), Poren-Spray, Poren einzeln, Adern folgen, Sommersprossen, Schmutz streuen, Kratzer
-- seven, on the six **4a test alphas** (proposal §6.5 named eight, some on starter alphas - "Feine Falten", "Körnung"
-need the starter set; they follow once Manu has accepted it, §14.5).
+Nine: Runder Pinsel (= `BrushSettings()`), Poren-Spray (Poren fein), Poren einzeln (Poren grob), Adern folgen (Adern
+verzweigt), Feine Falten (Falten kurz), Sommersprossen, Schmutz streuen (Fleck), Kratzer, Körnung - on the **starter
+alphas** since their adoption (2026-11-26; the first build of the same day used the 4a test alphas, "Feine Falten" and
+"Körnung" waited for the set). Proposal §6.5's eight, plus "Poren einzeln".
 
 ### 14.5 The starter set - `tools/make_starter_alphas.py`, contact sheet first (P-22, review point 6)
 
@@ -1230,10 +1232,16 @@ need the starter set; they follow once Manu has accepted it, §14.5).
   stamped strip (Einzeln, 100 % spacing) and a spray strip (12 stamps, random turn, size and flow jitter: the 4b
   randomness) across a neutral shaded sphere (the tangent-plane stamp with the depth window). Labels need Pillow
   (optional; it is not a dependency, `contact_sheet.md` names the rows).
-- **Not adopted yet:** as decided ("starter alphas adopted only after the contact-sheet check"), no starter PNG is
-  committed. `python tools/make_starter_alphas.py --adopt <categories>|all` writes the accepted categories into
-  `assets/paint/alphas/` with `index.json` and `assets/paint/LICENSES.md` (generator named per file); the library picks
-  them up as `builtin:<category>/<stem>` (pinned in a temporary folder).
+- **Adopted in full - Manu 2026-11-26 (session chat, verbatim): „alle übernehmen für das starterset“.**
+  `python tools/make_starter_alphas.py --adopt all` wrote `assets/paint/alphas/<category>/<stem>.png` (8-bit grey,
+  628 KB together), their 64² thumbnails `alphas/thumbs/<hash>.png`, `index.json` (names, hashes) and
+  `assets/paint/LICENSES.md` (the generator named per file). The library lists them as `builtin:<category>/<stem>` in
+  P-22's order, then the six 4a test alphas as "… (4a)" in "Test-Alphas (4a)" (kept: brushes may reference them; their
+  names no longer read as the starter "Kratzer", "Fleck", "Quadrat"). Pinned: every generated alpha is in the repo with
+  its name, hash and thumbnail, and the files equal what the generator makes now (re-run `--adopt all` after changing
+  it).
+- **Thumbnails stretched to white** (`PaintLibrary.make_thumbnail`): the starter "Kratzer" (2 px lines in 512) averaged
+  to a faint line at 64² - found when adopting; a thumbnail's brightest pixel is now white.
 
 ### 14.6 Tests [C]
 
@@ -1249,7 +1257,7 @@ missing alpha paints exactly as the round tip** and keeps its reference; a prese
 changes the pixels), `tests/test_brush_picker_model.py` (8: favourites first, filter, search; the brush row's marker and
 saving; "Alpha fehlt"; thumbnails; **50 thumbnails for the first open < 150 ms** without filling the alpha cache;
 thumbnail files follow their alphas; the import card's model; a headless draw of the panel and the picker),
-`tests/test_paint_starter_alphas.py` (2: deterministic, black borders, P-22's categories; `--adopt` → the library),
+`tests/test_paint_starter_alphas.py` (3: deterministic, black borders, P-22's categories; `--adopt` → the library; the adopted set in the repo equals the generator, with names, hashes and thumbnail files),
 `tests/test_gui_imgui_window.py::test_paint_brush_picker_thumbnails_import_card_and_release` (the real window: both
 tabs' thumbnails as GL textures, every thumbnail frame < 150 ms, the popup owns the mouse, GL state as found, the import
 card's rectangle, an import into the user folder, the textures freed when the room closes). The 4a / 4b tests are
@@ -1266,7 +1274,7 @@ Verbatim in [`RESULTS_PAINT_PHASE4C_CONTAINER_2026-11-26.md`](../../experiments/
 |---|---|---|
 | **P-L** 1024² import (open + suggestion, preview, files written): smooth / noise / shape on transparency, max | 92 / 106 / 107 ms | ≤ 500 ms |
 | P-L 4096² (clamped to 1024; information) | 0.61–0.75 s | — |
-| **P-M** picker first open, 50 thumbnails: thumbnails + GL textures (llvmpipe) | 23 + 65 = 88 ms | ≤ 150 ms |
+| **P-M** picker first open, 50 thumbnails: thumbnails + GL textures (llvmpipe) | 23 + 65 = 88 ms (44 imported + 6); with the starter set (22 imported + 28 built in) 20 + 55 = 76 ms | ≤ 150 ms |
 | P-M afterwards (every texture cached) | 0.15 ms per frame | no per-frame cost |
 | **P-N** alpha cache, 60 imported 1024² alphas read | 64.0 MiB peak (48 held) | ≤ 64 MiB |
 
@@ -1278,8 +1286,8 @@ Verbatim in [`RESULTS_PAINT_PHASE4C_CONTAINER_2026-11-26.md`](../../experiments/
 
 ### 14.8 Not in 4c / open
 
-- **Manu:** the contact sheets (§14.5) - which categories to adopt (then `--adopt`, the presets "Feine Falten",
-  "Körnung" on them); the Praxistest below; the reference-PC run of `probe_paint_library.py` (and 4b's, §13.8).
+- **Manu:** the Praxistest below; the reference-PC run of `probe_paint_library.py` (and 4b's, §13.8). (The contact
+  sheets: done, everything adopted, §14.5.)
 - 4d (each its own decision): colour jitter (§5.8), the preset export bundle, CC0 alphas with a recorded licence, the
   wrap for spray clusters, lazy mouse.
 - The room's last used brush is not remembered across sessions (view state, §6.1 "may"); the room starts on "Runder
@@ -1412,11 +1420,11 @@ Keine neue Taste.
 Neu oben im Panel: die **Pinsel-Zeile** (Vorschau, Name, „Pinsel …“) und darunter die **Spitze** mit Vorschaubild. Die
 4a-Auswahlliste „Spitze“ ist durch die Auswahl ersetzt. Keine neue Taste.
 
-0. **Kontaktbögen** (vorher, am Bildschirm): `docs/research/alpha_brush_4c_assets_2026-11-26/contact_sheet_*.png` –
-   je Kategorie: übernehmen, nachbessern (was?) oder weglassen? Erst danach kommen Starter-Alphas ins Repo.
+0. Die **Starter-Sammlung** ist übernommen (Dein „alle übernehmen“): im Reiter Alphas zuerst die 22 Starter-Alphas in
+   den sieben Kategorien, dahinter die alten Test-Alphas „… (4a)“. Wirken sie auf dem Kopf wie auf den Kontaktbögen?
 1. Gollum-Kopf, SPACE → „Paint Room öffnen“. Die Pinsel-Zeile zeigt **„Runder Pinsel (Grundformen)“** – malt er wie
    bisher?
-2. **„Pinsel …“**: Reiter **Pinsel** – sieben Vorschaubilder. **„Poren-Spray“** wählen und über die Wange malen. Farbe,
+2. **„Pinsel …“**: Reiter **Pinsel** – neun Vorschaubilder (neu: „Feine Falten“, „Körnung“). **„Poren-Spray“** wählen und über die Wange malen. Farbe,
    Werkzeug und Spiegeln bleiben, wie sie waren? Deckkraft ändern → „– geändert“ erscheint; **Zurücksetzen** holt die
    Werte zurück.
 3. **Speichern als …**: Namen eintippen, Enter. Danach etwas ändern → **Speichern** überschreibt Deinen Pinsel. Ein

@@ -1,6 +1,6 @@
 # Alpha Brush & Stroke System — Architecture and UX Proposal for AD-037 Phase 4 (2026-11-25)
 
-**Status:** **PROPOSAL — research and architecture only; decisions P-18 … P-28 DECIDED (Manu, 2026-11-25: „P-18 bis P-28 zugestimmt“), §10. Slice 4a BUILT 2026-11-25: [AD-037 §12](../architecture/AD-037-TEXTURE-PAINT.md) (the wrap projection of §4.3 built as its fallback; deviations there); 4b BUILT 2026-11-25 (§13); 4c BUILT 2026-11-26 (§14: deviations there - flat dynamics fields in the preset JSON, the source mode an import-only choice, thumbnail files; starter alphas await the contact-sheet verdict).** No change to `src/`, `tests/`, the keymap,
+**Status:** **PROPOSAL — research and architecture only; decisions P-18 … P-28 DECIDED (Manu, 2026-11-25: „P-18 bis P-28 zugestimmt“), §10. Slice 4a BUILT 2026-11-25: [AD-037 §12](../architecture/AD-037-TEXTURE-PAINT.md) (the wrap projection of §4.3 built as its fallback; deviations there); 4b BUILT 2026-11-25 (§13); 4c BUILT 2026-11-26 (§14: deviations there - flat dynamics fields in the preset JSON, the source mode an import-only choice, thumbnail files; starter set adopted in full, Manu 2026-11-26: „alle übernehmen für das starterset“).** No change to `src/`, `tests/`, the keymap,
 the scene format or the dependencies. Every value marked `PROVISIONAL` is an agent proposal; decisions P-18 … P-28
 (§10) are decided as recommended (Manu, 2026-11-25).
 **State audited:** `main` @ `e583cee` (AD-037 Phases 1–3 built; P-8 lifted 2026-11-25).

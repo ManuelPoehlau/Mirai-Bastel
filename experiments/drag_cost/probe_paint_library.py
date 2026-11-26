@@ -9,8 +9,8 @@ Everything is written into a temporary folder (a throw-away user folder); nothin
 - **P-L** a **1024² import**: `library.open_import` (read the PNG, the suggestion) + `ImportDraft.preview` (the
   normalised grey) + `PaintLibrary.import_alpha` (hash, the PNG and its thumbnail file written), for a smooth image and
   for noise (the worst case for the PNG codec); a 4096² image as information (clamped to 1024). Gate: <= 0.5 s.
-- **P-M** the picker's **first open with 50 thumbnails**: a new session's library (44 imported 1024² noise alphas + the
-  six built in), each thumbnail's pixels (`gui.brush_picker_model.thumbnail_pixels`: the small thumbnail files, no full
+- **P-M** the picker's **first open with 50 thumbnails**: a new session's library (the built-in alphas - since
+  2026-11-26 the 22 starter alphas and the six 4a test alphas - and imported 1024² noise alphas up to 50), each thumbnail's pixels (`gui.brush_picker_model.thumbnail_pixels`: the small thumbnail files, no full
   decode) and its GL texture; then the same 50 again (all cached: the per-frame cost afterwards). Gate: <= 150 ms, no
   per-frame cost afterwards. In the room the textures are also spread over frames (`THUMB_BUDGET_S`).
 - **P-N** the **alpha cache**: 60 imported 1024² alphas read for painting one after the other (pixels + mips, LRU);
@@ -98,10 +98,12 @@ def main(argv=None) -> int:
         lib.PaintLibrary(tmp / "user_big").import_alpha(draft.preview(), "big")
         print(f"  4096^2 (information, clamped to {draft.preview().shape[1]} px): {(time.perf_counter() - t0) * 1e3:.0f} ms")
 
-        print("\nP-M picker first open, 50 thumbnails (44 imported 1024^2 + 6 built in), ms      gate <= 150 ms")
         user = tmp / "user_m"
         setup = lib.PaintLibrary(user)
-        for k in range(44):
+        builtins = sum(1 for e in setup.alphas() if e.builtin)
+        print(f"\nP-M picker first open, 50 thumbnails ({50 - builtins} imported 1024^2 + {builtins} built in), ms"
+              f"      gate <= 150 ms")
+        for k in range(max(50 - builtins, 0)):
             setup.import_alpha((rng.random((1024, 1024)) * 255).astype(np.uint8), f"A{k}")
 
         class App:

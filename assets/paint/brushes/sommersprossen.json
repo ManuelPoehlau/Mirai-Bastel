@@ -4,9 +4,9 @@
   "category": "Haut",
   "tip": {
     "alpha": {
-      "id": "test/punkte",
-      "name": "Punkte",
-      "hash": "1de26f2bbc6c"
+      "id": "builtin:sprenkel/sommersprossen",
+      "name": "Sommersprossen",
+      "hash": "3fc04d902638"
     },
     "invert": false,
     "contrast": 0.0,

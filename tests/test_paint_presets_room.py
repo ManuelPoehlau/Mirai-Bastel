@@ -41,7 +41,7 @@ def test_selecting_a_preset_keeps_colour_tool_and_mirror(app):
     assert app.select_paint_preset("builtin:poren_spray")
     brush = app.paint_brush
     assert (brush.colour, brush.tool, brush.mirror) == ((0.1, 0.8, 0.3), TOOL_ERASE, False)
-    assert brush.tip.alpha == "test/poren" and brush.dynamics.spray and brush.radius_percent == 2.0
+    assert brush.tip.alpha == "builtin:organisch/poren_fein" and brush.dynamics.spray and brush.radius_percent == 2.0
     assert "Poren-Spray" in app.status_message and not app.paint_brush_changed
     assert not app.select_paint_preset("builtin:nope") and "unbekannter Pinsel" in app.status_message
 

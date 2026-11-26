@@ -57,3 +57,25 @@ def test_adopt_writes_where_the_library_finds_it(tool, tmp_path, monkeypatch):
     assert set(index) == {"formen/kreis", "formen/quadrat", "formen/ring_weich", "formen/linie"}
     assert "make_starter_alphas.py" in (tmp_path / "assets" / "paint" / "LICENSES.md").read_text(encoding="utf-8")
     assert library.image_for(library.tip("builtin:formen/linie")).half_extents == (1.0, 0.125)
+
+
+def test_the_adopted_starter_set_is_in_the_repo(tool):
+    """Manu 2026-11-26, „alle übernehmen für das starterset“: every generated alpha is built in, with its name, its
+    hash and its thumbnail file; the files are what the generator makes now (re-run `--adopt all` after a change)."""
+    library = lib.PaintLibrary()
+    builtin = {e.id: e for e in library.alphas() if e.source == "builtin"}
+    expected = {f"builtin:{c}/{stem}": name for c, entries in tool.STARTER.items() for stem, name, _ in entries}
+    assert {k: e.name for k, e in builtin.items()} == expected
+    for category, entries in tool.STARTER.items():
+        for stem, name, make in entries:
+            entry = builtin[f"builtin:{category}/{stem}"]
+            assert entry.category == lib.CATEGORIES[category]
+            pixels = library.pixels(entry)
+            assert np.array_equal(pixels, tool.generate(make)), stem
+            assert entry.hash == alpha_api.pixel_hash(pixels)
+            thumb_file = lib.BUILTIN_DIR / "alphas" / lib.THUMB_DIR / f"{entry.hash}.png"
+            assert thumb_file.is_file()
+            assert np.array_equal(library.thumbnail(entry.id), library.make_thumbnail(library.alpha(entry.id)))
+    assert library.problems == []
+    licences = (lib.BUILTIN_DIR / "LICENSES.md").read_text(encoding="utf-8")
+    assert all(f"alphas/{key[len('builtin:'):]}.png" in licences for key in expected)

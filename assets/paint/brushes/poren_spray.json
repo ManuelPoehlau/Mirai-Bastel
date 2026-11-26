@@ -4,9 +4,9 @@
   "category": "Haut",
   "tip": {
     "alpha": {
-      "id": "test/poren",
-      "name": "Poren",
-      "hash": "1fe23aa26aaf"
+      "id": "builtin:organisch/poren_fein",
+      "name": "Poren fein",
+      "hash": "cb6edf9b7a64"
     },
     "invert": false,
     "contrast": 0.0,

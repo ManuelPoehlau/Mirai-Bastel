@@ -47,7 +47,10 @@ def test_items_favourites_first_filter_and_search(app):
     cats = bm.categories(bm.preset_items(app))
     assert cats[:2] == (bm.ALL, bm.FAVOURITES) and "Haut" in cats and len(set(cats)) == len(cats)
     alphas = bm.alpha_items(app)
-    assert [a.name for a in alphas[:6]] == ["Poren", "Ader", "Kratzer", "Fleck", "Punkte", "Quadrat"]
+    assert [a.name for a in alphas[-6:]] == [f"{n} (4a)" for n in ("Poren", "Ader", "Kratzer", "Fleck", "Punkte",
+                                                                    "Quadrat")]
+    assert alphas[0].id == "builtin:organisch/poren_fein"  # the starter set first
+    assert len({a.name for a in alphas}) == len(alphas)  # no name twice
     assert not any(a.current for a in alphas)
     app.set_paint_tip("test/fleck")
     assert [a.id for a in bm.alpha_items(app) if a.current] == ["test/fleck"]
@@ -92,15 +95,17 @@ def test_thumbnails(app):
 
 
 def test_fifty_thumbnails_for_the_first_open(app, tmp_path):
-    """§9 "4c": the picker's first open with 50 thumbnails <= 150 ms - 44 imported 1024² alphas and the six built in;
-    a user alpha's thumbnail is its small file (no 1024² decode), and making it does not fill the alpha cache."""
+    """§9 "4c": the picker's first open with 50 thumbnails <= 150 ms - imported 1024² alphas and those built in (the
+    starter set's thumbnails are files too); a thumbnail is its small file (no full decode), and making it does not
+    fill the alpha cache."""
     rng = np.random.default_rng(0)
-    for k in range(44):
+    builtins = sum(1 for e in app.paint_library.alphas() if e.builtin)
+    for k in range(max(50 - builtins, 0)):
         app.paint_library.import_alpha((rng.random((1024, 1024)) * 255).astype(np.uint8), f"A{k}")
     app.paint_library.refresh()
     fresh = lib.PaintLibrary(tmp_path / "paint")  # a new session: nothing in memory
     app._paint_room.library = fresh
-    items = bm.alpha_items(app)
+    items = bm.alpha_items(app)[:50]
     assert len(items) == 50
     started = time.perf_counter()
     for item in items:
@@ -114,7 +119,8 @@ def test_thumbnail_files_follow_the_user_alphas(app, tmp_path):
     entry, _ = library.import_alpha(_disc(128), "Scheibe")
     thumb = tmp_path / "paint" / "alphas" / lib.THUMB_DIR / f"{entry.hash}.png"
     assert thumb.is_file() and library.thumbnail(entry.id).shape == (lib.THUMB, lib.THUMB)
-    assert len(library.alphas()) == 7  # the thumbnail folder is not scanned as alphas
+    builtins = sum(1 for e in library.alphas() if e.builtin)
+    assert len(library.alphas()) == builtins + 1  # the thumbnail folder is not scanned as alphas
     library.delete_alpha(entry.id)
     assert not thumb.exists()
 

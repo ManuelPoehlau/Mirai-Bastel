@@ -1,0 +1,90 @@
+{
+  "organisch/poren_fein": {
+    "name": "Poren fein",
+    "hash": "cb6edf9b7a64"
+  },
+  "organisch/poren_grob": {
+    "name": "Poren grob",
+    "hash": "5acc7e42a2bc"
+  },
+  "organisch/poren_gruppe": {
+    "name": "Poren gruppiert",
+    "hash": "06975e273b62"
+  },
+  "organisch/falten_kurz": {
+    "name": "Falten kurz",
+    "hash": "3e2da46ca008"
+  },
+  "organisch/kraehenfuss": {
+    "name": "Krähenfüße",
+    "hash": "5c9269778721"
+  },
+  "adern/adern_verzweigt": {
+    "name": "Adern verzweigt",
+    "hash": "e0f37835e916"
+  },
+  "adern/kapillaren": {
+    "name": "Kapillaren",
+    "hash": "40a154edb09c"
+  },
+  "sprenkel/sommersprossen": {
+    "name": "Sommersprossen",
+    "hash": "3fc04d902638"
+  },
+  "sprenkel/punkte_gestreut": {
+    "name": "Punkte gestreut",
+    "hash": "421c7c8ed37b"
+  },
+  "sprenkel/sprenkel_weich": {
+    "name": "Sprenkel weich",
+    "hash": "1072ba38fa7b"
+  },
+  "schmutz/fleck": {
+    "name": "Fleck",
+    "hash": "6ff3ccb95ef3"
+  },
+  "schmutz/schmutz": {
+    "name": "Schmutz",
+    "hash": "9bf4de10cde4"
+  },
+  "schmutz/ablagerung": {
+    "name": "Ablagerung",
+    "hash": "84ba03a9fb31"
+  },
+  "schaden/kratzer": {
+    "name": "Kratzer",
+    "hash": "1dc764b31b7d"
+  },
+  "schaden/narbe": {
+    "name": "Narbe",
+    "hash": "4f9aba11b087"
+  },
+  "schaden/risse": {
+    "name": "Risse",
+    "hash": "da30b14cfd17"
+  },
+  "oberflaeche/koernung": {
+    "name": "Körnung",
+    "hash": "44c715a9b8ef"
+  },
+  "oberflaeche/rauschen": {
+    "name": "Rauschen unregelmäßig",
+    "hash": "ba33db67386d"
+  },
+  "formen/kreis": {
+    "name": "Kreis",
+    "hash": "1324e3264529"
+  },
+  "formen/quadrat": {
+    "name": "Quadrat",
+    "hash": "d1a87e2f9db7"
+  },
+  "formen/ring_weich": {
+    "name": "Ring weich",
+    "hash": "54082663d9b0"
+  },
+  "formen/linie": {
+    "name": "Linie",
+    "hash": "fb43767e4db1"
+  }
+}

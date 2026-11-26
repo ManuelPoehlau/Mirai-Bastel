@@ -11,8 +11,9 @@ noisy polylines; grain from band-limited noise.
 **A contact sheet first** (review point 6): `--sheet DIR` (the default) writes one sheet per category - each alpha, a
 stamped strip (Einzeln) and a spray strip across a neutral shaded sphere (the tangent-plane stamp of `mirai.paint.stamp`,
 the 4b randomness for the spray) - and an overview. **Manu judges per category; only accepted categories are adopted**:
-`--adopt organisch,adern` (or `all`) writes `assets/paint/alphas/<category>/<stem>.png`, `index.json` (names, hashes)
-and `assets/paint/LICENSES.md`. Until then the library's built-ins are the six 4a test alphas.
+`--adopt organisch,adern` (or `all`) writes `assets/paint/alphas/<category>/<stem>.png`, their 64² thumbnails
+`alphas/thumbs/<hash>.png` (the picker's first open reads no full image), `index.json` (names, hashes) and
+`assets/paint/LICENSES.md`. **Adopted: all seven categories** (Manu 2026-11-26, „alle übernehmen für das starterset“).
 
 Usage (repo root):
     python tools/make_starter_alphas.py                        # contact sheets -> docs/research/alpha_brush_4c_assets_2026-11-26/
@@ -512,7 +513,7 @@ def sheets(out: Path) -> list[Path]:
 
 def adopt(categories: list[str]) -> list[Path]:
     """Write the accepted categories into `assets/paint/alphas/` (+ index.json, LICENSES.md)."""
-    from mirai.paint.library import CATEGORIES, encode_grey_png
+    from mirai.paint.library import CATEGORIES, THUMB_DIR, PaintLibrary, encode_grey_png
 
     root = ASSETS / "alphas"
     index_path = root / "index.json"
@@ -524,7 +525,11 @@ def adopt(categories: list[str]) -> list[Path]:
             path = root / category / f"{stem}.png"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(encode_grey_png(pixels, level=9))
-            index[f"{category}/{stem}"] = {"name": name, "hash": A.pixel_hash(pixels)}
+            digest = A.pixel_hash(pixels)
+            index[f"{category}/{stem}"] = {"name": name, "hash": digest}
+            thumb = PaintLibrary.make_thumbnail(A.AlphaImage.from_pixels(stem, name, pixels))
+            (root / THUMB_DIR).mkdir(parents=True, exist_ok=True)
+            (root / THUMB_DIR / f"{digest}.png").write_bytes(encode_grey_png(thumb, level=9))
             written.append(path)
     index_path.parent.mkdir(parents=True, exist_ok=True)
     index_path.write_text(json.dumps(index, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

@@ -81,7 +81,9 @@ def test_default_preset_is_todays_round_brush():
 def test_test_alphas_are_builtin_entries():
     library = lib.PaintLibrary()
     ids = [e.id for e in library.alphas()]
-    assert ids[:len(alpha_api.TEST_ALPHAS)] == list(alpha_api.TEST_ALPHAS)
+    assert ids[-len(alpha_api.TEST_ALPHAS):] == list(alpha_api.TEST_ALPHAS)  # after the starter set (2026-11-26)
+    test = library.alpha_entry("test/kratzer")
+    assert (test.name, test.category) == ("Kratzer" + lib.TEST_SUFFIX, lib.TEST_CATEGORY)
     assert library.alpha("test/poren") is alpha_api.generated_alpha("test/poren")
 
 
