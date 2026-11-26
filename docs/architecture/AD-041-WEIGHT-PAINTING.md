@@ -1,13 +1,13 @@
 # AD-041 — Weight painting: a Weight Room with a weight brush, fill from a selection, L/R bone pairs
 
-**Status:** **PROPOSED (2026-11-26)**, waiting for Manu's decision on W-1 … W-12 (§10). Direction decided by Manu on
-2026-11-26 (Development chat):
+**Status:** **ACCEPTED (Manu, 2026-11-26: „W-1 bis W-12 wie empfohlen, AD-041 freigegeben“)**: every W-point of §10 as recommended.
+Was PROPOSED the same day. Direction decided by Manu on 2026-11-26 (Development chat):
 - „Eigener Weight-Modus“;
 - „Regionen entkoppeln, Füllung behalten“;
 - brush operations Add / Subtract, Smooth / Blur, Replace and „Aufräumen“ in the first build;
 - „Gleich mit L/R-Paaren“.
 
-Nothing is built yet.
+Nothing is built yet; slice 1 (§11) is next.
 
 **Mode:** Production, in fresh sessions with this AD as the handoff (§11).
 **Baseline:** `claude/serene-dirac-9sue6z` @ `3c9c80c`.
@@ -254,6 +254,9 @@ Deine Entscheidungen brauche ich zu W-1 … W-12 in §10. Die Empfehlung steht j
 - **`config/keymap.json`:** untouched. Keys only after Manu's word (CLAUDE.md, AD-013 addendum 2026-10-28).
 
 ## 10. Decisions for Manu (Entscheidungen, Deutsch)
+
+**Entschieden 2026-11-26 (Manu): „W-1 bis W-12 wie empfohlen“** – jede Zeile gilt mit ihrer Empfehlung. Die Werte bleiben
+`PROVISIONAL`, bis der Praxistest (Scheibe 5) sie bestätigt; Tasten erst danach in `config/keymap.json`.
 
 | # | Frage | Empfehlung |
 |---|---|---|

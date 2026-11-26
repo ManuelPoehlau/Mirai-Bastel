@@ -636,13 +636,13 @@ panel, no new key. No `src/core` or scene-format change.
 
 ### Addendum 2026-11-26: weight painting (AD-041)
 
-**Status:** PROPOSED, together with [AD-041](AD-041-WEIGHT-PAINTING.md). Its direction was decided by Manu on 2026-11-26:
+**Status:** ACCEPTED with [AD-041](AD-041-WEIGHT-PAINTING.md) (Manu, 2026-11-26: „W-1 bis W-12 wie empfohlen, AD-041 freigegeben“). Its direction was decided by Manu on 2026-11-26:
 - „Eigener Weight-Modus“;
 - „Regionen entkoppeln, Füllung behalten“;
 - Add / Subtract, Smooth, Replace and „Aufräumen“;
 - „Gleich mit L/R-Paaren“.
 
-Once AD-041 is accepted, the following parts of this AD no longer apply:
+The following parts of this AD no longer apply, each as AD-041's slices build its replacement:
 - **§0**, „No weight brush in this phase“: the weight brush lives in the Weight Room (AD-041 §3–§4).
 - **§8.4**, the seeds of `FalloffGesture`: they become the selection, not the active group (AD-041 §3.4, „Füllen aus Auswahl“). The group stays a way to select.
 - **§8.4**, symmetry: an off-centre bone is refused only if it has no L/R partner. With a partner, both weight gestures and the brush write the mirror bone at the partner vertices (AD-041 §6).
@@ -785,7 +785,7 @@ bone mirroring (L/R) and symmetric weights of off-centre bones; GUI panels *(202
 addendum)*; `config/keymap.json`; removing the Morph
 Lab; transfer between meshes (Phase 7).
 
-*(2026-11-26: the weight brush and the L/R bone pairs, with symmetric weights for off-centre bones, are proposed in [AD-041](AD-041-WEIGHT-PAINTING.md). See the [addendum](#addendum-2026-11-26-weight-painting-ad-041).)*
+*(2026-11-26: the weight brush and the L/R bone pairs, with symmetric weights for off-centre bones, are decided in [AD-041](AD-041-WEIGHT-PAINTING.md) (ACCEPTED 2026-11-26). See the [addendum](#addendum-2026-11-26-weight-painting-ad-041).)*
 
 *(2026-11-03: a long-term product requirement for editing on the posed surface is proposed, pending Manu's review, in
 [MODELING_ON_DEFORMED_SURFACES](../design/MODELING_ON_DEFORMED_SURFACES.md). §7.1 (S5) stays the decided behaviour for position and topology edits; picking in the pose: §16 there, 2026-11-17.)*
