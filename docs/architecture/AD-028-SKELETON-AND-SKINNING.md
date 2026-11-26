@@ -634,6 +634,22 @@ panel, no new key. No `src/core` or scene-format change.
   head bone yet - re-parent in the panel when one exists). The eye objects do not follow the bones: that is the next Architecture Gate ([AD-036](AD-036-EYES-TEETH-AND-LIDS-ON-THE-RIG.md), PROPOSED 2026-11-18; *ACCEPTED and slices 1–2 built 2026-11-18: an eye links to its eye bone*).
   Tests: `tests/test_bone_axis.py`.
 
+### Addendum 2026-11-26: weight painting (AD-041)
+
+**Status:** PROPOSED, together with [AD-041](AD-041-WEIGHT-PAINTING.md). Its direction was decided by Manu on 2026-11-26:
+- „Eigener Weight-Modus“;
+- „Regionen entkoppeln, Füllung behalten“;
+- Add / Subtract, Smooth, Replace and „Aufräumen“;
+- „Gleich mit L/R-Paaren“.
+
+Once AD-041 is accepted, the following parts of this AD no longer apply:
+- **§0**, „No weight brush in this phase“: the weight brush lives in the Weight Room (AD-041 §3–§4).
+- **§8.4**, the seeds of `FalloffGesture`: they become the selection, not the active group (AD-041 §3.4, „Füllen aus Auswahl“). The group stays a way to select.
+- **§8.4**, symmetry: an off-centre bone is refused only if it has no L/R partner. With a partner, both weight gestures and the brush write the mirror bone at the partner vertices (AD-041 §6).
+- **§15**, the items „Weight brush“ and „bone mirroring (L/R) and symmetric weights of off-centre bones“.
+
+Everything else in this AD is unchanged: the data model §3, the write rule §3.4, the evaluation §5, and §7.1. AD-041 does not change the Core.
+
 ## 9. Core change (CORE_V1_FREEZE §7)
 
 1. **Requirement:** the jaw scenario (Manu 2026-10-29): bones and weights that survive topology edits, Undo, Knife
@@ -768,6 +784,8 @@ AD-036)*; per-object evaluated display beyond the edit object *(2026-11-18: buil
 bone mirroring (L/R) and symmetric weights of off-centre bones; GUI panels *(2026-11-17: one Bone / Skin panel, same
 addendum)*; `config/keymap.json`; removing the Morph
 Lab; transfer between meshes (Phase 7).
+
+*(2026-11-26: the weight brush and the L/R bone pairs, with symmetric weights for off-centre bones, are proposed in [AD-041](AD-041-WEIGHT-PAINTING.md). See the [addendum](#addendum-2026-11-26-weight-painting-ad-041).)*
 
 *(2026-11-03: a long-term product requirement for editing on the posed surface is proposed, pending Manu's review, in
 [MODELING_ON_DEFORMED_SURFACES](../design/MODELING_ON_DEFORMED_SURFACES.md). §7.1 (S5) stays the decided behaviour for position and topology edits; picking in the pose: §16 there, 2026-11-17.)*
