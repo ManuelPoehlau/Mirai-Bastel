@@ -1254,7 +1254,9 @@ thumbnail files follow their alphas; the import card's model; a headless draw of
 tabs' thumbnails as GL textures, every thumbnail frame < 150 ms, the popup owns the mouse, GL state as found, the import
 card's rectangle, an import into the user folder, the textures freed when the room closes). The 4a / 4b tests are
 unchanged and green (one assertion on the removed 4a tip combo now reads the panel model's tip label).
-Whole suite: see the commit's run below (§14.8).
+Whole suite (container, xvfb, NumPy 2.2.6): `tests/` 8335 passed, 3 failed - the same 3 as on `922d964`, in 4a and in
+4b (§12.5: the box-paint scenario, its `can_run` purity variant, `test_scene_menu_local_tmp::test_probe_menu_wiring`),
+8 skipped.
 
 ### 14.7 Measurements [C] (container: Xeon, Python 3.13, NumPy 2.2.6, llvmpipe; `probe_paint_library.py`)
 
