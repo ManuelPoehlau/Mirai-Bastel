@@ -32,7 +32,8 @@ def modifiers_from_pyglet(bits: int) -> frozenset[str]:
 #: interaction keeps the precedence of AD-030 §2.
 #: AD-037 Phase 2 (Manu 2026-11-18: „Im Panel lässt sich nichts bedienen“): the Paint Room is a room, not a gesture - its
 #: panel and the SPACE menu work between strokes; a running stroke keeps the mouse (`_gesture_running`).
-PANEL_USABLE_OWNERS = frozenset({"bonechain", "paint"})
+#: AD-041 §7: the Weight Room likewise.
+PANEL_USABLE_OWNERS = frozenset({"bonechain", "paint", "weight"})
 
 GL_STATE_NAMES = (
     "depth_test", "blend", "cull_face", "scissor_test", "blend_src", "blend_dst", "program", "vao", "array_buffer",
@@ -108,6 +109,7 @@ class ImguiLayer:
         self.bone_open = False
         self.eye_lab = None  # Eye LookDev Phase 2 (I-1): das Eye-Lab-Fenster, offen solange `app.eye_lab_open`
         self.paint = None  # AD-037 Phase 2: das Paint-Room-Panel, offen solange `app.paint_room_open`
+        self.weight = None  # AD-041 §7: das Weight-Room-Panel, offen solange `app.weight_room_open`
         self.lookdev = None  # AD-038: das LookDev-Fenster, offen solange `app.lookdev_open`
         self.popup_open = False  # ein Menü/Dialog des Layers ist offen: ihm gehört die ganze Maus (letzter Frame)
 
@@ -156,6 +158,9 @@ class ImguiLayer:
         from .paint_panel import PaintPanel
 
         self.paint = PaintPanel(imgui, self.app, self)
+        from .weight_panel import WeightPanel
+
+        self.weight = WeightPanel(imgui, self.app, self)
         from .lookdev_panel import LookdevPanel
 
         self.lookdev = LookdevPanel(imgui, self.app, self)
@@ -224,7 +229,8 @@ class ImguiLayer:
         sonst stockt Move/Rotate/Scale und der Cursor-Wrap, sobald der Zeiger über das Panel läuft."""
         app = self.app
         owner = app.interaction_owner
-        return (owner is not None and owner not in PANEL_USABLE_OWNERS) or app.pointer.active or app.paint_stroking
+        return ((owner is not None and owner not in PANEL_USABLE_OWNERS) or app.pointer.active or app.paint_stroking
+                or app.weight_stroking)
 
     def _over_panel(self, x: float, y: float) -> bool:
         if self._gesture_running() or self._blocked():
@@ -475,6 +481,17 @@ class ImguiLayer:
                 self.app.close_paint_room()
         elif self.paint is not None:
             self.paint.release()  # AD-037 §14: the picker's thumbnails live while the room is open
+        if self.weight is not None and self.app.weight_room_open:
+            # links oben (wie der Paint Room): die Mitte gehört dem Kopf, auf dem gemalt wird
+            imgui.set_next_window_pos(imgui.ImVec2(8.0, self.PANEL_POS[1]), imgui.Cond_.first_use_ever)
+            _, keep = imgui.begin("Weight Room", True, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
+                                  | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
+            self.weight.draw()
+            pos, size = imgui.get_window_pos(), imgui.get_window_size()
+            imgui.end()
+            rects.append((pos.x, pos.y, size.x, size.y))
+            if keep is False:
+                self.app.close_weight_room()
         if self.lookdev is not None and self.app.lookdev_open:
             # links oben (wie der Paint Room): die Mitte gehört dem Kopf, der beurteilt wird
             imgui.set_next_window_pos(imgui.ImVec2(8.0, self.PANEL_POS[1]), imgui.Cond_.first_use_ever)

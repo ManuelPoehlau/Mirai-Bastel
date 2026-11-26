@@ -46,6 +46,35 @@ SHADING_LOOKS: dict[str, tuple[tuple[tuple[float, float, float], ...], float, fl
 }
 
 
+#: AD-041 §5 (W-4, `PROVISIONAL`): the Weight Room's heatmap look - per vertex, opaque, a dark neutral grey at exactly
+#: 0 ("no share" reads differently from "a little"), blue -> green -> yellow -> red from > 0 to 1.
+WEIGHT_LOOK = "weights"
+WEIGHT_ZERO_RGB = (0.17, 0.17, 0.19)
+WEIGHT_HUES: tuple[tuple[float, float, float], ...] = (
+    (0.15, 0.35, 1.0),
+    (0.10, 0.80, 0.35),
+    (1.0, 0.88, 0.10),
+    (1.0, 0.16, 0.10),
+)
+WEIGHT_ALPHA = 0.85
+
+
+def weight_colors(shares) -> "np.ndarray":
+    """`(n, 4)` float32 RGBA of the heatmap look for the shares `(n,)` in [0, 1] (vectorised; `WEIGHT_*` above)."""
+    import numpy as np
+
+    w = np.clip(np.asarray(shares, dtype=np.float64), 0.0, 1.0)
+    out = np.empty((w.size, 4), dtype=np.float32)
+    hues = np.asarray(WEIGHT_HUES, dtype=np.float64)
+    position = w * (len(hues) - 1)
+    lower = np.minimum(position.astype(np.int64), len(hues) - 2)
+    t = (position - lower)[:, None]
+    out[:, :3] = hues[lower] + (hues[lower + 1] - hues[lower]) * t
+    out[w <= 0.0, :3] = WEIGHT_ZERO_RGB
+    out[:, 3] = WEIGHT_ALPHA
+    return out
+
+
 def shading_color(weight: float, look: str = "color") -> RGBA:
     """Corner colour of one weight: transparent for `w <= 0`, else the hue ramp of `look` at `w` with
     an alpha between the look's minimum and maximum."""
