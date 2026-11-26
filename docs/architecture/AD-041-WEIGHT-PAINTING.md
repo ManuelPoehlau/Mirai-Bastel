@@ -7,7 +7,7 @@ Was PROPOSED the same day. Direction decided by Manu on 2026-11-26 (Development 
 - brush operations Add / Subtract, Smooth / Blur, Replace and „Aufräumen“ in the first build;
 - „Gleich mit L/R-Paaren“.
 
-Nothing is built yet; slice 1 (§11) is next.
+Slice 1 (the brush arithmetic) is built (2026-11-26, §13); slice 2 (the Weight Room) is next.
 
 **Mode:** Production, in fresh sessions with this AD as the handoff (§11).
 **Baseline:** `claude/serene-dirac-9sue6z` @ `3c9c80c`.
@@ -300,3 +300,37 @@ Deine Entscheidungen brauche ich zu W-1 … W-12 in §10. Die Empfehlung steht j
 - brush presets and alpha tips for weights;
 - a GPU skinning path;
 - `config/keymap.json` entries before Manu's word.
+
+## 13. Implementation notes
+
+### Slice 1 — the brush arithmetic (2026-11-26)
+
+- **Built:** `src/mirai/weight_paint.py` (pure, headless): `WeightBrushSettings`, `VertexCloud` (the shown cage's
+  positions as one array; `refresh()` re-reads a `SurfacePositions`, a rest `Mesh` keeps its rows), `footprint()`
+  (§3.1: sphere, `paint.brush.falloff`, connected only by a BFS limited to the candidates, front only by vertex normals
+  on the cage) and `BrushWeightStroke` (§3.2: press cache at first touch, stroke buffer, Add / Subtract / Replace,
+  Smooth). `skin_weights.clean_weights` / `clean_value` (§3.3). No change under `src/core/`.
+- **Stroke buffer, as built:** `C <- C + (1 - C)·flow·c` per dab and `S = opacity·C` - exactly `PaintStroke`'s rule
+  (AD-037 Phase 2). §3.2's wording "S capped at the opacity" reads the same at opacity 1 and differs only in how a
+  flow below 1 approaches a lower opacity (asymptotically here, a hard stop there); the Paint Room's feel won because
+  Manu has tested it. `PROVISIONAL`.
+- **Mask:** `S·(1 - m)` (Smooth: `c·flow·(1 - m)`), `m >= 1` keeps the value - the same as `_WeightsGesture._masked`
+  for linear targets. Clean protects any vertex with `m > 0` (a threshold cut has no partial form; `PROVISIONAL`).
+- **Clean:** the smallest share below the threshold first, repeated per vertex until none is left; a parent that
+  receives a small share passes it on up to the object (ends: every step moves mass to a strictly shallower node).
+- **Smooth:** Jacobi - every target of a dab comes from the values before it; `N(v)` = edge neighbours on the edit
+  mesh (same topology as the cage); opacity does not apply (§3.2's formula).
+- **Tests:** `tests/test_weight_paint.py` (25): the footprint (sphere and falloff, two lips, a U bent outside the
+  sphere, front only, a moved cage), the formulas, the opacity cap, the parent rule, path-independence over shuffled
+  dabs, W1-W4 / Σw <= 1 / <= 4 keys after every dab on random weights, mask, Esc exact, one Undo / Redo step, O(footprint)
+  reads and writes after a stroke that touched > 600 vertices, Smooth, Clean. With `test_application_rig.py`,
+  `test_weight_view.py`, `test_skin_weights.py` and `test_layer_gate.py`: 131 passed.
+- **Early cost [H]** (container, a 296 x 296 grid = 87.6k vertices, footprint 989 vertices, median of 20 dabs; not the
+  slice-5 measurement): footprint 3.2 ms, Add dab 5.6 ms, Smooth dab 7.5 ms - about 9 / 11 ms, so slightly above the
+  container half-bar of 8.3 ms (§8) before the skin and heatmap patches. The per-vertex `set_bone_weight` +
+  `set_layer_value` dominate the dab; §8's first lever (a batch layer write, a Core API addition with its own §7 step)
+  stays for slice 5, together with a cluster cull of the candidate query.
+- **For slice 2:** the room builds one `VertexCloud` per stroke from `_query_cage()` (or the edit mesh) and calls
+  `refresh()` per dab while posed; `footprint(..., hit_face=face_hit's face, toward_viewer=...)`; `dab(fp,
+  services.mask_values(fp.vertices))` returns the written vertices for the heatmap patch.
+

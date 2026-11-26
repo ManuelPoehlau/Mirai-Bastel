@@ -22,6 +22,10 @@ Setting bone `b` to `x ∈ [0, 1]` at a vertex with value `W` and object share `
   does not restore the old split - `{jaw 0.4, cheek 0.6}` (parent head): jaw -> 0.7 gives
   `{jaw 0.7, cheek 0.3}`, jaw back -> 0.4 gives `{head 0.3, jaw 0.4, cheek 0.3}`. Within one gesture the
   result is deterministic: `WeightStroke` computes every step from the values at the press (§8.4).
+- **Clean** ("Aufräumen", AD-041 §3.3 / W-9, `clean_weights`): every share `0 < w < threshold` is lowered to 0 by this
+  rule (to the parent, or the object for a root), repeated until no share of the vertex is below the threshold - a
+  parent can receive a small share and pass it on; the hierarchy is finite, so this ends. The brush is
+  `mirai.weight_paint` (AD-041 §3.1-§3.2).
 """
 
 from __future__ import annotations
@@ -132,5 +136,39 @@ def delete_bone_weights(mesh: Mesh, layer, bone: int, rig: Rig) -> int:
     for v, value in mesh.layer_items(layer):
         if any(k == bone for k, _ in value):
             mesh.set_layer_value(layer, v, set_bone_weight(value, bone, 0.0, parent_of))
+            count += 1
+    return count
+
+
+#: AD-041 W-9 `PROVISIONAL`: shares below this are cleaned
+CLEAN_THRESHOLD = 0.01
+
+
+def clean_value(value, threshold: float, parent_of: Callable[[int], Optional[int]]) -> tuple:
+    """The value with every share below `threshold` lowered to 0 by the write rule (module docstring; pure)."""
+    while True:
+        small = [(w, k) for k, w in value if 0.0 < w < threshold]
+        if not small:
+            return tuple(value)
+        _, bone = min(small)  # the smallest first (ties: the smaller key)
+        value = set_bone_weight(value, bone, 0.0, parent_of)
+
+
+def clean_weights(mesh: Mesh, layer, rig: Optional[Rig], threshold: float = CLEAN_THRESHOLD,
+                  mask: Optional[Mapping] = None) -> int:
+    """Aufräumen ("clean", AD-041 §3.3) over the whole mesh and every bone, through `set_layer_value` inside the caller's one
+    recording (one Undo step). `mask`: vertex -> protection; a masked vertex (any `m > 0`, `PROVISIONAL`: a threshold
+    cut has no partial form) keeps its value. Returns the number of vertices rewritten."""
+    if not 0.0 < threshold <= 1.0:
+        raise ValueError(f"a clean threshold lies in (0, 1]: {threshold!r}")
+    parent_of = parent_function(rig)
+    mask = mask or {}
+    count = 0
+    for v, value in mesh.layer_items(layer):
+        if mask.get(v, 0.0) > 0.0 or not any(w < threshold for _, w in value):
+            continue
+        new = clean_value(value, threshold, parent_of)
+        if new != value:
+            mesh.set_layer_value(layer, v, new)
             count += 1
     return count
