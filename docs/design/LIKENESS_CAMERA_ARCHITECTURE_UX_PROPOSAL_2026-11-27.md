@@ -1,7 +1,10 @@
 # Likeness Camera and Reference Camera Matching: Architecture and UX Proposal
 
 **Status:** PROPOSAL. Design only: no production code, Core, scene format, render behaviour, GUI or key binding is
-changed, and no key is authorised. All decisions LC-D1 … LC-D10 are open (§11).
+changed, and no key is authorised. **LC-D1, LC-D3, LC-D4, LC-D5 decided (Manu, 2026-11-27, §0)**; LC-D2, LC-D6 …
+LC-D10 and every key stay open (§11). The architecture for M1 is
+[AD-042](../architecture/AD-042-LIKENESS-CAMERA-M1.md) (PROPOSED 2026-11-27, number `PROVISIONAL`); no `src/` change
+before Manu accepts it.
 **Date:** 2026-11-27.
 **State inspected:** `main` @ `df02a00` ("AD-041 slice 3: fill from a selection"), clean tree. The inventory handed
 over from the previous session (same commit) was checked against the code; corrections and additions are in §1.2.
@@ -29,6 +32,23 @@ Names of new classes, files, panels and labels are `PROVISIONAL`. The word **Ref
 role in Mirai (`ObjectState.REFERENCE`, AD-021 RF-1 … RF-6) [V `core/scene.py:85`]. To avoid a collision this
 document says **likeness camera** and **photo** (German UI: „Kamera“, „Foto“); code names would be `LikenessCamera`
 and `backdrop`, never `reference`.
+
+---
+
+## 0. Decisions (Manu, 2026-11-27, chat; entered by the agent)
+
+Manu answered the four questions §11 names as needed for M1. His words are quoted as given; the "Meaning" column is
+the agent's reading, which [AD-042](../architecture/AD-042-LIKENESS-CAMERA-M1.md) builds on.
+
+| # | Manu's answer (verbatim) | Meaning | Was recommended |
+|---|---|---|---|
+| **LC-D1** | „Ansicht“ | The Kameraansicht is a **view state**, not a room. It combines with LookDev, Morph and Pose, and every tool works in it (§6.1). | yes |
+| **LC-D3** | „Kamera bewegt sich mit“ | Navigation in the camera view **moves the likeness camera**. A switch **„Kamera fixieren“** exists: when fixed, navigation leaves into the free view and the camera stays where it is (§6.3). | yes |
+| **LC-D4** | „Das Foto“ | A tilted photo is matched by **rotating the photo**, not by camera roll; the model stays upright on screen (§2.4). | yes |
+| **LC-D5** | „Kleinbild-Äquivalent mm“ | The focal length is given in **35 mm equivalent** by default; real sensor sizes are a choice (§2.3, §6.4). | yes |
+
+Still open and not needed for M1: LC-D2, LC-D6 … LC-D10 and every key (§6.5, §11). Unchanged: Manu's navigation
+keys, D-L9 (rooms without a key), R-1, LD-D1 … LD-D16.
 
 ---
 
@@ -642,6 +662,9 @@ Marks on the photo linked to vertices, the pose solve with a fixed focal length,
 
 Für den Start von M1 brauche ich **LC-D1, LC-D3, LC-D4, LC-D5**. Die anderen können bis zum Praxistest warten.
 
+**Stand 2026-11-27:** LC-D1, LC-D3, LC-D4 und LC-D5 sind entschieden, alle wie empfohlen (§0). Offen bleiben LC-D2,
+LC-D6 … LC-D10 und alle Tasten.
+
 | # | Frage | Möglichkeiten | Empfehlung | Art |
 |---|---|---|---|---|
 | **LC-D1** | Soll die Kameraansicht eine **Ansicht** sein (wie Ortho), die du mit LookDev, Morph und Pose kombinieren kannst, oder ein **eigener Raum** wie LookDev? | Ansicht · eigener Raum | **Ansicht** — du modellierst ja gerade *in* dieser Ansicht, und das Foto unter LookDev-Licht zu prüfen ist besonders wertvoll | Product Truth |
@@ -661,7 +684,10 @@ LD-D1 … LD-D16.
 
 ---
 
-**Next step:** Manu's answers to LC-D1, LC-D3, LC-D4 and LC-D5, then the architecture AD for M1 (AD-042,
+**Update 2026-11-27:** LC-D1, LC-D3, LC-D4 and LC-D5 are answered (§0) and the M1 architecture is written as
+[AD-042](../architecture/AD-042-LIKENESS-CAMERA-M1.md) (PROPOSED). Next: Manu accepts AD-042, then M1 is built.
+
+**Next step (as written before the answers):** Manu's answers to LC-D1, LC-D3, LC-D4 and LC-D5, then the architecture AD for M1 (AD-042,
 `PROVISIONAL` number). The AD belongs in a **fresh session**: this one carries a long inventory context, and the AD
 plus M1 are a self-contained Type C slice. Suggested model: **Claude Opus 5.5, reasoning effort high** (camera
 contract and bit-identity discipline, a new draw step in both shading paths); M1's implementation after the AD can run
