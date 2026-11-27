@@ -2,7 +2,7 @@
 
 Rechte Spalte (wie „Bone“ und „Auge“), Knopf „Kamera [+]“ in der Leiste. Die Logik (Zeilen, Bereiche, Freigaben) steht
 in `likeness_model`; das Panel zeichnet nur und ruft `Application` - es hält keinen Zustand außer dem Auf/Zu von „Mehr“.
-Regler wirken sofort (Sitzungswerte, kein Undo, nichts wird gespeichert).
+Regler wirken sofort (kein Undo); die Kameras werden mit der Szene gespeichert (Q-LC-3, `view.likeness`).
 """
 
 from __future__ import annotations

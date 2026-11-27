@@ -95,6 +95,8 @@ from . import texture_files
 from . import view_state
 from .orbit_focus import FocusTracker, OrbitFocus, focus_point
 from .viewport import lens as lens_math
+from . import likeness_files
+from .likeness_files import CLIP_RANGE, SENSOR_SIDE_MM
 from .pivot import WorkingPivot
 from . import view_state
 from .scene_objects import (
@@ -238,11 +240,7 @@ DOLLY_OUT_FACTOR = 1.1
 # AD-042 (likeness camera M1)
 CAMERA_VIEW_FRAMING = "Kameraansicht: die Kamera ist die Rahmung"
 CAMERA_FIXED_LEFT = "Kamera fixiert – freie Ansicht ab der Kamera (Durchschauen kehrt zurück)"
-PHOTO_MAX_PX = 4096  # the photo's longer side after the cap (an integer box factor, E4)
-PHOTO_MIN_PX = 16
 LIKENESS_PHOTO_FRAMES = 2  # the photo decodes after the frames that show "Foto wird geladen …"
-SENSOR_SIDE_MM = (1.0, 100.0)
-CLIP_RANGE = (0.001, 100_000.0)
 _SENSOR_SHORT = {"equiv35": "KB", "full_frame": "Vollformat", "aps_c": "APS-C", "custom": "eigener Sensor"}
 
 
@@ -784,9 +782,9 @@ class Application:
             self.close_weight_room()
         if self._lookdev.open:  # AD-038 §2.1: the room closes before the scene is replaced
             self.close_lookdev()
-        if self._likeness.view is not None:  # AD-042 §5.5: the new scene frames itself; the cameras stay (session)
+        if self._likeness.view is not None:  # AD-042 §5.5: the new scene frames itself
             self.leave_camera_view(status=None)
-        self._likeness.pending_photo = None
+        self._likeness.reset()  # Q-LC-3: the cameras belong to the scene; a file brings its own (`view.likeness`)
         self._lookdev.clear()  # its session materials belong to the objects that go
         self.paint.clear()  # AD-037: every object is new
         self.paint_display.clear()
@@ -1413,11 +1411,6 @@ class Application:
 
     def _likeness_photo_step(self) -> None:
         """The photo's step two, once the status line was drawn: read, cap, set (nothing changes on an error)."""
-        import numpy as np
-
-        from .likeness import LikenessPhoto
-        from .paint.library import read_image_rgba, reduce_rgba
-
         session = self._likeness
         session.pending_frames -= 1
         if session.pending_frames > 0:
@@ -1426,19 +1419,14 @@ class Application:
         session.pending_photo = None
         start = time.perf_counter()
         try:
-            rgba = read_image_rgba(path)
-            if rgba.ndim != 3 or rgba.shape[2] != 4:
-                raise ValueError("kein RGBA-Bild")
-            source = (int(rgba.shape[1]), int(rgba.shape[0]))
-            if min(source) < PHOTO_MIN_PX:
-                raise ValueError(f"kleiner als {PHOTO_MIN_PX} px")
-            rgba = np.ascontiguousarray(reduce_rgba(rgba, PHOTO_MAX_PX), dtype=np.uint8)
+            photo = likeness_files.read_photo(path, 0, session.next_serial())
         except Exception as exc:  # OSError, ValueError and pyglet's decoder errors: a status line, nothing changes
             self._set_status(f"Foto ›{path.name}‹: nicht lesbar ({exc})")
             return
         seconds = time.perf_counter() - start
         cam = session.cameras[index]
-        cam.photo = LikenessPhoto(path=path, rgba=rgba, source_size=source, serial=session.next_serial())
+        cam.photo, cam.photo_missing = photo, None
+        source = photo.source_size
         w, h = cam.photo.size
         origin = "" if (w, h) == source else f" (aus {source[0]} × {source[1]})"
         self._likeness_changed(index)
@@ -1458,7 +1446,8 @@ class Application:
 
         photo = cam.photo
         cam.photo = dataclasses.replace(photo, rgba=np.ascontiguousarray(np.rot90(photo.rgba, k=-1)),
-                                        serial=session.next_serial())
+                                        serial=session.next_serial(), turns=(photo.turns + 1) % 4,
+                                        source_size=(photo.source_size[1], photo.source_size[0]))
         self._likeness_changed(index)
         return True
 
@@ -1466,9 +1455,9 @@ class Application:
         if self._likeness_index(index, "Foto entfernen") is None:
             return False
         cam = self._likeness.cameras[index]
-        if cam.photo is None:
+        if cam.photo is None and cam.photo_missing is None:
             return False
-        cam.photo = None
+        cam.photo = cam.photo_missing = None
         self._likeness_changed(index)
         self._set_status("Foto entfernt")
         return True
@@ -1546,6 +1535,31 @@ class Application:
         cam.distance = camera.distance
         cam.yaw = camera.yaw
         cam.pitch = camera.pitch
+
+    def _load_likeness_section(self, raw) -> None:
+        """Q-LC-3: the cameras of a loaded scene file (`view.likeness`), photos read and capped now. A broken section
+        raises (view_state skips it: no camera); a photo that cannot be read leaves its camera without one (path kept,
+        a status line)."""
+        session = self._likeness
+        scene_dir = Path(self.scene_path).parent if self.scene_path is not None else Path.cwd()
+        cameras, values = likeness_files.parse(raw, scene_dir)
+        missing = []
+        for cam, wanted in cameras:
+            if wanted is None:
+                continue
+            path, turns = wanted
+            try:
+                cam.photo = likeness_files.read_photo(path, turns, session.next_serial())
+            except Exception:  # missing or unreadable: the camera stays, its photo path with it
+                cam.photo_missing = (path, turns)
+                missing.append(Path(path).name)
+        session.cameras = [cam for cam, _wanted in cameras]
+        session.active = values["active"]
+        session.overscan = values["overscan"]
+        session.photo_opacity = values["photo_opacity"]
+        session.photo_shown = values["photo_shown"]
+        if missing:
+            self._set_status(f"Kamera-Fotos nicht gefunden (Pfad bleibt): {', '.join(missing)}")
 
     def _likeness_camera_shifted(self, shift) -> None:
         """The morph editing view moved the camera (AD-042 §5.6): the saved free view moves with it."""
@@ -3270,8 +3284,12 @@ class Application:
         copies, sclera_copies, missing = self._copy_eye_images(document, path)
         map_copies = self._copy_look_maps(document, path, missing)  # AD-039 §10: the LookDev maps likewise
         paint = paint_files.prepare_save(document.objects.values(), self.paint, path)  # AD-037: layer PNGs first
+        # Q-LC-3 / LC-D9: the likeness cameras in `view.likeness`, their photos copied to `<stem>_photos/` first
+        likeness, photo_copies = likeness_files.prepare_save(self._likeness, path)
         data = scene_to_dict(document)
         data[view_state.VIEW_KEY] = view_state.capture(self)
+        if self._likeness.cameras:
+            data[view_state.VIEW_KEY][likeness_files.SECTION] = likeness
         lookdev = self._lookdev.saved_view
         if lookdev is not None:  # AD-038 §2.1: the view the room restores (the eye tier is not part of the view)
             data[view_state.VIEW_KEY]["display"].update(mode=lookdev["mode"].name, wireframe_overlay=lookdev["wire"],
@@ -3312,6 +3330,9 @@ class Application:
             if moved:  # the same images; an Undo restores the old paths, which still exist
                 obj.look = dataclasses.replace(obj.look, maps=dataclasses.replace(obj.look.maps, **moved))
         paint.apply(self.paint)
+        cams = self._likeness.cameras
+        for index, copy in photo_copies.items():  # the same pixels, read from the copy from now on
+            cams[index].photo = likeness_files.pointed_at(cams[index].photo, copy)
         if copies or sclera_copies or map_copies:
             self._objects.sync_views()  # the entries draw from the copy from now on
         self.scene_path = path
@@ -3324,6 +3345,8 @@ class Application:
         if map_copies:
             count = len(set(map_copies.values()))
             notes.append(f"LookDev map{'s' if count != 1 else ''} copied to {folder}/")
+        if photo_copies:
+            notes.append(f"Fotos in {likeness_files.photo_dir(path).name}/")
         if missing:
             notes.append(f"image not found, path kept: {', '.join(sorted(missing))}")
         if paint.written or paint.flats:

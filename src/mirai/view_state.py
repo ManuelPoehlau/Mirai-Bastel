@@ -3,7 +3,8 @@
 Shading, Wireframe, Region-Farben, Symmetrie-Anzeige, Worklight, Glanz, Kamera (Ansicht, Fokus, Ortho),
 Referenz-Ghost, Texturen, die SubD-Vorschau, die Morph-Regler (Gewichte und aktuelles Ziel je Objekt, Manu
 2026-11-16) und das LookDev-Studio (Vorlage, Drehung, Helligkeit, Belichtung, Tonkurve, Key / Fill / Rim, Hintergrund;
-AD-038 §18 LD-2, Abschnitt `"lookdev"`; die P3-Effekte als `"effects"`, optional gelesen, AD-039 §2.1) sollen beim Öffnen einer gespeicherten Szene nicht neu
+AD-038 §18 LD-2, Abschnitt `"lookdev"`; die P3-Effekte als `"effects"`, optional gelesen, AD-039 §2.1) und die
+Likeness-Kameras (Abschnitt `"likeness"`, `mirai.likeness_files`, Q-LC-3 2026-11-27) sollen beim Öffnen einer gespeicherten Szene nicht neu
 eingestellt werden müssen. Der Zustand reist in der Szenendatei unter dem optionalen Schlüssel `"view"`
 (neben `objects`, `rig`, ...): `core.serialization` ignoriert unbekannte Schlüssel, das Core-Format
 (Version, Vertrag) bleibt unverändert, und ältere Builds lesen die Datei weiter (sie verlieren nur die Ansicht).
@@ -175,6 +176,7 @@ def apply(app, view: Any) -> list[str]:
         ("reference_ghost", _apply_ghost),
         ("morph", _apply_morph),
         ("lookdev", _apply_lookdev),
+        ("likeness", _apply_likeness),
     ):
         if name not in view:
             continue
@@ -184,6 +186,11 @@ def apply(app, view: Any) -> list[str]:
             skipped.append(name)
     app._apply_display()  # one push of mode, tint, light and finish to the viewport
     return skipped
+
+
+def _apply_likeness(app, raw: dict) -> None:
+    """Q-LC-3 (Manu 2026-11-27): the scene's likeness cameras (`mirai.likeness_files`); a broken section leaves none."""
+    app._load_likeness_section(raw)
 
 
 def _apply_display(app, raw: dict) -> None:

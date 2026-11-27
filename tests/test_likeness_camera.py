@@ -174,20 +174,91 @@ def test_a_save_in_the_camera_view_writes_the_free_view(app, tmp_path):
     path = tmp_path / "scene.mirai.json"
     assert app.save_scene_file(path), app.status_message
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["view"]["camera"] == free
-    assert "likeness" not in json.dumps(data) and "Kamera" not in json.dumps(data)
+    assert data["view"]["camera"] == free  # never the likeness camera's view
+    assert [c["name"] for c in data["view"]["likeness"]["cameras"]] == ["Kamera 1"]  # Q-LC-3
     assert app.camera_view_open  # saving changes nothing
 
 
-def test_a_scene_load_leaves_the_camera_view_and_keeps_the_cameras(app, tmp_path):
-    path = tmp_path / "scene.mirai.json"
-    assert app.save_scene_file(path)
+# -- Q-LC-3 (Manu 2026-11-27): the cameras belong to the scene file ------------------------------------------------
+
+def test_cameras_and_photos_round_trip_through_the_scene_file(app, tmp_path):
+    index = _new(app)
+    assert app.set_likeness_lens(index, focal_mm=85.0, sensor="aps_c") and app.set_likeness_fixed(index, True)
+    assert app.set_likeness_clip(index, near=0.2, far=500.0) and app.rename_likeness_camera(index, "Anna ¾")
+    source = _photo(tmp_path, 300, 200, "anna.png")
+    _load_photo(app, index, source)
+    assert app.turn_likeness_photo(index)
+    app.camera.orbit(0.4, 0.0)
+    assert _new(app) == 1
+    assert app.set_likeness_view(overscan=1.3, photo_opacity=0.6)
+    before = [(c.name, _pose(c), c.lens, c.clip_near, c.clip_far, c.fixed) for c in app.likeness.cameras]
+    scene = tmp_path / "scenes" / "head.mirai.json"
+    assert app.save_scene_file(scene), app.status_message
+    photos = scene.parent / "head_photos"
+    copies = list(photos.iterdir())
+    assert len(copies) == 1 and copies[0].read_bytes() == source.read_bytes()  # the source file, byte for byte
+    assert app.likeness.cameras[0].photo.path == copies[0] and "Fotos in head_photos/" in app.status_message
+    raw = json.loads(scene.read_text(encoding="utf-8"))["view"]["likeness"]["cameras"][0]["photo"]
+    assert raw == {"file": f"head_photos/{copies[0].name}", "turns": 1}
+    assert app.save_scene_file(scene) and list(photos.iterdir()) == copies  # a second save copies nothing
+    app.init_scene("cube")
+    assert app.likeness.cameras == []  # File > New: no camera
+    app.load_scene("file", scene_path=scene)
+    after = app.likeness.cameras
+    assert [(c.name, _pose(c), c.lens, c.clip_near, c.clip_far, c.fixed) for c in after] == before
+    assert after[0].photo.size == (200, 300) and after[0].photo.turns == 1 and after[1].photo is None
+    assert (app.likeness.active, app.likeness.overscan, app.likeness.photo_opacity) == (1, 1.3, 0.6)
+    assert not app.camera_view_open and app.look_through(0) and app.viewport.backdrop.image.shape == (300, 200, 4)
+
+
+def test_a_file_without_cameras_leaves_none(app, tmp_path):
+    empty = tmp_path / "empty.mirai.json"
+    assert app.save_scene_file(empty)
+    assert "likeness" not in json.loads(empty.read_text(encoding="utf-8"))["view"]
     index = _new(app)
     assert app.look_through(index)
-    app.load_scene("file", scene_path=path)
-    assert not app.camera_view_open and len(app.likeness.cameras) == 1 and app.viewport.backdrop is None
-    assert app.camera.clip_follows_distance
-    assert app.look_through(index) and app.viewport.backdrop is not None
+    app.load_scene("file", scene_path=empty)
+    assert not app.camera_view_open and app.likeness.cameras == [] and app.likeness.active is None
+    assert app.viewport.backdrop is None and app.camera.clip_follows_distance
+    assert app.toggle_camera_view() is False
+
+
+def test_a_missing_photo_keeps_its_path_and_a_gone_source_is_written_from_memory(app, tmp_path):
+    index = _new(app)
+    source = _photo(tmp_path, 64, 48, "temp.png")
+    _load_photo(app, index, source)
+    source.unlink()  # the source is gone before the save: the pixels in memory are written
+    scene = tmp_path / "s.mirai.json"
+    assert app.save_scene_file(scene), app.status_message
+    copy = next((tmp_path / "s_photos").iterdir())
+    assert copy.suffix == ".png"
+    copy.unlink()  # and gone again before the load
+    app.load_scene("file", scene_path=scene)
+    cam = app.likeness.cameras[0]
+    assert cam.photo is None and cam.photo_missing == (str(copy), 0) and "nicht gefunden" in app.status_message
+    other = tmp_path / "elsewhere" / "s2.mirai.json"
+    assert app.save_scene_file(other)
+    raw = json.loads(other.read_text(encoding="utf-8"))["view"]["likeness"]["cameras"][0]["photo"]
+    assert raw["file"] == str(copy)  # outside the new scene's folder: absolute, kept
+
+
+def test_a_broken_section_loads_the_scene_without_cameras(app, tmp_path):
+    index = _new(app)
+    scene = tmp_path / "b.mirai.json"
+    assert app.save_scene_file(scene)
+    data = json.loads(scene.read_text(encoding="utf-8"))
+    data["view"]["likeness"]["cameras"][0]["clip_near"] = -1.0
+    scene.write_text(json.dumps(data), encoding="utf-8")
+    app.load_scene("file", scene_path=scene)
+    assert app.likeness.cameras == [] and "likeness" in app.status_message and index == 0
+
+
+def test_the_photo_folders_are_git_ignored():
+    """LC-D9 (Manu 2026-11-27): photos of real people never reach the public repository."""
+    from pathlib import Path
+
+    rules = (Path(__file__).resolve().parents[1] / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "scenes/**/*_photos/" in rules
 
 
 # -- T-V5 / T-V6: navigation ----------------------------------------------------------------------------------------

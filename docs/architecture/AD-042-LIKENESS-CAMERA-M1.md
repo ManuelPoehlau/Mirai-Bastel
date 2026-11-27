@@ -970,7 +970,33 @@ Der Praxistest §15 gilt unverändert; vorher bitte einmal `python experiments/d
   the saved free view (§5.4; Q-LC-2 named the fixed camera only). Test:
   `test_likeness_camera.py::test_a_fixed_camera_leaves_and_the_free_view_starts_at_the_camera`.
 - **Q-LC-3:** cameras are scene data - saved with the file, replaced by a loaded file's (none in the file = none
-  left). That is AD-042's M3 persistence, which needs LC-D2 (where they live in the file) and LC-D9 (the photos); not
-  built until Manu answers those.
+  left). Built with LC-D2 / LC-D9 below (§17.7).
 
-**Next step:** Manu's answer to LC-D2 / LC-D9 for the persistence; his probe run and practical test (§11.3, §15).
+### 17.7 Cameras in the scene file (Q-LC-3; LC-D2 „C jetzt, A später“, LC-D9 „Kopie in <Szene>_photos/“)
+
+Manu 2026-11-27 (asked after Q-LC-3, because the AD had persistence in M3 behind LC-D2 and LC-D9). This replaces §4.2's
+"the session survives a scene load", §8.1's "privacy: M1 writes no photo and saves no path" and §5.5's load row.
+
+- **Where:** `view.likeness` in the scene file's view section (`mirai.likeness_files`, read in `view_state.apply`):
+  `format`, `cameras` (name, pose in orbit form, lens, clip, fixed, photo `{file, turns}` or null), `active`,
+  `overscan`, `photo_opacity`, `photo_shown`. Written only when there is a camera. No Core field, no format version,
+  no Undo (view state, LC-D2 C). An older build reads the file and drops the section when it saves (the `view.lookdev`
+  rule). M3 (LC-D2 A, camera objects in the Core) reads this section once more.
+- **Load / new:** every scene replacement (`init_scene`: file, cube, OBJ, File > New) leaves the camera view and empties
+  the session (`LikenessSession.reset`); a file then brings its own cameras. A file without the section has none.
+  A broken section loads the scene without cameras (the status line names `likeness`, like any skipped view section).
+  Photos are read and capped while the scene loads (synchronously; a 24 MP JPEG adds its decode time to the load).
+- **Photos (LC-D9):** on save the photo's **source file** is copied byte for byte into `<scene stem>_photos/` under
+  its content name (`texture_files.copy_into`: never overwrites, never deletes; a second save copies nothing). The file
+  stores the copy scene-relative and the quarter turns of „90° drehen“ (`LikenessPhoto.turns`); after the save the
+  photo reads from the copy. A source gone by the save is written from memory as a PNG (the capped, turned pixels,
+  0 turns). A photo missing on load leaves the camera without it, keeps the path (`LikenessCamera.photo_missing`,
+  written again on save, absolute when outside the scene folder) and shows „Kamera-Fotos nicht gefunden (Pfad bleibt)“.
+- **Privacy:** `.gitignore` gains `scenes/**/*_photos/` (Manu's LC-D9); a test checks the rule.
+- **Panel:** the hint says the cameras are saved with the scene; a missing photo shows „fehlt: <Name>“.
+- **Tests:** `test_likeness_camera.py` - the round trip (two cameras, lens, clip, fixed, a turned photo; the copy equals
+  the source; a second save copies nothing; File > New empties; the load restores everything), a file without cameras,
+  a gone source and a missing copy, a broken section, the `.gitignore` rule; the save test checks the section.
+
+**Next step:** Manu's probe run and practical test (§11.3, §15, now including save / load); M3 (camera objects, Undo,
+Outliner) after M2.

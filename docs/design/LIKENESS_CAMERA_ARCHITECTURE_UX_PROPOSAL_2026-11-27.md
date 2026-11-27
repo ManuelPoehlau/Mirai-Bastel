@@ -46,6 +46,8 @@ the agent's reading, which [AD-042](../architecture/AD-042-LIKENESS-CAMERA-M1.md
 | **LC-D3** | „Kamera bewegt sich mit“ | Navigation in the camera view **moves the likeness camera**. A switch **„Kamera fixieren“** exists: when fixed, navigation leaves into the free view and the camera stays where it is (§6.3). | yes |
 | **LC-D4** | „Das Foto“ | A tilted photo is matched by **rotating the photo**, not by camera roll; the model stays upright on screen (§2.4). | yes |
 | **LC-D5** | „Kleinbild-Äquivalent mm“ | The focal length is given in **35 mm equivalent** by default; real sensor sizes are a choice (§2.3, §6.4). | yes |
+| **LC-D2** (later the same day, after M1) | „C jetzt, A später“ (with Q-LC-3: „Kameras werden in der Szenendatei gespeichert/geladen“) | The cameras are saved **now** in the view section `view.likeness` (no Core, no Undo); the camera object (A, Core) follows with M3 and reads these files. Built: AD-042 §17.7. | A after M2 (C now is earlier than recommended) |
+| **LC-D9** (same) | „Kopie in <Szene>_photos/“ | Photos are copied beside the scene into `<stem>_photos/`, git-ignored (`scenes/**/*_photos/`). Built: AD-042 §17.7. | yes |
 
 Still open and not needed for M1: LC-D2, LC-D6 … LC-D10 and every key (§6.5, §11). Unchanged: Manu's navigation
 keys, D-L9 (rooms without a key), R-1, LD-D1 … LD-D16.

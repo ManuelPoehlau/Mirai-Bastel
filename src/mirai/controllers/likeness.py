@@ -43,6 +43,13 @@ class LikenessSession:
         self.pending_frames = 0  # ticks left before the pending photo decodes
         self._serial = 0
 
+    def reset(self) -> None:
+        """A scene replacement (Q-LC-3: the cameras belong to the scene): no camera, the view values at their defaults;
+        the serial counter keeps counting (a viewport never sees a serial twice). The caller left the camera view."""
+        serial = self._serial
+        self.__init__()
+        self._serial = serial
+
     @property
     def viewing(self) -> LikenessCamera | None:
         """The camera looked through, None = the free view."""

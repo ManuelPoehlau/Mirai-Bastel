@@ -22,6 +22,7 @@ class LikenessPhoto:
     rgba: np.ndarray  # (h, w, 4) uint8, top row first, capped (AD-042 §8.1)
     source_size: tuple[int, int]  # (w, h) before the cap (panel line)
     serial: int  # new on every load and quarter turn: the viewport uploads once per serial
+    turns: int = 0  # clockwise quarter turns applied to the file's pixels („90° drehen“; saved with the scene)
 
     @property
     def size(self) -> tuple[int, int]:
@@ -41,6 +42,8 @@ class LikenessCamera:
     clip_far: float
     photo: LikenessPhoto | None = None
     fixed: bool = False  # LC-D3 „Kamera fixieren“
+    #: a saved photo that was not found on load: (absolute path, turns), written again on the next save (Q-LC-3)
+    photo_missing: tuple[str, int] | None = None
 
 
 @dataclass(frozen=True)

@@ -1,13 +1,14 @@
 """Pure logic of the panel „Kamera“ (AD-042 §8.2): labels, rows, ranges, enabled states - tested headless.
 
 The panel (`likeness_panel`) only draws this and calls `Application`; it holds no state of its own. Lens and photo rows
-edit the **active** camera; without a camera only „Neu aus Ansicht“ is enabled. Everything is session view state:
-no Undo, nothing saved (M1).
+edit the **active** camera; without a camera only „Neu aus Ansicht“ is enabled. The cameras are saved with the scene
+(`view.likeness`, Q-LC-3); no Undo.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from mirai.viewport import lens as lens_math
 
@@ -26,7 +27,7 @@ FOCAL_BUTTONS = (24, 35, 50, 85, 105, 135, 200)
 SENSOR_LABELS = {**{key: label for key, (label, *_rest) in lens_math.SENSORS.items()}, lens_math.CUSTOM: "eigene"}
 FIT_LABELS = {"auto": "Auto", "width": "Breite", "height": "Höhe", "diagonal": "Diagonale"}
 HINT_FOCAL = "Fotos ab 50 mm KB vergleichen sich am besten"
-HINT_SESSION = "Nichts wird gespeichert (M1)"
+HINT_SESSION = "Kameras werden mit der Szene gespeichert, Fotos als Kopie in <Szene>_photos/ (kein Rückgängig)"
 FIX_HINT = "Navigation verlässt die Kameraansicht und beginnt an der Kamera; die Kamera bleibt (Durchschauen kehrt zurück)"
 FRAMING_HINT = "Kameraansicht: die Kamera ist die Rahmung"
 EYE_FRAMING_HINT = "erst Kameraansicht verlassen"
@@ -112,7 +113,13 @@ def state(app) -> PanelState:
                        ln.sensor_h_mm, ln.sensor == lens_math.CUSTOM, cam.clip_near, cam.clip_far)
         pending = session.pending_photo is not None and session.pending_photo[0] == session.active
         if cam.photo is None:
-            photo = PhotoRow(False, "wird geladen …" if pending else "kein Foto", pending)
+            if pending:
+                line = "wird geladen …"
+            elif cam.photo_missing is not None:
+                line = f"fehlt: {Path(cam.photo_missing[0]).name}"
+            else:
+                line = "kein Foto"
+            photo = PhotoRow(False, line, pending)
         else:
             w, h = cam.photo.size
             line = f"{cam.photo.path.name} · {w} × {h}"
