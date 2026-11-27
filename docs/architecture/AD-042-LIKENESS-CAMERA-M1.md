@@ -1123,7 +1123,13 @@ exif_adoptable`), drawn by `gui.likeness_panel` (no state but „Mehr“). Visib
   `tests/test_gui_likeness_panel_window.py` (+1: the compare radio and „Nur Foto (halten)“ in the real window).
 - **The one intended change of an existing test:** `test_likeness_camera.py::test_cameras_and_photos_round_trip_…`
   pins the photo entry exactly; it now includes `"oriented": True` (§18.4).
-- Guards: RESULTS_PLACEHOLDER
+- Guards: 394 headless tests in one targeted run (the §10.1 list, the likeness files, HUD, main wiring, interaction
+  structure): all green but the known `test_iv_can_run_is_pure[test_box_paint_and_lasso_select_…]` (§17.3, fails on
+  `b4eb346` too). In their own processes: `test_gl_gpu_picking.py` (41), `test_gl_face_data_layout.py` (16),
+  `test_gl_shading.py` (19), `test_gl_texture.py` (10), `test_gui_imgui_window.py` (19), `test_gl_lookdev_pass.py` (13),
+  `test_gl_line_overlay.py` (8), the three likeness GL / window files (18): all green.
+- Full `pytest tests` (headless, 14 min), the two known box-paint failures deselected: **7 858 passed, 477 skipped,
+  0 failed**.
 
 ### 18.8 Probe
 
