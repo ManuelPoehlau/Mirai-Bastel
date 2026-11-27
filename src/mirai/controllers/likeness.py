@@ -40,6 +40,7 @@ class LikenessSession:
         self.photo_shown = True
         self.passepartout = PASSEPARTOUT_DEFAULT
         self.pending_photo: tuple[int, Path] | None = None
+        self.pending_frames = 0  # ticks left before the pending photo decodes
         self._serial = 0
 
     @property

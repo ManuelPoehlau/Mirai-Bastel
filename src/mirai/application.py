@@ -646,7 +646,6 @@ class Application:
         # The LookDev room (AD-038 §2): view configuration + session studio and materials; no interaction session.
         self._lookdev = LookdevRoom(self._services)
         self._likeness = LikenessSession()  # AD-042: session likeness cameras and the camera view (view state only)
-        self._likeness_photo_wait = 0
         # WP-KNIFE-01 UX2b: any Shift key held, as the window reports it
         # (`set_shift_held`). Only the Knife's hover reads it (the midpoint before
         # the click); a click keeps deciding by its press modifiers (A2, AD-019).
@@ -1407,7 +1406,7 @@ class Application:
             return False
         session = self._likeness
         session.pending_photo = (index, Path(path))
-        self._likeness_photo_wait = LIKENESS_PHOTO_FRAMES
+        session.pending_frames = LIKENESS_PHOTO_FRAMES
         self._set_status("Foto wird geladen …")
         return True
 
@@ -1418,10 +1417,10 @@ class Application:
         from .likeness import LikenessPhoto
         from .paint.library import read_image_rgba, reduce_rgba
 
-        self._likeness_photo_wait -= 1
-        if self._likeness_photo_wait > 0:
-            return
         session = self._likeness
+        session.pending_frames -= 1
+        if session.pending_frames > 0:
+            return
         index, path = session.pending_photo
         session.pending_photo = None
         start = time.perf_counter()

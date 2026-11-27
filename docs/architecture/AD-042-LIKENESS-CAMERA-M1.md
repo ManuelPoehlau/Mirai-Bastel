@@ -930,6 +930,13 @@ shaders.
   morph twins, main wiring); in their own processes `test_gl_gpu_picking.py` (41), `test_gl_face_data_layout.py`
   (16), `test_gl_shading.py` (19), `test_gl_texture.py` (10), `test_gui_imgui_window.py` (19),
   `test_gl_lookdev_pass.py` (13), `test_gl_line_overlay.py` (8).
+- Full `pytest tests` (headless, 12 min): 7 809 passed, 470 skipped, 3 failed → 2 after the fix below. The two left
+  (`test_interaction_scenarios.py::test_box_paint_and_lasso_select_and_esc_cancels_a_box` and its purity replay
+  `test_interaction_structure.py::test_iv_can_run_is_pure[...]`, "Paint: 6 vertices selected" instead of 5) **fail on
+  `b4eb346` too** (checked in a worktree): not caused by M1, not touched. The third was M1's:
+  `test_i_application_init_sets_only_non_modal_fields` - `_likeness` is registered in `NON_MODAL_FIELDS` (a view
+  configuration without an interaction session, like `_lookdev`); the photo's tick counter lives in the session
+  (`pending_frames`), not on `Application`.
 
 ### 17.4 Probe, container
 
