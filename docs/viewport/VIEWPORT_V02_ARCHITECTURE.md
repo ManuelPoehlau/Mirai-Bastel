@@ -131,7 +131,8 @@ Decisions V-1..V-3 (chat 2026-10-28, all as recommended):
 - `basis()` at |pitch| = 90° (Top / Bottom) takes `right` from the yaw; free orbit stays within ±85°,
   `set_view` sets ±90° for a snapped view. `nearest_standard_view` keeps the yaw in its turn.
 - Every ortho or view change bumps `camera_revision` (PickCache, GPU picking and uniforms key on it).
-- The camera (and so ortho) is view state: not saved, no History.
+- The camera (and so ortho) is view state: no History. Since 2026-11-07 it is saved with the scene file under
+  `view.camera` (`mirai.view_state`: target, distance, yaw, pitch, `fov_degrees`, ortho; near and far are not saved).
 - Not in scope: snapping in the transform's Alt-orbit (`Application._navigate_during_transform`).
 
 #### Addendum 2026-11-08: orbit about a point (Dynamic Orbit Focus)
