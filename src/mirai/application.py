@@ -237,6 +237,7 @@ DOLLY_OUT_FACTOR = 1.1
 
 # AD-042 (likeness camera M1)
 CAMERA_VIEW_FRAMING = "Kameraansicht: die Kamera ist die Rahmung"
+CAMERA_FIXED_LEFT = "Kamera fixiert – freie Ansicht ab der Kamera (Durchschauen kehrt zurück)"
 PHOTO_MAX_PX = 4096  # the photo's longer side after the cap (an integer box factor, E4)
 PHOTO_MIN_PX = 16
 LIKENESS_PHOTO_FRAMES = 2  # the photo decodes after the frames that show "Foto wird geladen …"
@@ -1509,7 +1510,29 @@ class Application:
         if kind in ("snap", "ortho"):
             self.leave_camera_view("Kameraansicht verlassen: Ortho und Einrasten gibt es nur in der freien Ansicht")
         elif cam.fixed:
-            self.leave_camera_view("Kamera fixiert – freie Ansicht (Durchschauen kehrt zurück)")
+            self._leave_at_camera(cam)
+
+    def _leave_at_camera(self, cam) -> None:
+        """Q-LC-2 (Manu 2026-11-27: „beginnt in der Kamera-Position“): navigating a fixed camera leaves the camera view,
+        and the free view starts where the camera is (its pose, the morph shift included) instead of jumping back to
+        the saved free view. The free view keeps its own lens: its saved FOV, perspective, the clip following the
+        distance. The camera stays as it is."""
+        self.leave_camera_view(CAMERA_FIXED_LEFT)
+        camera = self.camera
+        shift = self._likeness_shift()
+        camera.target = tuple(cam.target[i] + shift[i] for i in range(3))
+        camera.distance = cam.distance
+        camera.yaw = cam.yaw
+        camera.pitch = cam.pitch
+        camera.ortho = False
+        camera.follow_clip()
+        camera.camera_revision += 1
+        self._view_name = None
+        self._ortho_auto = False
+        self._orbit_anchor = None
+        if self._orbit_virtual is not None:  # a running orbit gesture continues from here
+            self._orbit_virtual = (camera.yaw, camera.pitch)
+        self._camera_changed()
 
     def _camera_view_follow(self) -> None:
         """AD-042 §5.4, after a navigation step: the camera looked through takes the pose (exact copies, the morph

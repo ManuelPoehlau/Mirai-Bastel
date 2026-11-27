@@ -872,6 +872,12 @@ Three engineering defaults that can wait for the practical test (each is `PROVIS
 | Q-LC-2 | Navigieren mit fixierter Kamera | zurück in die gespeicherte freie Ansicht (Sprung) | die freie Ansicht beginnt an der Kamera-Position |
 | Q-LC-3 | Kameras nach „Szene laden“ | bleiben in der Liste (Sitzung) | werden gelöscht |
 
+**Entschieden (Manu 2026-11-27, Chat):** „Q LC-1 passt, LC-2 beginnt in der Kamera Position LC-3 wird gelöscht, bzw.
+Kameras werden in der Szenendatei gespeichert/geladen. Sollte die geladene Datei keine Kamera gesetzt haben, ist sie dort
+also gelöscht.“ → Q-LC-1: 1,15 bleibt. Q-LC-2: die Alternative, gebaut (§17.6). Q-LC-3: die Kameras gehören zur Szene
+(gespeichert und geladen; eine Datei ohne Kameras lässt keine übrig) - das zieht die Persistenz aus M3 vor und braucht
+LC-D2 und LC-D9 (§17.6).
+
 ---
 
 ---
@@ -953,4 +959,18 @@ control for it).
 Der Praxistest §15 gilt unverändert; vorher bitte einmal `python experiments/drag_cost/probe_likeness.py` (und mit
 `--photo <dein JPEG>`) auf dem Referenz-PC. Q-LC-1 … Q-LC-3 (§16) haben ihre Startwerte und warten auf den Test.
 
-**Next step:** Manu's probe run and practical test (§11.3, §15); his verdict sets the M2 scope.
+### 17.6 Q-LC-1 … Q-LC-3 answered (Manu 2026-11-27)
+
+- **Q-LC-1:** overscan 1.15 stays (`OVERSCAN_DEFAULT`, no change).
+- **Q-LC-2 built:** a navigation step on a fixed camera leaves the camera view and the free view **starts at the
+  camera's pose** (target with the morph shift, distance, yaw, pitch; `Application._leave_at_camera`), not at the saved
+  free view. The free view keeps its own lens - the saved FOV, perspective, the clip following the distance - so the
+  picture widens from the camera's focal length to the free view's, from the same eye point; the step then runs there.
+  Status „Kamera fixiert – freie Ansicht ab der Kamera (Durchschauen kehrt zurück)“. U and the Shift snap still return to
+  the saved free view (§5.4; Q-LC-2 named the fixed camera only). Test:
+  `test_likeness_camera.py::test_a_fixed_camera_leaves_and_the_free_view_starts_at_the_camera`.
+- **Q-LC-3:** cameras are scene data - saved with the file, replaced by a loaded file's (none in the file = none
+  left). That is AD-042's M3 persistence, which needs LC-D2 (where they live in the file) and LC-D9 (the photos); not
+  built until Manu answers those.
+
+**Next step:** Manu's answer to LC-D2 / LC-D9 for the persistence; his probe run and practical test (§11.3, §15).

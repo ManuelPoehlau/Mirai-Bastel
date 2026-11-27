@@ -210,20 +210,31 @@ def test_navigation_moves_the_camera_and_the_record_follows(app, focus):
         assert (app.camera.near, app.camera.far) == clip  # a not-fixed dolly keeps the record's clip
 
 
-def test_a_fixed_camera_leaves_and_the_step_moves_the_free_view(app):
+def test_a_fixed_camera_leaves_and_the_free_view_starts_at_the_camera(app):
+    """Q-LC-2 (Manu 2026-11-27): navigating a fixed camera leaves; the free view starts at the camera's pose with its own
+    lens (saved FOV, perspective, clip following the distance); the camera stays."""
+    from mirai.application import CAMERA_FIXED_LEFT, DOLLY_IN_FACTOR
+    from mirai.viewport.camera import clip_for_distance
+
     index = _new(app)
     app.camera.orbit(0.3, 0.0)  # the free view differs from the camera
+    free_fov = app.camera.fov_degrees
     record = app.likeness.cameras[index]
-    assert app.set_likeness_fixed(index, True)
-    for step in (lambda: _drag(app, 40.0, -15.0), lambda: _drag(app, 25.0, 12.0, ("alt", "shift")),
-                 lambda: app.pointer_scroll(WHEEL_UP)):
+    assert app.set_likeness_lens(index, focal_mm=85.0) and app.set_likeness_fixed(index, True)
+    for kind, step in (("orbit", lambda: _drag(app, 40.0, -15.0)), ("pan", lambda: _drag(app, 25.0, 12.0, ("alt", "shift"))),
+                       ("dolly", lambda: app.pointer_scroll(WHEEL_UP))):
         assert app.look_through(index) and "fixiert" in app.view_text
         pose = _pose(record)
-        free = _cam_pose(app.likeness.view.saved)
         step()
-        assert not app.camera_view_open and _pose(record) == pose
-        assert app.status_message == "Kamera fixiert – freie Ansicht (Durchschauen kehrt zurück)"
-        assert _cam_pose(app.camera) != free and _cam_pose(app.camera) != pose  # the step ran on the free view
+        camera = app.camera
+        assert not app.camera_view_open and _pose(record) == pose and app.status_message == CAMERA_FIXED_LEFT
+        assert camera.fov_degrees == free_fov and not camera.ortho and camera.clip_follows_distance
+        assert (camera.near, camera.far) == clip_for_distance(camera.distance)
+        if kind == "dolly":
+            assert _cam_pose(camera) == (pose[0], pose[1] * DOLLY_IN_FACTOR, pose[2], pose[3])
+        else:
+            assert camera.distance == pose[1] and _cam_pose(camera) != pose  # one step away from the camera
+            assert abs(camera.yaw - pose[2]) < 0.3 and abs(camera.pitch - pose[3]) < 0.3
     assert app.look_through(index) and _cam_pose(app.camera) == _pose(record)
 
 
