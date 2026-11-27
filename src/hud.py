@@ -152,6 +152,8 @@ class HudState:
     morph_view: Optional[str] = None
     #: Phase A3: the weight view - None = off; else the bone whose share is shown, or "— (<why>)" = nothing to show.
     weights: Optional[str] = None
+    #: AD-042 §5.7: the camera view - „Kamera ›Kamera 1‹ · 85 mm“ (+ „ · fixiert“), None = the free view.
+    camera: Optional[str] = None
 
 
 def hud_state(app) -> HudState:
@@ -219,6 +221,7 @@ def hud_state(app) -> HudState:
         pose_locked=app.edit_mesh_posed_and_bound,
         morph_view=app.morph_editing_target_name,
         weights=app.weight_view_text,
+        camera=app.camera_view_text,
     )
 
 
@@ -401,6 +404,8 @@ def hud_rows(
     if state.bone is not None:  # only a scene with a rig and a bone: the one 7 / 8 and the pose gestures act on
         rows.append(row("Bone", f"{state.bone!r} · {'posed' if state.posed else 'rest'}",
                         on=state.pose_mode or state.posed))
+    if state.camera is not None:  # AD-042 §5.7: one deviation entry while looking through a likeness camera
+        rows.append(row("Kamera", state.camera.removeprefix("Kamera "), on=True))
     rows.append(row("Weights", state.weights if state.weights is not None else "off",
                     on=state.weights is not None and not state.weights.startswith("—"), quiet=state.weights is None))
     rows += [

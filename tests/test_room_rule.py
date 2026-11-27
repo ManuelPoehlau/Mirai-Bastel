@@ -164,3 +164,26 @@ def test_eye_lab_to_lookdev_and_eye_lab_refused_inside(app):
     app.close_lookdev()
     _tick(app)
     assert snapshot(app) == before
+
+
+def test_the_camera_view_keeps_the_deformation_state(app):
+    """AD-042 T-V8: entering, switching and leaving the camera view in a pose with a mix, gaze and SubD on - also with
+    LookDev open - change nothing of R-1."""
+    _deform(app)
+    before = snapshot(app)
+    assert app.new_likeness_camera()
+    app.camera.orbit(0.3, 0.1)
+    assert app.new_likeness_camera()
+    for lookdev in (False, True):
+        if lookdev:
+            assert app.open_lookdev(), app.status_message
+        assert app.look_through(0), app.status_message
+        _tick(app)
+        assert snapshot(app) == before
+        assert app.look_through(1)
+        _tick(app)
+        assert snapshot(app) == before
+        assert app.leave_camera_view()
+        _tick(app)
+        assert snapshot(app) == before
+    assert app.close_lookdev()

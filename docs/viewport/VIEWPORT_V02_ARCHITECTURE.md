@@ -147,6 +147,19 @@ unchanged). During and after such an orbit the target is no longer the orbit cen
 target, pan still moves it. The anchor is app state (`Application._orbit_anchor_point`), never camera state.
 Spec: [WP_DYNAMIC_ORBIT_FOCUS.md](../WP_DYNAMIC_ORBIT_FOCUS.md); tests `tests/test_camera_orbit_about.py`.
 
+#### Addendum 2026-11-27: one tan(fov/2), the distance range and the clip coupling (AD-042)
+
+`OrbitCamera._tan_half_fov()` is the only place `tan(fov/2)` is computed; the seven sites (`frame_on_bounds`,
+`_half_height`, `build_projection_matrix`, `screen_to_ray`, `project_to_screen`, `screen_projector`, `pan`) call it with
+bit-identical results (`tests/test_camera.py` T-C1). The distance range is `MIN_DISTANCE = 0.5` … `MAX_DISTANCE = 2000`
+(was 200) in `dolly` and `view_state._apply_camera`. While `clip_follows_distance` (default on) the free view's clip
+follows the distance (`follow_clip` in `dolly`, `frame_on_bounds`, a view load and the Eye Lab's close):
+`clip_for_distance(d) = (max(0.05, d / 1000), max(200, 4 · d))`, exactly today's (0.05, 200) for every `d ≤ 50`, so
+`ortho_back` and every result below 50 are unchanged (T-C2). A likeness camera's view (AD-042 §5) turns the flag off
+and writes its own clip and an FOV computed from its lens (`mirai.viewport.lens`); no new projection, no asymmetric
+frustum, no roll: matrices, CPU / GPU picking and `ObjectSpaceCamera` read the same fields. The photo, gate and
+passepartout are a `Viewport.set_backdrop(Backdrop)` seam that receives only NDC values (AD-042 §7).
+
 ### 4.2 RenderMesh
 
 **Responsibility:** Persistent GPU geometry; dirty state tracking; update dispatch.

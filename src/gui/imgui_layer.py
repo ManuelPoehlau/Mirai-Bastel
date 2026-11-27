@@ -107,6 +107,8 @@ class ImguiLayer:
         self.eye_open = False
         self.bone = None  # Bone tool 01 (2026-11-17): das Bone- und Skin-Panel (Knopf „Bone“, Standard zu)
         self.bone_open = False
+        self.likeness = None  # AD-042 §8.2: das Panel „Kamera“ (Knopf „Kamera“, Standard zu)
+        self.likeness_open = False
         self.eye_lab = None  # Eye LookDev Phase 2 (I-1): das Eye-Lab-Fenster, offen solange `app.eye_lab_open`
         self.paint = None  # AD-037 Phase 2: das Paint-Room-Panel, offen solange `app.paint_room_open`
         self.weight = None  # AD-041 §7: das Weight-Room-Panel, offen solange `app.weight_room_open`
@@ -167,6 +169,9 @@ class ImguiLayer:
         from .bone_panel import BonePanel
 
         self.bone = BonePanel(imgui, self.app, self)
+        from .likeness_panel import LikenessPanel
+
+        self.likeness = LikenessPanel(imgui, self.app, self)
         if self.services is not None:
             from .goz_panel import GozPanel
             from .menus import Menus
@@ -405,6 +410,11 @@ class ImguiLayer:
             if imgui.small_button("Bone " + ("[-]" if self.bone_open else "[+]")):
                 self.bone_open = not self.bone_open
             self._remember("toggle", "bone")
+        if self.likeness is not None:
+            imgui.same_line()
+            if imgui.small_button("Kamera " + ("[-]" if self.likeness_open else "[+]")):
+                self.likeness_open = not self.likeness_open
+            self._remember("toggle", "likeness")
         pos, size = imgui.get_window_pos(), imgui.get_window_size()
         rects.append((pos.x, pos.y, size.x, size.y))
         imgui.end()
@@ -453,6 +463,16 @@ class ImguiLayer:
             imgui.begin("Auge", None, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
                         | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
             self.eye.draw()
+            pos, size = imgui.get_window_pos(), imgui.get_window_size()
+            imgui.end()
+            rects.append((pos.x, pos.y, size.x, size.y))
+        if self.likeness is not None and self.likeness_open:
+            w = self.window.get_size()[0]
+            imgui.set_next_window_pos(imgui.ImVec2(max(8.0, w - 380.0), self.PANEL_POS[1] + 40.0),
+                                      imgui.Cond_.first_use_ever)
+            imgui.begin("Kamera", None, imgui.WindowFlags_.no_collapse | imgui.WindowFlags_.always_auto_resize
+                        | imgui.WindowFlags_.no_saved_settings | imgui.WindowFlags_.no_nav)
+            self.likeness.draw()
             pos, size = imgui.get_window_pos(), imgui.get_window_size()
             imgui.end()
             rects.append((pos.x, pos.y, size.x, size.y))

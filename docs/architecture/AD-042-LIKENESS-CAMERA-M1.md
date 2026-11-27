@@ -1,8 +1,9 @@
 # AD-042 — Likeness Camera M1 („Durch ein Objektiv schauen“): lens math, session cameras, the camera view, the backdrop
 
-**Status:** **PROPOSED (2026-11-27)**, Architecture Gate (Type C), docs only. The number AD-042 is `PROVISIONAL`
-(checked free at `450ebd5`: no `AD-042*` file, the number is named only in the proposal). No `src/`, `tests/`,
-`config/keymap.json`, `.gitignore`, Core or scene-format change before Manu accepts this AD (as with AD-038).
+**Status:** **ACCEPTED (Manu 2026-11-27, chat: „AD-042 build M1“ = accepted as proposed, §2's engineering values
+and §16's start values unchanged) — M1 BUILT (2026-11-27)**, implementation note §17. Architecture Gate (Type C).
+Was PROPOSED (2026-11-27, docs only, number checked free at `450ebd5`). Still open: Manu's probe run and practical
+test (§11.3, §15), Q-LC-1 … Q-LC-3 (§16), every key (§11.4).
 **Basis:** [LIKENESS_CAMERA_ARCHITECTURE_UX_PROPOSAL_2026-11-27](../design/LIKENESS_CAMERA_ARCHITECTURE_UX_PROPOSAL_2026-11-27.md)
 §2–§7, §9 (M1 tests), §10 (M1), and Manu's decisions **LC-D1, LC-D3, LC-D4, LC-D5** (2026-11-27, chat; entered in its
 §0). LC-D2, LC-D6 … LC-D10 and every key stay open; M1 needs none of them.
@@ -873,4 +874,76 @@ Three engineering defaults that can wait for the practical test (each is `PROVIS
 
 ---
 
-**Next step:** Manu's acceptance of AD-042; then M1 is built in a fresh session (§11.2).
+---
+
+## 17. Implementation note — M1 built (2026-11-27)
+
+Built in one session on `claude/magical-hamilton-th1i0c` from `b4eb346`, after Manu's „AD-042 build M1“ (taken as the
+acceptance of §11.1, as proposed). Everything in §3 … §8 is built as written except the items in §17.2.
+
+### 17.1 What is where
+
+| AD § | Code |
+|---|---|
+| §3 lens math | `src/mirai/viewport/lens.py` (stdlib only; `SENSOR_KEYS`, `CUSTOM` added beside `SENSORS`) |
+| §3.4, §6 camera | `camera.py`: `_tan_half_fov` (seven sites), `MIN_DISTANCE`, `MAX_DISTANCE = 2000`, `NEAR_BASE`, `FAR_BASE`, `clip_for_distance`, `clip_follows_distance`, `follow_clip` (in `dolly`, `frame_on_bounds`); `view_state._apply_camera` and `close_eye_lab` call `follow_clip`; `view_state.camera_fields` (the six `view.camera` fields of a camera or a saved free view) |
+| §4.1, §5.1 records | `src/mirai/likeness.py`: `LikenessPhoto` (+ `size`), `LikenessCamera`, `FreeView` (frozen; `of`, `write`), `default_clip` (E3) |
+| §4.2 session | `src/mirai/controllers/likeness.py`: `LikenessSession`, `CameraView` |
+| §4.3, §5, §8.1 app | `Application`: the §4.3 API plus `set_active_likeness_camera`; `_camera_view_route` / `_camera_view_follow` at `_navigate`, the wheel zoom, `_apply_orbit_virtual` (Shift branch), `_toggle_ortho`; `_apply_likeness_lens` in `set_viewport_size`; leave in `init_scene` (beside `close_lookdev`), `open_eye_lab`, `shutdown`; `frame_lookdev` / `frame_eye` refused; the save writes the saved free view; `view_text` / `camera_view_text`; the photo tick in `update_viewport` |
+| §5.6 morph shift | `MorphController._pan` → `services.camera_shifted(shift)` → `Application._likeness_camera_shifted` |
+| §7 backdrop | `src/viewport/backdrop.py` (`Backdrop`, `gate_corners`), `src/viewport/backdrop_pass.py` (`BackdropPass`); `Viewport.set_backdrop` / `backdrop` / `backdrop_pass`, the slots in the Worklight branch and after `draw_background`, the overlay slot after the under-highlight extras, `request_capture(…, backdrop=False)` |
+| §8.2, §8.3 GUI | `src/gui/likeness_model.py` (pure), `src/gui/likeness_panel.py`; toggle „Kamera [+]“ and the right-column window in `imgui_layer.py`; the SPACE row in `menus.py`; LookDev framing buttons and „Frontal einrahmen“ / „Einrahmen“ disabled with a tooltip; the compact HUD row `Kamera` (`HudState.camera`) |
+| §10.4 probe | `experiments/drag_cost/probe_likeness.py` (+ `tests/test_probe_likeness.py`) |
+
+`src/main.py` needs no wiring: the panels are created by the imgui layer itself (as Bone, Auge, LookDev). Not
+touched, as §9 says: `src/core/`, the scene format, `config/keymap.json`, `.gitignore`, the Worklight / LookDev / eye
+shaders.
+
+### 17.2 Deviations found while building
+
+| # | AD said | Built | Reason |
+|---|---|---|---|
+| B1 | §3.2 table: 25.73 mm → 50.00° / **69.4°** | 50.00° / **69.95°** | an arithmetic slip in the table; the formula (and every other row) is right; `tests/test_lens.py` pins 69.95° |
+| B2 | §7.3 passepartout "the four rectangles outside the gate" (§7.5: VAO + `gl_VertexID`) | four rectangles, 24 vertices from `gl_VertexID` | as written; a first full-screen triangle with `discard` was replaced the same day (the probe showed the fill) |
+| B3 | §4.3 has no "make active" | `set_active_likeness_camera(index)` | a click on a row selects the camera the lens and photo rows edit; the panel holds no state, so it goes through `Application` |
+| B4 | §5.1 refusals | plus `PaintRoomController.settle()` first | a finishing paint stroke ends first, as in `open_lookdev`; otherwise the first click after a stroke was refused |
+| B5 | §8.1 "the next `update_viewport` tick reads it" | after `LIKENESS_PHOTO_FRAMES = 2` ticks | the LookDev "preparing" pattern: the click happens during a frame's panel draw, so one more frame shows the status line before the decode |
+| B6 | §10.3 G3 "equal before and after the image draw and the gate draw, in the Worklight and in LookDev" | the pass's two draws against a deliberately odd state (depth, cull, blend factors, polygon mode `LINE`, a texture and a sampler on unit 0, unit 3 active, unpack 4) + the whole app frame with and without the camera view (Worklight and LookDev) ending in the same state | the Worklight frame itself does not end in its start state (depth test on), so "before / after the whole frame" would test the meshes, not the backdrop |
+| B7 | §5.7 the strip entry `Kamera` | the row label `Kamera`, value „›Kamera 1‹ · 85 mm“ (+ „ · fixiert“); the `View` row shows the full `view_text` | the strip's row shape (label · value) |
+| B8 | §10.3 G2 "a plane object" | the cube's front face seen frontally (its silhouette is the front face) | the test scene has no plane; measured inside the gate (outside it the passepartout darkens the clear colour) |
+
+### 17.3 Tests (container, 2026-11-27)
+
+- New, headless: `tests/test_lens.py` (29: T-L1 … T-L6 + the §3.2 invariant over random lenses),
+  `tests/test_camera.py` (+4: T-C1 over 11 799 FOVs bit for bit, T-C2 … T-C4), `tests/test_likeness_camera.py` (20:
+  T-V1 … T-V7, T-V9 … T-V12 plus setters, switch, delete), `tests/test_room_rule.py` (+1: T-V8, with LookDev too),
+  `tests/test_gui_likeness_model.py` (5, incl. the compact HUD entry), `experiments/drag_cost/tests/test_probe_likeness.py` (2).
+- New, GL in their own process: `tests/test_gl_likeness_backdrop.py` (9: G1 round trip in both window shapes - the
+  mean difference inside the gate is **< 1/255**, G2 pinhole within 1 px, G3, G4 byte for byte, G5, G6 within 1/255,
+  G7), `tests/test_gui_likeness_panel_window.py` (1: the panel in the real window - new, look through, 85 mm, fix,
+  a photo uploaded once, leave).
+- The one intended change of an existing test (§6.3, K1): `test_camera.py::test_dolly_clamps_distance` asserts
+  `MAX_DISTANCE`. The §6.3 grep found no other test reaching a distance above 50 through `dolly`, `frame_on_bounds` or
+  a view load (`test_camera_ortho.py:28` builds one at 150 through the constructor: unchanged). No other existing
+  result changed.
+- Guards run green (§10.1): 431 headless tests in one targeted run (the §10.1 list plus the new files, HUD, Eye Lab,
+  morph twins, main wiring); in their own processes `test_gl_gpu_picking.py` (41), `test_gl_face_data_layout.py`
+  (16), `test_gl_shading.py` (19), `test_gl_texture.py` (10), `test_gui_imgui_window.py` (19),
+  `test_gl_lookdev_pass.py` (13), `test_gl_line_overlay.py` (8).
+
+### 17.4 Probe, container
+
+[`RESULTS_LIKENESS_CONTAINER_2026-11-27.md`](../../experiments/drag_cost/RESULTS_LIKENESS_CONTAINER_2026-11-27.md):
+a function check on llvmpipe. Every row runs; `free after` = `free`; „Neu aus Ansicht“ gives 33.3 mm at 1024 × 768 (as
+§4.4 computed). The camera-view rows are over the 0.5 ms target **on the software rasteriser**: the blended
+passepartout's fill (isolated: the rectangles alone +4.9 ms, the draw state alone +0.0 ms). The reference PC decides
+(§11.3); if it is over there too, the lever is the passepartout's strength under „Mehr“ (0 = off: only the 1 px gate
+line is drawn; the value already exists as `LikenessSession.passepartout` / `Backdrop.passepartout`, M1 has no
+control for it).
+
+### 17.5 For Manu
+
+Der Praxistest §15 gilt unverändert; vorher bitte einmal `python experiments/drag_cost/probe_likeness.py` (und mit
+`--photo <dein JPEG>`) auf dem Referenz-PC. Q-LC-1 … Q-LC-3 (§16) haben ihre Startwerte und warten auf den Test.
+
+**Next step:** Manu's probe run and practical test (§11.3, §15); his verdict sets the M2 scope.

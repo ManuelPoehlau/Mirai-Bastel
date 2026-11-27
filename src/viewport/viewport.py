@@ -201,6 +201,7 @@ def _mat4_mul(a: list[float], b: list[float]) -> list[float]:
         for row in range(4):
             out[col * 4 + row] = sum(a[k * 4 + row] * b[col * 4 + k] for k in range(4))
     return out
+from .backdrop import BEHIND as BACKDROP_BEHIND
 from .eye_pass import EyeDisplay, EyeDraw
 from .lookdev_pass import LookDraw
 from .light_rig import DEFAULT_PRESET, PRESETS, SPACE_WORLD, LightRig, resolve
@@ -249,7 +250,12 @@ class Viewport:
         # today's code plus one string comparison.
         self.shading = "worklight"
         self._capture_request = None  # AD-038 §18: the next render()'s capture callback ("Bild speichern")
+        self._capture_backdrop = False  # AD-042 §7.4: whether that capture draws the backdrop photo
         self._capturing = False
+        # AD-042 §7: the likeness camera's photo, gate and passepartout (None = nothing of it is drawn; the frames are
+        # today's). The pass exists once a backdrop was drawn.
+        self._backdrop = None
+        self._backdrop_pass = None
         self.lookdev_state = None
         self._lookdev_pass = None
         self._edit_look: LookDraw | None = None
@@ -751,6 +757,46 @@ class Viewport:
         """AD-033 §6: the eye view state (`preview`, `reflection`, `refraction`, `tier`) - not saved, no Undo."""
         self.eye_display = replace(self.eye_display, **changes)
         return self.eye_display
+
+    # -- the backdrop (AD-042 §7) ----------------------------------------------------------------------------------
+
+    @property
+    def backdrop(self):
+        """The `Backdrop` drawn now (None = none), also headless."""
+        return self._backdrop
+
+    def set_backdrop(self, backdrop) -> None:
+        """A photo behind the meshes, a gate and a passepartout over them (`viewport.backdrop.Backdrop`), or None.
+        A new `image_serial` uploads once on the next draw; None (or no image) frees the texture now."""
+        self._backdrop = backdrop
+        bp = self._backdrop_pass
+        if bp is not None and (backdrop is None or backdrop.image is None):
+            bp.drop_image()
+
+    @property
+    def backdrop_pass(self):
+        """The backdrop's GL pass (created on first use; GL objects only on its first draw)."""
+        if self._backdrop_pass is None:
+            from .backdrop_pass import BackdropPass
+
+            self._backdrop_pass = BackdropPass()
+        return self._backdrop_pass
+
+    def _backdrop_gl(self) -> bool:
+        """A GL store draws the backdrop; headless (TraceStore) it is state only."""
+        from .gl_render_store import GLRenderStore
+
+        return issubclass(self._store_type, GLRenderStore)
+
+    def _draw_backdrop_image(self) -> None:
+        """The photo behind the meshes (AD-042 §7.2); skipped in a capture unless it asked for it (§7.4)."""
+        backdrop = self._backdrop
+        if backdrop is None or backdrop.image is None or backdrop.placement != BACKDROP_BEHIND:
+            return
+        if self._capturing and not self._capture_backdrop:
+            return
+        if self._backdrop_gl():
+            self.backdrop_pass.draw_image(backdrop)
 
     @property
     def eye_pass(self):
@@ -1401,6 +1447,7 @@ class Viewport:
                 self._render_meshes()
             finally:
                 self._capturing = False
+                self._capture_backdrop = False
             rgba = read_back_buffer()
             gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
             capture(rgba)
@@ -1408,11 +1455,13 @@ class Viewport:
             return None
         self._render_overlays()
 
-    def request_capture(self, callback) -> None:
+    def request_capture(self, callback, *, backdrop: bool = False) -> None:
         """AD-038 §18: the next `render()` first draws the meshes without overlays, reads them back and calls
         `callback(rgba)` (an `(h, w, 4)` uint8 array, top row first), then draws the normal frame. A second request
-        before that frame replaces the first."""
+        before that frame replaces the first, flag included. AD-042 §7.4: `backdrop` draws the backdrop photo into the
+        capture too (the gate never: it is an overlay); "Bild speichern" leaves it off."""
         self._capture_request = callback
+        self._capture_backdrop = bool(backdrop)
 
     @property
     def capture_pending(self) -> bool:
@@ -1442,6 +1491,7 @@ class Viewport:
                 if timed:
                     timer.end()
         else:
+            self._draw_backdrop_image()  # AD-042 §7.2: behind every mesh
             if self.show_faces:
                 drawn.render(self.render_mesh.camera)
             eye_preview = self.eye_display.preview
@@ -1462,6 +1512,7 @@ class Viewport:
             and self.face_overlay is None
             and self.point_overlay is None
             and not self.extra_overlays
+            and self._backdrop is None
         ):
             return None
         # Dieselbe Matrix-Quelle wie die `camera_uniforms` des Mesh
@@ -1473,6 +1524,10 @@ class Viewport:
         for overlay in self.extra_overlays:
             if getattr(overlay, "DRAW_UNDER_HIGHLIGHTS", False):
                 overlay.draw(camera_uniforms)
+        # AD-042 §7.3: the passepartout and the gate line - after the under-highlight extras (they are darkened too),
+        # before the wire, the highlights and the points (they stay readable on top)
+        if self._backdrop is not None and self._backdrop_gl():
+            self.backdrop_pass.draw_gate(self._backdrop)
         if self.line_overlay is not None and self.wire_drawn():
             wire_rm = self._wire_render_mesh()
             if wire_rm is not None:
@@ -1548,6 +1603,7 @@ class Viewport:
             if eye_key is None:
                 self._sync_material_slots(rm, look, effects.regions)
         passes.draw_background(*self.lookdev_state.background_colours())
+        self._draw_backdrop_image()  # AD-042 §7.2: on the studio background, behind every mesh
         for rm, look, eye_key in skins:
             if eye_key is not None:
                 if self.eye_pass.draw(self.object_entries[eye_key], look, light, self.eye_display, lighting=frame,

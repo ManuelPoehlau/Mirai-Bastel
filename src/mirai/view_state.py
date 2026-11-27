@@ -33,6 +33,7 @@ from core import LayerId
 
 from .morph_targets import MAX_WEIGHT, MIN_WEIGHT, morph_target_ids
 from .subdivision.preview import LEVELS, VIEW_ORDER
+from .viewport.camera import MAX_DISTANCE, MIN_DISTANCE
 from .viewport.display import DisplayMode
 
 #: Schlüssel in der Szenendatei.
@@ -65,14 +66,7 @@ def capture(app) -> dict:
         "surface_finish": dataclasses.asdict(display.surface_finish),
         "symmetry_display": None if sym is None else bool(sym.visible),
         "reference_ghost": bool(app._objects.reference_ghost),
-        "camera": {
-            "target": list(camera.target),
-            "distance": camera.distance,
-            "yaw": camera.yaw,
-            "pitch": camera.pitch,
-            "fov_degrees": camera.fov_degrees,
-            "ortho": bool(camera.ortho),
-        },
+        "camera": camera_fields(camera),
         "subd": {
             "view": subd.view,
             "level": subd.level,
@@ -82,6 +76,18 @@ def capture(app) -> dict:
         },
         "morph": _capture_morph(app),
         "lookdev": _capture_lookdev(app._lookdev.studio),
+    }
+
+
+def camera_fields(camera) -> dict:
+    """`view.camera` of a camera - or of anything with its six fields (AD-042: the saved free view of a camera view)."""
+    return {
+        "target": list(camera.target),
+        "distance": camera.distance,
+        "yaw": camera.yaw,
+        "pitch": camera.pitch,
+        "fov_degrees": camera.fov_degrees,
+        "ortho": bool(camera.ortho),
     }
 
 
@@ -231,7 +237,8 @@ def _apply_camera(app, raw: dict) -> None:
         raise ValueError("camera distance / fov out of range")
     camera = app.camera
     camera.target = target
-    camera.distance = max(0.5, min(200.0, distance))  # the range `OrbitCamera.dolly` keeps
+    camera.distance = max(MIN_DISTANCE, min(MAX_DISTANCE, distance))  # the range `OrbitCamera.dolly` keeps
+    camera.follow_clip()
     camera.yaw = yaw
     camera.pitch = pitch
     camera.fov_degrees = fov

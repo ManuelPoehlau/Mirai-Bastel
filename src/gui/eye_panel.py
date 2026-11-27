@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from . import eye_model as em
 from . import iris_import_model as im
+from . import likeness_model
 from .file_browser_model import ALL_FILTER, IMAGE_FILTER
 from viewport.eye_pass import REFLECTIONS, REFRACTIONS, TIERS
 
@@ -116,11 +117,16 @@ class EyeLabPanel:
         imgui, app = self.imgui, self.app
         st = em.state(app)
         imgui.text_disabled(st.header)
+        locked = likeness_model.framing_locked(app)  # AD-042 §5.5: a framing, like the LookDev buttons
+        imgui.begin_disabled(locked)
         if imgui.button("Frontal einrahmen"):
             app.frame_eye(frontal=True)
         imgui.same_line()
         if imgui.button("Einrahmen"):
             app.frame_eye()
+        imgui.end_disabled()
+        if locked and imgui.is_item_hovered(imgui.HoveredFlags_.allow_when_disabled):
+            imgui.set_tooltip(likeness_model.EYE_FRAMING_HINT)
         changed, on = imgui.checkbox("Nur Augen + Kopf", st.isolate)
         if changed:
             app.set_eye_isolate(on)

@@ -94,6 +94,7 @@ from . import object_space
 from . import texture_files
 from . import view_state
 from .orbit_focus import FocusTracker, OrbitFocus, focus_point
+from .viewport import lens as lens_math
 from .pivot import WorkingPivot
 from . import view_state
 from .scene_objects import (
@@ -157,6 +158,7 @@ from .controllers.gestures import (
     hovered_of_mode,
 )
 from .controllers.knife import KnifeController
+from .controllers.likeness import NAME_LIMIT as LIKENESS_NAME_LIMIT, LikenessSession
 from .controllers.lookdev_room import LookdevRoom
 from .controllers.morph import MorphController
 from .controllers.paint_room import RESOLUTIONS as PAINT_RESOLUTIONS, PaintRoomController
@@ -232,6 +234,33 @@ from .viewport.picking_cache import PickCache
 ORBIT_RADIANS_PER_PX = 0.005
 DOLLY_IN_FACTOR = 0.9
 DOLLY_OUT_FACTOR = 1.1
+
+# AD-042 (likeness camera M1)
+CAMERA_VIEW_FRAMING = "Kameraansicht: die Kamera ist die Rahmung"
+PHOTO_MAX_PX = 4096  # the photo's longer side after the cap (an integer box factor, E4)
+PHOTO_MIN_PX = 16
+LIKENESS_PHOTO_FRAMES = 2  # the photo decodes after the frames that show "Foto wird geladen …"
+SENSOR_SIDE_MM = (1.0, 100.0)
+CLIP_RANGE = (0.001, 100_000.0)
+_SENSOR_SHORT = {"equiv35": "KB", "full_frame": "Vollformat", "aps_c": "APS-C", "custom": "eigener Sensor"}
+
+
+def _mm_text(value: float) -> str:
+    """85 -> "85", 25.734 -> "25,7" (German decimal comma)."""
+    return f"{value:.1f}".rstrip("0").rstrip(".").replace(".", ",")
+
+
+def _sensor_short(lens) -> str:
+    return _SENSOR_SHORT.get(lens.sensor, lens.sensor)
+
+
+def _finite(value) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"not a number: {value!r}")
+    value = float(value)
+    if not math.isfinite(value):
+        raise ValueError(f"not finite: {value!r}")
+    return value
 
 #: Two LMB clicks on the same edge within this many seconds are a double-click (loop select / range).
 EDGE_DOUBLE_CLICK_S = 0.4
@@ -616,6 +645,8 @@ class Application:
         self._weight_room = WeightRoomController(self._services, self._skeleton)
         # The LookDev room (AD-038 §2): view configuration + session studio and materials; no interaction session.
         self._lookdev = LookdevRoom(self._services)
+        self._likeness = LikenessSession()  # AD-042: session likeness cameras and the camera view (view state only)
+        self._likeness_photo_wait = 0
         # WP-KNIFE-01 UX2b: any Shift key held, as the window reports it
         # (`set_shift_held`). Only the Knife's hover reads it (the midpoint before
         # the click); a click keeps deciding by its press modifiers (A2, AD-019).
@@ -753,6 +784,9 @@ class Application:
             self.close_weight_room()
         if self._lookdev.open:  # AD-038 §2.1: the room closes before the scene is replaced
             self.close_lookdev()
+        if self._likeness.view is not None:  # AD-042 §5.5: the new scene frames itself; the cameras stay (session)
+            self.leave_camera_view(status=None)
+        self._likeness.pending_photo = None
         self._lookdev.clear()  # its session materials belong to the objects that go
         self.paint.clear()  # AD-037: every object is new
         self.paint_display.clear()
@@ -1042,6 +1076,8 @@ class Application:
         eyes = self._objects.eye_targets("Eye Lab")
         if eyes is None:
             return False
+        if self._likeness.view is not None:  # AD-042 §5.5: the Eye Lab owns the camera; its snapshot is the free view
+            self.leave_camera_view(status=None)
         if self.display.eye_lab is None:
             cam = self.camera
             self.display.eye_lab = {
@@ -1063,6 +1099,7 @@ class Application:
         cam = self.camera
         cam.target, cam.distance, cam.yaw, cam.pitch = lab["camera"][:4]
         cam.set_ortho(lab["camera"][4])
+        cam.follow_clip()  # AD-042 §6.2
         cam.camera_revision += 1
         self.restore_camera_state()
         self.set_eye_isolate(lab["isolate"])
@@ -1070,6 +1107,431 @@ class Application:
         self._objects.sync_views()  # AD-035 S-4: the selection tint is back on a selected eye
         self._set_status("Eye Lab closed")
         return True
+
+    # -- the likeness camera (AD-042 M1: session cameras, the camera view, the backdrop) -------------------------
+
+    @property
+    def likeness(self) -> LikenessSession:
+        """The session's likeness cameras and view values - read by the panel; changed through the methods below."""
+        return self._likeness
+
+    @property
+    def camera_view_open(self) -> bool:
+        return self._likeness.view is not None
+
+    @property
+    def camera_view_text(self) -> str | None:
+        """„Kamera ›Kamera 1‹ · 85 mm“ (+ „ · fixiert“) in the camera view, None in the free view (AD-042 §5.7)."""
+        cam = self._likeness.viewing
+        if cam is None:
+            return None
+        text = f"Kamera ›{cam.name}‹ · {_mm_text(cam.lens.focal_mm)} mm"
+        return f"{text} · fixiert" if cam.fixed else text
+
+    def likeness_refusal(self) -> str | None:
+        """Why the camera view cannot be entered now (None = it can): an exclusive interaction (Knife, Bone chain, ...),
+        a paint or weight stroke, a held gesture, the LookDev room preparing its shaders (the `lookdev_refusal` shape)."""
+        session = self.interaction.session
+        if session is not None and session.owner not in ("paint", "weight"):
+            return f"Kameraansicht: nicht während {session.owner or session.label} läuft"
+        if self._paint_room.stroking or self._weight_room.stroking:
+            return "Kameraansicht: nicht während eines Strichs"
+        if self._gesture is not None:
+            return "Kameraansicht: nicht während einer Geste"
+        if self._lookdev.preparing:
+            return "Kameraansicht: LookDev bereitet noch Shader vor"
+        return None
+
+    def _likeness_shift(self) -> tuple[float, float, float]:
+        """The morph editing view's camera translation (AD-042 §5.6), zero without one."""
+        shift = self._services.morph_view_shift
+        return (0.0, 0.0, 0.0) if shift is None else tuple(shift[1])
+
+    def _likeness_aspects(self, cam) -> tuple[float, float]:
+        """(frame aspect, window aspect) of a likeness camera now."""
+        a = lens_math.frame_aspect(cam.lens, None if cam.photo is None else cam.photo.size)
+        return a, self.viewport_width / self.viewport_height
+
+    def _likeness_index(self, index, what: str) -> int | None:
+        cams = self._likeness.cameras
+        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(cams):
+            self._set_status(f"{what}: keine Kamera {index!r}")
+            return None
+        return index
+
+    def new_likeness_camera(self) -> bool:
+        """„Neu aus Ansicht“ (AD-042 §4.4): a camera where the view is now, with the focal length that gives today's
+        FOV (looking through then changes nothing but the gate). Not entered; it becomes the active camera."""
+        from .likeness import LikenessCamera, default_clip
+
+        session = self._likeness
+        camera = self.camera
+        shift = self._likeness_shift()
+        lens = lens_math.Lens()
+        a = lens_math.frame_aspect(lens, None)  # no photo yet: the sensor's 3 : 2
+        focal = lens_math.focal_from_fov(camera.fov_degrees, lens, a, self.viewport_width / self.viewport_height,
+                                         session.overscan)
+        lo, hi = lens_math.FOCAL_RANGE_MM
+        lens = dataclasses.replace(lens, focal_mm=max(lo, min(hi, focal)))
+        near, far = default_clip(camera.distance)
+        name = session.next_name()
+        session.add(LikenessCamera(
+            name=name, target=tuple(camera.target[i] - shift[i] for i in range(3)), distance=camera.distance,
+            yaw=camera.yaw, pitch=camera.pitch, lens=lens, clip_near=near, clip_far=far))
+        suffix = " (perspektivisch)" if camera.ortho else ""
+        self._set_status(f"{name} aus der Ansicht{suffix} · {_mm_text(lens.focal_mm)} mm {_sensor_short(lens)}")
+        return True
+
+    def look_through(self, index: int) -> bool:
+        """Enter the camera view of camera `index` (AD-042 §5.1): the free view is saved (eight fields, the clip flag,
+        a snapped view), the camera gets the likeness camera's pose, lens and clip. Pose, morph, gaze and SubD are not
+        touched (R-1). Refused with a status line; True = looking through it."""
+        if self._likeness_index(index, "Durchschauen") is None:
+            return False
+        session = self._likeness
+        if session.view is not None and session.view.index == index:
+            return True
+        self._paint_room.settle()  # a finishing stroke is finished first (bounded, as `open_lookdev`)
+        refusal = self.likeness_refusal()
+        if refusal is not None:
+            self._set_status(refusal)
+            return False
+        if self.eye_lab_open:  # the Eye Lab owns the camera: its camera comes back first
+            self.close_eye_lab()
+        from .controllers.likeness import CameraView
+        from .likeness import FreeView
+
+        camera = self.camera
+        if session.view is None:
+            saved = FreeView.of(camera, self._view_name, self._ortho_auto)
+        else:  # a switch: the record looked through is up to date (§5.4), the saved free view stays
+            saved = session.view.saved
+        cam = session.cameras[index]
+        shift = self._likeness_shift()
+        camera.target = tuple(cam.target[i] + shift[i] for i in range(3))
+        camera.distance = cam.distance
+        camera.yaw = cam.yaw
+        camera.pitch = cam.pitch
+        camera.ortho = False
+        camera.near, camera.far = cam.clip_near, cam.clip_far
+        camera.clip_follows_distance = False
+        a, a_w = self._likeness_aspects(cam)
+        camera.fov_degrees = lens_math.view_fov_degrees(cam.lens, a, a_w, session.overscan)
+        camera.camera_revision += 1
+        self._view_name = None
+        self._ortho_auto = False
+        self._orbit_anchor = None
+        session.view = CameraView(index, saved)
+        session.active = index
+        self._camera_changed()
+        self._push_backdrop()
+        self._refresh_hover()
+        self._set_status(f"Kameraansicht ›{cam.name}‹ · {_mm_text(cam.lens.focal_mm)} mm {_sensor_short(cam.lens)}")
+        return True
+
+    def leave_camera_view(self, status: str | None = "Kameraansicht verlassen") -> bool:
+        """Back to the free view exactly as it was saved (AD-042 §5.2); the record keeps its pose. True = it was open."""
+        session = self._likeness
+        view = session.view
+        if view is None:
+            return False
+        saved = view.saved
+        camera = self.camera
+        saved.write(camera)
+        self._view_name = saved.view_name
+        self._ortho_auto = saved.ortho_auto
+        self._orbit_anchor = None
+        if self._orbit_virtual is not None:  # a running orbit gesture continues from the free view (K7)
+            self._orbit_virtual = (camera.yaw, camera.pitch)
+        session.view = None
+        if self.viewport is not None:
+            self.viewport.set_backdrop(None)
+        self._camera_changed()
+        self._refresh_hover()
+        if status is not None:
+            self._set_status(status)
+        return True
+
+    def toggle_camera_view(self) -> bool:
+        """The SPACE row: leave the camera view, or look through the active camera."""
+        session = self._likeness
+        if session.view is not None:
+            return self.leave_camera_view()
+        if session.active is None:
+            self._set_status("Kameraansicht: erst eine Kamera anlegen („Neu aus Ansicht“)")
+            return False
+        return self.look_through(session.active)
+
+    def _apply_likeness_lens(self) -> None:
+        """Re-apply the camera looked through after a lens, photo, overscan or window change (AD-042 §5.3): the FOV
+        (one revision bump) and the backdrop; the pose is not touched, so the model keeps its place in the gate."""
+        session = self._likeness
+        cam = session.viewing
+        if cam is None:
+            return
+        a, a_w = self._likeness_aspects(cam)
+        camera = self.camera
+        camera.fov_degrees = lens_math.view_fov_degrees(cam.lens, a, a_w, session.overscan)
+        camera.near, camera.far = cam.clip_near, cam.clip_far
+        camera.camera_revision += 1
+        self._push_backdrop()
+
+    def _likeness_changed(self, index: int) -> None:
+        """A setter changed camera `index`: re-applied at once when it is the one looked through."""
+        view = self._likeness.view
+        if view is not None and view.index == index:
+            self._apply_likeness_lens()
+            self._camera_changed()
+            self._refresh_hover()
+
+    def _push_backdrop(self) -> None:
+        """The gate, passepartout and photo of the camera looked through, to the viewport (AD-042 §7.1)."""
+        if self.viewport is None:
+            return
+        from viewport.backdrop import Backdrop, gate_corners
+
+        session = self._likeness
+        cam = session.viewing
+        if cam is None:
+            self.viewport.set_backdrop(None)
+            return
+        a, a_w = self._likeness_aspects(cam)
+        gate = lens_math.gate_rect_ndc(a, a_w, session.overscan)
+        photo = cam.photo if session.photo_shown else None
+        self.viewport.set_backdrop(Backdrop(
+            gate=gate, passepartout=session.passepartout,
+            image=None if photo is None else photo.rgba, image_serial=0 if photo is None else photo.serial,
+            corners=() if photo is None else gate_corners(gate), opacity=session.photo_opacity))
+
+    def set_active_likeness_camera(self, index: int) -> bool:
+        """The camera the panel's lens and photo rows edit and the SPACE row looks through."""
+        if self._likeness_index(index, "Kamera") is None:
+            return False
+        self._likeness.active = index
+        return True
+
+    def rename_likeness_camera(self, index: int, name: str) -> bool:
+        if self._likeness_index(index, "Umbenennen") is None:
+            return False
+        name = (name or "").strip()
+        if not name:
+            self._set_status("Umbenennen: der Name ist leer")
+            return False
+        if len(name) > LIKENESS_NAME_LIMIT:
+            self._set_status(f"Umbenennen: höchstens {LIKENESS_NAME_LIMIT} Zeichen")
+            return False
+        self._likeness.cameras[index].name = name
+        self._set_status(f"Kamera heißt jetzt ›{name}‹")
+        return True
+
+    def delete_likeness_camera(self, index: int) -> bool:
+        """Delete a camera; its camera view is left first."""
+        if self._likeness_index(index, "Löschen") is None:
+            return False
+        session = self._likeness
+        if session.view is not None and session.view.index == index:
+            self.leave_camera_view(status=None)
+        cam = session.remove(index)
+        self._set_status(f"›{cam.name}‹ gelöscht")
+        return True
+
+    def set_likeness_lens(self, index: int, **changes) -> bool:
+        """`focal_mm`, `sensor` (a preset's width, height and fit), `sensor_w_mm`, `sensor_h_mm` (custom), `fit`;
+        clamped to the ranges. True = changed."""
+        if self._likeness_index(index, "Objektiv") is None:
+            return False
+        unknown = set(changes) - {"focal_mm", "sensor", "sensor_w_mm", "sensor_h_mm", "fit"}
+        if unknown:
+            raise TypeError(f"unknown lens fields {sorted(unknown)}")
+        cam = self._likeness.cameras[index]
+        lens = cam.lens
+        try:
+            if "sensor" in changes:
+                lens = lens_math.with_sensor(lens, changes["sensor"])
+            for side in ("sensor_w_mm", "sensor_h_mm"):
+                if side in changes:
+                    value = _finite(changes[side])
+                    lens = dataclasses.replace(lens, **{side: max(SENSOR_SIDE_MM[0], min(SENSOR_SIDE_MM[1], value))},
+                                               sensor=lens_math.CUSTOM)
+            if "fit" in changes:
+                if changes["fit"] not in lens_math.FITS:
+                    raise ValueError(f"unknown fit {changes['fit']!r}")
+                lens = dataclasses.replace(lens, fit=changes["fit"])
+            if "focal_mm" in changes:
+                lo, hi = lens_math.FOCAL_RANGE_MM
+                lens = dataclasses.replace(lens, focal_mm=max(lo, min(hi, _finite(changes["focal_mm"]))))
+        except ValueError as exc:
+            self._set_status(f"Objektiv: {exc}")
+            return False
+        if lens == cam.lens:
+            return False
+        cam.lens = lens
+        self._likeness_changed(index)
+        return True
+
+    def set_likeness_clip(self, index: int, near: float | None = None, far: float | None = None) -> bool:
+        """The camera's clip (`0.001 <= near < far <= 100 000`), refused otherwise."""
+        if self._likeness_index(index, "Clip") is None:
+            return False
+        cam = self._likeness.cameras[index]
+        try:
+            n = cam.clip_near if near is None else _finite(near)
+            f = cam.clip_far if far is None else _finite(far)
+        except ValueError as exc:
+            self._set_status(f"Clip: {exc}")
+            return False
+        if not CLIP_RANGE[0] <= n < f <= CLIP_RANGE[1]:
+            self._set_status(f"Clip: es gilt {CLIP_RANGE[0]:g} ≤ nah < fern ≤ {CLIP_RANGE[1]:g}")
+            return False
+        if (n, f) == (cam.clip_near, cam.clip_far):
+            return False
+        cam.clip_near, cam.clip_far = n, f
+        self._likeness_changed(index)
+        return True
+
+    def set_likeness_fixed(self, index: int, on: bool) -> bool:
+        """LC-D3 „Kamera fixieren“: navigation leaves into the free view, the camera stays."""
+        if self._likeness_index(index, "Fixieren") is None:
+            return False
+        cam = self._likeness.cameras[index]
+        on = bool(on)
+        if cam.fixed == on:
+            return False
+        cam.fixed = on
+        self._set_status(f"›{cam.name}‹ fixiert" if on else f"›{cam.name}‹ folgt der Navigation")
+        return True
+
+    def load_likeness_photo(self, index: int, path: str | Path) -> bool:
+        """„Laden …“ (AD-042 §8.1): step one - the status line; the next tick reads and caps the file."""
+        if self._likeness_index(index, "Foto") is None:
+            return False
+        session = self._likeness
+        session.pending_photo = (index, Path(path))
+        self._likeness_photo_wait = LIKENESS_PHOTO_FRAMES
+        self._set_status("Foto wird geladen …")
+        return True
+
+    def _likeness_photo_step(self) -> None:
+        """The photo's step two, once the status line was drawn: read, cap, set (nothing changes on an error)."""
+        import numpy as np
+
+        from .likeness import LikenessPhoto
+        from .paint.library import read_image_rgba, reduce_rgba
+
+        self._likeness_photo_wait -= 1
+        if self._likeness_photo_wait > 0:
+            return
+        session = self._likeness
+        index, path = session.pending_photo
+        session.pending_photo = None
+        start = time.perf_counter()
+        try:
+            rgba = read_image_rgba(path)
+            if rgba.ndim != 3 or rgba.shape[2] != 4:
+                raise ValueError("kein RGBA-Bild")
+            source = (int(rgba.shape[1]), int(rgba.shape[0]))
+            if min(source) < PHOTO_MIN_PX:
+                raise ValueError(f"kleiner als {PHOTO_MIN_PX} px")
+            rgba = np.ascontiguousarray(reduce_rgba(rgba, PHOTO_MAX_PX), dtype=np.uint8)
+        except Exception as exc:  # OSError, ValueError and pyglet's decoder errors: a status line, nothing changes
+            self._set_status(f"Foto ›{path.name}‹: nicht lesbar ({exc})")
+            return
+        seconds = time.perf_counter() - start
+        cam = session.cameras[index]
+        cam.photo = LikenessPhoto(path=path, rgba=rgba, source_size=source, serial=session.next_serial())
+        w, h = cam.photo.size
+        origin = "" if (w, h) == source else f" (aus {source[0]} × {source[1]})"
+        self._likeness_changed(index)
+        took = f"{seconds:.1f}".replace(".", ",")
+        self._set_status(f"Foto ›{path.name}‹: {w} × {h}{origin}, {took} s")
+
+    def turn_likeness_photo(self, index: int) -> bool:
+        """„90° drehen“: the photo turned clockwise (lossless, new serial); the frame aspect inverts and re-applies."""
+        if self._likeness_index(index, "Foto drehen") is None:
+            return False
+        session = self._likeness
+        cam = session.cameras[index]
+        if cam.photo is None:
+            self._set_status("Foto drehen: kein Foto geladen")
+            return False
+        import numpy as np
+
+        photo = cam.photo
+        cam.photo = dataclasses.replace(photo, rgba=np.ascontiguousarray(np.rot90(photo.rgba, k=-1)),
+                                        serial=session.next_serial())
+        self._likeness_changed(index)
+        return True
+
+    def remove_likeness_photo(self, index: int) -> bool:
+        if self._likeness_index(index, "Foto entfernen") is None:
+            return False
+        cam = self._likeness.cameras[index]
+        if cam.photo is None:
+            return False
+        cam.photo = None
+        self._likeness_changed(index)
+        self._set_status("Foto entfernt")
+        return True
+
+    def set_likeness_view(self, **changes) -> bool:
+        """Session view values: `overscan` (1.0 … 1.5), `photo_opacity` (0 … 1), `photo_shown`; clamped."""
+        unknown = set(changes) - {"overscan", "photo_opacity", "photo_shown"}
+        if unknown:
+            raise TypeError(f"unknown view fields {sorted(unknown)}")
+        session = self._likeness
+        before = (session.overscan, session.photo_opacity, session.photo_shown)
+        try:
+            if "overscan" in changes:
+                lo, hi = lens_math.OVERSCAN_RANGE
+                session.overscan = max(lo, min(hi, _finite(changes["overscan"])))
+            if "photo_opacity" in changes:
+                session.photo_opacity = max(0.0, min(1.0, _finite(changes["photo_opacity"])))
+        except ValueError as exc:
+            self._set_status(f"Ansicht: {exc}")
+            return False
+        if "photo_shown" in changes:
+            session.photo_shown = bool(changes["photo_shown"])
+        if (session.overscan, session.photo_opacity, session.photo_shown) == before:
+            return False
+        if session.view is not None:
+            if session.overscan != before[0]:
+                self._likeness_changed(session.view.index)
+            else:
+                self._push_backdrop()
+        return True
+
+    def _camera_view_route(self, kind: str) -> None:
+        """AD-042 §5.4, before a navigation step: Ortho and the Shift snap leave the camera view; orbit / pan / dolly
+        leave it when the camera is fixed (the step then runs on the free view). Otherwise nothing."""
+        session = self._likeness
+        cam = session.viewing
+        if cam is None:
+            return
+        if kind in ("snap", "ortho"):
+            self.leave_camera_view("Kameraansicht verlassen: Ortho und Einrasten gibt es nur in der freien Ansicht")
+        elif cam.fixed:
+            self.leave_camera_view("Kamera fixiert – freie Ansicht (Durchschauen kehrt zurück)")
+
+    def _camera_view_follow(self) -> None:
+        """AD-042 §5.4, after a navigation step: the camera looked through takes the pose (exact copies, the morph
+        shift subtracted) unless it is fixed."""
+        cam = self._likeness.viewing
+        if cam is None or cam.fixed:
+            return
+        camera = self.camera
+        shift = self._likeness_shift()
+        cam.target = tuple(camera.target[i] - shift[i] for i in range(3))
+        cam.distance = camera.distance
+        cam.yaw = camera.yaw
+        cam.pitch = camera.pitch
+
+    def _likeness_camera_shifted(self, shift) -> None:
+        """The morph editing view moved the camera (AD-042 §5.6): the saved free view moves with it."""
+        view = self._likeness.view
+        if view is None:
+            return
+        saved = view.saved
+        view.saved = dataclasses.replace(saved, target=tuple(saved.target[i] + shift[i] for i in range(3)))
 
     # -- the Paint Room (AD-037 §8 Phase 2, P-2: a configuration of the same window) -----------------------------
 
@@ -1737,6 +2199,9 @@ class Application:
 
         if self.viewport is None:
             return
+        if self._likeness.view is not None:  # AD-042 §5.5: the likeness camera is the framing
+            self._set_status(CAMERA_VIEW_FRAMING)
+            return
         self.frame_scene()
         self._leave_view()
         self.camera.set_view(math.radians(yaw_degrees), math.radians(pitch_degrees))
@@ -2285,7 +2750,10 @@ class Application:
 
     def frame_eye(self, eye: SceneObject | None = None, frontal: bool = False) -> bool:
         """Frame one eye (the first selected one by default) close up; `frontal` also turns the camera to look into
-        it along its drawn axis (the gaze included). View only. True = framed."""
+        it along its drawn axis (the gaze included). View only. True = framed. AD-042 §5.5: refused in the camera view."""
+        if self._likeness.view is not None:
+            self._set_status("Auge rahmen: erst Kameraansicht verlassen")
+            return False
         if eye is None:
             eyes = self._objects.eye_targets("Frame eye")
             if eyes is None:
@@ -2786,6 +3254,8 @@ class Application:
         if lookdev is not None:  # AD-038 §2.1: the view the room restores (the eye tier is not part of the view)
             data[view_state.VIEW_KEY]["display"].update(mode=lookdev["mode"].name, wireframe_overlay=lookdev["wire"],
                                                          region_tint=lookdev["regions"])
+        if self._likeness.view is not None:  # AD-042 §5.5: the file keeps the free view, never the likeness camera's
+            data[view_state.VIEW_KEY]["camera"] = view_state.camera_fields(self._likeness.view.saved)
         room = self._paint_room.saved_view
         if room is not None:  # AD-037: the file keeps the view the room restores, not the room's own
             data[view_state.VIEW_KEY]["display"].update(mode=room["mode"].name, wireframe_overlay=room["wire"],
@@ -6214,6 +6684,8 @@ class Application:
         neuen Aspect an den Viewport."""
         self.viewport_width = max(int(width), 1)
         self.viewport_height = max(int(height), 1)
+        if self._likeness.view is not None:  # AD-042 §5.3: the gate keeps the model in its place
+            self._apply_likeness_lens()
         self._camera_changed()
 
     def pointer_press(
@@ -6322,7 +6794,9 @@ class Application:
             return self._execute(command)
         if command != commands.ZOOM:
             return False
+        self._camera_view_route("dolly")
         self.camera.dolly(DOLLY_IN_FACTOR if input.value == "UP" else DOLLY_OUT_FACTOR)
+        self._camera_view_follow()
         self._camera_changed()
         # Unter dem ruhenden Cursor liegt nach dem Zoom ggf. ein anderer Vertex.
         if self.coalesce_hover and self.interaction.owner != "knife":
@@ -6598,11 +7072,14 @@ class Application:
         """Orbit / Pan one step. `snap` (the pointer ORBIT gesture only, V-1): Shift held snaps the camera to the
         nearest standard view; the transform's Alt-orbit (`_navigate_during_transform`) never snaps."""
         if command == commands.ORBIT:
+            self._camera_view_route("orbit")
             self._orbit_step(-dx * ORBIT_RADIANS_PER_PX, -dy * ORBIT_RADIANS_PER_PX, snap)
         elif command == commands.PAN:
+            self._camera_view_route("pan")
             self.camera.pan(dx, dy, self.viewport_width, self.viewport_height)
         else:
             return False
+        self._camera_view_follow()
         self._camera_changed()
         return True
 
@@ -6615,7 +7092,11 @@ class Application:
 
     @property
     def view_text(self) -> str:
-        """HUD / status text of the view: "Persp", "Ortho", "Front · Ortho", "Front · Persp"."""
+        """HUD / status text of the view: "Persp", "Ortho", "Front · Ortho", "Front · Persp"; in the camera view
+        „Kamera ›Kamera 1‹ · 85 mm“ (AD-042 §5.7)."""
+        likeness = self.camera_view_text
+        if likeness is not None:
+            return likeness
         projection = "Ortho" if self.camera.ortho else "Persp"
         return projection if self._view_name is None else f"{self._view_name} · {projection}"
 
@@ -6641,6 +7122,8 @@ class Application:
 
     def _apply_orbit_virtual(self) -> None:
         """The camera for the running orbit gesture's virtual angles and the held Shift."""
+        if self._shift_held:
+            self._camera_view_route("snap")  # AD-042 §5.4: leaving re-seeds the virtual angles from the free view
         yaw, pitch = self._orbit_virtual
         if self._shift_held:
             name, snap_yaw, snap_pitch = nearest_standard_view(yaw, pitch)
@@ -6782,6 +7265,7 @@ class Application:
     def _toggle_ortho(self) -> bool:
         """`TOGGLE_ORTHO` (V-2): Ortho <-> Persp at any time; view state only (no History, not saved). Ortho set by
         hand stays when a free orbit leaves a snapped view."""
+        self._camera_view_route("ortho")
         self.camera.set_ortho(not self.camera.ortho)
         self._ortho_auto = False
         self._camera_changed()
@@ -7265,6 +7749,8 @@ class Application:
         """
         self._paint_room.frame()  # AD-037 §12: the stroke's placements within the frame budget (and its finish)
         self._weight_room.frame()  # AD-041 §4: the weight stroke's placements within the frame budget
+        if self._likeness.pending_photo is not None:
+            self._likeness_photo_step()  # AD-042 §8.1: the decode after the frame that showed the status line
         if self.viewport is not None:
             self.flush_hover()
             if self._paint_room.session is not None and self._paint_room.obj is not self.scene.edit_object:
@@ -7297,6 +7783,8 @@ class Application:
             self.close_weight_room()
         if self._lookdev.open:
             self.close_lookdev()
+        if self._likeness.view is not None:
+            self.leave_camera_view(status=None)
         chain = self._skeleton.chain
         if chain is not None:
             chain.end(quiet=True)

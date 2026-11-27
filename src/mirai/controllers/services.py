@@ -196,6 +196,11 @@ class AppServices:
     def status(self, text: str) -> None:
         self._app._set_status(text)
 
+    def camera_shifted(self, shift) -> None:
+        """The morph editing view translated the camera by `shift` (AD-042 §5.6). Reason for the member: in the camera
+        view the saved free view moves with it, so leaving gives the free view the single camera would have."""
+        self._app._likeness_camera_shifted(shift)
+
     def can_run(self, command: str | None, ctx) -> Any:
         return self._app.can_run(command, ctx)
 

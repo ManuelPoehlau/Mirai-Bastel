@@ -3,8 +3,8 @@
 **Status:** PROPOSAL. Design only: no production code, Core, scene format, render behaviour, GUI or key binding is
 changed, and no key is authorised. **LC-D1, LC-D3, LC-D4, LC-D5 decided (Manu, 2026-11-27, §0)**; LC-D2, LC-D6 …
 LC-D10 and every key stay open (§11). The architecture for M1 is
-[AD-042](../architecture/AD-042-LIKENESS-CAMERA-M1.md) (PROPOSED 2026-11-27, number `PROVISIONAL`); no `src/` change
-before Manu accepts it.
+[AD-042](../architecture/AD-042-LIKENESS-CAMERA-M1.md) (ACCEPTED 2026-11-27; M1 built 2026-11-27, AD-042 §17 - where
+the AD deviates from this proposal, the AD holds).
 **Date:** 2026-11-27.
 **State inspected:** `main` @ `df02a00` ("AD-041 slice 3: fill from a selection"), clean tree. The inventory handed
 over from the previous session (same commit) was checked against the code; corrections and additions are in §1.2.
@@ -685,7 +685,8 @@ LD-D1 … LD-D16.
 ---
 
 **Update 2026-11-27:** LC-D1, LC-D3, LC-D4 and LC-D5 are answered (§0) and the M1 architecture is written as
-[AD-042](../architecture/AD-042-LIKENESS-CAMERA-M1.md) (PROPOSED). Next: Manu accepts AD-042, then M1 is built.
+[AD-042](../architecture/AD-042-LIKENESS-CAMERA-M1.md). **Update 2026-11-27 (later):** AD-042 accepted and M1 built
+(AD-042 §17). Next: Manu's probe run and practical test (AD-042 §15).
 
 **Next step (as written before the answers):** Manu's answers to LC-D1, LC-D3, LC-D4 and LC-D5, then the architecture AD for M1 (AD-042,
 `PROVISIONAL` number). The AD belongs in a **fresh session**: this one carries a long inventory context, and the AD

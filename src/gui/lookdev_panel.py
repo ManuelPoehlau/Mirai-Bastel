@@ -14,6 +14,7 @@ direction.
 from __future__ import annotations
 
 from . import lookdev_model as lm
+from . import likeness_model
 from .file_browser_model import ALL_FILTER, IMAGE_FILTER
 
 
@@ -156,11 +157,16 @@ class LookdevPanel:
                 imgui.set_tooltip(lm.RESET_HINT if row.area is None else lm.AREA_RESET_HINT)
         # -- Ansicht
         imgui.separator_text("Ansicht")
+        locked = likeness_model.framing_locked(app)  # AD-042 §5.5: in the camera view the camera is the framing
+        imgui.begin_disabled(locked)
         for i, (name, (yaw, pitch)) in enumerate(lm.VIEWS.items()):
             if i:
                 imgui.same_line()
             if imgui.button(name):
                 app.frame_lookdev(yaw, pitch)
+        imgui.end_disabled()
+        if locked and imgui.is_item_hovered(imgui.HoveredFlags_.allow_when_disabled):
+            imgui.set_tooltip(likeness_model.FRAMING_HINT)
         changed, on = imgui.checkbox("Wire", st.wire)
         if changed:
             app.set_lookdev_wire(on)

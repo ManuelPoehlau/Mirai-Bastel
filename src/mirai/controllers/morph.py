@@ -563,6 +563,7 @@ class MorphController:
         cam = services.camera
         cam.target = tuple(cam.target[i] + shift[i] for i in range(3))
         cam.camera_revision += 1
+        services.camera_shifted(shift)  # AD-042 §5.6: the saved free view of a camera view moves with it
         if services.viewport is not None:
             width, height = services.viewport_size
             services.viewport.on_camera_changed(width / height)

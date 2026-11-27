@@ -40,7 +40,7 @@ from mirai.detach import LABEL as DETACH_LABEL, LINKED_LABEL
 from mirai.topology.bridge import LABEL as BRIDGE_LABEL
 from mirai.topology.weld import LABEL as WELD_LABEL
 
-from . import lookdev_model, paint_model, weight_model
+from . import likeness_model, lookdev_model, paint_model, weight_model
 from .file_browser import FileBrowser
 from .file_browser_model import ALL_FILTER, OBJ_FILTER, SCENE_FILTER, LastDirs, RecentFiles
 
@@ -353,6 +353,9 @@ class Menus:
         # AD-038: the LookDev room (no key, D-L9)
         if imgui.menu_item(lookdev_model.menu_label(app), "", app.lookdev_open)[0]:
             lookdev_model.toggle(app)
+        camera_row = likeness_model.menu_label(app)  # AD-042 §8.3: the camera view (no key)
+        if camera_row is not None and imgui.menu_item(camera_row, "", app.camera_view_open)[0]:
+            app.toggle_camera_view()
         imgui.separator()
         imgui.text_disabled("Szene laden (Shift+Klick: als Referenz)")
         for name in sv.scenes():

@@ -66,6 +66,21 @@ def ray_plane_point(origin: Vec3, direction: Vec3, plane_point: Vec3, plane_norm
 #: ±85° (`OrbitCamera.orbit`), so only a snapped view reaches it.
 POLE_EPS = 1e-6
 
+#: The distance range `dolly` and a view load keep (AD-042 §6.1: the ceiling was 200 before likeness cameras).
+MIN_DISTANCE = 0.5
+MAX_DISTANCE = 2000.0
+#: The clip of the free view up to distance 50 (= the field defaults below).
+NEAR_BASE, FAR_BASE = 0.05, 200.0
+
+
+def clip_for_distance(distance: float) -> tuple[float, float]:
+    """(near, far) the free view keeps at `distance`: today's (0.05, 200) up to distance 50, then proportional.
+
+    Exact below 50: `50 / 1000.0 == 0.05` and `4.0 * 50.0 == 200.0` in binary64 and both are monotone, so
+    every distance <= 50 gives (0.05, 200.0) bit for bit. Keep the division (`* 0.001` is not exact)."""
+    return max(NEAR_BASE, distance / 1000.0), max(FAR_BASE, 4.0 * distance)
+
+
 _QUARTER = math.pi / 2.0
 #: Standard views by the quarter turn of the yaw (eye on +Z = Front; Y-up, the model faces +Z).
 _SIDE_VIEWS = ("Front", "Right", "Back", "Left")
@@ -103,6 +118,9 @@ class OrbitCamera:
     # NIE eine Geometry-Invalidierung ausloesen (siehe RenderMesh._sync_camera,
     # das ausschliesslich die camera_uniforms-Ressource anfasst).
     camera_revision: int = field(default=0, compare=False)
+    #: AD-042 §6.2: the free view's clip follows the distance (`follow_clip`); off while looking through a
+    #: likeness camera, which brings its own clip.
+    clip_follows_distance: bool = field(default=True, compare=False)
 
     def orbit(self, d_yaw: float, d_pitch: float) -> None:
         self.yaw += d_yaw
@@ -111,8 +129,19 @@ class OrbitCamera:
         self.camera_revision += 1
 
     def dolly(self, factor: float) -> None:
-        self.distance = max(0.5, min(200.0, self.distance * factor))
+        self.distance = max(MIN_DISTANCE, min(MAX_DISTANCE, self.distance * factor))
+        self.follow_clip()
         self.camera_revision += 1
+
+    def follow_clip(self) -> None:
+        """Free view (AD-042 §6.2): `near` / `far` follow the distance (`clip_for_distance`) while
+        `clip_follows_distance` is on; a likeness camera's view turns it off. No revision bump (the callers bump)."""
+        if self.clip_follows_distance:
+            self.near, self.far = clip_for_distance(self.distance)
+
+    def _tan_half_fov(self) -> float:
+        """tan(fov/2) of the vertical field of view - the only place it is computed (AD-042 §3.4)."""
+        return math.tan(math.radians(self.fov_degrees) / 2.0)
 
     def frame_on_bounds(self, center: Vec3, radius: float, margin: float = 1.25) -> None:
         """Richtet die Kamera auf einen Bounds-Mittelpunkt/-Radius aus ("Zoom to Object").
@@ -129,14 +158,14 @@ class OrbitCamera:
         Schon als Idee vorgemerkt in `docs/future_ideas/VIEWPORT_NAVIGATION.md`
         ("Zoom to Object").
         """
-        fov_degrees = self.fov_degrees
-        half_height = math.tan(math.radians(fov_degrees / 2.0))
+        half_height = self._tan_half_fov()
         if half_height <= 0.0:
             distance = max(radius * 2.0, 0.5)
         else:
             distance = max((radius / half_height) * margin, 0.5)
         self.target = center
         self.distance = distance
+        self.follow_clip()
         self.camera_revision += 1
 
     def set_view(self, yaw: float, pitch: float, ortho: bool | None = None) -> None:
@@ -198,7 +227,7 @@ class OrbitCamera:
 
     def _half_height(self) -> float:
         """Half the view height: tan(fov/2) per unit depth (persp) or in world units (ortho)."""
-        half_h = math.tan(math.radians(self.fov_degrees) / 2.0)
+        half_h = self._tan_half_fov()
         return half_h * self.distance if self.ortho else half_h
 
     def ray_origin_toward(self, point: Vec3) -> Vec3:
@@ -272,7 +301,7 @@ class OrbitCamera:
                 0.0, 0.0, -2.0 / (far - near), 0.0,
                 0.0, 0.0, -(far + near) / (far - near), 1.0,
             ]
-        half_h = math.tan(math.radians(self.fov_degrees) / 2.0)
+        half_h = self._tan_half_fov()
         half_w = half_h * aspect
         m00 = 1.0 / half_w
         m11 = 1.0 / half_h
@@ -303,7 +332,7 @@ class OrbitCamera:
         ndc_x = (2.0 * sx / width) - 1.0
         ndc_y = (2.0 * sy / height) - 1.0
         aspect = width / height
-        half_h = math.tan(math.radians(self.fov_degrees) / 2.0)
+        half_h = self._tan_half_fov()
         half_w = half_h * aspect
         forward, right, up = self.basis()
         if self.ortho:
@@ -351,7 +380,7 @@ class OrbitCamera:
         cam_x = v.dot(rel, right)
         cam_y = v.dot(rel, up)
         aspect = width / height
-        half_h = math.tan(math.radians(self.fov_degrees) / 2.0)
+        half_h = self._tan_half_fov()
         half_w = half_h * aspect
         ndc_x = cam_x / (cam_z * half_w)
         ndc_y = cam_y / (cam_z * half_h)
@@ -386,7 +415,7 @@ class OrbitCamera:
             return project_ortho
         near = self.near
         aspect = width / height
-        half_h = math.tan(math.radians(self.fov_degrees) / 2.0)
+        half_h = self._tan_half_fov()
         half_w = half_h * aspect
 
         def project(point: Vec3) -> tuple[float, float] | None:
@@ -418,7 +447,7 @@ class OrbitCamera:
         """
         if height <= 0:
             return
-        half_h = math.tan(math.radians(self.fov_degrees) / 2.0)
+        half_h = self._tan_half_fov()
         world_per_px = 2.0 * self.distance * half_h / height
         _forward, right, up = self.basis()
         self.target = v.sub(

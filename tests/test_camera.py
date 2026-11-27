@@ -12,7 +12,7 @@ import unittest
 import tests._bootstrap  # noqa: F401
 
 from mirai.viewport import vecmath as v
-from mirai.viewport.camera import OrbitCamera
+from mirai.viewport.camera import MAX_DISTANCE, OrbitCamera
 
 
 def _close(a: float, b: float, eps: float = 1e-4) -> bool:
@@ -70,7 +70,7 @@ class OrbitCameraTests(unittest.TestCase):
         cam.dolly(0.001)
         self.assertGreaterEqual(cam.distance, 0.5)
         cam.dolly(1e6)
-        self.assertLessEqual(cam.distance, 200.0)
+        self.assertLessEqual(cam.distance, MAX_DISTANCE)
 
     def test_screen_delta_to_world_moves_along_view_plane(self):
         cam = OrbitCamera(target=(0.0, 0.0, 0.0), distance=6.0)
@@ -158,6 +158,63 @@ class FrameOnBoundsTests(unittest.TestCase):
                     p = tuple(rng.uniform(-8.0, 8.0) for _ in range(3))
                     self.assertEqual(project(p), cam.project_to_screen(p, w, h))
                 self.assertIsNone(project(cam.eye()))
+
+
+# -- AD-042 §3.4, §6: one tan(fov/2), the distance range and the clip coupling -------------------------------------
+
+import random as _random  # noqa: E402
+
+from mirai.viewport.camera import FAR_BASE, MIN_DISTANCE, NEAR_BASE, clip_for_distance  # noqa: E402
+
+
+def _old_frame_on_bounds_half_height(fov_degrees: float) -> float:
+    return math.tan(math.radians(fov_degrees / 2.0))  # the inline formula before AD-042
+
+
+def test_tan_half_fov_equals_the_old_frame_on_bounds_formula_bit_for_bit():
+    """T-C1."""
+    values = [k / 10.0 for k in range(1, 1800)]
+    rng = _random.Random(7)
+    values += [rng.uniform(0.001, 179.999) for _ in range(10_000)]
+    cam = OrbitCamera()
+    for fov in values:
+        cam.fov_degrees = fov
+        assert cam._tan_half_fov() == _old_frame_on_bounds_half_height(fov), fov
+
+
+def test_clip_below_distance_50_is_todays_exactly():
+    """T-C2."""
+    rng = _random.Random(3)
+    for d in [0.5, 1.0, 6.0, 49.999999, 50.0] + [rng.uniform(0.5, 50.0) for _ in range(5000)]:
+        assert clip_for_distance(d) == (0.05, 200.0), d
+    cam = OrbitCamera(distance=6.0)
+    for factor in (0.9, 1.1, 1.1, 3.0, 2.0):  # stays <= 50
+        cam.dolly(factor)
+        assert (cam.near, cam.far, cam.ortho_back) == (0.05, 200.0, 100.0)
+    cam.frame_on_bounds((0.0, 0.0, 0.0), 5.0)
+    assert cam.distance < 50.0 and (cam.near, cam.far) == (0.05, 200.0)
+
+
+def test_clip_above_50_is_proportional_up_to_the_ceiling():
+    """T-C3."""
+    assert clip_for_distance(200.0) == (0.2, 800.0)
+    assert clip_for_distance(MAX_DISTANCE) == (2.0, 8000.0)
+    cam = OrbitCamera(distance=100.0)
+    cam.dolly(1e6)
+    assert cam.distance == MAX_DISTANCE and (cam.near, cam.far) == clip_for_distance(MAX_DISTANCE)
+    cam.dolly(1e-9)
+    assert cam.distance == MIN_DISTANCE and (cam.near, cam.far) == (NEAR_BASE, FAR_BASE)
+    cam.clip_follows_distance = False
+    cam.near, cam.far = 1.0, 1000.0
+    cam.dolly(100.0)
+    cam.frame_on_bounds((0.0, 0.0, 0.0), 500.0)
+    assert (cam.near, cam.far) == (1.0, 1000.0)
+
+
+def test_the_constructor_keeps_its_clip_fields():
+    """T-C4."""
+    cam = OrbitCamera(distance=150.0)
+    assert (cam.near, cam.far, cam.clip_follows_distance) == (0.05, 200.0, True)
 
 
 if __name__ == "__main__":
