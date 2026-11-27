@@ -37,3 +37,25 @@ Reading (container):
   (WIC on Windows) - `--photo <JPEG>` on the reference PC.
 
 Reference-PC run: open (Manu, before M2; AD-042 §11.3).
+
+## M2 rows (AD-042 §18.8, 2026-11-27)
+
+The same command after M2 (working tree on `aa0506b` + M2, before its commit):
+
+```
+  free                        GPU p50    0.53 ms (min   0.32, max  14.06)    1.6 % of 33.3 ms   CPU p50   11.69 ms
+  (Kamera 1: 33.3 mm KB from the view, overscan 1.15)
+  camera view                 GPU p50    0.09 ms (min   0.08, max   3.15)    0.3 % of 33.3 ms   CPU p50   11.99 ms   vs free  -0.44 ms ok
+  photo 4096 behind           GPU p50    0.09 ms (min   0.07, max   0.11)    0.3 % of 33.3 ms   CPU p50   18.45 ms   vs free  -0.44 ms ok
+  photo 4096 front            GPU p50    0.09 ms (min   0.08, max   0.12)    0.3 % of 33.3 ms   CPU p50   15.72 ms   vs free  -0.44 ms ok
+  photo 4096 wipe             GPU p50    0.07 ms (min   0.05, max   4.68)    0.2 % of 33.3 ms   CPU p50   15.88 ms   vs free  -0.45 ms ok
+  photo 4096 front, turned    GPU p50    0.05 ms (min   0.03, max   2.10)    0.1 % of 33.3 ms   CPU p50   17.74 ms   vs free  -0.48 ms ok
+  lookdev (gate, no photo)    GPU p50    6.49 ms (min   6.20, max   7.34)   19.5 % of 33.3 ms   CPU p50   28.97 ms
+  lookdev photo 4096 behind   GPU p50    6.64 ms (min   6.42, max   6.95)   19.9 % of 33.3 ms   CPU p50   34.30 ms   vs lookdev  +0.15 ms
+  free after                  GPU p50    0.40 ms (min   0.30, max   4.91)    1.2 % of 33.3 ms   CPU p50   12.68 ms   vs free  -0.13 ms ok
+```
+
+Reading: every row runs (front, wipe, a turned photo), `free after` ≈ `free`. On llvmpipe the GPU timer does not
+separate the work this run (the camera-view rows read *below* `free`, where M1's run read +3.8 ms for the same draw):
+the software rasteriser's timer queries are not a cost measure, and the CPU column carries its fill time (+4 … +6 ms
+with a photo). Nothing here is a verdict; the reference PC decides (AD-042 §18.9).

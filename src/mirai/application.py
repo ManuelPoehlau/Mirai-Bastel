@@ -95,6 +95,7 @@ from . import texture_files
 from . import view_state
 from .orbit_focus import FocusTracker, OrbitFocus, focus_point
 from .viewport import lens as lens_math
+from .viewport import photo_fit as fit_math
 from . import likeness_files
 from .likeness_files import CLIP_RANGE, SENSOR_SIDE_MM
 from .pivot import WorkingPivot
@@ -161,6 +162,7 @@ from .controllers.gestures import (
 )
 from .controllers.knife import KnifeController
 from .controllers.likeness import NAME_LIMIT as LIKENESS_NAME_LIMIT, LikenessSession
+from .controllers import likeness as likeness_ctl
 from .controllers.lookdev_room import LookdevRoom
 from .controllers.morph import MorphController
 from .controllers.paint_room import RESOLUTIONS as PAINT_RESOLUTIONS, PaintRoomController
@@ -1242,6 +1244,7 @@ class Application:
         if self._orbit_virtual is not None:  # a running orbit gesture continues from the free view (K7)
             self._orbit_virtual = (camera.yaw, camera.pitch)
         session.view = None
+        session.flip_held = False
         if self.viewport is not None:
             self.viewport.set_backdrop(None)
         self._camera_changed()
@@ -1286,7 +1289,7 @@ class Application:
         """The gate, passepartout and photo of the camera looked through, to the viewport (AD-042 §7.1)."""
         if self.viewport is None:
             return
-        from viewport.backdrop import Backdrop, gate_corners
+        from viewport.backdrop import BEHIND as BACKDROP_BEHIND, FRONT as BACKDROP_FRONT, Backdrop
 
         session = self._likeness
         cam = session.viewing
@@ -1295,11 +1298,23 @@ class Application:
             return
         a, a_w = self._likeness_aspects(cam)
         gate = lens_math.gate_rect_ndc(a, a_w, session.overscan)
-        photo = cam.photo if session.photo_shown else None
+        flip = session.flip_held
+        photo = cam.photo if session.photo_shown or flip else None
+        # AD-042 §18.2: „Umschalten“ shows the photo alone (in front, full strength) while held; the wipe shows it in
+        # front at full strength left of the line; „vor dem Modell“ blends it over the model at the opacity
+        placement, opacity, wipe = BACKDROP_BEHIND, session.photo_opacity, None
+        if flip:
+            placement, opacity = BACKDROP_FRONT, 1.0
+        elif session.compare == likeness_ctl.FRONT:
+            placement = BACKDROP_FRONT
+        elif session.compare == likeness_ctl.WIPE:
+            placement, opacity = BACKDROP_FRONT, 1.0
+            wipe = -gate[0] + 2.0 * gate[0] * session.wipe
         self.viewport.set_backdrop(Backdrop(
             gate=gate, passepartout=session.passepartout,
             image=None if photo is None else photo.rgba, image_serial=0 if photo is None else photo.serial,
-            corners=() if photo is None else gate_corners(gate), opacity=session.photo_opacity))
+            corners=() if photo is None else fit_math.photo_corners(gate, a_w, cam.photo_fit), opacity=opacity,
+            placement=placement, wipe=None if photo is None else wipe))
 
     def set_active_likeness_camera(self, index: int) -> bool:
         """The camera the panel's lens and photo rows edit and the SPACE row looks through."""
@@ -1425,13 +1440,23 @@ class Application:
             return
         seconds = time.perf_counter() - start
         cam = session.cameras[index]
+        before = cam.photo
+        if before is None or Path(before.path).resolve() != Path(path).resolve():
+            cam.photo_fit = fit_math.PhotoFit()  # AD-042 §18.3: a new photo fills the gate; the same file keeps its fit
         cam.photo, cam.photo_missing = photo, None
         source = photo.source_size
         w, h = cam.photo.size
         origin = "" if (w, h) == source else f" (aus {source[0]} × {source[1]})"
         self._likeness_changed(index)
         took = f"{seconds:.1f}".replace(".", ",")
-        self._set_status(f"Foto ›{path.name}‹: {w} × {h}{origin}, {took} s")
+        extra = ""
+        if photo.exif.orientation != 1:
+            extra += " · nach EXIF ausgerichtet"
+        suggestion = self.likeness_exif_suggestion(index)
+        if suggestion is not None:
+            kind = "KB" if suggestion[1] else "echt"
+            extra += f" · EXIF {_mm_text(suggestion[0])} mm {kind} (Übernehmen im Panel)"
+        self._set_status(f"Foto ›{path.name}‹: {w} × {h}{origin}, {took} s{extra}")
 
     def turn_likeness_photo(self, index: int) -> bool:
         """„90° drehen“: the photo turned clockwise (lossless, new serial); the frame aspect inverts and re-applies."""
@@ -1463,30 +1488,156 @@ class Application:
         return True
 
     def set_likeness_view(self, **changes) -> bool:
-        """Session view values: `overscan` (1.0 … 1.5), `photo_opacity` (0 … 1), `photo_shown`; clamped."""
-        unknown = set(changes) - {"overscan", "photo_opacity", "photo_shown"}
+        """Session view values: `overscan` (1.0 … 1.5), `photo_opacity` (0 … 1), `photo_shown`, and (AD-042 §18.2)
+        `compare` (`behind` / `front` / `wipe`) and `wipe` (the line across the gate, 0 … 1); clamped."""
+        unknown = set(changes) - {"overscan", "photo_opacity", "photo_shown", "compare", "wipe"}
         if unknown:
             raise TypeError(f"unknown view fields {sorted(unknown)}")
         session = self._likeness
-        before = (session.overscan, session.photo_opacity, session.photo_shown)
+        before = (session.overscan, session.photo_opacity, session.photo_shown, session.compare, session.wipe)
         try:
             if "overscan" in changes:
                 lo, hi = lens_math.OVERSCAN_RANGE
-                session.overscan = max(lo, min(hi, _finite(changes["overscan"])))
+                overscan = max(lo, min(hi, _finite(changes["overscan"])))
             if "photo_opacity" in changes:
-                session.photo_opacity = max(0.0, min(1.0, _finite(changes["photo_opacity"])))
+                opacity = max(0.0, min(1.0, _finite(changes["photo_opacity"])))
+            if "wipe" in changes:
+                wipe = max(0.0, min(1.0, _finite(changes["wipe"])))
+            if "compare" in changes and changes["compare"] not in likeness_ctl.COMPARE_MODES:
+                raise ValueError(f"unknown compare mode {changes['compare']!r}")
         except ValueError as exc:
             self._set_status(f"Ansicht: {exc}")
             return False
+        if "overscan" in changes:
+            session.overscan = overscan
+        if "photo_opacity" in changes:
+            session.photo_opacity = opacity
+        if "wipe" in changes:
+            session.wipe = wipe
+        if "compare" in changes:
+            session.compare = changes["compare"]
         if "photo_shown" in changes:
             session.photo_shown = bool(changes["photo_shown"])
-        if (session.overscan, session.photo_opacity, session.photo_shown) == before:
+        if (session.overscan, session.photo_opacity, session.photo_shown, session.compare, session.wipe) == before:
             return False
         if session.view is not None:
             if session.overscan != before[0]:
                 self._likeness_changed(session.view.index)
             else:
                 self._push_backdrop()
+        return True
+
+    def set_likeness_flip(self, held: bool) -> bool:
+        """„Umschalten“ (AD-042 §18.2): while held the photo is shown alone, in front at full strength; released, the
+        comparison is back. The panel sends the button's held state every frame; only a change does anything. Not
+        saved; leaving the camera view releases it. True = changed."""
+        session = self._likeness
+        held = bool(held) and session.view is not None
+        if session.flip_held == held:
+            return False
+        session.flip_held = held
+        self._push_backdrop()
+        return True
+
+    def set_likeness_photo_fit(self, index: int, **changes) -> bool:
+        """The photo's fit in the gate (AD-042 §18.3): `rotation_deg` (LC-D4, counter-clockwise), `offset_x` /
+        `offset_y` (gate heights, = lens shift), `cropped` and `scale` („beschnittenes Foto“), `mirror`; clamped. The
+        lens and the pose are not touched: the model stays where it is in the gate. True = changed."""
+        if self._likeness_index(index, "Foto einpassen") is None:
+            return False
+        names = {f.name for f in dataclasses.fields(fit_math.PhotoFit)}
+        unknown = set(changes) - names
+        if unknown:
+            raise TypeError(f"unknown photo fit fields {sorted(unknown)}")
+        cam = self._likeness.cameras[index]
+        try:
+            numbers = {k: _finite(v) for k, v in changes.items() if k not in ("cropped", "mirror")}
+            flags = {k: bool(v) for k, v in changes.items() if k in ("cropped", "mirror")}
+            fit = fit_math.clamped(dataclasses.replace(cam.photo_fit, **numbers, **flags))
+        except ValueError as exc:
+            self._set_status(f"Foto einpassen: {exc}")
+            return False
+        if fit == cam.photo_fit:
+            return False
+        cam.photo_fit = fit
+        self._likeness_fit_changed(index)
+        return True
+
+    def reset_likeness_photo_fit(self, index: int) -> bool:
+        """„Zurücksetzen“: the photo fills the gate again, unturned, unshifted, unmirrored."""
+        if self._likeness_index(index, "Foto einpassen") is None:
+            return False
+        cam = self._likeness.cameras[index]
+        if cam.photo_fit == fit_math.PhotoFit():
+            return False
+        cam.photo_fit = fit_math.PhotoFit()
+        self._likeness_fit_changed(index)
+        self._set_status("Foto füllt den Rahmen wieder")
+        return True
+
+    def _likeness_fit_changed(self, index: int) -> None:
+        view = self._likeness.view
+        if view is not None and view.index == index:
+            self._push_backdrop()  # the corners only: no lens, no pose, no camera revision
+
+    def likeness_exif_suggestion(self, index: int) -> tuple[float, bool] | None:
+        """The photo's EXIF focal length as (mm, is 35 mm equivalent), None without one (AD-042 §18.4)."""
+        cams = self._likeness.cameras
+        if not 0 <= index < len(cams) or cams[index].photo is None:
+            return None
+        info = cams[index].photo.exif
+        if info.focal_35mm is not None:
+            return info.focal_35mm, True
+        if info.focal_mm is not None:
+            return info.focal_mm, False
+        return None
+
+    def adopt_likeness_exif(self, index: int) -> bool:
+        """„Übernehmen“: the EXIF suggestion becomes the lens. A 35 mm equivalent value sets the sensor „Kleinbild-
+        Äquivalent“ with its diagonal fit (LC-D5); a real focal length only sets the focal length (the sensor is
+        Manu's choice: EXIF does not name it reliably)."""
+        if self._likeness_index(index, "EXIF") is None:
+            return False
+        suggestion = self.likeness_exif_suggestion(index)
+        if suggestion is None:
+            self._set_status("EXIF: das Foto nennt keine Brennweite")
+            return False
+        mm, equiv = suggestion
+        changes = {"sensor": "equiv35", "focal_mm": mm} if equiv else {"focal_mm": mm}
+        changed = self.set_likeness_lens(index, **changes)
+        lens = self._likeness.cameras[index].lens
+        self._set_status(f"Objektiv aus EXIF: {_mm_text(lens.focal_mm)} mm {_sensor_short(lens)}"
+                         + ("" if equiv else " (echte Brennweite: Sensor prüfen)"))
+        return changed
+
+    def dolly_zoom_likeness(self, index: int, focal_mm: float) -> bool:
+        """The dolly zoom (AD-042 §18.5, proposal §5.2 - the main likeness lever): the focal length and the distance
+        change together (distance / focal stays), so the target plane keeps its size in the gate and only the
+        perspective changes. The target and the view direction stay; the factor is limited so that both stay in
+        their ranges (the ratio is kept exactly). True = changed."""
+        if self._likeness_index(index, "Dolly-Zoom") is None:
+            return False
+        from .viewport.camera import MAX_DISTANCE, MIN_DISTANCE
+
+        cam = self._likeness.cameras[index]
+        try:
+            wanted = _finite(focal_mm)
+        except ValueError as exc:
+            self._set_status(f"Dolly-Zoom: {exc}")
+            return False
+        f0, d0 = cam.lens.focal_mm, cam.distance
+        lo, hi = lens_math.FOCAL_RANGE_MM
+        k_lo = max(lo / f0, MIN_DISTANCE / d0)
+        k_hi = min(hi / f0, MAX_DISTANCE / d0)
+        k = max(k_lo, min(k_hi, wanted / f0)) if wanted > 0.0 else k_lo
+        if k == 1.0:
+            return False
+        cam.lens = dataclasses.replace(cam.lens, focal_mm=f0 * k)
+        cam.distance = d0 * k
+        view = self._likeness.view
+        if view is not None and view.index == index:
+            self.camera.distance = cam.distance
+        self._likeness_changed(index)
         return True
 
     def _camera_view_route(self, kind: str) -> None:
@@ -1547,17 +1698,20 @@ class Application:
         for cam, wanted in cameras:
             if wanted is None:
                 continue
-            path, turns = wanted
+            path, turns, oriented = wanted
             try:
-                cam.photo = likeness_files.read_photo(path, turns, session.next_serial())
+                cam.photo = likeness_files.read_photo(path, turns, session.next_serial(), orient=oriented)
             except Exception:  # missing or unreadable: the camera stays, its photo path with it
                 cam.photo_missing = (path, turns)
+                cam.photo_missing_oriented = oriented
                 missing.append(Path(path).name)
         session.cameras = [cam for cam, _wanted in cameras]
         session.active = values["active"]
         session.overscan = values["overscan"]
         session.photo_opacity = values["photo_opacity"]
         session.photo_shown = values["photo_shown"]
+        session.compare = values["compare"]
+        session.wipe = values["wipe"]
         if missing:
             self._set_status(f"Kamera-Fotos nicht gefunden (Pfad bleibt): {', '.join(missing)}")
 

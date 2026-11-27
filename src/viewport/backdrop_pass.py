@@ -1,4 +1,5 @@
-"""GL side of the backdrop (AD-042 §7.5): the photo quad, the passepartout and the gate line.
+"""GL side of the backdrop (AD-042 §7.5, §18.2): the photo quad (behind or in front), the passepartout, the gate
+line and the wipe line.
 
 One program, an empty VAO and `gl_VertexID` (the LookDev background's pattern): corners, gate and colours are
 uniforms, there is no vertex buffer. One RGBA8 texture at a time, uploaded once per `image_serial`. Every draw saves
@@ -14,9 +15,11 @@ import ctypes
 import numpy as np
 
 VERTEX_SRC = """#version 330 core
-uniform int u_mode;            // 0 = image quad, 1 = passepartout (4 rectangles outside the gate), 2 = gate line loop
+uniform int u_mode;            // 0 = image quad, 1 = passepartout (4 rectangles outside the gate), 2 = gate line loop,
+                               // 3 = wipe line (2 vertices)
 uniform vec2 u_corners[4];     // top-left, top-right, bottom-right, bottom-left (NDC)
 uniform vec2 u_gate;           // half size of the centred gate (NDC)
+uniform float u_wipe;          // NDC x of the wipe line (mode 3; mode 0 clips at it when u_wipe_on)
 out vec2 v_uv;
 out vec2 v_ndc;
 const int TRI[6] = int[6](0, 1, 2, 0, 2, 3);
@@ -38,8 +41,11 @@ void main() {
         vec2 s = LOOP[TRI[gl_VertexID - 6 * r]] * 0.5 + 0.5;  // 0..1 corner of the rectangle
         p = mix(box.xy, box.zw, s);
         v_uv = s;
-    } else {
+    } else if (u_mode == 2) {
         p = LOOP[gl_VertexID] * u_gate;
+        v_uv = vec2(0.0);
+    } else {
+        p = vec2(u_wipe, gl_VertexID == 0 ? u_gate.y : -u_gate.y);
         v_uv = vec2(0.0);
     }
     v_ndc = p;
@@ -53,11 +59,16 @@ uniform vec2 u_gate;
 uniform sampler2D u_image;
 uniform float u_opacity;
 uniform vec4 u_color;
+uniform int u_wipe_on;
+uniform float u_wipe;
 in vec2 v_uv;
 in vec2 v_ndc;
 out vec4 out_color;
 void main() {
     if (u_mode == 0) {
+        if (u_wipe_on == 1 && v_ndc.x > u_wipe) {
+            discard;  // AD-042 §18.2: the photo left of the wipe line, the model right of it
+        }
         vec4 t = texture(u_image, v_uv);
         out_color = vec4(t.rgb, t.a * u_opacity);
     } else {
@@ -148,7 +159,8 @@ class BackdropPass:
     # -- draws --------------------------------------------------------------------------------------------------
 
     def draw_image(self, backdrop) -> bool:
-        """The photo quad (behind the meshes). False = nothing to draw (no image)."""
+        """The photo quad (behind or over the meshes, as the caller's slot says), clipped at the wipe line.
+        False = nothing to draw (no image)."""
         if backdrop.image is None:
             return False
         self._ensure_program()
@@ -167,12 +179,14 @@ class BackdropPass:
             program["u_opacity"] = float(backdrop.opacity)
             program["u_gate"] = tuple(float(g) for g in backdrop.gate)
             program["u_corners"] = [(float(x), float(y)) for x, y in backdrop.corners]
+            program["u_wipe_on"] = 0 if backdrop.wipe is None else 1
+            program["u_wipe"] = 0.0 if backdrop.wipe is None else float(backdrop.wipe)
             gl.glDrawArrays(gl.GL_TRIANGLES, 0, 6)
         self.draws += 1
         return True
 
     def draw_gate(self, backdrop) -> None:
-        """The passepartout (outside the gate, black at `passepartout` alpha) and the 1 px gate line."""
+        """The passepartout (outside the gate, black at `passepartout` alpha), the 1 px gate line and the wipe line."""
         self._ensure_program()
         from pyglet import gl
 
@@ -187,6 +201,10 @@ class BackdropPass:
             program["u_mode"] = 2
             program["u_color"] = GATE_LINE_COLOUR
             gl.glDrawArrays(gl.GL_LINE_LOOP, 0, 4)
+            if backdrop.wipe is not None and backdrop.image is not None:
+                program["u_mode"] = 3
+                program["u_wipe"] = float(backdrop.wipe)
+                gl.glDrawArrays(gl.GL_LINES, 0, 2)
         self.draws += 1
 
     def _begin(self) -> None:

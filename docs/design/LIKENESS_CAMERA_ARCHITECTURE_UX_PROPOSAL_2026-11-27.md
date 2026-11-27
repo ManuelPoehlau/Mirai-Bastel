@@ -688,7 +688,9 @@ LD-D1 … LD-D16.
 
 **Update 2026-11-27:** LC-D1, LC-D3, LC-D4 and LC-D5 are answered (§0) and the M1 architecture is written as
 [AD-042](../architecture/AD-042-LIKENESS-CAMERA-M1.md). **Update 2026-11-27 (later):** AD-042 accepted and M1 built
-(AD-042 §17). Next: Manu's probe run and practical test (AD-042 §15).
+(AD-042 §17). **Update 2026-11-27 (M2):** M2 „Vergleichen und anpassen“ built at Manu's „AD-042 M2 bauen“ (AD-042
+§18: photo in front, wipe, „Nur Foto (halten)“, photo fit, EXIF orientation and focal suggestion, the dolly zoom in the
+panel; no key). Next: Manu's probe run and the practical test of M1 + M2 (AD-042 §18.9).
 
 **Next step (as written before the answers):** Manu's answers to LC-D1, LC-D3, LC-D4 and LC-D5, then the architecture AD for M1 (AD-042,
 `PROVISIONAL` number). The AD belongs in a **fresh session**: this one carries a long inventory context, and the AD

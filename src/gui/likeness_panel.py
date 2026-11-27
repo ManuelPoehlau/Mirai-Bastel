@@ -1,4 +1,5 @@
-"""Das Panel „Kamera“ (AD-042 §8.2; Layout `PROVISIONAL`): Likeness-Kameras der Sitzung, Objektiv, Foto, Ansicht.
+"""Das Panel „Kamera“ (AD-042 §8.2, M2 §18.6; Layout `PROVISIONAL`): Likeness-Kameras, Objektiv, Foto, Vergleich,
+Ansicht.
 
 Rechte Spalte (wie „Bone“ und „Auge“), Knopf „Kamera [+]“ in der Leiste. Die Logik (Zeilen, Bereiche, Freigaben) steht
 in `likeness_model`; das Panel zeichnet nur und ruft `Application` - es hält keinen Zustand außer dem Auf/Zu von „Mehr“.
@@ -77,6 +78,13 @@ class LikenessPanel:
             if imgui.small_button(str(mm)):
                 app.set_likeness_lens(index, focal_mm=float(mm))
             self.layer._remember("likeness_focal", mm)
+        # AD-042 §18.5: Halten + Maus = Wert - ziehen ändert Brennweite und Abstand zusammen (keine Taste bis „Taste passt“)
+        changed, value = imgui.drag_float(lm.DOLLY, lens.focal_mm, 0.25, lo, hi, "%.1f")
+        if changed:
+            app.dolly_zoom_likeness(index, value)
+        self.layer._remember("likeness_dolly", 0)
+        if imgui.is_item_hovered():
+            imgui.set_tooltip(lm.DOLLY_HINT)
         if imgui.begin_combo("Sensor", lens.sensor_label):
             for key in lens_math.SENSOR_KEYS:
                 if imgui.selectable(lm.SENSOR_LABELS[key], key == lens.sensor)[0]:
@@ -124,12 +132,72 @@ class LikenessPanel:
         if changed:
             app.set_likeness_view(photo_opacity=value)
         imgui.text_disabled(photo.line)
+        if photo.exif_line:
+            imgui.text_disabled(photo.exif_line)
+            imgui.same_line()
+            imgui.begin_disabled(not photo.exif_adoptable)
+            if imgui.small_button(lm.ADOPT):
+                app.adopt_likeness_exif(index)
+            imgui.end_disabled()
+            self.layer._remember("likeness_exif", 0)
+        self._compare(st)
         if self.more and photo.loaded:
             if imgui.small_button(lm.TURN):
                 app.turn_likeness_photo(index)
             imgui.same_line()
             if imgui.small_button(lm.REMOVE):
                 app.remove_likeness_photo(index)
+            self._fit(photo.fit, index)
+
+    def _compare(self, st: lm.PanelState) -> None:
+        """AD-042 §18.2: hinter / vor dem Modell / Wischen, die Wischlinie und „Nur Foto (halten)“."""
+        imgui, app = self.imgui, self.app
+        imgui.text(lm.COMPARE_TITLE)
+        for mode, label in lm.COMPARE_LABELS.items():
+            imgui.same_line()
+            if imgui.radio_button(label, st.compare == mode):
+                app.set_likeness_view(compare=mode)
+            self.layer._remember("likeness_compare", mode)
+        if st.compare == "wipe":
+            changed, value = imgui.slider_float(lm.WIPE, st.wipe, 0.0, 1.0, "%.2f")
+            if changed:
+                app.set_likeness_view(wipe=value)
+        imgui.begin_disabled(not (st.viewing and st.photo.loaded))
+        imgui.button(lm.FLIP)
+        held = imgui.is_item_active()
+        imgui.end_disabled()
+        self.layer._remember("likeness_flip", 0)
+        if imgui.is_item_hovered(imgui.HoveredFlags_.allow_when_disabled):
+            imgui.set_tooltip(lm.FLIP_HINT)
+        if held != st.flip_held:
+            app.set_likeness_flip(held)
+
+    def _fit(self, fit, index: int) -> None:
+        """AD-042 §18.3 (unter „Mehr“): das Foto im Rahmen drehen (LC-D4), verschieben, beschnitten skalieren, spiegeln."""
+        imgui, app = self.imgui, self.app
+        changed, value = imgui.drag_float(lm.ROTATE, fit.rotation_deg, 0.05, *lm.ROTATION_RANGE, "%.2f")
+        if changed:
+            app.set_likeness_photo_fit(index, rotation_deg=value)
+        changed, value = imgui.drag_float(lm.SHIFT_X, fit.offset_x, 0.001, *lm.OFFSET_RANGE, "%.3f")
+        if changed:
+            app.set_likeness_photo_fit(index, offset_x=value)
+        changed, value = imgui.drag_float(lm.SHIFT_Y, fit.offset_y, 0.001, *lm.OFFSET_RANGE, "%.3f")
+        if changed:
+            app.set_likeness_photo_fit(index, offset_y=value)
+        changed, on = imgui.checkbox(lm.CROPPED, fit.cropped)
+        if changed:
+            app.set_likeness_photo_fit(index, cropped=on)
+        imgui.same_line()
+        changed, on = imgui.checkbox(lm.MIRROR, fit.mirror)
+        if changed:
+            app.set_likeness_photo_fit(index, mirror=on)
+        imgui.begin_disabled(not fit.cropped)
+        changed, value = imgui.drag_float(lm.SCALE, fit.scale, 0.002, *lm.SCALE_RANGE, "%.3f")
+        if changed:
+            app.set_likeness_photo_fit(index, scale=value)
+        imgui.end_disabled()
+        if imgui.small_button(lm.FIT_RESET):
+            app.reset_likeness_photo_fit(index)
 
     def _view(self, st: lm.PanelState) -> None:
         imgui, app = self.imgui, self.app

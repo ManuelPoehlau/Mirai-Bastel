@@ -202,6 +202,7 @@ def _mat4_mul(a: list[float], b: list[float]) -> list[float]:
             out[col * 4 + row] = sum(a[k * 4 + row] * b[col * 4 + k] for k in range(4))
     return out
 from .backdrop import BEHIND as BACKDROP_BEHIND
+from .backdrop import FRONT as BACKDROP_FRONT
 from .eye_pass import EyeDisplay, EyeDraw
 from .lookdev_pass import LookDraw
 from .light_rig import DEFAULT_PRESET, PRESETS, SPACE_WORLD, LightRig, resolve
@@ -788,10 +789,12 @@ class Viewport:
 
         return issubclass(self._store_type, GLRenderStore)
 
-    def _draw_backdrop_image(self) -> None:
-        """The photo behind the meshes (AD-042 §7.2); skipped in a capture unless it asked for it (§7.4)."""
+    def _draw_backdrop_image(self, placement: str = BACKDROP_BEHIND) -> None:
+        """The photo in its slot (AD-042 §7.2 behind the meshes, §18.2 in front of them): drawn only in the slot of
+        its placement; skipped in a capture unless it asked for it (§7.4; a capture draws no overlay slot, so a front
+        photo is never in one)."""
         backdrop = self._backdrop
-        if backdrop is None or backdrop.image is None or backdrop.placement != BACKDROP_BEHIND:
+        if backdrop is None or backdrop.image is None or backdrop.placement != placement:
             return
         if self._capturing and not self._capture_backdrop:
             return
@@ -1524,8 +1527,9 @@ class Viewport:
         for overlay in self.extra_overlays:
             if getattr(overlay, "DRAW_UNDER_HIGHLIGHTS", False):
                 overlay.draw(camera_uniforms)
-        # AD-042 §7.3: the passepartout and the gate line - after the under-highlight extras (they are darkened too),
-        # before the wire, the highlights and the points (they stay readable on top)
+        # AD-042 §7.3, §18.2: the front photo, then the passepartout and the gate line - after the under-highlight
+        # extras (they are covered and darkened too), before the wire, the highlights and the points (readable on top)
+        self._draw_backdrop_image(BACKDROP_FRONT)
         if self._backdrop is not None and self._backdrop_gl():
             self.backdrop_pass.draw_gate(self._backdrop)
         if self.line_overlay is not None and self.wire_drawn():

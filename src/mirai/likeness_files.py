@@ -13,6 +13,10 @@ scene-relative plus the quarter turns („90° drehen“); the source is read ag
 gone by the time of the save is written from memory as a PNG (the capped, turned pixels; 0 turns). A photo missing on
 load keeps its path (`LikenessCamera.photo_missing`) and is written again on the next save.
 
+M2 (AD-042 §18) adds keys, no format bump (an M1 reader ignores them, an M1 file reads with the defaults): per camera
+`photo_fit` (rotation, offset, crop scale, mirror), per photo `oriented` (the EXIF orientation is applied before the
+turns; absent = an M1 file, read unoriented so its turns stay right), and the session's `compare` and `wipe`.
+
 pyglet-free except through `paint.library.read_image_rgba` (pyglet only for a non-PNG file).
 """
 
@@ -25,9 +29,12 @@ from typing import Any
 
 import numpy as np
 
-from . import texture_files
+from . import exif, texture_files
 from .likeness import LikenessCamera, LikenessPhoto
+from .controllers.likeness import BEHIND, COMPARE_MODES, WIPE_DEFAULT
 from .viewport import lens as lens_math
+from .viewport import photo_fit
+from .viewport.photo_fit import PhotoFit
 
 SECTION = "likeness"
 FORMAT = 1
@@ -44,14 +51,19 @@ def photo_dir(scene_path: str | Path) -> Path:
     return scene.parent / f"{texture_files.scene_stem(scene)}_photos"
 
 
-def read_photo(path: str | Path, turns: int, serial: int) -> LikenessPhoto:
-    """Read, cap and turn a photo file. `OSError` / `ValueError` (and pyglet's decoder errors) when it cannot."""
+def read_photo(path: str | Path, turns: int, serial: int, orient: bool = True) -> LikenessPhoto:
+    """Read, orient (EXIF, AD-042 §18.4), cap and turn a photo file. `orient=False` keeps the stored pixel order (a
+    file saved by M1, whose quarter turns were set on the unoriented pixels). `OSError` / `ValueError` (and pyglet's
+    decoder errors) when it cannot."""
     from .paint.library import read_image_rgba, reduce_rgba
 
     path = Path(path)
     rgba = read_image_rgba(path)
     if rgba.ndim != 3 or rgba.shape[2] != 4:
         raise ValueError("kein RGBA-Bild")
+    info = exif.read_exif(path)
+    if orient:
+        rgba = exif.apply_orientation(rgba, info.orientation)
     source = (int(rgba.shape[1]), int(rgba.shape[0]))
     if min(source) < PHOTO_MIN_PX:
         raise ValueError(f"kleiner als {PHOTO_MIN_PX} px")
@@ -61,7 +73,8 @@ def read_photo(path: str | Path, turns: int, serial: int) -> LikenessPhoto:
         rgba = np.ascontiguousarray(np.rot90(rgba, k=-turns))
         if turns % 2:
             source = (source[1], source[0])
-    return LikenessPhoto(path=path, rgba=rgba, source_size=source, serial=serial, turns=turns)
+    return LikenessPhoto(path=path, rgba=rgba, source_size=source, serial=serial, turns=turns, exif=info,
+                         oriented=bool(orient))
 
 
 # -- save --------------------------------------------------------------------------------------------------------
@@ -90,10 +103,12 @@ def prepare_save(session, scene_path: Path) -> tuple[dict, dict[int, Path]]:
                 copy = texture_files.store(data, directory, texture_files.hashed_name(source.stem, data, ".png"))
                 turns = 0
             copies[index] = copy
-            photo = {"file": texture_files.to_file(str(copy), scene_dir), "turns": turns}
+            photo = {"file": texture_files.to_file(str(copy), scene_dir), "turns": turns,
+                     "oriented": bool(cam.photo.oriented)}  # a PNG from memory has no EXIF: either is right
         elif cam.photo_missing is not None:
             missing, turns = cam.photo_missing
-            photo = {"file": texture_files.to_file(missing, scene_dir), "turns": turns}
+            photo = {"file": texture_files.to_file(missing, scene_dir), "turns": turns,
+                     "oriented": bool(cam.photo_missing_oriented)}
         lens = cam.lens
         cameras.append({
             "name": cam.name,
@@ -101,10 +116,11 @@ def prepare_save(session, scene_path: Path) -> tuple[dict, dict[int, Path]]:
             "lens": {"focal_mm": lens.focal_mm, "sensor": lens.sensor, "sensor_w_mm": lens.sensor_w_mm,
                      "sensor_h_mm": lens.sensor_h_mm, "fit": lens.fit},
             "clip_near": cam.clip_near, "clip_far": cam.clip_far, "fixed": bool(cam.fixed),
-            "photo": photo,
+            "photo": photo, "photo_fit": dataclasses.asdict(cam.photo_fit),
         })
     section = {"format": FORMAT, "cameras": cameras, "active": session.active, "overscan": session.overscan,
-               "photo_opacity": session.photo_opacity, "photo_shown": bool(session.photo_shown)}
+               "photo_opacity": session.photo_opacity, "photo_shown": bool(session.photo_shown),
+               "compare": session.compare, "wipe": session.wipe}
     return section, copies
 
 
@@ -128,8 +144,21 @@ def _lens(raw: dict) -> lens_math.Lens:
                           sensor_w_mm=side(raw["sensor_w_mm"]), sensor_h_mm=side(raw["sensor_h_mm"]), fit=raw["fit"])
 
 
-def parse(raw: Any, scene_dir: Path) -> tuple[list[tuple[LikenessCamera, tuple[str, int] | None]], dict]:
-    """The section as [(camera without photo, (absolute photo path, turns) or None)] and the session values. Raises
+def _photo_fit(raw: Any) -> PhotoFit:
+    """A camera's `photo_fit` (absent in M1 files: the identity), clamped to the ranges."""
+    if raw is None:
+        return PhotoFit()
+    if not isinstance(raw, dict):
+        raise ValueError("photo_fit must be an object")
+    fit = PhotoFit(rotation_deg=_number(raw.get("rotation_deg", 0.0)), offset_x=_number(raw.get("offset_x", 0.0)),
+                   offset_y=_number(raw.get("offset_y", 0.0)), cropped=bool(raw.get("cropped", False)),
+                   scale=_number(raw.get("scale", 1.0)), mirror=bool(raw.get("mirror", False)))
+    return photo_fit.clamped(fit)
+
+
+def parse(raw: Any, scene_dir: Path) -> tuple[list[tuple[LikenessCamera, tuple[str, int, bool] | None]], dict]:
+    """The section as [(camera without photo, (absolute photo path, turns, oriented) or None)] and the session values.
+    Raises
     `ValueError` / `TypeError` / `KeyError` on a broken section (the caller then keeps no camera)."""
     if not isinstance(raw, dict) or not isinstance(raw.get("cameras"), list):
         raise ValueError("likeness section needs a camera list")
@@ -147,12 +176,14 @@ def parse(raw: Any, scene_dir: Path) -> tuple[list[tuple[LikenessCamera, tuple[s
             raise ValueError("camera clip out of range")
         cam = LikenessCamera(name=name, target=tuple(_number(c) for c in target), distance=distance,
                              yaw=_number(item["yaw"]), pitch=_number(item["pitch"]), lens=_lens(item["lens"]),
-                             clip_near=near, clip_far=far, fixed=bool(item.get("fixed", False)))
+                             clip_near=near, clip_far=far, fixed=bool(item.get("fixed", False)),
+                             photo_fit=_photo_fit(item.get("photo_fit")))
         photo = item.get("photo")
         wanted = None
         if photo is not None:
             turns = int(_number(photo.get("turns", 0))) % 4
-            wanted = (texture_files.resolve(str(photo["file"]), scene_dir), turns)
+            # M1 files have no flag: their turns were set on the unoriented pixels (AD-042 §18.4)
+            wanted = (texture_files.resolve(str(photo["file"]), scene_dir), turns, bool(photo.get("oriented", False)))
         out.append((cam, wanted))
     lo, hi = lens_math.OVERSCAN_RANGE
     values = {
@@ -160,6 +191,8 @@ def parse(raw: Any, scene_dir: Path) -> tuple[list[tuple[LikenessCamera, tuple[s
         "overscan": max(lo, min(hi, _number(raw.get("overscan", lens_math.OVERSCAN_DEFAULT)))),
         "photo_opacity": max(0.0, min(1.0, _number(raw.get("photo_opacity", 1.0)))),
         "photo_shown": bool(raw.get("photo_shown", True)),
+        "compare": raw.get("compare", BEHIND) if raw.get("compare", BEHIND) in COMPARE_MODES else BEHIND,
+        "wipe": max(0.0, min(1.0, _number(raw.get("wipe", WIPE_DEFAULT)))),
     }
     active = values["active"]
     if isinstance(active, bool) or not isinstance(active, int) or not 0 <= active < len(out):

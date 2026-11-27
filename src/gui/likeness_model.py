@@ -1,4 +1,4 @@
-"""Pure logic of the panel „Kamera“ (AD-042 §8.2): labels, rows, ranges, enabled states - tested headless.
+"""Pure logic of the panel „Kamera“ (AD-042 §8.2, M2 §18.6): labels, rows, ranges, enabled states - tested headless.
 
 The panel (`likeness_panel`) only draws this and calls `Application`; it holds no state of its own. Lens and photo rows
 edit the **active** camera; without a camera only „Neu aus Ansicht“ is enabled. The cameras are saved with the scene
@@ -10,7 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from mirai.controllers import likeness as likeness_ctl
 from mirai.viewport import lens as lens_math
+from mirai.viewport import photo_fit as fit_math
 
 TITLE = "Kamera"
 NEW = "Neu aus Ansicht"
@@ -23,6 +25,25 @@ TURN = "90° drehen"
 REMOVE = "Entfernen"
 SHOW = "Foto ein"
 MORE = "Mehr"
+# AD-042 §18 (M2): comparing and fitting
+COMPARE_LABELS = {likeness_ctl.BEHIND: "Hinter", likeness_ctl.FRONT: "Vor", likeness_ctl.WIPE: "Wischen"}
+COMPARE_TITLE = "Vergleich"
+WIPE = "Wischlinie"
+FLIP = "Nur Foto (halten)"
+FLIP_HINT = "Solange gedrückt: nur das Foto, volle Deckkraft; loslassen: zurück zum Vergleich"
+DOLLY = "Dolly-Zoom (mm)"
+DOLLY_HINT = "Ziehen: Brennweite und Abstand zusammen - der Kopf bleibt gleich groß, nur die Perspektive ändert sich"
+ROTATE = "Drehen (°)"
+SHIFT_X = "Verschieben ←→"
+SHIFT_Y = "Verschieben ↑↓"
+CROPPED = "Beschnittenes Foto"
+SCALE = "Skalieren"
+MIRROR = "Spiegeln"
+FIT_RESET = "Einpassen zurücksetzen"
+ADOPT = "Übernehmen"
+ROTATION_RANGE = fit_math.ROTATION_RANGE
+OFFSET_RANGE = fit_math.OFFSET_RANGE
+SCALE_RANGE = fit_math.SCALE_RANGE
 FOCAL_BUTTONS = (24, 35, 50, 85, 105, 135, 200)
 SENSOR_LABELS = {**{key: label for key, (label, *_rest) in lens_math.SENSORS.items()}, lens_math.CUSTOM: "eigene"}
 FIT_LABELS = {"auto": "Auto", "width": "Breite", "height": "Höhe", "diagonal": "Diagonale"}
@@ -65,6 +86,18 @@ class PhotoRow:
     loaded: bool
     line: str  # file name and size, or „kein Foto“
     pending: bool
+    fit: fit_math.PhotoFit = fit_math.PhotoFit()
+    exif_line: str = ""  # „EXIF: 26 mm KB“, "" without a focal length in the file
+    exif_adoptable: bool = False  # the suggestion differs from the lens
+
+
+def exif_line(suggestion: tuple[float, bool] | None) -> str:
+    """„EXIF: 26 mm KB“ / „EXIF: 4,2 mm echt (Sensor prüfen)“, "" without a suggestion."""
+    if suggestion is None:
+        return ""
+    mm, equiv = suggestion
+    return f"EXIF: {_decimal(mm).removesuffix(',0')} mm KB" if equiv else (
+        f"EXIF: {_decimal(mm).removesuffix(',0')} mm echt (Sensor prüfen)")
 
 
 @dataclass(frozen=True)
@@ -80,6 +113,9 @@ class PanelState:
     overscan: float
     photo_opacity: float
     photo_shown: bool
+    compare: str = likeness_ctl.BEHIND
+    wipe: float = likeness_ctl.WIPE_DEFAULT
+    flip_held: bool = False
 
 
 def _decimal(value: float, digits: int = 1) -> str:
@@ -119,18 +155,21 @@ def state(app) -> PanelState:
                 line = f"fehlt: {Path(cam.photo_missing[0]).name}"
             else:
                 line = "kein Foto"
-            photo = PhotoRow(False, line, pending)
+            photo = PhotoRow(False, line, pending, cam.photo_fit)
         else:
             w, h = cam.photo.size
             line = f"{cam.photo.path.name} · {w} × {h}"
             if cam.photo.source_size != (w, h) and sorted(cam.photo.source_size) != sorted((w, h)):
                 line += f" (aus {cam.photo.source_size[0]} × {cam.photo.source_size[1]})"
-            photo = PhotoRow(True, line, pending)
+            suggestion = app.likeness_exif_suggestion(session.active)
+            adoptable = suggestion is not None and (
+                abs(suggestion[0] - ln.focal_mm) > 1e-9 or (suggestion[1] and ln.sensor != "equiv35"))
+            photo = PhotoRow(True, line, pending, cam.photo_fit, exif_line(suggestion), adoptable)
         fixed = cam.fixed
         dist = distance_line(cam.distance)
         angles = angles_line(ln, None if cam.photo is None else cam.photo.size)
     return PanelState(rows, cam is not None, view is not None, lens, photo, fixed, dist, angles, session.overscan,
-                      session.photo_opacity, session.photo_shown)
+                      session.photo_opacity, session.photo_shown, session.compare, session.wipe, session.flip_held)
 
 
 def framing_locked(app) -> bool:

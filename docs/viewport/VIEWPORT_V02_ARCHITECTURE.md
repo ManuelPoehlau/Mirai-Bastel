@@ -158,7 +158,10 @@ follows the distance (`follow_clip` in `dolly`, `frame_on_bounds`, a view load a
 `ortho_back` and every result below 50 are unchanged (T-C2). A likeness camera's view (AD-042 §5) turns the flag off
 and writes its own clip and an FOV computed from its lens (`mirai.viewport.lens`); no new projection, no asymmetric
 frustum, no roll: matrices, CPU / GPU picking and `ObjectSpaceCamera` read the same fields. The photo, gate and
-passepartout are a `Viewport.set_backdrop(Backdrop)` seam that receives only NDC values (AD-042 §7).
+passepartout are a `Viewport.set_backdrop(Backdrop)` seam that receives only NDC values (AD-042 §7). M2 (AD-042 §18):
+the photo's roll, lens shift, crop and mirror arrive as other corners (`mirai.viewport.photo_fit`), still no frustum
+change; `Backdrop.placement = FRONT` draws it in the overlay slot under the passepartout, wire and highlights, and
+`Backdrop.wipe` (an NDC x) clips it with a 1 px line.
 
 ### 4.2 RenderMesh
 

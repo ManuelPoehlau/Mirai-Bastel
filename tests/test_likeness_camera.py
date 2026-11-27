@@ -199,7 +199,7 @@ def test_cameras_and_photos_round_trip_through_the_scene_file(app, tmp_path):
     assert len(copies) == 1 and copies[0].read_bytes() == source.read_bytes()  # the source file, byte for byte
     assert app.likeness.cameras[0].photo.path == copies[0] and "Fotos in head_photos/" in app.status_message
     raw = json.loads(scene.read_text(encoding="utf-8"))["view"]["likeness"]["cameras"][0]["photo"]
-    assert raw == {"file": f"head_photos/{copies[0].name}", "turns": 1}
+    assert raw == {"file": f"head_photos/{copies[0].name}", "turns": 1, "oriented": True}  # AD-042 §18.4
     assert app.save_scene_file(scene) and list(photos.iterdir()) == copies  # a second save copies nothing
     app.init_scene("cube")
     assert app.likeness.cameras == []  # File > New: no camera

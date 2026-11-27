@@ -65,3 +65,37 @@ def test_the_panel_creates_looks_through_and_fixes_a_camera(env, tmp_path):
     _frame(window, 2)
     _click(window, _center(layer.item_rects[("likeness_look", 0)]))  # „Verlassen“
     assert not app.camera_view_open and app.viewport.backdrop is None
+
+
+def test_the_m2_rows_compare_and_hold_the_photo(env, tmp_path):
+    """AD-042 §18.6: the compare radio reaches `Application`, „Nur Foto (halten)“ holds while pressed only."""
+    from mirai.iris_import import encode_png
+
+    window, app, layer = env
+    _frame(window, 2)
+    _click(window, _center(layer.item_rects[("likeness_new", 0)]))
+    path = tmp_path / "p.png"
+    path.write_bytes(encode_png(np.full((60, 80, 4), 180, np.uint8)))
+    assert app.load_likeness_photo(0, path)
+    for _ in range(3):
+        app.update_viewport(1 / 60)
+    _frame(window, 2)
+    _click(window, _center(layer.item_rects[("likeness_look", 0)]))
+    assert app.camera_view_open
+    _frame(window, 2)
+    _click(window, _center(layer.item_rects[("likeness_compare", "front")]))
+    assert app.likeness.compare == "front" and app.viewport.backdrop.placement == "front"
+    _frame(window, 2)
+    x, y = _center(layer.item_rects[("likeness_flip", 0)])
+    px, py = x, window.height - y
+    window.dispatch_event("on_mouse_motion", px, py, 0, 0)
+    _frame(window, 1)
+    window.dispatch_event("on_mouse_press", px, py, pyglet.window.mouse.LEFT, 0)
+    _frame(window, 2)
+    assert app.likeness.flip_held and app.viewport.backdrop.opacity == 1.0
+    window.dispatch_event("on_mouse_release", px, py, pyglet.window.mouse.LEFT, 0)
+    _frame(window, 2)
+    assert not app.likeness.flip_held
+    assert app.dolly_zoom_likeness(0, 100.0)  # the drag row's call, as the panel makes it
+    _frame(window, 2)
+    assert ("likeness_dolly", 0) in layer.item_rects

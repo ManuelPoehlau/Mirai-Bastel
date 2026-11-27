@@ -5,11 +5,13 @@ no gesture (LC-D1, like LookDev). `Application` drives it (`look_through`, `leav
 
 - `cameras`, `active` (the camera the SPACE row looks through: the last one created or looked through);
 - `view`: while looking through, the camera's index and the saved free view;
-- the session view values `overscan`, `photo_opacity`, `photo_shown`, `passepartout`;
+- the session view values `overscan`, `photo_opacity`, `photo_shown`, `passepartout`, and (M2, AD-042 §18.2)
+  `compare` (the photo behind the model, in front of it, or the wipe) with the wipe line's place `wipe`;
+- `flip_held`: „Umschalten“ - while held the photo is shown alone at full strength (never saved);
 - `pending_photo`: the two-step load (the status line is drawn before a long decode, AD-042 §8.1);
 - a serial counter for photos.
 
-The session survives a scene load (it is not document data, Q-LC-3); the camera view does not (§5.5).
+The cameras belong to the scene (Q-LC-3): a scene replacement empties the session (`reset`), a file brings its own.
 """
 
 from __future__ import annotations
@@ -22,6 +24,10 @@ from ..viewport.lens import OVERSCAN_DEFAULT
 
 NAME_LIMIT = 40
 PASSEPARTOUT_DEFAULT = 0.5
+#: AD-042 §18.2: where the photo is compared - behind the model (M1), in front of it, or a wipe (photo left of the line)
+BEHIND, FRONT, WIPE = "behind", "front", "wipe"
+COMPARE_MODES = (BEHIND, FRONT, WIPE)
+WIPE_DEFAULT = 0.5  # the wipe line across the gate, 0 = its left edge, 1 = its right edge
 
 
 @dataclass
@@ -39,6 +45,9 @@ class LikenessSession:
         self.photo_opacity = 1.0
         self.photo_shown = True
         self.passepartout = PASSEPARTOUT_DEFAULT
+        self.compare = BEHIND
+        self.wipe = WIPE_DEFAULT
+        self.flip_held = False
         self.pending_photo: tuple[int, Path] | None = None
         self.pending_frames = 0  # ticks left before the pending photo decodes
         self._serial = 0

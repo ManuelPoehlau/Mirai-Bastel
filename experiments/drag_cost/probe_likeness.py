@@ -1,4 +1,5 @@
-"""Likeness camera probe (AD-042 M1 §10.4, 2026-11-27): what the camera view, the gate and a photo cost in the app frame.
+"""Likeness camera probe (AD-042 M1 §10.4, M2 §18.8, 2026-11-27): what the camera view, the gate and a photo cost in the
+app frame - behind the model, in front of it, wiped, rotated.
 
 Usage (from the repo root; opens a hidden pyglet window):
     python experiments/drag_cost/probe_likeness.py                     # 1024x768, 30 rounds
@@ -12,6 +13,9 @@ Rows, `Viewport.render()` exactly as `main.py` calls it (overlays included), GL_
 - `free`                      the Worklight frame, no camera view (today's floor);
 - `camera view`               looking through a camera „Neu aus Ansicht“: gate and passepartout, no photo;
 - `photo 4096 behind`         a generated 4096 x 3072 photo behind the model, Worklight;
+- `photo 4096 front`          the same photo over the model at opacity 0.5 (M2, „Vor“);
+- `photo 4096 wipe`           the wipe at the middle (M2, „Wischen“);
+- `photo 4096 front, turned`  „Vor“ with the photo turned 5° and shifted (M2 fit: other corners, the same draw);
 - `lookdev photo 4096 behind` the same in LookDev (Portrait);
 - `free after`                left again, LookDev closed: must equal `free`;
 - `photo load`                wall ms of read + cap + upload for a generated 6000 x 4000 PNG (`encode_png`), and for
@@ -127,7 +131,7 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     window, app = build_app(tuple(args.size))
     size = window.get_framebuffer_size()
-    print(f"Likeness camera probe (AD-042 M1), {size[0]}x{size[1]}, {args.draws} rounds after {WARMUP_ROUNDS}")
+    print(f"Likeness camera probe (AD-042 M1 + M2), {size[0]}x{size[1]}, {args.draws} rounds after {WARMUP_ROUNDS}")
     for line in machine_info(gl.gl_info.get_version_string(), gl.gl_info.get_renderer()):
         print(line)
     print(f"Source: {source_state()}")
@@ -154,6 +158,18 @@ def main(argv=None) -> int:
         read, upload, _status = load_photo(window, size, query, app, photo)
         gpu, wall = rounds(window, size, query, app, args.draws)
         print(row("photo 4096 behind", gpu, wall, floor))
+        app.set_likeness_view(compare="front", photo_opacity=0.5)
+        gpu, wall = rounds(window, size, query, app, args.draws)
+        print(row("photo 4096 front", gpu, wall, floor))
+        app.set_likeness_view(compare="wipe", wipe=0.5)
+        gpu, wall = rounds(window, size, query, app, args.draws)
+        print(row("photo 4096 wipe", gpu, wall, floor))
+        app.set_likeness_view(compare="front")
+        app.set_likeness_photo_fit(0, rotation_deg=5.0, offset_x=0.02)
+        gpu, wall = rounds(window, size, query, app, args.draws)
+        print(row("photo 4096 front, turned", gpu, wall, floor))
+        app.reset_likeness_photo_fit(0)
+        app.set_likeness_view(compare="behind", photo_opacity=1.0)
 
         from drag_cost.probe_lookdev import timed_frame
 

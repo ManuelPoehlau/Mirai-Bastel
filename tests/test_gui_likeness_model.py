@@ -66,3 +66,31 @@ def test_the_compact_strip_names_the_camera_view(app):
     assert app.new_likeness_camera() and app.look_through(0)
     shown, state = labels()
     assert "Kamera" in shown and state.camera.startswith("Kamera ›Kamera 1‹") and state.view == state.camera
+
+
+# -- AD-042 M2 (§18.6) --------------------------------------------------------------------------------------------------
+
+def test_m2_compare_fit_and_exif_rows(app, tmp_path, monkeypatch):
+    import numpy as np
+
+    from mirai import exif
+    from mirai.iris_import import encode_png
+    from mirai.viewport.photo_fit import PhotoFit
+
+    assert lm.exif_line(None) == "" and lm.exif_line((26.0, True)) == "EXIF: 26 mm KB"
+    assert lm.exif_line((4.25, False)) == "EXIF: 4,2 mm echt (Sensor prüfen)"
+    assert app.new_likeness_camera()
+    st = lm.state(app)
+    assert (st.compare, st.wipe, st.flip_held) == ("behind", 0.5, False) and st.photo.exif_line == ""
+    assert st.photo.fit == PhotoFit() and set(lm.COMPARE_LABELS) == {"behind", "front", "wipe"}
+    path = tmp_path / "p.png"
+    path.write_bytes(encode_png(np.full((20, 30, 4), 200, np.uint8)))
+    monkeypatch.setattr(exif, "read_exif", lambda _p: exif.ExifInfo(focal_35mm=85.0))
+    assert app.load_likeness_photo(0, path)
+    for _ in range(3):
+        app.update_viewport(0.0)
+    assert app.set_likeness_photo_fit(0, mirror=True) and app.set_likeness_view(compare="wipe", wipe=0.2)
+    st = lm.state(app)
+    assert st.photo.exif_line == "EXIF: 85 mm KB" and st.photo.exif_adoptable and st.photo.fit.mirror
+    assert (st.compare, st.wipe) == ("wipe", 0.2)
+    assert app.adopt_likeness_exif(0) and not lm.state(app).photo.exif_adoptable

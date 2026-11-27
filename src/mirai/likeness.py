@@ -1,6 +1,6 @@
-"""Likeness camera records (AD-042 §4.1, §5.1): session cameras, their photo, the saved free view.
+"""Likeness camera records (AD-042 §4.1, §5.1, §18): the cameras, their photo and its fit, the saved free view.
 
-Session only in M1: nothing here is saved, nothing has Undo, no photo is copied anywhere (AD-042 §8.1). The pose is
+Saved with the scene in `view.likeness` (`mirai.likeness_files`, Q-LC-3 / LC-D2 C); no Undo. The pose is
 stored in orbit form (target, distance, yaw, pitch), so writing it into the one interactive camera and back is
 lossless and every navigation of the free view works on it; M3 maps it to an object transform (LC-D2).
 """
@@ -12,17 +12,21 @@ from pathlib import Path
 
 import numpy as np
 
+from .exif import ExifInfo
 from .viewport.lens import Lens
+from .viewport.photo_fit import PhotoFit
 from .viewport.vecmath import Vec3
 
 
 @dataclass
 class LikenessPhoto:
-    path: Path  # where it was read (panel line); nothing is copied or saved in M1
+    path: Path  # where it was read (panel line; after a save: its copy in `<stem>_photos/`)
     rgba: np.ndarray  # (h, w, 4) uint8, top row first, capped (AD-042 §8.1)
     source_size: tuple[int, int]  # (w, h) before the cap (panel line)
     serial: int  # new on every load and quarter turn: the viewport uploads once per serial
     turns: int = 0  # clockwise quarter turns applied to the file's pixels („90° drehen“; saved with the scene)
+    exif: ExifInfo = ExifInfo()  # AD-042 §18.4: the file's orientation and focal length (a suggestion only)
+    oriented: bool = True  # the EXIF orientation was applied before the turns (False: a file saved by M1)
 
     @property
     def size(self) -> tuple[int, int]:
@@ -42,8 +46,10 @@ class LikenessCamera:
     clip_far: float
     photo: LikenessPhoto | None = None
     fixed: bool = False  # LC-D3 „Kamera fixieren“
+    photo_fit: PhotoFit = PhotoFit()  # AD-042 §18.3: rotation (LC-D4), offset, crop scale, mirror of the photo
     #: a saved photo that was not found on load: (absolute path, turns), written again on the next save (Q-LC-3)
     photo_missing: tuple[str, int] | None = None
+    photo_missing_oriented: bool = True  # that photo's `oriented` flag, written again with it
 
 
 @dataclass(frozen=True)

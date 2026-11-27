@@ -1,9 +1,10 @@
 # AD-042 — Likeness Camera M1 („Durch ein Objektiv schauen“): lens math, session cameras, the camera view, the backdrop
 
 **Status:** **ACCEPTED (Manu 2026-11-27, chat: „AD-042 build M1“ = accepted as proposed, §2's engineering values
-and §16's start values unchanged) — M1 BUILT (2026-11-27)**, implementation note §17. Architecture Gate (Type C).
-Was PROPOSED (2026-11-27, docs only, number checked free at `450ebd5`). Still open: Manu's probe run and practical
-test (§11.3, §15), Q-LC-1 … Q-LC-3 (§16), every key (§11.4).
+and §16's start values unchanged) — M1 BUILT (2026-11-27)**, implementation note §17. **M2 BUILT (2026-11-27, Manu:
+„AD-042 M2 bauen“)**, implementation note §18. Architecture Gate (Type C).
+Was PROPOSED (2026-11-27, docs only, number checked free at `450ebd5`). Q-LC-1 … Q-LC-3 answered (§17.6). Still open:
+Manu's probe run and practical test of M1 + M2 (§15, §18.9), every key (§11.4, §18.5).
 **Basis:** [LIKENESS_CAMERA_ARCHITECTURE_UX_PROPOSAL_2026-11-27](../design/LIKENESS_CAMERA_ARCHITECTURE_UX_PROPOSAL_2026-11-27.md)
 §2–§7, §9 (M1 tests), §10 (M1), and Manu's decisions **LC-D1, LC-D3, LC-D4, LC-D5** (2026-11-27, chat; entered in its
 §0). LC-D2, LC-D6 … LC-D10 and every key stay open; M1 needs none of them.
@@ -998,5 +999,156 @@ Manu 2026-11-27 (asked after Q-LC-3, because the AD had persistence in M3 behind
   the source; a second save copies nothing; File > New empties; the load restores everything), a file without cameras,
   a gone source and a missing copy, a broken section, the `.gitignore` rule; the save test checks the section.
 
-**Next step:** Manu's probe run and practical test (§11.3, §15, now including save / load); M3 (camera objects, Undo,
-Outliner) after M2.
+### 17.8 Next step (as written after M1)
+
+Manu's probe run and practical test (§11.3, §15, now including save / load); M3 (camera objects, Undo, Outliner) after
+M2. **Superseded the same day:** Manu asked for M2 („AD-042 M2 bauen“) before the practical test; §18.
+
+---
+
+## 18. Implementation note — M2 built „Vergleichen und anpassen“ (2026-11-27)
+
+Built on `ccr-cb804aa2-4wwtfq` from `aa0506b` (M1 and its persistence, branch `claude/magical-hamilton-th1i0c`, fast-
+forwarded), after Manu's „AD-042 M2 bauen“. Scope as the proposal's §10 M2 and §13 here; §11's stop point "Manu's
+practical test before M2" is passed over at his word, so M1 and M2 are tested together (§18.9). No Core field, no format
+version (the `view.likeness` section gains keys), no key, no `.gitignore` change. Engineering values are `PROVISIONAL`.
+
+### 18.1 Kurzfassung für Manu (Deutsch)
+
+- **Vergleich** (Panel „Kamera“ → Foto): **Hinter** (wie M1) · **Vor** (das Foto halbdurchsichtig über dem Modell, mit
+  der Deckkraft) · **Wischen** (links das Foto, rechts das Modell; „Wischlinie“ verschiebt die Grenze; das Foto mit
+  voller Deckkraft). Drahtgitter, Auswahl, Punkte und Gizmo bleiben immer oben lesbar.
+- **„Nur Foto (halten)“**: solange du den Knopf gedrückt hältst, siehst du nur das Foto; loslassen = zurück. (Die Taste
+  `0` halten wäre der Vorschlag dafür – erst nach deinem „Taste passt“.)
+- **Foto einpassen** (unter „Mehr“): **Drehen** (das Foto dreht sich, nicht die Kamera, LC-D4), **Verschieben** (für ein
+  Foto, dessen Mitte nicht die Bildmitte ist), **Beschnittenes Foto** + **Skalieren** (für einen Ausschnitt), **Spiegeln**,
+  „Einpassen zurücksetzen“. Das Modell bleibt dabei stehen; nur das Foto bewegt sich. Wird mit der Szene gespeichert.
+- **EXIF**: Handyfotos werden jetzt richtig herum geladen (die Drehung aus der Datei). Steht in der Datei eine
+  Brennweite, zeigt das Panel „EXIF: 26 mm KB“ mit **„Übernehmen“** – nur ein Vorschlag, du bestätigst.
+- **Dolly-Zoom** (Objektiv, „Dolly-Zoom (mm)“: anklicken und seitlich ziehen): Brennweite und Abstand ändern sich
+  zusammen; der Kopf bleibt gleich groß, nur die Perspektive ändert sich. Der wichtigste Hebel für die Ähnlichkeit.
+  Brennweite allein: der bisherige Regler.
+- Alte Szenen aus M1 laden unverändert (ihre „90° drehen“ bleiben richtig).
+
+### 18.2 The comparison (proposal §5.1) [built]
+
+- **Session values** (`LikenessSession`, saved in `view.likeness` like the opacity): `compare` ∈ `behind` · `front` ·
+  `wipe` (`controllers.likeness.COMPARE_MODES`, default `behind` = M1), `wipe` ∈ [0, 1] across the gate (default 0.5),
+  and `flip_held` (never saved; leaving the camera view releases it). `Application.set_likeness_view(compare=, wipe=)`,
+  `set_likeness_flip(held)`.
+- **What reaches the viewport** (`Application._push_backdrop`): `behind` → M1's `Backdrop`; `front` → `placement=FRONT`
+  at the session opacity; `wipe` → `FRONT` at **opacity 1** with `wipe = -half_w + 2 · half_w · wipe` (the photo left
+  of the line, the model right; the proposal's "photo on one side, model on the other"); held „Nur Foto“ → `FRONT` at
+  opacity 1, shown even when „Foto ein“ is off, no wipe.
+- **The seam** (`viewport.backdrop`): `Backdrop.wipe: float | None` (an NDC x, validated in [-1, 1]); `FRONT` is now drawn.
+  `Viewport._draw_backdrop_image(placement)` draws the photo only in its placement's slot: `BEHIND` where M1 put it,
+  `FRONT` in `_render_overlays` **after** the under-highlight extras and **before** the passepartout, gate line, wire,
+  highlights, tool lines and points (§7.6 as written: one branch in the fixed slot, no new ordering mechanism).
+- **The pass** (`viewport.backdrop_pass`): the image fragment discards right of `u_wipe` when `u_wipe_on`; mode 3 draws
+  the 1 px wipe line (gate-line colour) from the gate's top to its bottom, after the gate line. Same saved / restored
+  state as M1 (`_SavedState`); no new GL object.
+- **Capture:** a capture draws no overlay slot, so a front photo is never in one; `request_capture(…, backdrop=True)`
+  still draws only a behind photo (the M1 test path).
+
+### 18.3 The photo fit (proposal §2.4, §4.3; LC-D4) [built]
+
+- **Pure math** `src/mirai/viewport/photo_fit.py` (stdlib): `PhotoFit(rotation_deg, offset_x, offset_y, cropped, scale,
+  mirror)`, `clamped` (rotation folded into [-180, 180], offset ±1 gate height, scale 0.1 … 4), `photo_corners(gate,
+  window_aspect, fit)` → the four NDC corners (the identity fit returns exactly `gate_corners(gate)`, so M1's pixels are
+  unchanged), `photo_point_ndc` (tests). Units: degrees counter-clockwise on screen; offsets in gate heights (+x right,
+  +y up), so a value means the same in any window; the maths runs in isotropic units (NDC x · window aspect), so a
+  rotation keeps the photo's shape. The scale applies only with `cropped` (proposal §2.4: otherwise the lens is the
+  variable); it is kept while off.
+- **Record:** `LikenessCamera.photo_fit` (per camera: a fit is part of a match, proposal §4.3); saved per camera as
+  `photo_fit`. A new photo file resets it; reloading the same file keeps it. „90° drehen“ keeps it.
+- **App:** `set_likeness_photo_fit(index, **changes)`, `reset_likeness_photo_fit(index)`. A fit change pushes only the
+  backdrop: no lens, no pose, no camera revision (the model does not move in the gate; picking caches stay valid).
+- **Tested equivalences** (`tests/test_photo_fit.py`, against a reference camera written out independently):
+  offset ≡ an off-axis frustum (principal point moved by `c` tan units ⇒ `offset = c / (2 · tan_half_v)` gate heights),
+  rotation ≡ a rolled camera (roll φ ⇒ `rotation_deg = φ`), and both together, to 1e-12 in four window / photo shapes.
+
+### 18.4 EXIF (proposal §4.2) [built]
+
+- `src/mirai/exif.py` (stdlib, the own-PNG-decoder spirit): the first APP1 "Exif" segment before the scan, both byte
+  orders; IFD0 Orientation (0x0112), Exif IFD FocalLength (0x920A) and FocalLengthIn35mmFilm (0xA405, 0 = unknown).
+  Anything broken, truncated or foreign gives `ExifInfo()` - a photo never fails to load for its metadata.
+- **Orientation** is applied in `likeness_files.read_photo` before the cap and the quarter turns
+  (`apply_orientation`, all eight TIFF cases, cross-checked against PIL's `exif_transpose`). pyglet's decoders ignore it
+  (checked in the container: PIL; WIC on Windows the same [H, checked on the reference PC by the practical test]).
+- **Compatibility:** a photo entry gains `"oriented": true`. An M1 file has no flag and reads **unoriented**, so its
+  saved quarter turns (set on the stored pixels) stay right; it keeps `false` when saved again
+  (`LikenessPhoto.oriented`, `LikenessCamera.photo_missing_oriented`).
+- **Focal length** is a suggestion only (`Application.likeness_exif_suggestion`, the panel line „EXIF: 26 mm KB“ and
+  „Übernehmen“ = `adopt_likeness_exif`): a 35 mm-equivalent value sets the sensor „Kleinbild-Äquivalent“ with its
+  diagonal fit (LC-D5); a real focal length alone sets only the focal length („Sensor prüfen“: EXIF names no sensor
+  reliably). The status line of a load names the orientation and the suggestion. The proposal's [H] that phone makers
+  derive the 35 mm value from the diagonal ratio is **not** checked here (no third-party photos in the repository);
+  Manu's own photos check it (§18.9 step 3).
+
+### 18.5 The dolly zoom (proposal §5.2) [built, no key]
+
+`Application.dolly_zoom_likeness(index, focal_mm)`: the focal length and the distance scale by the same factor `k`
+(target and view direction stay), so `distance / focal` is constant and the target plane keeps its size in the gate
+exactly; in front of it the perspective changes. `k` is limited so that both stay in range (focal 10 … 600 mm, distance
+`MIN_DISTANCE` … `MAX_DISTANCE`), the ratio exact. It edits the record also when the camera is fixed (an explicit panel
+edit, like the focal slider; fixing guards navigation). Panel: the drag row „Dolly-Zoom (mm)“ under the focal buttons
+(„Halten + Maus = Wert“ in the panel). The proposal's keys (hold `A` + mouse, `Alt` + wheel, `0` hold for „Nur Foto“)
+stay suggestions until Manu's „Taste passt“; `config/keymap.json` unchanged.
+
+### 18.6 The panel „Kamera“ (M2 rows, `PROVISIONAL`)
+
+| Section | Shown | Under „Mehr“ |
+|---|---|---|
+| Objektiv | + „Dolly-Zoom (mm)“ (drag) | — |
+| Foto | + „EXIF: … mm KB“ and „Übernehmen“ (only when the file names a focal length), „Vergleich: Hinter · Vor · Wischen“, „Wischlinie“ (only in Wischen), „Nur Foto (halten)“ (only in the camera view with a photo) | + „Drehen (°)“, „Verschieben ←→ / ↑↓“, „Beschnittenes Foto“ + „Skalieren“, „Spiegeln“, „Einpassen zurücksetzen“ |
+
+Pure state in `gui.likeness_model` (`PanelState.compare / wipe / flip_held`, `PhotoRow.fit / exif_line /
+exif_adoptable`), drawn by `gui.likeness_panel` (no state but „Mehr“). Visible controls: M1's ≈ 14 plus up to 6
+(Dolly-Zoom, the three compare choices, Wischlinie, Nur Foto; „Übernehmen“ only with EXIF) - over the LookDev rule's
+≈ 15 [E]; Manu's GUI verdict decides what moves under „Mehr“. Deviation from the proposal's
+§6.4: the EXIF suggestion is shown, not under „Mehr“ (it is the first thing to do with a phone photo).
+
+### 18.7 Tests (container, 2026-11-27)
+
+- New, headless: `tests/test_photo_fit.py` (19), `tests/test_likeness_exif.py` (16: both byte orders, unknown / broken /
+  truncated files, the eight orientations against PIL, the app's orientation, suggestion and „Übernehmen“, and a real
+  JPEG through pyglet's decoder - skipped without a decoder), `tests/test_likeness_compare.py` (8: the compare modes and
+  „Nur Foto“ at the seam, the fit as corners without a camera revision, the fit reset on a new file, the dolly zoom on
+  the target plane and at the limits, the round trip of every new value, an M1 file read with the defaults and
+  unoriented, a broken `photo_fit`), `tests/test_gui_likeness_model.py` (+1).
+- New, GL in their own process: `tests/test_gl_likeness_compare.py` (7: the front photo covers the model and the wire
+  is drawn the same over it, half opacity mixes, the wipe - photo left, right of the line byte-identical to the
+  camera view without a photo, the line drawn -, mirror and half-turn round trips through the capture (< 1/255),
+  GL state of the new draws, the app frame's state and the capture with a front photo, „Nur Foto“ in pixels),
+  `tests/test_gui_likeness_panel_window.py` (+1: the compare radio and „Nur Foto (halten)“ in the real window).
+- **The one intended change of an existing test:** `test_likeness_camera.py::test_cameras_and_photos_round_trip_…`
+  pins the photo entry exactly; it now includes `"oriented": True` (§18.4).
+- Guards: RESULTS_PLACEHOLDER
+
+### 18.8 Probe
+
+`probe_likeness.py` gains three rows: `photo 4096 front` (opacity 0.5), `photo 4096 wipe`, `photo 4096 front, turned`
+(5°, shifted). Container (llvmpipe, a function check only): every row runs, `free after` ≈ `free`. The reference PC
+decides against the same target (each row ≤ free + 0.5 ms GPU). The front photo is one more full-gate textured quad
+per frame; the passepartout (M1's §17.4 lever) is unchanged.
+
+### 18.9 Praxistest für Manu (Deutsch, ca. 30 Minuten, M1 und M2 zusammen)
+
+Vorher einmal `python experiments/drag_cost/probe_likeness.py --photo <dein Handy-JPEG>` auf dem Referenz-PC.
+
+1. **M1 (15 min):** die Schritte aus §15 (Kamera anlegen, Foto laden, durchschauen, Brennweite, fixieren, LookDev,
+   speichern / laden).
+2. **Handyfoto (2 min):** ein hochkant aufgenommenes Handyfoto laden: Steht es richtig herum, ohne „90° drehen“?
+3. **EXIF (2 min):** Steht „EXIF: … mm KB“ im Panel? „Übernehmen“ – passt die Perspektive besser als vorher? (Das prüft,
+   ob die Hersteller-Angabe zu unserem Kleinbild-Äquivalent passt.)
+4. **Dolly-Zoom (5 min):** „Dolly-Zoom (mm)“ anklicken und seitlich ziehen: Bleibt der Kopf gleich groß und ändert
+   sich nur die Perspektive? Kommst du damit schneller zur passenden Brennweite als mit Regler + Mausrad?
+5. **Vergleich (4 min):** „Vor“ mit Deckkraft 0,5; „Wischen“ und die Wischlinie; „Nur Foto (halten)“ mehrmals
+   drücken. Welche der drei Arten benutzt du wirklich?
+6. **Einpassen (3 min):** ein schiefes Foto mit „Drehen“ gerade stellen; „Spiegeln“; „Einpassen zurücksetzen“.
+7. **Urteil:** Welche Tasten möchtest du (Vorschläge: `0` tippen = Kameraansicht, `0` halten = Nur Foto, `A` halten +
+   Maus = Dolly-Zoom, `Alt` + Rad = Brennweite)? Ist das Panel zu voll? Was fehlt für M3 (Kamera als Objekt, Rückgängig,
+   Outliner, LC-D2 A)?
+
+**Next step:** Manu's probe run and the practical test of M1 + M2 (§18.9); his key verdicts („Taste passt“); then M3
+(LC-D2 A: camera objects in the Core, Undo per gesture, Outliner) after his go for the Core field.
